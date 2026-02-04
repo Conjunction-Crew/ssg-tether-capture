@@ -26,6 +26,6 @@ jobs:
 
       - name: Run rust unit tests
         run: |
-          unset WAYLAND_DISPLAY
+          sudo apt install libwayland-dev
           cargo test
       
