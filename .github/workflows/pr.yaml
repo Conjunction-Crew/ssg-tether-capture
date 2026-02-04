@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Dependencies
+        run: |
+          sudo apt install libwayland-dev
+          sudo apt install libasound2-dev
+
       - name: Cache
         uses: actions/cache@v4
         with:
@@ -26,6 +31,5 @@ jobs:
 
       - name: Run rust unit tests
         run: |
-          sudo apt install libwayland-dev
           cargo test
       
