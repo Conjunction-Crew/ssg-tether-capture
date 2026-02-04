@@ -16,5 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run rust unit tests
-        run: cargo test
+        run: |
+          unset WAYLAND_DISPLAY
+          cargo test
       
