@@ -19,6 +19,7 @@ jobs:
         run: |
           sudo apt install libwayland-dev
           sudo apt install libasound2-dev
+          sudo apt install libudev-dev
 
       - name: Cache
         uses: actions/cache@v4
