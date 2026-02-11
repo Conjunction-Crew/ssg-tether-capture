@@ -2,9 +2,9 @@ name: PR
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
   workflow_dispatch:
 
@@ -32,5 +32,5 @@ jobs:
 
       - name: Run rust unit tests
         run: |
-          cargo test
+          RUST_BACKTRACE=1 cargo test
       
