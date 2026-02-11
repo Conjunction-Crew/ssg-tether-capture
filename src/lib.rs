@@ -1,6 +1,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
+// Application plugin and system setup
 pub fn run() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
@@ -8,7 +9,7 @@ pub fn run() {
     .run();
 }
 
-// Integration Tests
+// Minimal test app harness for unit testing
 #[cfg(test)]
 mod tests {
     use super::*;
