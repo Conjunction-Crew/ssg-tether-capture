@@ -1,4 +1,4 @@
-use bevy::prelude::{Component, Quat, Vec3};
+use bevy::prelude::{Component, Quat, Vec3, DVec3};
 
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone)]
@@ -49,15 +49,15 @@ pub struct BodyAxes {
 #[derive(Debug, Clone)]
 pub struct OrbitalState {
 	// Earth-centered inertial frame by default.
-	pub position_km: Vec3,
-	pub velocity_km_s: Vec3,
+	pub position_km: DVec3,
+	pub velocity_km_s: DVec3,
 	pub altitude_km: f32,
 }
 
 #[derive(Debug, Clone)]
 pub struct ApproachMetrics {
-	pub relative_position_km: Vec3,
-	pub relative_velocity_km_s: Vec3,
+	pub relative_position_km: DVec3,
+	pub relative_velocity_km_s: DVec3,
 	pub range_km: f32,
 	pub closing_speed_km_s: f32,
 	pub time_to_closest_approach_s: Option<f32>,
@@ -81,8 +81,8 @@ impl Default for AttitudeState {
 impl Default for OrbitalState {
 	fn default() -> Self {
 		Self {
-			position_km: Vec3::ZERO,
-			velocity_km_s: Vec3::ZERO,
+			position_km: DVec3::ZERO,
+			velocity_km_s: DVec3::ZERO,
 			altitude_km: 0.0,
 		}
 	}
@@ -91,8 +91,8 @@ impl Default for OrbitalState {
 impl Default for ApproachMetrics {
 	fn default() -> Self {
 		Self {
-			relative_position_km: Vec3::ZERO,
-			relative_velocity_km_s: Vec3::ZERO,
+			relative_position_km: DVec3::ZERO,
+			relative_velocity_km_s: DVec3::ZERO,
 			range_km: 0.0,
 			closing_speed_km_s: 0.0,
 			time_to_closest_approach_s: None,
