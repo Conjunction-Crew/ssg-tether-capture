@@ -63,3 +63,54 @@ pub struct ApproachMetrics {
 	pub time_to_closest_approach_s: Option<f32>,
 	pub closest_approach_distance_km: Option<f32>,
 }
+
+impl Default for AttitudeState {
+	fn default() -> Self {
+		Self {
+			orientation: Quat::IDENTITY,
+			angular_velocity_rad_s: Vec3::ZERO,
+			body_axes: BodyAxes {
+				x_body: Vec3::X,
+				y_body: Vec3::Y,
+				z_body: Vec3::Z,
+			},
+		}
+	}
+}
+
+impl Default for OrbitalState {
+	fn default() -> Self {
+		Self {
+			position_km: Vec3::ZERO,
+			velocity_km_s: Vec3::ZERO,
+			altitude_km: 0.0,
+		}
+	}
+}
+
+impl Default for ApproachMetrics {
+	fn default() -> Self {
+		Self {
+			relative_position_km: Vec3::ZERO,
+			relative_velocity_km_s: Vec3::ZERO,
+			range_km: 0.0,
+			closing_speed_km_s: 0.0,
+			time_to_closest_approach_s: None,
+			closest_approach_distance_km: None,
+		}
+	}
+}
+
+impl Default for OrbitalInfo {
+	fn default() -> Self {
+		Self {
+			object_id: String::new(),
+			primary_id: String::new(),
+			tle: None,
+			orbit: None,
+			attitude: AttitudeState::default(),
+			state: OrbitalState::default(),
+			approach: ApproachMetrics::default(),
+		}
+	}
+}
