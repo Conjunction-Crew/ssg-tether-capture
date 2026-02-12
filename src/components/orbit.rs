@@ -1,5 +1,17 @@
 use bevy::prelude::{Component, Quat, Vec3};
 
+// Orbital parameters and state for a body approaching another object.
+#[derive(Component, Debug, Clone)]
+pub struct OrbitalInfo {
+	pub object_id: String,
+	pub primary_id: String,
+	pub tle: Option<TleData>,
+	pub orbit: Option<OrbitElements>,
+	pub attitude: AttitudeState,
+	pub state: OrbitalState,
+	pub approach: ApproachMetrics,
+}
+
 #[derive(Debug, Clone)]
 pub struct TleData {
 	pub line1: String,
