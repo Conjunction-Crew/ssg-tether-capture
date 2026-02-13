@@ -1,12 +1,29 @@
+mod components;
+mod systems;
+
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use systems::setup::setup;
+use systems::orbit_camera::*;
 
 // Application plugin and system setup
 pub fn run() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-    .add_plugins(PhysicsPlugins::default())
-    .run();
+        .add_plugins(PhysicsPlugins::default())
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                orbit_camera_input,
+                orbit_camera_track,
+                orbit_camera_switch_target,
+                orbit_camera_control_target,
+            ),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
+        .insert_resource(Gravity(Vec3::ZERO))
+        .run();
 }
 
 // Minimal test app harness for unit testing
@@ -23,6 +40,7 @@ mod tests {
             AssetPlugin::default(),
         ));
         app.init_asset::<Mesh>();
+        app.add_systems(Startup, setup);
 
         app
     }
@@ -36,7 +54,7 @@ mod tests {
         app.world_mut().spawn((
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(0.0, 4.0, 0.0),
+            Transform::from_xyz(40.0, 40.0, 40.0),
         ));
 
         app.update();
