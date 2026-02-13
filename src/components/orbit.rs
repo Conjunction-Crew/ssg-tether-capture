@@ -1,4 +1,4 @@
-use bevy::prelude::{Component, Quat, Vec3, DVec3};
+use bevy::{math::DVec3, prelude::{Component, Quat, Vec3}};
 
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone)]

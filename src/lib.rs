@@ -1,29 +1,53 @@
+mod components;
+mod systems;
+
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use systems::orbit_camera::*;
+use systems::setup::setup;
 
-// Application plugin and system setup
+// Main entrypoint to run the desktop application
 pub fn run() {
-    let mut app = App::new();
+    let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-    .add_plugins(PhysicsPlugins::default())
-    .run();
+        .run();
+}
+
+fn create_app() -> App {
+    let mut app = App::new();
+    app.add_plugins(PhysicsPlugins::default())
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                orbit_camera_input,
+                orbit_camera_track,
+                orbit_camera_switch_target,
+                orbit_camera_control_target,
+            ),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
+        .insert_resource(Gravity(Vec3::ZERO));
+
+    app
 }
 
 // Minimal test app harness for unit testing
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::{input::InputPlugin, scene::ScenePlugin};
 
     fn test_app() -> App {
-        let mut app = App::new();
+        let mut app = create_app();
         app.add_plugins((
             MinimalPlugins,
-            TransformPlugin,
-            ColliderHierarchyPlugin,
             AssetPlugin::default(),
-        ));
-        app.init_asset::<Mesh>();
-
+            InputPlugin,
+            ScenePlugin
+        ))
+        .init_asset::<Mesh>()
+        .init_asset::<StandardMaterial>();
         app
     }
 
@@ -36,7 +60,7 @@ mod tests {
         app.world_mut().spawn((
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(0.0, 4.0, 0.0),
+            Transform::from_xyz(40.0, 40.0, 40.0),
         ));
 
         app.update();
