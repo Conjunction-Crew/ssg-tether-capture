@@ -1,4 +1,7 @@
-use bevy::{ ecs::entity::Entity, prelude::{Component,  Vec3}};
+use bevy::{
+    ecs::entity::Entity,
+    prelude::{Component, Vec3},
+};
 
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]
@@ -14,11 +17,11 @@ pub struct OrbitCamera {
     pub target: Option<Entity>,
 }
 
-impl OrbitCamera {
-    pub fn new(focus: Vec3, distance: f32) -> Self {
+impl Default for OrbitCamera {
+    fn default() -> Self {
         Self {
-            focus,
-            distance,
+            focus: Vec3::ZERO,
+            distance: 30.0,
             yaw: 0.0,
             pitch: 0.0,
             min_distance: 0.5,

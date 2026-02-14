@@ -13,7 +13,7 @@ pub fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
-        OrbitCamera::new(Vec3::new(0.0, 0.0, 0.0), 30.0),
+        OrbitCamera::default(),
     ));
 
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));

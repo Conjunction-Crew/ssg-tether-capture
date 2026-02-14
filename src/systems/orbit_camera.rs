@@ -92,7 +92,7 @@ pub fn orbit_camera_control_target(
         let (camera, transform) = s.into_inner();
         if let Some(t) = camera.target {
             if let Ok(mut v) = bodies.get_mut(t) {
-                let force_dir = transform.forward() * time.delta().as_secs_f32() * 500.0;
+                let force_dir = transform.forward() * time.delta().as_secs_f32() * 1000.0;
                 *v = ConstantForce::new(force_dir.x, force_dir.y, force_dir.z);
             }
         }
