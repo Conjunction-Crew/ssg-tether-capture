@@ -1,44 +1,36 @@
+mod components;
+mod systems;
+mod tests;
+
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use systems::orbit_camera::*;
+use systems::setup::setup;
 
-// Application plugin and system setup
+// Main entrypoint to run the desktop application.
 pub fn run() {
-    let mut app = App::new();
+    let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-    .add_plugins(PhysicsPlugins::default())
-    .run();
+        .add_systems(Startup, setup)
+        .run();
 }
 
-// Minimal test app harness for unit testing
-#[cfg(test)]
-mod tests {
-    use super::*;
+// Create the bevy application.
+// Shared plugins between desktop application and tests go here.
+pub fn create_app() -> App {
+    let mut app = App::new();
+    app.add_plugins(PhysicsPlugins::default())
+        .add_systems(
+            Update,
+            (
+                orbit_camera_input,
+                orbit_camera_track,
+                orbit_camera_switch_target,
+                orbit_camera_control_target,
+            ),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
+        .insert_resource(Gravity(Vec3::ZERO));
 
-    fn test_app() -> App {
-        let mut app = App::new();
-        app.add_plugins((
-            MinimalPlugins,
-            TransformPlugin,
-            ColliderHierarchyPlugin,
-            AssetPlugin::default(),
-        ));
-        app.init_asset::<Mesh>();
-
-        app
-    }
-
-    #[test]
-    fn minimal_rigidbody_setup() {
-        let mut app = test_app();
-
-        let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
-
-        app.world_mut().spawn((
-            RigidBody::Dynamic,
-            Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(0.0, 4.0, 0.0),
-        ));
-
-        app.update();
-    }
+    app
 }
