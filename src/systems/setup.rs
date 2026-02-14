@@ -12,23 +12,30 @@ use std::f32::consts::PI;
 const CELESTIAL_LAYER: usize = 0;
 const LOCAL_LAYER: usize = 1;
 
+// Earth constants
+const EARTH_RADIUS: f32 = 6_360_000.0;
+const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
+
+// Other constants
+const INITIAL_HEIGHT_KM: f32 = 400.0;
+
 // Setup the orbital simulation environment
 pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+    asset_server: Res<AssetServer>,
 ) {
     // Set up celestial camera to render Sun / Earth
     commands.spawn((
         RenderLayers::layer(CELESTIAL_LAYER),
         Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
-        // OrbitCamera::default(),
+        Transform::from_xyz(0.0, INITIAL_HEIGHT_KM, 0.0).looking_at(Vec3::NEG_Y, Vec3::Z),
         Atmosphere {
-            bottom_radius: 6_360_000.0,
-            top_radius: 6_460_000.0,
-            ground_albedo: Vec3::splat(0.3),
+            bottom_radius: EARTH_RADIUS,
+            top_radius: EARTH_ATMOSPHERE_RADIUS,
+            ground_albedo: Vec3::splat(1.0),
             medium: scattering_mediums.add(ScatteringMedium::default()),
         },
         AtmosphereSettings {
@@ -36,6 +43,20 @@ pub fn setup(
             scene_units_to_m: 1000.0,
             ..default()
         },
+    ));
+
+    let earth_mesh = Sphere::new(EARTH_RADIUS / 1000.0).mesh().uv(128, 64);
+    let earth_texture: Handle<Image> = asset_server.load("textures/earth.jpg");
+
+    commands.spawn((
+        RenderLayers::layer(CELESTIAL_LAYER),
+        Mesh3d(meshes.add(earth_mesh)),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(earth_texture),
+            perceptual_roughness: 1.0,
+            ..default()
+        })),
+        Transform::from_xyz(0.0, -(EARTH_RADIUS / 1000.0), 0.0),
     ));
 
     // Set up local camera to render Rigid Body physics objects
