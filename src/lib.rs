@@ -5,14 +5,14 @@ mod tests;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use systems::orbit_camera::*;
-use systems::setup::setup;
+use systems::setup::*;
 use systems::propagation::ssg_propagate_keplerian;
 
 // Main entrypoint to run the desktop application.
 pub fn run() {
     let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup_celestial, setup_lighting, setup_physics).chain())
         .run();
 }
 

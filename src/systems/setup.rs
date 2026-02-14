@@ -1,5 +1,5 @@
-use crate::components::orbit_camera::OrbitCamera;
 use crate::components::orbit::Orbital;
+use crate::components::orbit_camera::OrbitCamera;
 
 use astrora_core::core::elements::OrbitalElements;
 use avian3d::prelude::*;
@@ -15,37 +15,62 @@ use std::f32::consts::PI;
 const CELESTIAL_LAYER: usize = 0;
 const LOCAL_LAYER: usize = 1;
 
+// Scale factor of celestial layer objects (1:1000 size for rendering)
+pub const CELESTIAL_UNITS_TO_M: f64 = 1000.0;
+
 // Earth constants
 const EARTH_RADIUS: f32 = 6_360_000.0;
 const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
-pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / 1000.0;
+pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / CELESTIAL_UNITS_TO_M as f32;
 
+    // i: 0.90114,
 // Other constants
-const INITIAL_HEIGHT_KM: f32 = 400.0;
 const ISS_ORBIT: OrbitalElements = OrbitalElements {
     // Semi-major axis (meters)
     a: 6_799_130.0,
     // Eccentricity (dimensionless)
     e: 0.00112,
     // Inclination (radians)
-    i: 0.90114,
+    i: 6.28,
     // Right ascension of ascending node (radians)
     raan: 3.54993,
     // Argument of periapsis (radians)
     argp: 1.51296,
     // True anomaly (radians)
-    nu: 4.77190
+    nu: 4.77190,
 };
 
-// Setup the orbital simulation environment
-pub fn setup(
+pub fn setup_lighting(mut commands: Commands) {
+    commands.spawn((
+        RenderLayers::layer(CELESTIAL_LAYER).with(LOCAL_LAYER),
+        DirectionalLight {
+            illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
+            shadows_enabled: true,
+            ..default()
+        },
+        SunDisk::EARTH,
+        Transform {
+            translation: Vec3::new(0.0, 2.0, 0.0),
+            rotation: Quat::from_rotation_x(-PI / 4.),
+            ..default()
+        },
+        CascadeShadowConfigBuilder {
+            first_cascade_far_bound: 4.0,
+            maximum_distance: 1000.0,
+            ..default()
+        }
+        .build(),
+    ));    
+}
+
+pub fn setup_celestial(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     asset_server: Res<AssetServer>,
 ) {
-    // Set up celestial camera to render Sun / Earth
+    // Set up celestial camera
     commands.spawn((
         RenderLayers::layer(CELESTIAL_LAYER),
         Camera3d::default(),
@@ -62,11 +87,12 @@ pub fn setup(
         },
         AtmosphereSettings {
             rendering_method: AtmosphereMode::Raymarched,
-            scene_units_to_m: 1000.0,
+            scene_units_to_m: CELESTIAL_UNITS_TO_M as f32,
             ..default()
         },
     ));
 
+    // Set up Earth rendering
     let earth_mesh = Sphere::new(EARTH_RADIUS / 1000.0).mesh().uv(128, 64);
     let earth_texture: Handle<Image> = asset_server.load("textures/earth.jpg");
 
@@ -80,7 +106,13 @@ pub fn setup(
         })),
         Transform::from_xyz(0.0, -EARTH_Y_OFFSET, 0.0),
     ));
+}
 
+pub fn setup_physics(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     // Set up local camera to render Rigid Body physics objects
     commands.spawn((
         RenderLayers::layer(LOCAL_LAYER),
@@ -126,47 +158,5 @@ pub fn setup(
             ..default()
         })),
         Transform::from_xyz(10.0, 0.0, 0.0),
-    ));
-
-    commands.spawn((
-        RenderLayers::layer(LOCAL_LAYER),
-        DirectionalLight {
-            illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
-            shadows_enabled: true,
-            ..default()
-        },
-        SunDisk::EARTH,
-        Transform {
-            translation: Vec3::new(0.0, 2.0, 0.0),
-            rotation: Quat::from_rotation_x(-PI / 4.),
-            ..default()
-        },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 4.0,
-            maximum_distance: 1000.0,
-            ..default()
-        }
-        .build(),
-    ));
-
-    commands.spawn((
-        RenderLayers::layer(CELESTIAL_LAYER).with(LOCAL_LAYER),
-        DirectionalLight {
-            illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
-            shadows_enabled: true,
-            ..default()
-        },
-        SunDisk::EARTH,
-        Transform {
-            translation: Vec3::new(0.0, 2.0, 0.0),
-            rotation: Quat::from_rotation_x(-PI / 4.),
-            ..default()
-        },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 4.0,
-            maximum_distance: 1000.0,
-            ..default()
-        }
-        .build(),
     ));
 }
