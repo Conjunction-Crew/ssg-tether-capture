@@ -1,4 +1,7 @@
 use crate::components::orbit_camera::OrbitCamera;
+use crate::components::orbit::Orbital;
+
+use astrora_core::core::elements::OrbitalElements;
 use avian3d::prelude::*;
 use bevy::camera::Camera3dDepthLoadOp;
 use bevy::camera::visibility::RenderLayers;
@@ -15,9 +18,24 @@ const LOCAL_LAYER: usize = 1;
 // Earth constants
 const EARTH_RADIUS: f32 = 6_360_000.0;
 const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
+pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / 1000.0;
 
 // Other constants
 const INITIAL_HEIGHT_KM: f32 = 400.0;
+const ISS_ORBIT: OrbitalElements = OrbitalElements {
+    // Semi-major axis (meters)
+    a: 6_799_130.0,
+    // Eccentricity (dimensionless)
+    e: 0.00112,
+    // Inclination (radians)
+    i: 0.90114,
+    // Right ascension of ascending node (radians)
+    raan: 3.54993,
+    // Argument of periapsis (radians)
+    argp: 1.51296,
+    // True anomaly (radians)
+    nu: 4.77190
+};
 
 // Setup the orbital simulation environment
 pub fn setup(
@@ -31,11 +49,15 @@ pub fn setup(
     commands.spawn((
         RenderLayers::layer(CELESTIAL_LAYER),
         Camera3d::default(),
-        Transform::from_xyz(0.0, INITIAL_HEIGHT_KM, 0.0).looking_at(Vec3::NEG_Y, Vec3::Z),
+        Orbital {
+            elements: Some(ISS_ORBIT),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::NEG_Y, Vec3::Z),
         Atmosphere {
             bottom_radius: EARTH_RADIUS,
             top_radius: EARTH_ATMOSPHERE_RADIUS,
-            ground_albedo: Vec3::splat(1.0),
+            ground_albedo: Vec3::splat(0.3),
             medium: scattering_mediums.add(ScatteringMedium::default()),
         },
         AtmosphereSettings {
@@ -56,7 +78,7 @@ pub fn setup(
             perceptual_roughness: 1.0,
             ..default()
         })),
-        Transform::from_xyz(0.0, -(EARTH_RADIUS / 1000.0), 0.0),
+        Transform::from_xyz(0.0, -EARTH_Y_OFFSET, 0.0),
     ));
 
     // Set up local camera to render Rigid Body physics objects

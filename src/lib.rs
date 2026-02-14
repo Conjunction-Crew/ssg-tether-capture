@@ -6,6 +6,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use systems::orbit_camera::*;
 use systems::setup::setup;
+use systems::propagation::ssg_propagate_keplerian;
 
 // Main entrypoint to run the desktop application.
 pub fn run() {
@@ -28,6 +29,7 @@ pub fn create_app() -> App {
                 orbit_camera_track,
                 orbit_camera_switch_target,
                 orbit_camera_control_target,
+                ssg_propagate_keplerian,
             ),
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
