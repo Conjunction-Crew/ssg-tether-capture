@@ -24,6 +24,7 @@ pub fn create_app() -> App {
             Update,
             (
                 orbit_camera_input,
+                orbit_camera_sync_rotation.after(orbit_camera_input),
                 orbit_camera_track,
                 orbit_camera_switch_target,
                 orbit_camera_control_target,
