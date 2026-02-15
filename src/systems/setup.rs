@@ -23,7 +23,6 @@ const EARTH_RADIUS: f32 = 6_360_000.0;
 const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / CELESTIAL_UNITS_TO_M as f32;
 
-    // i: 0.90114,
 // Other constants
 const ISS_ORBIT: OrbitalElements = OrbitalElements {
     // Semi-major axis (meters)
@@ -31,7 +30,7 @@ const ISS_ORBIT: OrbitalElements = OrbitalElements {
     // Eccentricity (dimensionless)
     e: 0.00112,
     // Inclination (radians)
-    i: 6.28,
+    i: 0.90114,
     // Right ascension of ascending node (radians)
     raan: 3.54993,
     // Argument of periapsis (radians)
@@ -55,8 +54,8 @@ pub fn setup_lighting(mut commands: Commands) {
             ..default()
         },
         CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 4.0,
-            maximum_distance: 1000.0,
+            first_cascade_far_bound: 200.0,
+            maximum_distance: 20_000.0,
             ..default()
         }
         .build(),
@@ -93,7 +92,7 @@ pub fn setup_celestial(
     ));
 
     // Set up Earth rendering
-    let earth_mesh = Sphere::new(EARTH_RADIUS / 1000.0).mesh().uv(128, 64);
+    let earth_mesh = Sphere::new(EARTH_RADIUS / CELESTIAL_UNITS_TO_M as f32).mesh().uv(128, 64);
     let earth_texture: Handle<Image> = asset_server.load("textures/earth.jpg");
 
     commands.spawn((
