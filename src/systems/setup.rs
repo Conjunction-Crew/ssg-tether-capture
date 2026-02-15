@@ -1,5 +1,6 @@
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::OrbitCamera;
+use crate::plugins::post_processing_test::PostProcessSettings;
 
 use astrora_core::core::elements::OrbitalElements;
 use avian3d::prelude::*;
@@ -122,6 +123,10 @@ pub fn setup_physics(
         Camera {
             order: 1,
             clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        PostProcessSettings {
+            intensity: 0.02,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
