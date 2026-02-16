@@ -32,8 +32,8 @@ const ISS_ORBIT: OrbitalElements = OrbitalElements {
     // Inclination (radians)
     i: 0.90114,
     // Right ascension of ascending node (radians)
-    // raan: 3.54993,
-    raan: 6.28,
+    raan: 3.54993,
+    // raan: 6.28,
     // Argument of periapsis (radians)
     argp: 1.51296,
     // True anomaly (radians)
@@ -62,33 +62,11 @@ pub fn setup_lighting(mut commands: Commands) {
     ));
 }
 
-pub fn setup_cameras(
-    mut commands: Commands,
-    mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
-) {
-    // Set up 3D scene camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
-        OrbitCamera::default(),
-        Atmosphere {
-            world_position: Vec3::new(0.0 as f32, 0.0, 0.0),
-            bottom_radius: EARTH_RADIUS,
-            top_radius: EARTH_ATMOSPHERE_RADIUS,
-            ground_albedo: Vec3::splat(0.3),
-            medium: scattering_mediums.add(ScatteringMedium::default()),
-        },
-        AtmosphereSettings {
-            rendering_method: AtmosphereMode::Raymarched,
-            ..default()
-        },
-    ));
-}
-
-pub fn setup_orbitals(
+pub fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     asset_server: Res<AssetServer>,
 ) {
     // Set up Earth rendering
@@ -112,7 +90,7 @@ pub fn setup_orbitals(
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
     // Sphere 1
-    commands.spawn((
+    let sphere_1 = commands.spawn((
         RigidBody::Dynamic,
         Orbital {
             elements: Some(ISS_ORBIT),
@@ -129,7 +107,7 @@ pub fn setup_orbitals(
             ..default()
         })),
         Transform::from_xyz(-10.0, 0.0, 0.0),
-    ));
+    )).id();
 
     // Sphere 2
     commands.spawn((
@@ -149,5 +127,26 @@ pub fn setup_orbitals(
             ..default()
         })),
         Transform::from_xyz(10.0, 0.0, 0.0),
+    ));
+
+    // Set up 3D scene camera
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
+        OrbitCamera {
+            target: Some(sphere_1),
+            ..default()
+        },
+        Atmosphere {
+            world_position: Vec3::new(0.0 as f32, 0.0, 0.0),
+            bottom_radius: EARTH_RADIUS,
+            top_radius: EARTH_ATMOSPHERE_RADIUS,
+            ground_albedo: Vec3::splat(0.3),
+            medium: scattering_mediums.add(ScatteringMedium::default()),
+        },
+        AtmosphereSettings {
+            rendering_method: AtmosphereMode::Raymarched,
+            ..default()
+        },
     ));
 }

@@ -32,29 +32,44 @@ pub fn ssg_propagate_keplerian(
 
 pub fn floating_origin(
     mut orbitals: Query<(&mut Orbital, &mut Transform)>,
-    s: Single<(&mut OrbitCamera, &mut Transform, &mut Atmosphere), (With<Camera3d>, Without<Orbital>)>,
+    s: Single<
+        (&mut OrbitCamera, &mut Transform, &mut Atmosphere),
+        (With<Camera3d>, Without<Orbital>),
+    >,
 ) {
     let (cam, mut transform, mut atmosphere) = s.into_inner();
 
     // We want to position orbital objects relative to the camera's current target
     if let Some(target_entity) = cam.target {
-        if let Ok((target_orbital, target_transform)) = orbitals.get(target_entity) {
-            if let (Some(elements), Some(parent_entity)) =
-                (&target_orbital.elements, &target_orbital.parent_entity)
-            {
-                let (new_position, _new_velocity) = coe_to_rv(&elements, GM_EARTH);
+        let target_orbital_result = orbitals.get(target_entity);
 
-                // Parent orbital becomes new position
-                if let Ok((parent_orbital, mut parent_transform)) = orbitals.get_mut(*parent_entity) {
-                    let new_translation = Vec3::new(
-                        (new_position.x) as f32,
-                        (new_position.y) as f32,
-                        (new_position.z) as f32,
-                    );
-                    parent_transform.translation = new_translation;
-                    atmosphere.world_position = new_translation;
-                }
+        if target_orbital_result.is_err() {
+            return;
+        }
+
+        let (target_orbital_ref, target_transform_ref) = target_orbital_result.unwrap();
+        let target_orbital = target_orbital_ref.clone();
+        let target_transform = target_transform_ref.clone();
+
+        if let (Some(target_elements), Some(parent_entity)) =
+            (&target_orbital.elements, &target_orbital.parent_entity)
+        {
+            let (new_position, _new_velocity) = coe_to_rv(&target_elements, GM_EARTH);
+
+            // Parent translation becomes new position
+            if let Ok((parent_orbital, mut parent_transform)) = orbitals.get_mut(*parent_entity) {
+                let new_translation = Vec3::new(
+                    (new_position.x) as f32,
+                    (new_position.y) as f32,
+                    (new_position.z) as f32,
+                ) - target_transform.translation;
+                parent_transform.translation = new_translation;
+                atmosphere.world_position = new_translation;
             }
         }
     }
 }
+
+// pub fn floating_origin_physics_radius(
+//     mut orbitals: Query<(&mut Orbital, &mut Transform)>,
+// )

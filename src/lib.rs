@@ -14,7 +14,7 @@ use crate::systems::propagation::floating_origin;
 pub fn run() {
     let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-        .add_systems(Startup, (setup_cameras, setup_lighting, setup_orbitals).chain())
+        .add_systems(Startup, (setup_lighting, setup_scene))
         .run();
 }
 
