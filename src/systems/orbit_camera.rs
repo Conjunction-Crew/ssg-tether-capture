@@ -45,15 +45,6 @@ pub fn orbit_camera_input(
     transform.translation += delta_pos;
 }
 
-pub fn orbit_camera_sync_rotation(
-    orbit_cam: Single<&Transform, With<OrbitCamera>>,
-    mut other_cams: Query<&mut Transform, (With<Camera3d>, Without<OrbitCamera>)>,
-) {
-    for mut transform in &mut other_cams {
-        transform.rotation = orbit_cam.rotation;
-    }
-}
-
 pub fn orbit_camera_track(
     targets: Query<&GlobalTransform>,
     mut cams: Query<&mut OrbitCamera, With<Camera3d>>,
