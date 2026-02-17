@@ -8,7 +8,7 @@ use systems::orbit_camera::*;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
-use crate::systems::propagation::floating_origin;
+use crate::systems::propagation::{floating_origin, target_entity_reset_origin};
 use crate::systems::user_interface::track_objects;
 
 // Main entrypoint to run the desktop application.
@@ -33,6 +33,7 @@ pub fn create_app() -> App {
                 orbit_camera_control_target,
                 ssg_propagate_keplerian,
                 floating_origin,
+                target_entity_reset_origin,
                 track_objects
             ),
         )
