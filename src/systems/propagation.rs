@@ -32,12 +32,9 @@ pub fn ssg_propagate_keplerian(
 
 pub fn floating_origin(
     mut orbitals: Query<(&mut Orbital, &mut Transform)>,
-    s: Single<
-        (&mut OrbitCamera, &mut Transform, &mut Atmosphere),
-        (With<Camera3d>, Without<Orbital>),
-    >,
+    s: Single<(&mut OrbitCamera, &mut Atmosphere), (With<Camera3d>, Without<Orbital>)>,
 ) {
-    let (cam, mut transform, mut atmosphere) = s.into_inner();
+    let (cam, mut atmosphere) = s.into_inner();
 
     // We want to position orbital objects relative to the camera's current target
     if let Some(target_entity) = cam.target {
@@ -54,6 +51,7 @@ pub fn floating_origin(
         if let (Some(target_elements), Some(parent_entity)) =
             (&target_orbital.elements, &target_orbital.parent_entity)
         {
+            // Calculate the position of the target based on orbital elements
             let (new_position, _new_velocity) = coe_to_rv(&target_elements, GM_EARTH);
 
             // Parent translation becomes new position
