@@ -1,5 +1,4 @@
 use crate::components::orbit::Orbital;
-use crate::systems::setup::EARTH_Y_OFFSET;
 use crate::systems::setup::CELESTIAL_UNITS_TO_M;
 
 use astrora_core::core::constants::GM_EARTH;
@@ -21,7 +20,7 @@ pub fn ssg_propagate_keplerian(
                 let (new_position, _new_velocity) = coe_to_rv(&new_elements, GM_EARTH);
                 transform.translation = Vec3::new(
                     (new_position.x / CELESTIAL_UNITS_TO_M) as f32,
-                    (new_position.y / CELESTIAL_UNITS_TO_M) as f32 - EARTH_Y_OFFSET,
+                    (new_position.y / CELESTIAL_UNITS_TO_M) as f32,
                     (new_position.z / CELESTIAL_UNITS_TO_M) as f32,
                 );
             }

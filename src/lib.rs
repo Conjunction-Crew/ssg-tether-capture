@@ -1,10 +1,8 @@
 mod components;
 mod systems;
 mod tests;
-mod plugins;
 
 use avian3d::prelude::*;
-use plugins::post_processing_test::PostProcessPlugin;
 use bevy::prelude::*;
 use systems::orbit_camera::*;
 use systems::setup::*;
@@ -14,7 +12,6 @@ use systems::propagation::ssg_propagate_keplerian;
 pub fn run() {
     let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-        .add_plugins(PostProcessPlugin)
         .add_systems(Startup, (setup_celestial, setup_lighting, setup_physics).chain())
         .run();
 }
