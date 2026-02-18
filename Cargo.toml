@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = { version = "0.18.0", features = ["debug", "jpeg"] }
 avian3d = "0.5.0"
+astrora_core = { version = "0.1.1", default-features = false }
 
 [[bin]]
 name = "ssg_tether_capture"
