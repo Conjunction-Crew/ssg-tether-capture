@@ -2,7 +2,7 @@ use bevy::{math::DVec3, prelude::{Component, Quat, Vec3}};
 use astrora_core::core::elements::OrbitalElements;
 
 #[derive(Debug, Clone)]
-enum PhysicsState {
+pub enum PhysicsState {
 	INACTIVE,
 	ACTIVE
 }
