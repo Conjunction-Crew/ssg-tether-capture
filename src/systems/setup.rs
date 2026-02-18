@@ -204,15 +204,5 @@ pub fn setup_scene(
                     ..default()
                 },
             ));
-            parent.spawn((
-                TrackObject {
-                    entity: Some(sphere_2),
-                },
-                Text::new("TEST 2"),
-                Node {
-                    margin: UiRect::bottom(px(10)),
-                    ..default()
-                },
-            ));
         });
 }

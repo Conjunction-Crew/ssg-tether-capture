@@ -106,14 +106,14 @@ pub fn target_entity_reset_origin(
 
                     // Add target relative position and velocity to calculated orbital position and velocity
                     let new_position: Vector3 = Vector3::new(
-                        current_position.x + target_transform.translation.x as f64,
-                        current_position.y + target_transform.translation.y as f64,
-                        current_position.z + target_transform.translation.z as f64,
+                        current_position.x - target_transform.translation.x as f64,
+                        current_position.y - target_transform.translation.y as f64,
+                        current_position.z - target_transform.translation.z as f64,
                     );
                     let new_velocity: Vector3 = Vector3::new(
-                        current_velocity.x + target_linvel.x as f64,
-                        current_velocity.y + target_linvel.y as f64,
-                        current_velocity.z + target_linvel.z as f64,
+                        current_velocity.x - target_linvel.x as f64,
+                        current_velocity.y - target_linvel.y as f64,
+                        current_velocity.z - target_linvel.z as f64,
                     );
 
                     if let Ok(new_elements) =
