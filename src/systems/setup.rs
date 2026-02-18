@@ -25,7 +25,7 @@ const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 // pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / CELESTIAL_UNITS_TO_M as f32;
 
 // Tether testing constants
-const NUM_TETHER_JOINTS: u32 = 10;
+const NUM_TETHER_JOINTS: u32 = 100;
 const DIST_BETWEEN_JOINTS: f32 = 1.1;
 
 // Other constants
@@ -130,31 +130,13 @@ pub fn setup_scene(
         ))
         .id();
 
-    // Sphere 2
-    let sphere_2 = commands
-        .spawn((
-            RigidBody::Dynamic,
-            Orbital {
-                elements: Some(ISS_ORBIT),
-                object_id: String::from("Sphere2"),
-                parent_entity: Some(earth),
-                ..default()
-            },
-            ConstantForce::new(0.0, 0.0, 0.0),
-            Collider::convex_hull_from_mesh(&test_sphere_mesh.clone()).unwrap(),
-            Mesh3d(meshes.add(test_sphere_mesh.clone())),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::WHITE,
-                perceptual_roughness: 1.0,
-                ..default()
-            })),
-            Transform::from_xyz(10.0, 0.0, 0.0),
-        ))
-        .id();
-
     // Set up 3D scene camera
     commands.spawn((
         Camera3d::default(),
+        Bloom {
+            intensity: 0.2,
+            ..default()
+        },
         Camera {
             order: 0,
             ..default()
@@ -187,29 +169,20 @@ pub fn setup_scene(
         },
     ));
 
-    commands
-        .spawn((
-            RenderLayers::layer(1),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                TrackObject {
-                    entity: Some(sphere_1),
-                },
-                Text::new("TEST 1"),
-                Node {
-                    margin: UiRect::bottom(px(10)),
-                    ..default()
-                },
-            ));
-        });
+    let scene: Handle<Scene> =
+        asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/broken_satellite.glb"));
+
+    commands.spawn((
+        SceneRoot(scene),
+        RigidBody::Dynamic,
+        Orbital {
+            elements: Some(ISS_ORBIT),
+            object_id: String::from("Satellite"),
+            ..default()
+        },
+        ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+        Transform::from_xyz(0.0, 4.0, 40.0),
+    ));
 }
 
 pub fn setup_tether(
@@ -247,9 +220,7 @@ pub fn setup_tether(
     for i in 1..NUM_TETHER_JOINTS {
         let sphere = commands
             .spawn((
-                TetherNode {
-                    root: tether_root
-                },
+                TetherNode { root: tether_root },
                 RigidBody::Dynamic,
                 ConstantForce::new(0.0, 0.0, 0.0),
                 sphere_collider.clone(),
@@ -270,4 +241,29 @@ pub fn setup_tether(
         prev_sphere = sphere;
         commands.entity(tether_root).add_child(sphere);
     }
+
+    commands
+        .spawn((
+            RenderLayers::layer(1),
+            Node {
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TrackObject {
+                    entity: Some(tether_root),
+                },
+                Text::new("TEST 1"),
+                Node {
+                    margin: UiRect::bottom(px(10)),
+                    ..default()
+                },
+            ));
+        });
 }
