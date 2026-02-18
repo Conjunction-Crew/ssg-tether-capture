@@ -79,6 +79,7 @@ pub fn setup_celestial(
         },
         Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::NEG_Y, Vec3::Z),
         Atmosphere {
+            world_position: Vec3::new(0.0, 0.0, 0.0),
             bottom_radius: EARTH_RADIUS,
             top_radius: EARTH_ATMOSPHERE_RADIUS,
             ground_albedo: Vec3::splat(0.3),
@@ -103,7 +104,7 @@ pub fn setup_celestial(
             perceptual_roughness: 1.0,
             ..default()
         })),
-        Transform::from_xyz(0.0, -EARTH_Y_OFFSET, 0.0),
+        Transform::from_xyz(0.0, 0.0, 0.0),
     ));
 }
 
