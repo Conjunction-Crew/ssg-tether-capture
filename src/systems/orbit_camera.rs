@@ -1,4 +1,4 @@
-use crate::components::orbit_camera::OrbitCamera;
+use crate::components::{orbit::Orbital, orbit_camera::OrbitCamera};
 use avian3d::prelude::*;
 use bevy::{
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
@@ -60,7 +60,7 @@ pub fn orbit_camera_track(
 
 pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    bodies: Query<Entity, With<RigidBody>>,
+    bodies: Query<Entity, (With<RigidBody>, With<Orbital>)>,
     mut camera: Single<&mut OrbitCamera, With<Camera3d>>,
 ) {
     if keyboard_input.just_pressed(KeyCode::Tab) {
@@ -92,7 +92,7 @@ pub fn orbit_camera_control_target(
         let (camera, transform) = s.into_inner();
         if let Some(t) = camera.target {
             if let Ok(mut v) = bodies.get_mut(t) {
-                let force_dir = transform.forward() * time.delta().as_secs_f32() * 100000.0;
+                let force_dir = transform.forward() * time.delta().as_secs_f32() * 10000.0;
                 *v = ConstantForce::new(force_dir.x, force_dir.y, force_dir.z);
             }
         }

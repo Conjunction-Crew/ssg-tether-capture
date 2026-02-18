@@ -1,4 +1,4 @@
-use crate::components::orbit::Orbital;
+use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::OrbitCamera;
 use crate::components::user_interface::TrackObject;
 
@@ -23,6 +23,10 @@ use std::f32::consts::PI;
 const EARTH_RADIUS: f32 = 6_360_000.0;
 const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 // pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / CELESTIAL_UNITS_TO_M as f32;
+
+// Tether testing constants
+const NUM_TETHER_JOINTS: u32 = 10;
+const DIST_BETWEEN_JOINTS: f32 = 1.1;
 
 // Other constants
 const ISS_ORBIT: OrbitalElements = OrbitalElements {
@@ -76,6 +80,7 @@ pub fn setup_scene(
 
     let earth = commands
         .spawn((
+            Earth,
             Orbital {
                 object_id: String::from("Earth"),
                 ..default()
@@ -205,4 +210,64 @@ pub fn setup_scene(
                 },
             ));
         });
+}
+
+pub fn setup_tether(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(0.5)));
+    let sphere_collider = Collider::sphere(0.5);
+    let sphere_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        perceptual_roughness: 1.0,
+        ..default()
+    });
+
+    // The root tether node
+    let tether_root = commands
+        .spawn((
+            RigidBody::Dynamic,
+            ConstantForce::new(0.0, 0.0, 0.0),
+            sphere_collider.clone(),
+            Mesh3d(sphere_mesh.clone()),
+            MeshMaterial3d(sphere_material.clone()),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Orbital {
+                elements: Some(ISS_ORBIT),
+                object_id: String::from("Tether"),
+                ..default()
+            },
+        ))
+        .id();
+
+    let mut prev_sphere = tether_root;
+
+    for i in 1..NUM_TETHER_JOINTS {
+        let sphere = commands
+            .spawn((
+                TetherNode {
+                    root: tether_root
+                },
+                RigidBody::Dynamic,
+                ConstantForce::new(0.0, 0.0, 0.0),
+                sphere_collider.clone(),
+                Mesh3d(sphere_mesh.clone()),
+                MeshMaterial3d(sphere_material.clone()),
+                Transform::from_xyz(0.0, i as f32 * DIST_BETWEEN_JOINTS, 0.0),
+            ))
+            .id();
+
+        let anchor = Vec3::new(
+            0.0,
+            i as f32 * DIST_BETWEEN_JOINTS - DIST_BETWEEN_JOINTS / 2.0,
+            0.0,
+        );
+
+        commands.spawn(SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor));
+
+        prev_sphere = sphere;
+        commands.entity(tether_root).add_child(sphere);
+    }
 }

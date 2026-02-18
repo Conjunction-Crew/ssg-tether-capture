@@ -25,7 +25,7 @@ impl Default for OrbitCamera {
             yaw: 0.0,
             pitch: 0.0,
             min_distance: 0.5,
-            max_distance: 1000.0,
+            max_distance: 100000.0,
             sensitivity: 0.005,
             max_pitch: 1.55,
             target: None,

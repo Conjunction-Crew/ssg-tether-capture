@@ -7,6 +7,16 @@ pub enum PhysicsState {
 	ACTIVE
 }
 
+// Component to query Earth.
+#[derive(Component)]
+pub struct Earth;
+
+// Component for identifying a root node of a tether system.
+#[derive(Component, Debug, Clone)]
+pub struct TetherNode {
+	pub root: Entity,
+}
+
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone)]
 pub struct Orbital {
