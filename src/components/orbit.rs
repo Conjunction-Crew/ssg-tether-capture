@@ -1,4 +1,4 @@
-use bevy::{math::DVec3, prelude::{Component, Quat, Vec3}};
+use bevy::{ecs::entity::Entity, math::DVec3, prelude::{Component, Quat, Vec3}};
 use astrora_core::core::elements::OrbitalElements;
 
 #[derive(Debug, Clone)]
@@ -11,6 +11,7 @@ pub enum PhysicsState {
 #[derive(Component, Debug, Clone)]
 pub struct Orbital {
 	pub object_id: String,
+	pub parent_entity: Option<Entity>,
 	pub primary_id: String,
 	pub tle: Option<TleData>,
 	pub elements: Option<OrbitalElements>,
@@ -83,6 +84,7 @@ impl Default for Orbital {
 	fn default() -> Self {
 		Self {
 			object_id: String::new(),
+			parent_entity: None,
 			primary_id: String::new(),
 			tle: None,
 			elements: None,

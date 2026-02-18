@@ -45,23 +45,14 @@ pub fn orbit_camera_input(
     transform.translation += delta_pos;
 }
 
-pub fn orbit_camera_sync_rotation(
-    orbit_cam: Single<&Transform, With<OrbitCamera>>,
-    mut other_cams: Query<&mut Transform, (With<Camera3d>, Without<OrbitCamera>)>,
-) {
-    for mut transform in &mut other_cams {
-        transform.rotation = orbit_cam.rotation;
-    }
-}
-
 pub fn orbit_camera_track(
-    targets: Query<&GlobalTransform>,
+    targets: Query<&Transform, Without<Camera3d>>,
     mut cams: Query<&mut OrbitCamera, With<Camera3d>>,
 ) {
     for mut cam in &mut cams {
         if let Some(entity) = cam.target {
             if let Ok(target) = targets.get(entity) {
-                cam.focus = target.translation();
+                cam.focus = target.translation;
             }
         }
     }
@@ -101,7 +92,7 @@ pub fn orbit_camera_control_target(
         let (camera, transform) = s.into_inner();
         if let Some(t) = camera.target {
             if let Ok(mut v) = bodies.get_mut(t) {
-                let force_dir = transform.forward() * time.delta().as_secs_f32() * 1000.0;
+                let force_dir = transform.forward() * time.delta().as_secs_f32() * 100000.0;
                 *v = ConstantForce::new(force_dir.x, force_dir.y, force_dir.z);
             }
         }
