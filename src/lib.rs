@@ -1,4 +1,6 @@
 mod components;
+mod constants;
+mod resources;
 mod systems;
 mod tests;
 
@@ -9,14 +11,29 @@ use systems::orbit_camera::*;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
+use crate::resources::celestials::Celestials;
+use crate::resources::devices::Devices;
 use crate::systems::propagation::{floating_origin, target_entity_reset_origin};
+use crate::systems::user_input::toggle_map_view;
 use crate::systems::user_interface::track_objects;
 
 // Main entrypoint to run the desktop application.
 pub fn run() {
     let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
-        .add_systems(Startup, (setup_lighting, setup_scene, setup_tether))
+        .add_systems(
+            Startup,
+            (
+                setup_lighting,
+                (
+                    setup_celestial,
+                    setup_tether,
+                    setup_user_interface,
+                    setup_entities,
+                )
+                    .chain(),
+            ),
+        )
         .run();
 }
 
@@ -35,6 +52,7 @@ pub fn create_app() -> App {
                 ssg_propagate_keplerian,
                 floating_origin,
                 track_objects,
+                toggle_map_view,
             ),
         )
         .add_systems(
@@ -42,7 +60,9 @@ pub fn create_app() -> App {
             target_entity_reset_origin.in_set(PhysicsSystems::First),
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
-        .insert_resource(Gravity(Vec3::ZERO));
+        .insert_resource(Gravity(Vec3::ZERO))
+        .init_resource::<Celestials>()
+        .init_resource::<Devices>();
 
     app
 }

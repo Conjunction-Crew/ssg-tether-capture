@@ -2,36 +2,27 @@ use std::char::MAX;
 
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::OrbitCamera;
+use crate::constants::MAP_LAYER;
 
 use astrora_core::core::constants::GM_EARTH;
 use astrora_core::core::elements::{coe_to_rv, rv_to_coe};
 use astrora_core::core::linalg::Vector3;
 use astrora_core::propagators::keplerian::propagate_keplerian;
 use avian3d::prelude::{LinearVelocity, Position, RigidBody};
+use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 
 const MAX_ORIGIN_OFFSET: f32 = 1000.0;
 const MAX_LINVEL: f32 = 1000.0;
 
-pub fn ssg_propagate_keplerian(
-    mut orbitals: Query<(&mut Orbital, &mut Transform)>,
-    time: Res<Time>,
-) {
+pub fn ssg_propagate_keplerian(mut orbitals: Query<&mut Orbital>, time: Res<Time>) {
     let dt = time.delta_secs_f64() * 10.0;
 
-    for (mut orbital, mut transform) in &mut orbitals {
+    for mut orbital in &mut orbitals {
         if let Some(elements) = &mut orbital.elements {
             if let Ok(new_elements) = propagate_keplerian(&elements, dt, GM_EARTH) {
                 *elements = new_elements;
-
-                // Don't propagate transform. Let floating origin determine new positions.
-                // let (new_position, _new_velocity) = coe_to_rv(&new_elements, GM_EARTH);
-                // transform.translation = Vec3::new(
-                //     (new_position.x) as f32,
-                //     (new_position.y) as f32,
-                //     (new_position.z) as f32,
-                // );
             }
         }
     }
@@ -39,13 +30,21 @@ pub fn ssg_propagate_keplerian(
 
 pub fn floating_origin(
     orbitals: Query<(&mut Orbital, &mut Transform), With<RigidBody>>,
-    s: Single<(&mut OrbitCamera, &mut Atmosphere), (With<Camera3d>, Without<Orbital>)>,
+    s: Single<
+        (&mut OrbitCamera, &mut Atmosphere, &RenderLayers),
+        (With<Camera3d>, Without<Orbital>),
+    >,
     earth: Single<&mut Transform, (With<Earth>, Without<RigidBody>)>,
 ) {
-    let (cam, mut atmosphere) = s.into_inner();
+    let (cam, mut atmosphere, render_layers) = s.into_inner();
+
+    // Do not calculate floating origin if we are in map view
+    if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        return;
+    }
 
     // We want to position orbital objects relative to the camera's current target
-    if let Some(target_entity) = cam.target {
+    if let Some(target_entity) = cam.scene_params.target {
         let target_orbital_result = orbitals.get(target_entity);
 
         if target_orbital_result.is_err() {
@@ -76,12 +75,11 @@ pub fn floating_origin(
 pub fn target_entity_reset_origin(
     mut orbitals: Query<(&mut Orbital, &mut Position, &mut LinearVelocity)>,
     mut nodes: Query<(&mut Position, &TetherNode), Without<Orbital>>,
-    s: Single<(&mut OrbitCamera), (With<Camera3d>, Without<Orbital>)>,
+    s: Single<&mut OrbitCamera, (With<Camera3d>, Without<Orbital>)>,
 ) {
-    let (cam) = s.into_inner();
+    let cam = s.into_inner();
 
-    // We want to position orbital objects relative to the camera's current target
-    if let Some(target_entity) = cam.target {
+    if let Some(target_entity) = cam.scene_params.target {
         if let Ok((mut target_orbital, mut target_position, mut target_linvel)) =
             orbitals.get_mut(target_entity)
         {
