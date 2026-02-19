@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
 use crate::components::user_interface::TrackObject;
@@ -6,15 +8,20 @@ use crate::resources::celestials::Celestials;
 use crate::resources::devices::Devices;
 
 use avian3d::prelude::*;
+use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
-use bevy::color::palettes::css::GREEN;
+use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
 use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use std::f32::consts::PI;
+use bevy::render::render_resource::BlendState;
 
 pub fn setup_lighting(mut commands: Commands) {
+    let sun_rotation = Quat::from_rotation_x(-PI / 12.0);
+    let moon_rotation = sun_rotation * Quat::from_rotation_y(PI) * Quat::from_rotation_x(-PI / 6.0);
+
+    // Sun
     commands.spawn((
         RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
         DirectionalLight {
@@ -24,7 +31,28 @@ pub fn setup_lighting(mut commands: Commands) {
         },
         SunDisk::EARTH,
         Transform {
-            translation: Vec3::new(0.0, 2.0, 0.0),
+            rotation: sun_rotation,
+            ..default()
+        },
+        CascadeShadowConfigBuilder {
+            first_cascade_far_bound: 200.0,
+            maximum_distance: 20_000.0,
+            ..default()
+        }
+        .build(),
+    ));
+
+    // Moon
+    commands.spawn((
+        RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
+        DirectionalLight {
+            illuminance: light_consts::lux::CIVIL_TWILIGHT,
+            shadows_enabled: true,
+            ..default()
+        },
+        SunDisk::EARTH,
+        Transform {
+            rotation: moon_rotation,
             ..default()
         },
         CascadeShadowConfigBuilder {
@@ -116,6 +144,9 @@ pub fn setup_entities(
         Transform::from_xyz(0.0, 0.0, 0.0),
     ));
 
+    // Skybox
+    let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
+
     // Set up 3D scene camera
     commands.spawn((
         RenderLayers::layer(SCENE_LAYER),
@@ -127,6 +158,11 @@ pub fn setup_entities(
         Camera {
             order: 0,
             is_active: true,
+            ..default()
+        },
+        Skybox {
+            image: skybox_handle.clone(),
+            brightness: 5000.0,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -254,6 +290,10 @@ pub fn setup_user_interface(mut commands: Commands, devices: ResMut<Devices>) {
         Camera {
             order: 1,
             clear_color: ClearColorConfig::None,
+            output_mode: CameraOutputMode::Write {
+                blend_state: Some(BlendState::ALPHA_BLENDING),
+                clear_color: ClearColorConfig::None,
+            },
             ..default()
         },
     ));

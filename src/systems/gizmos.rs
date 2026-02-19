@@ -6,7 +6,7 @@ use crate::{components::orbit::Orbital, constants::MAP_UNITS_TO_M};
 pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
     for orbital in orbitals {
         if let Some(elements) = orbital.elements {
-            // Semi-major axis
+            // Semi-minor axis
             let semi_minor = (elements.periapsis() * elements.apoapsis()).sqrt() / MAP_UNITS_TO_M as f64;
             let (r, v) = coe_to_rv(&elements, GM_EARTH);
             let r_vec = Vec3::new(r.x as f32, r.y as f32, r.z as f32);

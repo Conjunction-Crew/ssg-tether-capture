@@ -7,9 +7,17 @@ pub enum PhysicsState {
 	ACTIVE
 }
 
+// Component to query Sun.
+#[derive(Component)]
+pub struct Sun;
+
 // Component to query Earth.
 #[derive(Component)]
 pub struct Earth;
+
+// Component to query Stars.
+#[derive(Component)]
+pub struct Stars;
 
 // Component for identifying a root node of a tether system.
 #[derive(Component, Debug, Clone)]
