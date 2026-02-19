@@ -13,7 +13,7 @@ pub const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 pub const MAP_UNITS_TO_M: f32 = 100000.0;
 
 // Tether testing constants
-pub const NUM_TETHER_JOINTS: u32 = 100;
+pub const NUM_TETHER_JOINTS: u32 = 10;
 pub const DIST_BETWEEN_JOINTS: f32 = 1.1;
 
 // Other constants

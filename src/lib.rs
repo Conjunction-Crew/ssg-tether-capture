@@ -6,13 +6,16 @@ mod tests;
 
 use avian3d::prelude::*;
 use avian3d::schedule::PhysicsSystems;
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use systems::orbit_camera::*;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
+use crate::constants::MAP_LAYER;
 use crate::resources::celestials::Celestials;
 use crate::resources::devices::Devices;
+use crate::systems::gizmos::orbital_gizmos;
 use crate::systems::propagation::{floating_origin, target_entity_reset_origin};
 use crate::systems::user_input::toggle_map_view;
 use crate::systems::user_interface::track_objects;
@@ -33,6 +36,14 @@ pub fn run() {
                 )
                     .chain(),
             ),
+        )
+        .add_systems(Last, orbital_gizmos)
+        .insert_gizmo_config(
+            DefaultGizmoConfigGroup,
+            GizmoConfig {
+                render_layers: RenderLayers::layer(MAP_LAYER),
+                ..default()
+            },
         )
         .run();
 }

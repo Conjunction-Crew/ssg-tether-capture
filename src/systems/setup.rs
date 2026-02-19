@@ -7,6 +7,7 @@ use crate::resources::devices::Devices;
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
+use bevy::color::palettes::css::GREEN;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
 use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium};
 use bevy::post_process::bloom::Bloom;
@@ -46,8 +47,8 @@ pub fn setup_celestial(
     asset_server: Res<AssetServer>,
 ) {
     // Set up Earth rendering
-    let earth_mesh = Sphere::new(EARTH_RADIUS).mesh().uv(128, 64);
-    let earth_texture: Handle<Image> = asset_server.load("textures/earth.jpg");
+    let earth_mesh = Sphere::new(EARTH_RADIUS).mesh().uv(512, 256);
+    let earth_texture: Handle<Image> = asset_server.load("textures/earth_8192x4096_uastc.ktx2");
     let earth_material = materials.add(StandardMaterial {
         base_color_texture: Some(earth_texture),
         perceptual_roughness: 1.0,
@@ -76,7 +77,7 @@ pub fn setup_celestial(
     // Set up Earth map rendering
     let map_earth_mesh = Sphere::new(EARTH_RADIUS / MAP_UNITS_TO_M)
         .mesh()
-        .uv(128, 64);
+        .uv(512, 256);
 
     celestials.planets.insert(
         "Map_Earth".to_string(),
@@ -97,8 +98,8 @@ pub fn setup_entities(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
-    celestials: ResMut<Celestials>,
-    devices: ResMut<Devices>,
+    celestials: Res<Celestials>,
+    devices: Res<Devices>,
     asset_server: Res<AssetServer>,
 ) {
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
@@ -141,7 +142,7 @@ pub fn setup_entities(
             },
             map_params: OrbitCameraParams {
                 distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M
-                    + 0.1 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M),
+                    + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M),
                 min_distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M,
                 target: Some(
                     *celestials
@@ -160,6 +161,7 @@ pub fn setup_entities(
             medium: scattering_mediums.add(ScatteringMedium::default()),
         },
         AtmosphereSettings {
+            sky_view_lut_size: UVec2::new(512, 256),
             rendering_method: AtmosphereMode::Raymarched,
             ..default()
         },
@@ -244,7 +246,7 @@ pub fn setup_tether(
     }
 }
 
-pub fn setup_user_interface(mut commands: Commands, mut devices: ResMut<Devices>) {
+pub fn setup_user_interface(mut commands: Commands, devices: ResMut<Devices>) {
     // UI camera
     commands.spawn((
         Camera2d::default(),

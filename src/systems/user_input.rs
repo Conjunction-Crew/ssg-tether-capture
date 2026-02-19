@@ -1,5 +1,3 @@
-use crate::components::orbit::Earth;
-use crate::components::orbit_camera::OrbitCamera;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER};
 
 use bevy::{
@@ -10,16 +8,10 @@ use bevy::{
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    scene_camera: Single<(
-        &mut OrbitCamera,
-        &mut RenderLayers,
-        &mut Atmosphere,
-        &mut AtmosphereSettings,
-    )>,
-    earth: Single<&mut Transform, With<Earth>>,
+    scene_camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings)>,
 ) {
     if keyboard_input.just_pressed(KeyCode::KeyM) {
-        let (mut orbit_camera, mut render_layers, mut atmosphere, mut atmosphere_settings) =
+        let (mut render_layers, mut atmosphere, mut atmosphere_settings) =
             scene_camera.into_inner();
 
         if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
