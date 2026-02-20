@@ -2,19 +2,17 @@ use std::char::MAX;
 
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::OrbitCamera;
-use crate::constants::MAP_LAYER;
+use crate::constants::{MAP_LAYER, MAX_LINVEL, MAX_ORIGIN_OFFSET};
 
 use astrora_core::core::constants::GM_EARTH;
 use astrora_core::core::elements::{coe_to_rv, rv_to_coe};
 use astrora_core::core::linalg::Vector3;
 use astrora_core::propagators::keplerian::propagate_keplerian;
+use avian3d::math::Vector;
 use avian3d::prelude::{LinearVelocity, Position, RigidBody};
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
-
-const MAX_ORIGIN_OFFSET: f32 = 1000.0;
-const MAX_LINVEL: f32 = 1000.0;
 
 pub fn ssg_propagate_keplerian(mut orbitals: Query<&mut Orbital>, time: Res<Time>) {
     let dt = time.delta_secs_f64();
@@ -74,7 +72,7 @@ pub fn floating_origin(
 
 pub fn target_entity_reset_origin(
     mut orbitals: Query<(&mut Orbital, &mut Position, &mut LinearVelocity)>,
-    mut nodes: Query<(&mut Position, &TetherNode), Without<Orbital>>,
+    mut nodes: Query<(&mut Position, &mut LinearVelocity, &TetherNode), Without<Orbital>>,
     s: Single<&mut OrbitCamera, (With<Camera3d>, Without<Orbital>)>,
 ) {
     let cam = s.into_inner();
@@ -119,16 +117,22 @@ pub fn target_entity_reset_origin(
                     {
                         *elements = new_elements;
 
-                        // *target_linvel = LinearVelocity::ZERO;
-
                         let target_position_offset = target_position.0.clone();
                         target_position.0 = Vec3::ZERO;
 
-                        for (mut node_position, node) in nodes {
+                        for (mut node_position, mut node_linvel, node) in nodes {
                             if node.root == target_entity {
                                 node_position.0 -= target_position_offset;
+
+                                *node_linvel = LinearVelocity(Vec3::new(
+                                    node_linvel.x - target_linvel.x,
+                                    node_linvel.y - target_linvel.y,
+                                    node_linvel.z - target_linvel.z,
+                                ))
                             }
                         }
+
+                        *target_linvel = LinearVelocity::ZERO;
                     }
                 }
             }
