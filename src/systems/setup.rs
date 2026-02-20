@@ -12,14 +12,16 @@ use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
+use bevy::math::cubic_splines::LinearSpline;
 use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium};
+use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 
 pub fn setup_lighting(mut commands: Commands) {
-    let sun_rotation = Quat::from_rotation_x(-PI / 12.0);
-    let moon_rotation = sun_rotation * Quat::from_rotation_y(PI) * Quat::from_rotation_x(-PI / 6.0);
+    let sun_rotation = Quat::from_rotation_x(0.0);
+    let moon_rotation = sun_rotation * Quat::from_rotation_y(PI);
 
     // Sun
     commands.spawn((
@@ -34,11 +36,7 @@ pub fn setup_lighting(mut commands: Commands) {
             rotation: sun_rotation,
             ..default()
         },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 200.0,
-            maximum_distance: 20_000.0,
-            ..default()
-        }
+        CascadeShadowConfigBuilder::default()
         .build(),
     ));
 
@@ -55,11 +53,7 @@ pub fn setup_lighting(mut commands: Commands) {
             rotation: moon_rotation,
             ..default()
         },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 200.0,
-            maximum_distance: 20_000.0,
-            ..default()
-        }
+        CascadeShadowConfigBuilder::default()
         .build(),
     ));
 }
@@ -126,6 +120,7 @@ pub fn setup_entities(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+    mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
     celestials: Res<Celestials>,
     devices: Res<Devices>,
     asset_server: Res<AssetServer>,
@@ -152,7 +147,18 @@ pub fn setup_entities(
         RenderLayers::layer(SCENE_LAYER),
         Camera3d::default(),
         Bloom {
-            intensity: 0.1,
+            intensity: 0.01,
+            ..default()
+        },
+        AutoExposure {
+            compensation_curve: compensation_curves.add(
+                AutoExposureCompensationCurve::from_curve(LinearSpline::new([
+                    vec2(-4.0, -4.0),
+                    vec2(0.0, 0.0),
+                    vec2(2.0, 1.0),
+                ]))
+                .unwrap(),
+            ),
             ..default()
         },
         Camera {
@@ -162,7 +168,7 @@ pub fn setup_entities(
         },
         Skybox {
             image: skybox_handle.clone(),
-            brightness: 5000.0,
+            brightness: 1000.0,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -188,6 +194,10 @@ pub fn setup_entities(
                 ),
                 ..default()
             },
+        },
+        AmbientLight {
+            brightness: 1.0,
+            ..default()
         },
         Atmosphere {
             world_position: Vec3::new(0.0, 0.0, 0.0),

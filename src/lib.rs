@@ -7,6 +7,7 @@ mod tests;
 use avian3d::prelude::*;
 use avian3d::schedule::PhysicsSystems;
 use bevy::camera::visibility::RenderLayers;
+use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
 use systems::orbit_camera::*;
 use systems::propagation::ssg_propagate_keplerian;
@@ -24,6 +25,7 @@ use crate::systems::user_interface::track_objects;
 pub fn run() {
     let mut app = create_app();
     app.add_plugins(DefaultPlugins.build().disable::<TransformPlugin>())
+        .add_plugins(AutoExposurePlugin)
         .add_systems(
             Startup,
             (

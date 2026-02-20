@@ -17,7 +17,7 @@ const MAX_ORIGIN_OFFSET: f32 = 1000.0;
 const MAX_LINVEL: f32 = 1000.0;
 
 pub fn ssg_propagate_keplerian(mut orbitals: Query<&mut Orbital>, time: Res<Time>) {
-    let dt = time.delta_secs_f64() * 10.0;
+    let dt = time.delta_secs_f64();
 
     for mut orbital in &mut orbitals {
         if let Some(elements) = &mut orbital.elements {

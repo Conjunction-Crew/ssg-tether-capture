@@ -1,5 +1,8 @@
 use astrora_core::core::{constants::GM_EARTH, elements::coe_to_rv};
-use bevy::{color::palettes::css::BLUE, prelude::*};
+use bevy::{
+    color::palettes::css::{BLUE, GREEN},
+    prelude::*,
+};
 
 use crate::{components::orbit::Orbital, constants::MAP_UNITS_TO_M};
 
@@ -7,7 +10,8 @@ pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
     for orbital in orbitals {
         if let Some(elements) = orbital.elements {
             // Semi-minor axis
-            let semi_minor = (elements.periapsis() * elements.apoapsis()).sqrt() / MAP_UNITS_TO_M as f64;
+            let semi_minor =
+                (elements.periapsis() * elements.apoapsis()).sqrt() / MAP_UNITS_TO_M as f64;
             let (r, v) = coe_to_rv(&elements, GM_EARTH);
             let r_vec = Vec3::new(r.x as f32, r.y as f32, r.z as f32);
             let v_vec = Vec3::new(v.x as f32, v.y as f32, v.z as f32);
@@ -29,6 +33,7 @@ pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
 
             let rotation = Quat::from_mat3(&Mat3::from_cols(x_axis, y_axis, z_axis));
 
+            // Draw orbital ellipse
             gizmos
                 .ellipse(
                     Isometry3d {
@@ -39,6 +44,22 @@ pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
                     BLUE,
                 )
                 .resolution(512);
+
+            // Draw current location
+            gizmos
+                .sphere(
+                    Isometry3d {
+                        rotation: Quat::IDENTITY,
+                        translation: Vec3A::new(
+                            -r_vec.x / MAP_UNITS_TO_M,
+                            -r_vec.y / MAP_UNITS_TO_M,
+                            -r_vec.z / MAP_UNITS_TO_M,
+                        ),
+                    },
+                    1.,
+                    GREEN,
+                )
+                .resolution(64);
         }
     }
 }
