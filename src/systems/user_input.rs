@@ -1,4 +1,7 @@
-use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER};
+use crate::{
+    constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
+    resources::time_warp::TimeWarp,
+};
 
 use bevy::{
     camera::visibility::RenderLayers,
@@ -28,5 +31,16 @@ pub fn toggle_map_view(
             // Adjust atmosphere
             atmosphere_settings.scene_units_to_m = 1.0;
         }
+    }
+}
+
+pub fn change_time_warp(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut time_warp: ResMut<TimeWarp>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Period) {
+        time_warp.multiplier *= 10.0;
+    } else if keyboard_input.just_pressed(KeyCode::Comma) {
+        time_warp.multiplier /= 10.0;
     }
 }

@@ -1,8 +1,9 @@
 use std::f32::consts::PI;
+use std::ops::RangeInclusive;
 
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
-use crate::components::user_interface::TrackObject;
+use crate::components::user_interface::{OrbitLabel, TrackObject};
 use crate::constants::*;
 use crate::resources::celestials::Celestials;
 use crate::resources::devices::Devices;
@@ -36,8 +37,7 @@ pub fn setup_lighting(mut commands: Commands) {
             rotation: sun_rotation,
             ..default()
         },
-        CascadeShadowConfigBuilder::default()
-        .build(),
+        CascadeShadowConfigBuilder::default().build(),
     ));
 
     // Moon
@@ -53,8 +53,7 @@ pub fn setup_lighting(mut commands: Commands) {
             rotation: moon_rotation,
             ..default()
         },
-        CascadeShadowConfigBuilder::default()
-        .build(),
+        CascadeShadowConfigBuilder::default().build(),
     ));
 }
 
@@ -151,6 +150,9 @@ pub fn setup_entities(
             ..default()
         },
         AutoExposure {
+            filter: RangeInclusive::new(0.005, 0.995),
+            speed_brighten: 5.0,
+            speed_darken: 5.0,
             compensation_curve: compensation_curves.add(
                 AutoExposureCompensationCurve::from_curve(LinearSpline::new([
                     vec2(-4.0, -4.0),
@@ -221,7 +223,7 @@ pub fn setup_entities(
         RigidBody::Dynamic,
         Orbital {
             elements: Some(ISS_ORBIT),
-            object_id: String::from("Satellite"),
+            object_id: String::from("Satellite1"),
             ..default()
         },
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
@@ -255,7 +257,7 @@ pub fn setup_tether(
             Transform::from_xyz(0.0, 0.0, 0.0),
             Orbital {
                 elements: Some(ISS_ORBIT),
-                object_id: String::from("Tether"),
+                object_id: String::from("Tether1"),
                 ..default()
             },
         ))
@@ -292,7 +294,11 @@ pub fn setup_tether(
     }
 }
 
-pub fn setup_user_interface(mut commands: Commands, devices: ResMut<Devices>) {
+pub fn setup_user_interface(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    devices: ResMut<Devices>,
+) {
     // UI camera
     commands.spawn((
         Camera2d::default(),
@@ -307,6 +313,9 @@ pub fn setup_user_interface(mut commands: Commands, devices: ResMut<Devices>) {
             ..default()
         },
     ));
+
+    // Font
+    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
     commands
         .spawn((
@@ -333,6 +342,27 @@ pub fn setup_user_interface(mut commands: Commands, devices: ResMut<Devices>) {
                 Text::new("TEST 1"),
                 Node {
                     margin: UiRect::bottom(px(10)),
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                RenderLayers::layer(MAP_LAYER),
+                OrbitLabel {
+                    entity: Some(
+                        *devices
+                            .tethers
+                            .get("Tether1")
+                            .expect("Tether1 not instantiated!"),
+                    ),
+                },
+                Text::new("┌─ Tether1"),
+                TextFont {
+                    font: font,
+                    ..default()
+                },
+                Node {
+                    position_type: PositionType::Absolute,
                     ..default()
                 },
             ));

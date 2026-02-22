@@ -3,19 +3,23 @@ use std::char::MAX;
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::OrbitCamera;
 use crate::constants::{MAP_LAYER, MAX_LINVEL, MAX_ORIGIN_OFFSET};
+use crate::resources::time_warp::TimeWarp;
 
 use astrora_core::core::constants::GM_EARTH;
 use astrora_core::core::elements::{coe_to_rv, rv_to_coe};
 use astrora_core::core::linalg::Vector3;
 use astrora_core::propagators::keplerian::propagate_keplerian;
-use avian3d::math::Vector;
 use avian3d::prelude::{LinearVelocity, Position, RigidBody};
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 
-pub fn ssg_propagate_keplerian(mut orbitals: Query<&mut Orbital>, time: Res<Time>) {
-    let dt = time.delta_secs_f64();
+pub fn ssg_propagate_keplerian(
+    mut orbitals: Query<&mut Orbital>,
+    time: Res<Time>,
+    time_warp: Res<TimeWarp>,
+) {
+    let dt = time.delta_secs_f64() * time_warp.multiplier;
 
     for mut orbital in &mut orbitals {
         if let Some(elements) = &mut orbital.elements {
@@ -59,11 +63,12 @@ pub fn floating_origin(
 
             // Earth translation becomes new position
             let mut earth_transform = earth.into_inner();
-            let new_translation = Vec3::new(
-                (new_position.x) as f32,
-                (new_position.y) as f32,
-                (new_position.z) as f32,
-            ) - target_transform.translation;
+            let new_translation = target_transform.translation
+                - Vec3::new(
+                    (new_position.x) as f32,
+                    (new_position.y) as f32,
+                    (new_position.z) as f32,
+                );
             earth_transform.translation = new_translation;
             atmosphere.world_position = new_translation;
         }
@@ -72,7 +77,7 @@ pub fn floating_origin(
 
 pub fn target_entity_reset_origin(
     mut orbitals: Query<(&mut Orbital, &mut Position, &mut LinearVelocity)>,
-    mut nodes: Query<(&mut Position, &mut LinearVelocity, &TetherNode), Without<Orbital>>,
+    nodes: Query<(&mut Position, &mut LinearVelocity, &TetherNode), Without<Orbital>>,
     s: Single<&mut OrbitCamera, (With<Camera3d>, Without<Orbital>)>,
 ) {
     let cam = s.into_inner();
@@ -101,14 +106,14 @@ pub fn target_entity_reset_origin(
 
                     // Add target relative position and velocity to calculated orbital position and velocity
                     let new_position: Vector3 = Vector3::new(
-                        current_position.x - target_position.x as f64,
-                        current_position.y - target_position.y as f64,
-                        current_position.z - target_position.z as f64,
+                        current_position.x + target_position.x as f64,
+                        current_position.y + target_position.y as f64,
+                        current_position.z + target_position.z as f64,
                     );
                     let new_velocity: Vector3 = Vector3::new(
-                        current_velocity.x - target_linvel.x as f64,
-                        current_velocity.y - target_linvel.y as f64,
-                        current_velocity.z - target_linvel.z as f64,
+                        current_velocity.x + target_linvel.x as f64,
+                        current_velocity.y + target_linvel.y as f64,
+                        current_velocity.z + target_linvel.z as f64,
                     );
 
                     // Reset root node to 0 and offset child node positions by the same amount

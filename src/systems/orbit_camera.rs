@@ -91,10 +91,10 @@ pub fn orbit_camera_switch_target(
 
         entities.sort_by_key(|e| e.index());
 
-        let (mut orbit_cameras, render_layers) = cam_q.into_inner();
+        let (mut orbit_cameras, _render_layers) = cam_q.into_inner();
 
         // Only switch scene targets (TODO: implement switch targets for map view)
-        let camera =   &mut orbit_cameras.scene_params;
+        let camera = &mut orbit_cameras.scene_params;
 
         camera.target = Some(match camera.target {
             None => entities[0],

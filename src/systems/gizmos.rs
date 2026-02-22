@@ -1,6 +1,7 @@
 use astrora_core::core::{constants::GM_EARTH, elements::coe_to_rv};
 use bevy::{
     color::palettes::css::{BLUE, GREEN},
+    math::VectorSpace,
     prelude::*,
 };
 
@@ -9,6 +10,8 @@ use crate::{components::orbit::Orbital, constants::MAP_UNITS_TO_M};
 pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
     for orbital in orbitals {
         if let Some(elements) = orbital.elements {
+            // Semi-major axis
+            let semi_major = elements.a / MAP_UNITS_TO_M as f64;
             // Semi-minor axis
             let semi_minor =
                 (elements.periapsis() * elements.apoapsis()).sqrt() / MAP_UNITS_TO_M as f64;
@@ -38,28 +41,13 @@ pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
                 .ellipse(
                     Isometry3d {
                         rotation: rotation,
-                        translation: Vec3A::ZERO,
+                        translation: rotation
+                            * Vec3A::new(-semi_major as f32 * elements.e as f32, 0.0, 0.0),
                     },
-                    Vec2::new(elements.a as f32 / MAP_UNITS_TO_M, semi_minor as f32),
-                    BLUE,
+                    Vec2::new(semi_major as f32, semi_minor as f32),
+                    Srgba::new(0.0, 0.0, 1.0, 0.1),
                 )
                 .resolution(512);
-
-            // Draw current location
-            gizmos
-                .sphere(
-                    Isometry3d {
-                        rotation: Quat::IDENTITY,
-                        translation: Vec3A::new(
-                            -r_vec.x / MAP_UNITS_TO_M,
-                            -r_vec.y / MAP_UNITS_TO_M,
-                            -r_vec.z / MAP_UNITS_TO_M,
-                        ),
-                    },
-                    1.,
-                    GREEN,
-                )
-                .resolution(64);
         }
     }
 }
