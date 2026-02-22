@@ -346,8 +346,8 @@ pub fn setup_user_interface(
                 },
             ));
 
+            // Orbit labels
             parent.spawn((
-                RenderLayers::layer(MAP_LAYER),
                 OrbitLabel {
                     entity: Some(
                         *devices

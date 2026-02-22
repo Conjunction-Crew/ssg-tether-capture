@@ -3,13 +3,13 @@ use crate::{
         orbit::Orbital,
         user_interface::{OrbitLabel, TrackObject},
     },
-    constants::MAP_UNITS_TO_M,
+    constants::{MAP_UNITS_TO_M, SCENE_LAYER},
     resources::time_warp::TimeWarp,
 };
 
 use astrora_core::core::{constants::GM_EARTH, elements::coe_to_rv};
 use avian3d::prelude::LinearVelocity;
-use bevy::prelude::*;
+use bevy::{camera::visibility::RenderLayers, prelude::*};
 
 pub fn track_objects(
     bodies: Query<(&Transform, &LinearVelocity, &Orbital)>,
@@ -43,13 +43,18 @@ pub fn track_objects(
 }
 
 pub fn map_orbitals(
-    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
     mut labels: Query<(&mut Node, &OrbitLabel)>,
     orbitals: Query<&Orbital>,
 ) {
-    let (cam, cam_transform) = camera.into_inner();
+    let (cam, cam_transform, render_layers) = camera.into_inner();
 
     for (mut node, label) in &mut labels {
+        if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+            node.display = Display::None;
+        } else {
+            node.display = Display::Block;
+        }
         if let Some(entity) = label.entity {
             if let Ok(orbital) = orbitals.get(entity) {
                 if let Some(elements) = orbital.elements {
