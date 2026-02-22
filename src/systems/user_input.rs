@@ -1,0 +1,50 @@
+use crate::{
+    constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
+    resources::time_warp::TimeWarp,
+};
+
+use avian3d::prelude::{Physics, PhysicsTime};
+use bevy::{
+    camera::visibility::RenderLayers,
+    pbr::{Atmosphere, AtmosphereSettings},
+    prelude::*,
+};
+
+pub fn toggle_map_view(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    scene_camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings)>,
+) {
+    if keyboard_input.just_pressed(KeyCode::KeyM) {
+        let (mut render_layers, mut atmosphere, mut atmosphere_settings) =
+            scene_camera.into_inner();
+
+        if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+            println!("Switching to map view");
+            *render_layers = RenderLayers::layer(MAP_LAYER);
+
+            // Adjust atmosphere
+            atmosphere.world_position = Vec3::ZERO;
+            atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M;
+        } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+            println!("Switching to scene view");
+            *render_layers = RenderLayers::layer(SCENE_LAYER);
+
+            // Adjust atmosphere
+            atmosphere_settings.scene_units_to_m = 1.0;
+        }
+    }
+}
+
+pub fn change_time_warp(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut time_warp: ResMut<TimeWarp>,
+    mut physics_time: ResMut<Time<Physics>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Period) {
+        time_warp.multiplier *= 10.0;
+    } else if keyboard_input.just_pressed(KeyCode::Comma) {
+        time_warp.multiplier /= 10.0;
+    }
+
+    physics_time.set_relative_speed_f64(time_warp.multiplier);
+}

@@ -2,36 +2,29 @@ use std::char::MAX;
 
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::OrbitCamera;
+use crate::constants::{MAP_LAYER, MAX_LINVEL, MAX_ORIGIN_OFFSET};
+use crate::resources::time_warp::TimeWarp;
 
 use astrora_core::core::constants::GM_EARTH;
 use astrora_core::core::elements::{coe_to_rv, rv_to_coe};
 use astrora_core::core::linalg::Vector3;
 use astrora_core::propagators::keplerian::propagate_keplerian;
 use avian3d::prelude::{LinearVelocity, Position, RigidBody};
+use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 
-const MAX_ORIGIN_OFFSET: f32 = 1000.0;
-const MAX_LINVEL: f32 = 1000.0;
-
 pub fn ssg_propagate_keplerian(
-    mut orbitals: Query<(&mut Orbital, &mut Transform)>,
+    mut orbitals: Query<&mut Orbital>,
     time: Res<Time>,
+    time_warp: Res<TimeWarp>,
 ) {
-    let dt = time.delta_secs_f64() * 10.0;
+    let dt = time.delta_secs_f64() * time_warp.multiplier;
 
-    for (mut orbital, mut transform) in &mut orbitals {
+    for mut orbital in &mut orbitals {
         if let Some(elements) = &mut orbital.elements {
             if let Ok(new_elements) = propagate_keplerian(&elements, dt, GM_EARTH) {
                 *elements = new_elements;
-
-                // Don't propagate transform. Let floating origin determine new positions.
-                // let (new_position, _new_velocity) = coe_to_rv(&new_elements, GM_EARTH);
-                // transform.translation = Vec3::new(
-                //     (new_position.x) as f32,
-                //     (new_position.y) as f32,
-                //     (new_position.z) as f32,
-                // );
             }
         }
     }
@@ -39,13 +32,21 @@ pub fn ssg_propagate_keplerian(
 
 pub fn floating_origin(
     orbitals: Query<(&mut Orbital, &mut Transform), With<RigidBody>>,
-    s: Single<(&mut OrbitCamera, &mut Atmosphere), (With<Camera3d>, Without<Orbital>)>,
+    s: Single<
+        (&mut OrbitCamera, &mut Atmosphere, &RenderLayers),
+        (With<Camera3d>, Without<Orbital>),
+    >,
     earth: Single<&mut Transform, (With<Earth>, Without<RigidBody>)>,
 ) {
-    let (cam, mut atmosphere) = s.into_inner();
+    let (cam, mut atmosphere, render_layers) = s.into_inner();
+
+    // Do not calculate floating origin if we are in map view
+    if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        return;
+    }
 
     // We want to position orbital objects relative to the camera's current target
-    if let Some(target_entity) = cam.target {
+    if let Some(target_entity) = cam.scene_params.target {
         let target_orbital_result = orbitals.get(target_entity);
 
         if target_orbital_result.is_err() {
@@ -62,11 +63,12 @@ pub fn floating_origin(
 
             // Earth translation becomes new position
             let mut earth_transform = earth.into_inner();
-            let new_translation = Vec3::new(
-                (new_position.x) as f32,
-                (new_position.y) as f32,
-                (new_position.z) as f32,
-            ) - target_transform.translation;
+            let new_translation = target_transform.translation
+                - Vec3::new(
+                    (new_position.x) as f32,
+                    (new_position.y) as f32,
+                    (new_position.z) as f32,
+                );
             earth_transform.translation = new_translation;
             atmosphere.world_position = new_translation;
         }
@@ -75,13 +77,12 @@ pub fn floating_origin(
 
 pub fn target_entity_reset_origin(
     mut orbitals: Query<(&mut Orbital, &mut Position, &mut LinearVelocity)>,
-    mut nodes: Query<(&mut Position, &TetherNode), Without<Orbital>>,
-    s: Single<(&mut OrbitCamera), (With<Camera3d>, Without<Orbital>)>,
+    nodes: Query<(&mut Position, &mut LinearVelocity, &TetherNode), Without<Orbital>>,
+    s: Single<&mut OrbitCamera, (With<Camera3d>, Without<Orbital>)>,
 ) {
-    let (cam) = s.into_inner();
+    let cam = s.into_inner();
 
-    // We want to position orbital objects relative to the camera's current target
-    if let Some(target_entity) = cam.target {
+    if let Some(target_entity) = cam.scene_params.target {
         if let Ok((mut target_orbital, mut target_position, mut target_linvel)) =
             orbitals.get_mut(target_entity)
         {
@@ -105,14 +106,14 @@ pub fn target_entity_reset_origin(
 
                     // Add target relative position and velocity to calculated orbital position and velocity
                     let new_position: Vector3 = Vector3::new(
-                        current_position.x - target_position.x as f64,
-                        current_position.y - target_position.y as f64,
-                        current_position.z - target_position.z as f64,
+                        current_position.x + target_position.x as f64,
+                        current_position.y + target_position.y as f64,
+                        current_position.z + target_position.z as f64,
                     );
                     let new_velocity: Vector3 = Vector3::new(
-                        current_velocity.x - target_linvel.x as f64,
-                        current_velocity.y - target_linvel.y as f64,
-                        current_velocity.z - target_linvel.z as f64,
+                        current_velocity.x + target_linvel.x as f64,
+                        current_velocity.y + target_linvel.y as f64,
+                        current_velocity.z + target_linvel.z as f64,
                     );
 
                     // Reset root node to 0 and offset child node positions by the same amount
@@ -121,16 +122,22 @@ pub fn target_entity_reset_origin(
                     {
                         *elements = new_elements;
 
-                        // *target_linvel = LinearVelocity::ZERO;
-
                         let target_position_offset = target_position.0.clone();
                         target_position.0 = Vec3::ZERO;
 
-                        for (mut node_position, node) in nodes {
+                        for (mut node_position, mut node_linvel, node) in nodes {
                             if node.root == target_entity {
                                 node_position.0 -= target_position_offset;
+
+                                *node_linvel = LinearVelocity(Vec3::new(
+                                    node_linvel.x - target_linvel.x,
+                                    node_linvel.y - target_linvel.y,
+                                    node_linvel.z - target_linvel.z,
+                                ))
                             }
                         }
+
+                        *target_linvel = LinearVelocity::ZERO;
                     }
                 }
             }

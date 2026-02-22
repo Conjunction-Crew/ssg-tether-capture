@@ -1,52 +1,32 @@
-use crate::components::orbit::{Earth, Orbital, TetherNode};
-use crate::components::orbit_camera::OrbitCamera;
-use crate::components::user_interface::TrackObject;
+use std::f32::consts::PI;
+use std::ops::RangeInclusive;
 
-use astrora_core::core::elements::OrbitalElements;
+use crate::components::orbit::{Earth, Orbital, TetherNode};
+use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
+use crate::components::user_interface::{OrbitLabel, TrackObject};
+use crate::constants::*;
+use crate::resources::celestials::Celestials;
+use crate::resources::devices::Devices;
+
 use avian3d::prelude::*;
-use bevy::camera::Camera3dDepthLoadOp;
+use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
+use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
+use bevy::math::cubic_splines::LinearSpline;
 use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium};
+use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use std::f32::consts::PI;
-
-// Camera layers
-// const CELESTIAL_LAYER: usize = 0;
-// const LOCAL_LAYER: usize = 1;
-
-// Scale factor of celestial layer objects (1:1000 size for rendering)
-// pub const CELESTIAL_UNITS_TO_M: f64 = 1000.0;
-
-// Earth constants
-const EARTH_RADIUS: f32 = 6_360_000.0;
-const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
-// pub const EARTH_Y_OFFSET: f32 = EARTH_RADIUS / CELESTIAL_UNITS_TO_M as f32;
-
-// Tether testing constants
-const NUM_TETHER_JOINTS: u32 = 100;
-const DIST_BETWEEN_JOINTS: f32 = 1.1;
-
-// Other constants
-const ISS_ORBIT: OrbitalElements = OrbitalElements {
-    // Semi-major axis (meters)
-    a: 6_799_130.0,
-    // Eccentricity (dimensionless)
-    e: 0.00112,
-    // Inclination (radians)
-    i: 0.90114,
-    // Right ascension of ascending node (radians)
-    raan: 3.54993,
-    // raan: 6.28,
-    // Argument of periapsis (radians)
-    argp: 1.51296,
-    // True anomaly (radians)
-    nu: 4.77190,
-};
+use bevy::render::render_resource::BlendState;
 
 pub fn setup_lighting(mut commands: Commands) {
+    let sun_rotation = Quat::from_rotation_x(0.0);
+    let moon_rotation = sun_rotation * Quat::from_rotation_y(PI);
+
+    // Sun
     commands.spawn((
+        RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
         DirectionalLight {
             illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
             shadows_enabled: true,
@@ -54,51 +34,101 @@ pub fn setup_lighting(mut commands: Commands) {
         },
         SunDisk::EARTH,
         Transform {
-            translation: Vec3::new(0.0, 2.0, 0.0),
-            rotation: Quat::from_rotation_x(-PI / 4.),
+            rotation: sun_rotation,
             ..default()
         },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 200.0,
-            maximum_distance: 20_000.0,
+        CascadeShadowConfigBuilder::default().build(),
+    ));
+
+    // Moon
+    commands.spawn((
+        RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
+        DirectionalLight {
+            illuminance: light_consts::lux::CIVIL_TWILIGHT,
+            shadows_enabled: true,
             ..default()
-        }
-        .build(),
+        },
+        SunDisk::EARTH,
+        Transform {
+            rotation: moon_rotation,
+            ..default()
+        },
+        CascadeShadowConfigBuilder::default().build(),
     ));
 }
 
-pub fn setup_scene(
+/// -------------------------------------------------------------- ///
+///                         SCENE SETUP
+/// -------------------------------------------------------------- ///
+pub fn setup_celestial(
+    mut commands: Commands,
+    mut celestials: ResMut<Celestials>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    // Set up Earth rendering
+    let earth_mesh = Sphere::new(EARTH_RADIUS).mesh().uv(512, 256);
+    let earth_texture: Handle<Image> = asset_server.load("textures/earth_8192x4096_uastc.ktx2");
+    let earth_material = materials.add(StandardMaterial {
+        base_color_texture: Some(earth_texture),
+        perceptual_roughness: 1.0,
+        ..default()
+    });
+
+    // Add Earth to our CelestialBodies resource (enables global entity access)
+    celestials.planets.insert(
+        "Earth".to_string(),
+        commands
+            .spawn((
+                Earth,
+                RenderLayers::layer(SCENE_LAYER),
+                Orbital {
+                    object_id: String::from("Earth"),
+                    ..default()
+                },
+                Mesh3d(meshes.add(earth_mesh)),
+                MeshMaterial3d(earth_material.clone()),
+                Transform::from_xyz(0.0, 0.0, 0.0)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            ))
+            .id(),
+    );
+
+    // Set up Earth map rendering
+    let map_earth_mesh = Sphere::new(EARTH_RADIUS / MAP_UNITS_TO_M)
+        .mesh()
+        .uv(512, 256);
+
+    celestials.planets.insert(
+        "Map_Earth".to_string(),
+        commands
+            .spawn((
+                RenderLayers::layer(MAP_LAYER),
+                Mesh3d(meshes.add(map_earth_mesh)),
+                MeshMaterial3d(earth_material.clone()),
+                Transform::from_xyz(0.0, 0.0, 0.0)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            ))
+            .id(),
+    );
+}
+
+pub fn setup_entities(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+    mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
+    celestials: Res<Celestials>,
+    devices: Res<Devices>,
     asset_server: Res<AssetServer>,
 ) {
-    // Set up Earth rendering
-    let earth_mesh = Sphere::new(EARTH_RADIUS).mesh().uv(128, 64);
-    let earth_texture: Handle<Image> = asset_server.load("textures/earth.jpg");
-
-    let earth = commands
-        .spawn((
-            Earth,
-            Orbital {
-                object_id: String::from("Earth"),
-                ..default()
-            },
-            Mesh3d(meshes.add(earth_mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(earth_texture),
-                perceptual_roughness: 1.0,
-                ..default()
-            })),
-            Transform::from_xyz(0.0, 0.0, 0.0),
-        ))
-        .id();
-
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
     // Origin Sphere
     commands.spawn((
+        RenderLayers::layer(SCENE_LAYER),
         Mesh3d(meshes.add(test_sphere_mesh.clone())),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 1.0, 0.2),
@@ -108,63 +138,79 @@ pub fn setup_scene(
         Transform::from_xyz(0.0, 0.0, 0.0),
     ));
 
-    // Sphere 1
-    let sphere_1 = commands
-        .spawn((
-            RigidBody::Dynamic,
-            Orbital {
-                elements: Some(ISS_ORBIT),
-                object_id: String::from("Sphere1"),
-                parent_entity: Some(earth),
-                ..default()
-            },
-            ConstantForce::new(0.0, 0.0, 0.0),
-            Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Mesh3d(meshes.add(test_sphere_mesh.clone())),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::WHITE,
-                perceptual_roughness: 1.0,
-                ..default()
-            })),
-            Transform::from_xyz(-10.0, 0.0, 0.0),
-        ))
-        .id();
+    // Skybox
+    let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
 
     // Set up 3D scene camera
     commands.spawn((
+        RenderLayers::layer(SCENE_LAYER),
         Camera3d::default(),
         Bloom {
-            intensity: 0.2,
+            intensity: 0.01,
+            ..default()
+        },
+        AutoExposure {
+            filter: RangeInclusive::new(0.005, 0.995),
+            speed_brighten: 5.0,
+            speed_darken: 5.0,
+            compensation_curve: compensation_curves.add(
+                AutoExposureCompensationCurve::from_curve(LinearSpline::new([
+                    vec2(-4.0, -4.0),
+                    vec2(0.0, 0.0),
+                    vec2(2.0, 1.0),
+                ]))
+                .unwrap(),
+            ),
             ..default()
         },
         Camera {
             order: 0,
+            is_active: true,
+            ..default()
+        },
+        Skybox {
+            image: skybox_handle.clone(),
+            brightness: 1000.0,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
         OrbitCamera {
-            target: Some(sphere_1),
+            scene_params: OrbitCameraParams {
+                target: Some(
+                    *devices
+                        .tethers
+                        .get("Tether1")
+                        .expect("Tether1 has not been spawned but was expected."),
+                ),
+                ..default()
+            },
+            map_params: OrbitCameraParams {
+                distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M
+                    + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M),
+                min_distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M,
+                target: Some(
+                    *celestials
+                        .planets
+                        .get("Map_Earth")
+                        .expect("The Earth has not been spawned but was expected."),
+                ),
+                ..default()
+            },
+        },
+        AmbientLight {
+            brightness: 1.0,
             ..default()
         },
         Atmosphere {
-            world_position: Vec3::new(0.0 as f32, 0.0, 0.0),
+            world_position: Vec3::new(0.0, 0.0, 0.0),
             bottom_radius: EARTH_RADIUS,
             top_radius: EARTH_ATMOSPHERE_RADIUS,
             ground_albedo: Vec3::splat(0.3),
             medium: scattering_mediums.add(ScatteringMedium::default()),
         },
         AtmosphereSettings {
+            sky_view_lut_size: UVec2::new(512, 256),
             rendering_method: AtmosphereMode::Raymarched,
-            ..default()
-        },
-    ));
-
-    commands.spawn((
-        Camera2d::default(),
-        RenderLayers::layer(1),
-        Camera {
-            order: 1,
-            clear_color: ClearColorConfig::None,
             ..default()
         },
     ));
@@ -177,7 +223,7 @@ pub fn setup_scene(
         RigidBody::Dynamic,
         Orbital {
             elements: Some(ISS_ORBIT),
-            object_id: String::from("Satellite"),
+            object_id: String::from("Satellite1"),
             ..default()
         },
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
@@ -189,6 +235,7 @@ pub fn setup_tether(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut devices: ResMut<Devices>,
 ) {
     let sphere_mesh = meshes.add(Mesh::from(Sphere::new(0.5)));
     let sphere_collider = Collider::sphere(0.5);
@@ -201,6 +248,7 @@ pub fn setup_tether(
     // The root tether node
     let tether_root = commands
         .spawn((
+            RenderLayers::layer(SCENE_LAYER),
             RigidBody::Dynamic,
             ConstantForce::new(0.0, 0.0, 0.0),
             sphere_collider.clone(),
@@ -209,17 +257,20 @@ pub fn setup_tether(
             Transform::from_xyz(0.0, 0.0, 0.0),
             Orbital {
                 elements: Some(ISS_ORBIT),
-                object_id: String::from("Tether"),
+                object_id: String::from("Tether1"),
                 ..default()
             },
         ))
         .id();
+
+    devices.tethers.insert("Tether1".to_string(), tether_root);
 
     let mut prev_sphere = tether_root;
 
     for i in 1..NUM_TETHER_JOINTS {
         let sphere = commands
             .spawn((
+                RenderLayers::layer(SCENE_LAYER),
                 TetherNode { root: tether_root },
                 RigidBody::Dynamic,
                 ConstantForce::new(0.0, 0.0, 0.0),
@@ -241,10 +292,34 @@ pub fn setup_tether(
         prev_sphere = sphere;
         commands.entity(tether_root).add_child(sphere);
     }
+}
+
+pub fn setup_user_interface(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    devices: ResMut<Devices>,
+) {
+    // UI camera
+    commands.spawn((
+        Camera2d::default(),
+        RenderLayers::layer(UI_LAYER),
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            output_mode: CameraOutputMode::Write {
+                blend_state: Some(BlendState::ALPHA_BLENDING),
+                clear_color: ClearColorConfig::None,
+            },
+            ..default()
+        },
+    ));
+
+    // Font
+    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
     commands
         .spawn((
-            RenderLayers::layer(1),
+            RenderLayers::layer(UI_LAYER),
             Node {
                 width: percent(100),
                 height: percent(100),
@@ -257,11 +332,37 @@ pub fn setup_tether(
         .with_children(|parent| {
             parent.spawn((
                 TrackObject {
-                    entity: Some(tether_root),
+                    entity: Some(
+                        *devices
+                            .tethers
+                            .get("Tether1")
+                            .expect("Tether1 not instantiated!"),
+                    ),
                 },
                 Text::new("TEST 1"),
                 Node {
                     margin: UiRect::bottom(px(10)),
+                    ..default()
+                },
+            ));
+
+            // Orbit labels
+            parent.spawn((
+                OrbitLabel {
+                    entity: Some(
+                        *devices
+                            .tethers
+                            .get("Tether1")
+                            .expect("Tether1 not instantiated!"),
+                    ),
+                },
+                Text::new("─ Tether1"),
+                TextFont {
+                    font: font,
+                    ..default()
+                },
+                Node {
+                    position_type: PositionType::Absolute,
                     ..default()
                 },
             ));
