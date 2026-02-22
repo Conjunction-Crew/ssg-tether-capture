@@ -3,6 +3,7 @@ use crate::{
     resources::time_warp::TimeWarp,
 };
 
+use avian3d::prelude::{Physics, PhysicsTime};
 use bevy::{
     camera::visibility::RenderLayers,
     pbr::{Atmosphere, AtmosphereSettings},
@@ -37,10 +38,13 @@ pub fn toggle_map_view(
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut time_warp: ResMut<TimeWarp>,
+    mut physics_time: ResMut<Time<Physics>>,
 ) {
     if keyboard_input.just_pressed(KeyCode::Period) {
         time_warp.multiplier *= 10.0;
     } else if keyboard_input.just_pressed(KeyCode::Comma) {
         time_warp.multiplier /= 10.0;
     }
+
+    physics_time.set_relative_speed_f64(time_warp.multiplier);
 }

@@ -356,7 +356,7 @@ pub fn setup_user_interface(
                             .expect("Tether1 not instantiated!"),
                     ),
                 },
-                Text::new("┌─ Tether1"),
+                Text::new("─ Tether1"),
                 TextFont {
                     font: font,
                     ..default()
