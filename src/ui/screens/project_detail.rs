@@ -36,6 +36,14 @@ pub fn spawn_project_detail_screen(
         .map(|project| project.description.clone())
         .unwrap_or_else(|| "Return to Home and choose a project.".to_string());
 
+    let project_directory = selected
+        .map(|project| project.working_directory.clone())
+        .unwrap_or_else(|| "Unknown directory".to_string());
+
+    let project_file = selected
+        .map(|project| project.file_name.clone())
+        .unwrap_or_else(|| "Unknown file".to_string());
+
     let tether_entity = selected.and_then(|project| devices.tethers.get(&project.tether_id).copied());
 
     commands
@@ -45,127 +53,221 @@ pub fn spawn_project_detail_screen(
             Node {
                 width: percent(100),
                 height: percent(100),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Start,
-                padding: UiRect::axes(px(24.0), px(24.0)),
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
             BackgroundColor(theme.background),
         ))
-        .with_children(|parent| {
-            parent
-                .spawn((
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    width: percent(100),
+                    min_height: px(72.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    padding: UiRect::axes(px(18.0), px(14.0)),
+                    ..default()
+                },
+                BackgroundColor(theme.header_background),
+            ))
+            .with_children(|header| {
+                header.spawn((
+                    Button,
+                    BackButton,
                     Node {
-                        width: theme.content_max_width,
-                        max_width: percent(100),
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(px(20.0)),
-                        row_gap: px(16.0),
+                        min_width: px(120.0),
+                        min_height: px(40.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
                         ..default()
                     },
-                    BackgroundColor(theme.panel_background),
+                    BackgroundColor(theme.panel_background_soft),
                 ))
-                .with_children(|content| {
-                    content
-                        .spawn((
-                            Node {
-                                width: percent(100),
-                                justify_content: JustifyContent::SpaceBetween,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                        ))
-                        .with_children(|top_row| {
-                            top_row.spawn((
-                                Text::new(project_title),
-                                TextFont {
-                                    font: font.clone(),
-                                    font_size: 34.0,
-                                    ..default()
-                                },
-                                TextColor(theme.text_primary),
-                            ));
-
-                            top_row
-                                .spawn((
-                                    Button,
-                                    BackButton,
-                                    Node {
-                                        min_width: px(120.0),
-                                        min_height: px(44.0),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme.button_background),
-                                ))
-                                .with_children(|button| {
-                                    button.spawn((
-                                        Text::new("Back to Home"),
-                                        TextFont {
-                                            font: font.clone(),
-                                            font_size: 14.0,
-                                            ..default()
-                                        },
-                                        TextColor(theme.button_text),
-                                    ));
-                                });
-                        });
-
-                    content.spawn((
-                        Text::new(project_description),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 18.0,
-                            ..default()
-                        },
-                        TextColor(theme.text_muted),
-                    ));
-
-                    content.spawn((
-                        Text::new("Simulation HUD"),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 20.0,
-                            ..default()
-                        },
-                        TextColor(theme.text_primary),
-                    ));
-
-                    content.spawn((
-                        TrackObject {
-                            entity: tether_entity,
-                        },
-                        Text::new("Waiting for tether telemetry..."),
+                .with_children(|button| {
+                    button.spawn((
+                        Text::new("Back"),
                         TextFont {
                             font: font.clone(),
                             font_size: 14.0,
                             ..default()
                         },
                         TextColor(theme.text_primary),
-                        Node {
-                            margin: UiRect::top(px(6.0)),
-                            ..default()
-                        },
-                    ));
-
-                    content.spawn((
-                        OrbitLabel {
-                            entity: tether_entity,
-                        },
-                        Text::new("─ Orbit Label"),
-                        TextFont {
-                            font,
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(theme.text_primary),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            ..default()
-                        },
                     ));
                 });
+
+                header.spawn((
+                    Text::new(project_title),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_primary),
+                ));
+
+                header.spawn((
+                    Text::new("Project View"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_muted),
+                ));
+            });
+
+            root.spawn(Node {
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Row,
+                ..default()
+            })
+            .with_children(|content| {
+                content
+                    .spawn(Node {
+                        width: percent(100),
+                        flex_grow: 1.0,
+                        ..default()
+                    })
+                    .with_children(|left| {
+                        left.spawn((
+                            Text::new("3D View"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(theme.text_muted),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: px(12.0),
+                                top: px(12.0),
+                                ..default()
+                            },
+                        ));
+                    });
+
+                content
+                    .spawn((
+                        Node {
+                            width: px(420.0),
+                            max_width: percent(42.0),
+                            height: percent(100),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(10.0),
+                            padding: UiRect::all(px(12.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme.panel_background_soft),
+                    ))
+                    .with_children(|sidebar| {
+                        sidebar
+                            .spawn((
+                                Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|info| {
+                                info.spawn((
+                                    Text::new("Project Information"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 17.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+
+                                info.spawn((
+                                    Text::new(project_description),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_muted),
+                                ));
+
+                                info.spawn((
+                                    Text::new(format!("Working Directory: {}", project_directory)),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 11.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+
+                                info.spawn((
+                                    Text::new(format!("Main File: {}", project_file)),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 11.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+                            });
+
+                        sidebar
+                            .spawn((
+                                Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|hud| {
+                                hud.spawn((
+                                    Text::new("Simulation HUD"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 17.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+
+                                hud.spawn((
+                                    TrackObject {
+                                        entity: tether_entity,
+                                    },
+                                    Text::new("Waiting for tether telemetry..."),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+                            });
+                    });
+            });
+
+            root.spawn((
+                OrbitLabel {
+                    entity: tether_entity,
+                },
+                Text::new("─ Orbit Label"),
+                TextFont {
+                    font,
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(theme.text_primary),
+                Node {
+                    position_type: PositionType::Absolute,
+                    ..default()
+                },
+            ));
         });
 }
 
@@ -179,17 +281,32 @@ pub fn cleanup_project_detail_screen(
 }
 
 pub fn project_detail_interactions(
-    mut interactions: Query<&Interaction, (Changed<Interaction>, With<Button>, With<BackButton>)>,
+    mut interactions: Query<
+        (&Interaction, Option<&BackButton>, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>),
+    >,
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<crate::ui::state::UiScreen>>,
+    theme: Res<UiTheme>,
 ) {
     if *screen.get() != crate::ui::state::UiScreen::ProjectDetail {
         return;
     }
 
-    for interaction in &mut interactions {
-        if *interaction == Interaction::Pressed {
-            events.write(UiEvent::BackToHome);
+    for (interaction, back_button, mut background_color) in &mut interactions {
+        match *interaction {
+            Interaction::Pressed => {
+                *background_color = BackgroundColor(theme.button_background_hover);
+                if back_button.is_some() {
+                    events.write(UiEvent::BackToHome);
+                }
+            }
+            Interaction::Hovered => {
+                *background_color = BackgroundColor(theme.button_background);
+            }
+            Interaction::None => {
+                *background_color = BackgroundColor(theme.panel_background_soft);
+            }
         }
     }
 }
