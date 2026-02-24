@@ -1,6 +1,8 @@
 use bevy::prelude::*;
+use bevy::camera::visibility::RenderLayers;
 
 use crate::components::user_interface::{OrbitLabel, TrackObject};
+use crate::constants::UI_LAYER;
 use crate::resources::devices::Devices;
 use crate::ui::events::UiEvent;
 use crate::ui::state::{ProjectCatalog, SelectedProject};
@@ -50,13 +52,14 @@ pub fn spawn_project_detail_screen(
         .spawn((
             ProjectDetailScreen,
             ScreenRoot,
+            RenderLayers::layer(UI_LAYER),
             Node {
                 width: percent(100),
                 height: percent(100),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            BackgroundColor(theme.background),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
         ))
         .with_children(|root| {
             root.spawn((

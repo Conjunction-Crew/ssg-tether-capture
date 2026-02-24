@@ -1,5 +1,7 @@
 use bevy::prelude::*;
+use bevy::camera::visibility::RenderLayers;
 
+use crate::constants::UI_LAYER;
 use crate::ui::events::UiEvent;
 use crate::ui::state::ProjectCatalog;
 use crate::ui::theme::UiTheme;
@@ -35,6 +37,7 @@ pub fn spawn_home_screen(
         .spawn((
             HomeScreen,
             ScreenRoot,
+            RenderLayers::layer(UI_LAYER),
             Node {
                 width: percent(100),
                 height: percent(100),
