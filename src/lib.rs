@@ -1,5 +1,6 @@
 mod components;
 mod constants;
+mod plugins;
 mod resources;
 mod systems;
 mod tests;
@@ -10,16 +11,17 @@ use avian3d::schedule::PhysicsSystems;
 use bevy::camera::visibility::RenderLayers;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
-use systems::orbit_camera::*;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
 use crate::constants::MAP_LAYER;
+use crate::plugins::orbit_camera::OrbitCameraPlugin;
+use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::celestials::Celestials;
-use crate::resources::devices::Devices;
+use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::time_warp::TimeWarp;
 use crate::systems::gizmos::orbital_gizmos;
-use crate::systems::propagation::{floating_origin, target_entity_reset_origin};
+use crate::systems::propagation::{floating_origin, physics_bubble_add_remove, target_entity_reset_origin};
 use crate::systems::user_input::{change_time_warp, toggle_map_view};
 use crate::systems::user_interface::{map_orbitals, track_objects};
 use crate::ui::plugin::UiPlugin;
@@ -53,13 +55,11 @@ pub fn run() {
 pub fn create_app() -> App {
     let mut app = App::new();
     app.add_plugins(PhysicsPlugins::default())
+        .add_plugins(OrbitalMechanicsPlugin)
+        .add_plugins(OrbitCameraPlugin)
         .add_systems(
             Update,
             (
-                orbit_camera_input,
-                orbit_camera_track,
-                orbit_camera_switch_target,
-                orbit_camera_control_target,
                 ssg_propagate_keplerian,
                 toggle_map_view,
                 change_time_warp,
@@ -70,12 +70,16 @@ pub fn create_app() -> App {
         .add_systems(PostUpdate, floating_origin)
         .add_systems(
             FixedPostUpdate,
-            (target_entity_reset_origin.in_set(PhysicsSystems::First),),
+            (
+                physics_bubble_add_remove.in_set(PhysicsSystems::First),
+                target_entity_reset_origin.in_set(PhysicsSystems::First),
+                ssg_propagate_keplerian.in_set(PhysicsSystems::Last),
+            ),
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(Gravity(Vec3::ZERO))
         .init_resource::<Celestials>()
-        .init_resource::<Devices>()
+        .init_resource::<OrbitalEntities>()
         .init_resource::<TimeWarp>();
 
     app

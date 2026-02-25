@@ -1,11 +1,11 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use crate::components::orbit::{Earth, Orbital, TetherNode};
-use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
+use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
+use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::celestials::Celestials;
-use crate::resources::devices::Devices;
+use crate::resources::orbital_entities::OrbitalEntities;
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
@@ -80,10 +80,10 @@ pub fn setup_celestial(
             .spawn((
                 Earth,
                 RenderLayers::layer(SCENE_LAYER),
-                Orbital {
-                    object_id: String::from("Earth"),
-                    ..default()
-                },
+                Orbit::FromParams(TrueParams {
+                    r: [0.0, 0.0, 0.0],
+                    v: [0.0, 0.0, 0.0],
+                }),
                 Mesh3d(meshes.add(earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
                 Transform::from_xyz(0.0, 0.0, 0.0)
@@ -117,8 +117,7 @@ pub fn setup_entities(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
-    celestials: Res<Celestials>,
-    devices: Res<Devices>,
+    mut orbital_entities: ResMut<OrbitalEntities>,
     asset_server: Res<AssetServer>,
 ) {
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
@@ -172,25 +171,11 @@ pub fn setup_entities(
         },
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
         OrbitCamera {
-            scene_params: OrbitCameraParams {
-                target: Some(
-                    *devices
-                        .tethers
-                        .get("Tether1")
-                        .expect("Tether1 has not been spawned but was expected."),
-                ),
-                ..default()
-            },
+            scene_params: OrbitCameraParams::default(),
             map_params: OrbitCameraParams {
                 distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M
                     + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M),
                 min_distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M,
-                target: Some(
-                    *celestials
-                        .planets
-                        .get("Map_Earth")
-                        .expect("The Earth has not been spawned but was expected."),
-                ),
                 ..default()
             },
         },
@@ -215,24 +200,25 @@ pub fn setup_entities(
     let scene: Handle<Scene> =
         asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/broken_satellite.glb"));
 
-    commands.spawn((
-        SceneRoot(scene),
-        RigidBody::Dynamic,
-        Orbital {
-            elements: Some(ISS_ORBIT),
-            object_id: String::from("Satellite1"),
-            ..default()
-        },
-        ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
-        Transform::from_xyz(0.0, 4.0, 40.0),
-    ));
+    orbital_entities.debris.insert(
+        "Satellite1".to_string(),
+        commands
+            .spawn((
+                SceneRoot(scene),
+                RigidBody::Dynamic,
+                Orbit::FromElements(ISS_ORBIT),
+                ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+                Transform::from_xyz(0.0, 4.0, 40.0),
+            ))
+            .id(),
+    );
 }
 
 pub fn setup_tether(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut devices: ResMut<Devices>,
+    mut orbital_entities: ResMut<OrbitalEntities>,
 ) {
     let sphere_mesh = meshes.add(Mesh::from(Sphere::new(0.5)));
     let sphere_collider = Collider::sphere(0.5);
@@ -245,6 +231,7 @@ pub fn setup_tether(
     // The root tether node
     let tether_root = commands
         .spawn((
+            CameraTarget,
             RenderLayers::layer(SCENE_LAYER),
             RigidBody::Dynamic,
             ConstantForce::new(0.0, 0.0, 0.0),
@@ -252,15 +239,13 @@ pub fn setup_tether(
             Mesh3d(sphere_mesh.clone()),
             MeshMaterial3d(sphere_material.clone()),
             Transform::from_xyz(0.0, 0.0, 0.0),
-            Orbital {
-                elements: Some(ISS_ORBIT),
-                object_id: String::from("Tether1"),
-                ..default()
-            },
+            Orbit::FromElements(ISS_ORBIT),
         ))
         .id();
 
-    devices.tethers.insert("Tether1".to_string(), tether_root);
+    orbital_entities
+        .tethers
+        .insert("Tether1".to_string(), tether_root);
 
     let mut prev_sphere = tether_root;
 

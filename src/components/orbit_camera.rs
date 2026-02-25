@@ -1,7 +1,10 @@
 use bevy::{
-    ecs::entity::Entity,
     prelude::{Component, Vec3},
 };
+
+// Component to query the camera target
+#[derive(Component, Debug, Clone)]
+pub struct CameraTarget;
 
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]
@@ -20,7 +23,7 @@ pub struct OrbitCameraParams {
     pub max_distance: f32,
     pub sensitivity: f32,
     pub max_pitch: f32,
-    pub target: Option<Entity>,
+    pub up: Vec3,
 }
 
 impl Default for OrbitCameraParams {
@@ -34,7 +37,7 @@ impl Default for OrbitCameraParams {
             max_distance: 10000.0,
             sensitivity: 0.005,
             max_pitch: 1.55,
-            target: None,
+            up: Vec3::Y,
         }
     }
 }

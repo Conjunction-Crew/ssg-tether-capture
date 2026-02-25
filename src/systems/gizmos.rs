@@ -1,50 +1,67 @@
-use astrora_core::core::{constants::GM_EARTH, elements::coe_to_rv};
-use bevy::{
-    color::palettes::css::{BLUE, GREEN},
-    math::VectorSpace,
-    prelude::*,
+use astrora_core::core::{Vector3, constants::GM_EARTH, elements::rv_to_coe};
+use avian3d::prelude::{LinearVelocity, Position, RigidBodyDisabled};
+use bevy::prelude::*;
+
+use crate::{
+    components::orbit::{Orbital, TrueParams},
+    constants::MAP_UNITS_TO_M,
 };
 
-use crate::{components::orbit::Orbital, constants::MAP_UNITS_TO_M};
+pub fn orbital_gizmos(
+    orbitals: Query<(
+        &TrueParams,
+        &Position,
+        &LinearVelocity,
+        Option<&RigidBodyDisabled>,
+    )>,
+    mut gizmos: Gizmos,
+) {
+    for (true_params, r, v, disabled) in orbitals {
+        let (r_world, v_world) = if disabled.is_some() {
+            (
+                Vector3::new(true_params.r[0], true_params.r[1], true_params.r[2]),
+                Vector3::new(true_params.v[0], true_params.v[1], true_params.v[2]),
+            )
+        } else {
+            (
+                Vector3::new(
+                    true_params.r[0] + r.x as f64,
+                    true_params.r[1] + r.y as f64,
+                    true_params.r[2] + r.z as f64,
+                ),
+                Vector3::new(
+                    true_params.v[0] + v.x as f64,
+                    true_params.v[1] + v.y as f64,
+                    true_params.v[2] + v.z as f64,
+                ),
+            )
+        };
 
-pub fn orbital_gizmos(orbitals: Query<&Orbital>, mut gizmos: Gizmos) {
-    for orbital in orbitals {
-        if let Some(elements) = orbital.elements {
-            // Semi-major axis
-            let semi_major = elements.a / MAP_UNITS_TO_M as f64;
-            // Semi-minor axis
+        if let Ok(elements) = rv_to_coe(
+            &r_world,
+            &v_world,
+            GM_EARTH,
+            1e-8,
+        ) {
+            if elements.e >= 1.0 {
+                continue;
+            }
+
+            let map_scale = MAP_UNITS_TO_M as f64;
+            let semi_major = (elements.a / map_scale) as f32;
             let semi_minor =
-                (elements.periapsis() * elements.apoapsis()).sqrt() / MAP_UNITS_TO_M as f64;
-            let (r, v) = coe_to_rv(&elements, GM_EARTH);
-            let r_vec = Vec3::new(r.x as f32, r.y as f32, r.z as f32);
-            let v_vec = Vec3::new(v.x as f32, v.y as f32, v.z as f32);
+                (elements.a * (1.0 - elements.e * elements.e).sqrt() / map_scale) as f32;
 
-            let x_axis = r_vec.normalize_or_zero();
-            if x_axis == Vec3::ZERO {
-                continue;
-            }
+            let rotation = Quat::from_axis_angle(Vec3::Z, elements.raan as f32)
+                * Quat::from_axis_angle(Vec3::X, elements.i as f32)
+                * Quat::from_axis_angle(Vec3::Z, elements.argp as f32);
 
-            let z_axis = r_vec.cross(v_vec).normalize_or_zero();
-            if z_axis == Vec3::ZERO {
-                continue;
-            }
+            let center_offset = rotation * Vec3::new(-semi_major * elements.e as f32, 0.0, 0.0);
 
-            let y_axis = z_axis.cross(x_axis).normalize_or_zero();
-            if y_axis == Vec3::ZERO {
-                continue;
-            }
-
-            let rotation = Quat::from_mat3(&Mat3::from_cols(x_axis, y_axis, z_axis));
-
-            // Draw orbital ellipse
             gizmos
                 .ellipse(
-                    Isometry3d {
-                        rotation: rotation,
-                        translation: rotation
-                            * Vec3A::new(-semi_major as f32 * elements.e as f32, 0.0, 0.0),
-                    },
-                    Vec2::new(semi_major as f32, semi_minor as f32),
+                    Isometry3d::new(center_offset, rotation),
+                    Vec2::new(semi_major, semi_minor),
                     Srgba::new(0.0, 0.0, 1.0, 0.1),
                 )
                 .resolution(512);

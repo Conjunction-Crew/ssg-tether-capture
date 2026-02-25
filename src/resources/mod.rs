@@ -1,3 +1,3 @@
 pub mod celestials;
-pub mod devices;
+pub mod orbital_entities;
 pub mod time_warp;
