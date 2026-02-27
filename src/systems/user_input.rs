@@ -1,4 +1,5 @@
 use crate::{
+    components::dev_components::Origin,
     constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
     resources::time_warp::TimeWarp,
 };
@@ -47,4 +48,25 @@ pub fn change_time_warp(
     }
 
     physics_time.set_relative_speed_f64(time_warp.multiplier);
+}
+
+pub fn toggle_origin(
+    mut commands: Commands,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    origin: Single<(Entity, &Visibility), With<Origin>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::KeyO) {
+        let (origin_entity, origin_vis) = origin.into_inner();
+
+        match origin_vis {
+            Visibility::Visible => {
+                commands.entity(origin_entity).insert(Visibility::Hidden);
+            }
+            Visibility::Hidden => {
+                commands.entity(origin_entity).insert(Visibility::Visible);
+            }
+
+            Visibility::Inherited => {}
+        }
+    }
 }

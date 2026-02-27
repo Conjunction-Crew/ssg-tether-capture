@@ -22,7 +22,7 @@ use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::time_warp::TimeWarp;
 use crate::systems::gizmos::orbital_gizmos;
 use crate::systems::propagation::{floating_origin, physics_bubble_add_remove, target_entity_reset_origin};
-use crate::systems::user_input::{change_time_warp, toggle_map_view};
+use crate::systems::user_input::{change_time_warp, toggle_map_view, toggle_origin};
 use crate::systems::user_interface::{map_orbitals, track_objects};
 use crate::ui::plugin::UiPlugin;
 
@@ -62,6 +62,7 @@ pub fn create_app() -> App {
             (
                 ssg_propagate_keplerian,
                 toggle_map_view,
+                toggle_origin,
                 change_time_warp,
                 track_objects,
                 map_orbitals,

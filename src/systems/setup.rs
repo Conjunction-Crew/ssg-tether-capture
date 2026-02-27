@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
+use crate::components::dev_components::Origin;
 use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
@@ -124,6 +125,8 @@ pub fn setup_entities(
 
     // Origin Sphere
     commands.spawn((
+        Origin,
+        Visibility::Hidden,
         RenderLayers::layer(SCENE_LAYER),
         Mesh3d(meshes.add(test_sphere_mesh.clone())),
         MeshMaterial3d(materials.add(StandardMaterial {
