@@ -1,7 +1,7 @@
-use avian3d::prelude::PhysicsSystems;
 use bevy::prelude::*;
 
 use crate::systems::orbit_camera::*;
+use crate::systems::propagation::floating_origin;
 
 pub struct OrbitCameraPlugin;
 
@@ -15,6 +15,6 @@ impl Plugin for OrbitCameraPlugin {
                 orbit_camera_control_target,
             ),
         )
-        .add_systems(FixedPostUpdate, orbit_camera_track);
+        .add_systems(PostUpdate, orbit_camera_track.after(floating_origin));
     }
 }

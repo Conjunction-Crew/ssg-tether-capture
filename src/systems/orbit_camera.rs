@@ -64,11 +64,23 @@ pub fn orbit_camera_track(
     };
     let earth_transform = earth.into_inner();
 
-    let up_frame = Quat::from_rotation_arc(Vec3::Y, camera.up);
+    if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        if let Ok(target) = targets.single() {
+            camera.focus = target.translation;
+            camera.up = -(earth_transform.translation - target.translation).normalize_or(Vec3::NEG_Y);
+        }
+    }
+
+    let up = camera.up.normalize_or(Vec3::Y);
+    let earth_axis = (earth_transform.rotation * Vec3::Y).normalize_or(Vec3::Y);
+    let base_forward =
+        (earth_axis - up * earth_axis.dot(up)).normalize_or((Vec3::NEG_Z - up * Vec3::NEG_Z.dot(up)).normalize_or(Vec3::X));
+    let right = base_forward.cross(up).normalize_or(Vec3::X);
+    let forward = up.cross(right).normalize_or(Vec3::NEG_Z);
+    let up_frame = Quat::from_mat3(&Mat3::from_cols(right, up, -forward));
 
     // Adjust the actual transform of the camera
     let new_rot = Quat::from_euler(EulerRot::YXZ, camera.yaw, camera.pitch, 0.0);
-
     transform.rotation = (up_frame * new_rot).normalize();
 
     let new_pos = camera.focus - transform.forward() * camera.distance;
@@ -76,14 +88,6 @@ pub fn orbit_camera_track(
     // let delta_pos = new_pos - transform.translation;
 
     transform.translation = new_pos;
-
-    if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-        if let Ok(target) = targets.single() {
-            orbit_camera.scene_params.focus = target.translation;
-            orbit_camera.scene_params.up =
-                -(earth_transform.translation - target.translation).normalize_or(Vec3::NEG_Y);
-        }
-    }
 }
 
 pub fn orbit_camera_switch_target(
