@@ -211,6 +211,7 @@ pub fn setup_entities(
                 RigidBody::Dynamic,
                 Orbit::FromElements(ISS_ORBIT),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+                CenterOfMass(Vec3::ZERO),
                 Transform::from_xyz(0.0, 4.0, 40.0),
             ))
             .id(),

@@ -259,7 +259,7 @@ pub fn spawn_project_detail_screen(
                 OrbitLabel {
                     entity: tether_entity,
                 },
-                Text::new("─ Orbit Label"),
+                Text::new("─ Tether1"),
                 TextFont {
                     font,
                     font_size: 14.0,
