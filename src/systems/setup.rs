@@ -3,13 +3,11 @@ use std::ops::RangeInclusive;
 
 use crate::components::orbit::{Earth, Orbital, TetherNode};
 use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
-use crate::components::user_interface::{OrbitLabel, TrackObject};
 use crate::constants::*;
 use crate::resources::celestials::Celestials;
 use crate::resources::devices::Devices;
 
 use avian3d::prelude::*;
-use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
@@ -18,7 +16,6 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::render_resource::BlendState;
 
 pub fn setup_lighting(mut commands: Commands) {
     let sun_rotation = Quat::from_rotation_x(0.0);
@@ -292,79 +289,4 @@ pub fn setup_tether(
         prev_sphere = sphere;
         commands.entity(tether_root).add_child(sphere);
     }
-}
-
-pub fn setup_user_interface(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    devices: ResMut<Devices>,
-) {
-    // UI camera
-    commands.spawn((
-        Camera2d::default(),
-        RenderLayers::layer(UI_LAYER),
-        Camera {
-            order: 1,
-            clear_color: ClearColorConfig::None,
-            output_mode: CameraOutputMode::Write {
-                blend_state: Some(BlendState::ALPHA_BLENDING),
-                clear_color: ClearColorConfig::None,
-            },
-            ..default()
-        },
-    ));
-
-    // Font
-    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-
-    commands
-        .spawn((
-            RenderLayers::layer(UI_LAYER),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                flex_direction: FlexDirection::Column,
-
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                TrackObject {
-                    entity: Some(
-                        *devices
-                            .tethers
-                            .get("Tether1")
-                            .expect("Tether1 not instantiated!"),
-                    ),
-                },
-                Text::new("TEST 1"),
-                Node {
-                    margin: UiRect::bottom(px(10)),
-                    ..default()
-                },
-            ));
-
-            // Orbit labels
-            parent.spawn((
-                OrbitLabel {
-                    entity: Some(
-                        *devices
-                            .tethers
-                            .get("Tether1")
-                            .expect("Tether1 not instantiated!"),
-                    ),
-                },
-                Text::new("─ Tether1"),
-                TextFont {
-                    font: font,
-                    ..default()
-                },
-                Node {
-                    position_type: PositionType::Absolute,
-                    ..default()
-                },
-            ));
-        });
 }
