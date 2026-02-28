@@ -17,11 +17,15 @@ use systems::setup::*;
 use crate::constants::MAP_LAYER;
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
+use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::time_warp::TimeWarp;
+use crate::systems::capture_algorithms::capture_state_machine_update;
 use crate::systems::gizmos::orbital_gizmos;
-use crate::systems::propagation::{floating_origin, physics_bubble_add_remove, target_entity_reset_origin};
+use crate::systems::propagation::{
+    floating_origin, physics_bubble_add_remove, target_entity_reset_origin,
+};
 use crate::systems::user_input::{change_time_warp, toggle_map_view, toggle_origin};
 use crate::systems::user_interface::{map_orbitals, track_objects};
 use crate::ui::plugin::UiPlugin;
@@ -36,6 +40,7 @@ pub fn run() {
             Startup,
             (
                 setup_lighting,
+                load_capture_plans,
                 (setup_celestial, setup_tether, setup_entities).chain(),
             ),
         )
@@ -66,6 +71,7 @@ pub fn create_app() -> App {
                 change_time_warp,
                 track_objects,
                 map_orbitals,
+                capture_state_machine_update,
             ),
         )
         .add_systems(PostUpdate, floating_origin)
@@ -81,7 +87,8 @@ pub fn create_app() -> App {
         .insert_resource(Gravity(Vec3::ZERO))
         .init_resource::<Celestials>()
         .init_resource::<OrbitalEntities>()
-        .init_resource::<TimeWarp>();
+        .init_resource::<TimeWarp>()
+        .init_resource::<CapturePlanLibrary>();
 
     app
 }

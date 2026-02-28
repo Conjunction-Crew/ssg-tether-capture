@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use bevy::camera::visibility::RenderLayers;
+use bevy::prelude::*;
 
 use crate::components::user_interface::{OrbitLabel, TrackObject};
 use crate::constants::UI_LAYER;
@@ -15,6 +15,11 @@ pub struct ProjectDetailScreen;
 #[derive(Component)]
 pub struct BackButton;
 
+#[derive(Component)]
+pub struct CaptureButton {
+    pub entity: Option<Entity>,
+}
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -25,10 +30,12 @@ pub fn spawn_project_detail_screen(
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
-    let selected = selected_project
-        .project_id
-        .as_ref()
-        .and_then(|project_id| catalog.projects.iter().find(|project| &project.id == project_id));
+    let selected = selected_project.project_id.as_ref().and_then(|project_id| {
+        catalog
+            .projects
+            .iter()
+            .find(|project| &project.id == project_id)
+    });
 
     let project_title = selected
         .map(|project| project.title.clone())
@@ -46,7 +53,9 @@ pub fn spawn_project_detail_screen(
         .map(|project| project.file_name.clone())
         .unwrap_or_else(|| "Unknown file".to_string());
 
-    let tether_entity = selected.and_then(|project| orbital_entities.tethers.get(&project.tether_id).copied());
+    let tether_entity = selected
+        .and_then(|project| orbital_entities.tethers.get(&project.tether_id))
+        .expect("Failed to get tether entity");
 
     commands
         .spawn((
@@ -74,29 +83,30 @@ pub fn spawn_project_detail_screen(
                 BackgroundColor(theme.header_background),
             ))
             .with_children(|header| {
-                header.spawn((
-                    Button,
-                    BackButton,
-                    Node {
-                        min_width: px(120.0),
-                        min_height: px(40.0),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
-                    BackgroundColor(theme.panel_background_soft),
-                ))
-                .with_children(|button| {
-                    button.spawn((
-                        Text::new("Back"),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 14.0,
+                header
+                    .spawn((
+                        Button,
+                        BackButton,
+                        Node {
+                            min_width: px(120.0),
+                            min_height: px(40.0),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
                             ..default()
                         },
-                        TextColor(theme.text_primary),
-                    ));
-                });
+                        BackgroundColor(theme.panel_background_soft),
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Back"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(theme.text_primary),
+                        ));
+                    });
 
                 header.spawn((
                     Text::new(project_title),
@@ -217,6 +227,7 @@ pub fn spawn_project_detail_screen(
                                 ));
                             });
 
+                        // Current Scene Information
                         sidebar
                             .spawn((
                                 Node {
@@ -241,7 +252,7 @@ pub fn spawn_project_detail_screen(
 
                                 hud.spawn((
                                     TrackObject {
-                                        entity: tether_entity,
+                                        entity: tether_entity.get(0).cloned(),
                                     },
                                     Text::new("Waiting for tether telemetry..."),
                                     TextFont {
@@ -252,12 +263,87 @@ pub fn spawn_project_detail_screen(
                                     TextColor(theme.text_primary),
                                 ));
                             });
+
+                        // Nearby Objects Information
+                        sidebar
+                            .spawn((
+                                Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|hud| {
+                                hud.spawn((
+                                    Text::new("Nearby Debris"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 17.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+
+                                hud.spawn(Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    ..default()
+                                })
+                                .with_children(|object_info| {
+                                    object_info.spawn((
+                                        TrackObject {
+                                            entity: orbital_entities.debris.get("Satellite1").copied(),
+                                        },
+                                        Text::new("Waiting for object telemetry..."),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.text_primary),
+                                    ));
+
+                                    object_info
+                                        .spawn((
+                                            Button,
+                                            CaptureButton {
+                                                entity: orbital_entities
+                                                    .debris
+                                                    .get("Satellite1")
+                                                    .copied(),
+                                            },
+                                            Node {
+                                                min_width: px(120.0),
+                                                min_height: px(40.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_children(|button| {
+                                            button.spawn((
+                                                Text::new("Capture"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_primary),
+                                            ));
+                                        });
+                                });
+                            });
                     });
             });
 
             root.spawn((
                 OrbitLabel {
-                    entity: tether_entity,
+                    entity: tether_entity.get(0).cloned(),
                 },
                 Text::new("─ Tether1"),
                 TextFont {
@@ -285,7 +371,12 @@ pub fn cleanup_project_detail_screen(
 
 pub fn project_detail_interactions(
     mut interactions: Query<
-        (&Interaction, Option<&BackButton>, &mut BackgroundColor),
+        (
+            &Interaction,
+            Option<&BackButton>,
+            Option<&CaptureButton>,
+            &mut BackgroundColor,
+        ),
         (Changed<Interaction>, With<Button>),
     >,
     mut events: MessageWriter<UiEvent>,
@@ -296,12 +387,14 @@ pub fn project_detail_interactions(
         return;
     }
 
-    for (interaction, back_button, mut background_color) in &mut interactions {
+    for (interaction, back_button, capture_button, mut background_color) in &mut interactions {
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(theme.button_background_hover);
                 if back_button.is_some() {
                     events.write(UiEvent::BackToHome);
+                } else if let Some(capture_entity) = capture_button {
+                    events.write(UiEvent::CaptureDebris(capture_entity.entity));
                 }
             }
             Interaction::Hovered => {
