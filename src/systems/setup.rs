@@ -1,10 +1,14 @@
 use std::f32::consts::PI;
+use std::fs;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 
+use crate::components::capture_components::CapturePlan;
 use crate::components::dev_components::Origin;
 use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
+use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
 
@@ -249,7 +253,7 @@ pub fn setup_tether(
 
     orbital_entities
         .tethers
-        .insert("Tether1".to_string(), tether_root);
+        .insert("Tether1".to_string(), vec![tether_root]);
 
     let mut prev_sphere = tether_root;
 
@@ -277,5 +281,39 @@ pub fn setup_tether(
 
         prev_sphere = sphere;
         commands.entity(tether_root).add_child(sphere);
+    }
+
+    // Add tail node to tether entity
+    orbital_entities
+        .tethers
+        .get_mut(&"Tether1".to_string())
+        .expect("Error getting tether")
+        .push(prev_sphere);
+}
+
+pub fn load_capture_plans(mut capture_plan_lib: ResMut<CapturePlanLibrary>) {
+    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
+
+    for plan_file_result in fs::read_dir(&plans_dir).expect("failed to read capture_plans dir") {
+        if let Ok(plan_file) = plan_file_result {
+            let path = plan_file.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                if let Ok(raw_json) = fs::read_to_string(&path) {
+                    if let Ok(plan) = serde_json::from_str(&raw_json) {
+                        if let Some(plan_id) = path.file_stem() {
+                            capture_plan_lib.plans.insert(
+                                String::from(plan_id.to_str().expect("failed to get plan name!")),
+                                plan,
+                            );
+                        }
+                    } else {
+                        println!("Failed to parse plan json");
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,0 +1,21 @@
+{
+  "name": "example_plan",
+  "nodes": ["Tether1"],
+  "states": [
+    {
+      "id": "approach",
+      "action": "hold_course",
+      "next": "terminal"
+    },
+    {
+      "id": "terminal",
+      "action": "close_tether",
+      "next": "capture"
+    },
+    {
+      "id": "capture",
+      "action": "attach",
+      "next": "none"
+    }
+  ]
+}
