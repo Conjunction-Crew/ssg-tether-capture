@@ -9,8 +9,10 @@ mod ui;
 use avian3d::prelude::*;
 use avian3d::schedule::PhysicsSystems;
 use bevy::camera::visibility::RenderLayers;
+use bevy::pbr::DefaultOpaqueRendererMethod;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::solari::prelude::SolariPlugins;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
@@ -33,7 +35,10 @@ use crate::ui::plugin::UiPlugin;
 // Main entrypoint to run the desktop application.
 pub fn run() {
     let mut app = create_app();
-    app.add_plugins(DefaultPlugins.build())
+    app.add_plugins((
+        DefaultPlugins,
+        SolariPlugins,
+    ))
         .add_plugins(UiPlugin)
         .add_plugins(AutoExposurePlugin)
         .add_systems(
@@ -72,6 +77,8 @@ pub fn create_app() -> App {
                 track_objects,
                 map_orbitals,
                 capture_state_machine_update,
+                tune_satellite_material,
+                add_raytracing_meshes,
             ),
         )
         .add_systems(PostUpdate, floating_origin)
@@ -84,6 +91,7 @@ pub fn create_app() -> App {
             ),
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
+        .insert_resource(DefaultOpaqueRendererMethod::deferred())
         .insert_resource(Gravity(Vec3::ZERO))
         .init_resource::<Celestials>()
         .init_resource::<OrbitalEntities>()
