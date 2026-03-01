@@ -1,6 +1,6 @@
 {
   "name": "example_plan",
-  "nodes": ["Tether1"],
+  "tether": "Tether1",
   "states": [
     {
       "id": "approach",

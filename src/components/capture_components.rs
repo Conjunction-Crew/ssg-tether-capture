@@ -7,21 +7,21 @@ use serde::{Deserialize, Serialize};
 #[derive(Component, Debug, Clone)]
 pub struct CaptureComponent {
     pub plan_id: String,
-    pub current_state: u32,
+    pub current_state: String,
     pub state_enter_time_s: f64,
     pub state_elapsed_time_s: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct State {
-    id: String,
-    action: String,
-    next: String,
+    pub id: String,
+    pub action: String,
+    pub next: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CapturePlan {
-    name: String,
-    states: Vec<State>,
-    nodes: Vec<String>,
+    pub name: String,
+    pub states: Vec<State>,
+    pub tether: String,
 }

@@ -1,10 +1,13 @@
 use astrora_core::core::{Vector3, constants::GM_EARTH, elements::rv_to_coe};
 use avian3d::prelude::{LinearVelocity, Position, RigidBodyDisabled};
-use bevy::prelude::*;
+use bevy::{camera::visibility::RenderLayers, prelude::*};
 
 use crate::{
-    components::orbit::{Orbital, TrueParams},
-    constants::MAP_UNITS_TO_M,
+    components::{
+        capture_components::CaptureComponent,
+        orbit::{Orbital, TrueParams},
+    },
+    constants::{MAP_UNITS_TO_M, SCENE_LAYER},
 };
 
 pub fn orbital_gizmos(
@@ -14,8 +17,16 @@ pub fn orbital_gizmos(
         &LinearVelocity,
         Option<&RigidBodyDisabled>,
     )>,
+    camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     mut gizmos: Gizmos,
 ) {
+    let render_layers = camera_s.into_inner();
+
+    // Do not render orbit gizmos in scene view
+    if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        return;
+    }
+
     for (true_params, r, v, disabled) in orbitals {
         let (r_world, v_world) = if disabled.is_some() {
             (
@@ -37,12 +48,7 @@ pub fn orbital_gizmos(
             )
         };
 
-        if let Ok(elements) = rv_to_coe(
-            &r_world,
-            &v_world,
-            GM_EARTH,
-            1e-8,
-        ) {
+        if let Ok(elements) = rv_to_coe(&r_world, &v_world, GM_EARTH, 1e-8) {
             if elements.e >= 1.0 {
                 continue;
             }

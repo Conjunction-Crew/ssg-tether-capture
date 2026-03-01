@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
-use crate::constants::MAP_LAYER;
+use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::CapturePlanLibrary;
@@ -48,7 +48,7 @@ pub fn run() {
         .insert_gizmo_config(
             DefaultGizmoConfigGroup,
             GizmoConfig {
-                render_layers: RenderLayers::layer(MAP_LAYER),
+                render_layers: RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
                 ..default()
             },
         )
