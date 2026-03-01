@@ -14,6 +14,7 @@ use crate::resources::orbital_entities::OrbitalEntities;
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
+use bevy::color::palettes::css::WHITE;
 use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
 use bevy::math::cubic_splines::LinearSpline;
@@ -215,7 +216,14 @@ pub fn setup_entities(
                 RigidBody::Dynamic,
                 Orbit::FromElements(ISS_ORBIT),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::WHITE,
+                    metallic: 1.0,
+                    reflectance: 1.0,
+                    ..default()
+                })),
                 CenterOfMass(Vec3::ZERO),
+                Mass::from(2500.0),
                 Transform::from_xyz(0.0, 4.0, 40.0),
             ))
             .id(),
@@ -242,7 +250,6 @@ pub fn setup_tether(
             CameraTarget,
             RenderLayers::layer(SCENE_LAYER),
             RigidBody::Dynamic,
-            ConstantForce::new(0.0, 0.0, 0.0),
             sphere_collider.clone(),
             Mesh3d(sphere_mesh.clone()),
             MeshMaterial3d(sphere_material.clone()),

@@ -7,6 +7,7 @@ use bevy::render::render_resource::BlendState;
 
 use crate::components::capture_components::CaptureComponent;
 use crate::constants::UI_LAYER;
+use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_entities::{self, OrbitalEntities};
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
@@ -73,6 +74,7 @@ fn handle_ui_events(
     mut selected_project: ResMut<SelectedProject>,
     time: Res<Time>,
     project_catalog: Res<ProjectCatalog>,
+    capture_plans: Res<CapturePlanLibrary>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
 ) {
     for event in ui_events.read() {
@@ -99,15 +101,21 @@ fn handle_ui_events(
                         for marked_entity in capture_entities {
                             commands.entity(marked_entity).remove::<CaptureComponent>();
                         }
-                        println!("capture started...");
-
-                        // Now, mark the entity for capture
-                        commands.entity(*capture_entity).insert(CaptureComponent {
-                            plan_id: "example_plan".to_string(),
-                            current_state: 0,
-                            state_enter_time_s: time.elapsed_secs_f64(),
-                            state_elapsed_time_s: time.elapsed_secs_f64(),
-                        });
+                        // Get plan information
+                        if let Some(plan) = capture_plans.plans.get("example_plan") {
+                            // Now, mark the entity for capture
+                            commands.entity(*capture_entity).insert(CaptureComponent {
+                                plan_id: plan.name.clone(),
+                                current_state: plan
+                                    .states
+                                    .get(0)
+                                    .expect("No states in the desired plan!")
+                                    .id
+                                    .clone(),
+                                state_enter_time_s: time.elapsed_secs_f64(),
+                                state_elapsed_time_s: time.elapsed_secs_f64(),
+                            });
+                        }
                     } else {
                         println!("entity already marked for capture!");
                     }
