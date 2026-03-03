@@ -216,14 +216,12 @@ pub fn setup_entities(
                 RigidBody::Dynamic,
                 Orbit::FromElements(ISS_ORBIT),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: Color::WHITE,
-                    metallic: 1.0,
-                    reflectance: 1.0,
-                    ..default()
-                })),
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
+                AngularVelocity {
+                    0: Vec3::new(2.0, 2.0, 0.0),
+                    ..default()
+                },
                 Transform::from_xyz(0.0, 4.0, 40.0),
             ))
             .id(),

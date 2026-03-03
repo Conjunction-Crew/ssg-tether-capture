@@ -1,6 +1,6 @@
-use astrora_core::core::Duration;
-use bevy::{prelude::*};
+use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 // Component to add to an entity to attempt a capture.
 // There should only ever be 0 or 1 entity with this component at a time.
@@ -12,14 +12,20 @@ pub struct CaptureComponent {
     pub state_elapsed_time_s: f64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct State {
     pub id: String,
-    pub action: String,
-    pub next: String,
+    #[serde(default)]
+    pub next: Option<String>,
+    #[serde(default)]
+    pub parameters: Option<Value>,
+    #[serde(default)]
+    pub transitions: Option<Vec<Value>>,
+    #[serde(default)]
+    pub next_conditions: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CapturePlan {
     pub name: String,
     pub states: Vec<State>,

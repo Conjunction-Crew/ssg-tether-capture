@@ -4,18 +4,68 @@
   "states": [
     {
       "id": "approach",
-      "action": "hold_course",
-      "next": "terminal"
+      "parameters": {
+        "target_distance_m": 50.0,
+        "max_speed_m_s": 12.0
+      },
+      "transitions": [
+        {
+          "to": "terminal",
+          "distance": {
+            "less_than": 50.0,
+            "units": "m"
+          }
+        }
+      ]
     },
     {
       "id": "terminal",
-      "action": "close_tether",
-      "next": "capture"
+      "parameters": {
+        "target_distance_m": 8.0,
+        "max_speed_m_s": 1.0
+      },
+      "transitions": [
+        {
+          "to": "capture",
+          "all": [
+            {
+              "distance": {
+                "less_than": 9.0,
+                "units": "m"
+              }
+            },
+            {
+              "relative_speed": {
+                "less_than": 1.0,
+                "units": "m/s"
+              }
+            }
+          ]
+        },
+        {
+          "to": "approach",
+          "distance": {
+            "greater_than": 20.0,
+            "units": "m"
+          }
+        }
+      ]
     },
     {
       "id": "capture",
-      "action": "attach",
-      "next": "none"
+      "parameters": {
+        "hold_time_s": 2.0,
+        "max_speed_m_s": 0.25
+      },
+      "transitions": [
+        {
+          "to": "none",
+          "hold_time_s": {
+            "greater_than": 2.0,
+            "units": "s"
+          }
+        }
+      ]
     }
   ]
 }

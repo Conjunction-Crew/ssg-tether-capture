@@ -36,18 +36,26 @@ pub fn toggle_map_view(
     }
 }
 
+const MAX_TIME_WARP: f64 = 1000.0;
+const MIN_TIME_WARP: f64 = 0.001;
+
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut time_warp: ResMut<TimeWarp>,
     mut physics_time: ResMut<Time<Physics>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Period) {
+    if keyboard_input.just_pressed(KeyCode::Period) && time_warp.multiplier * 10.0 <= MAX_TIME_WARP {
         time_warp.multiplier *= 10.0;
-    } else if keyboard_input.just_pressed(KeyCode::Comma) {
+    } else if keyboard_input.just_pressed(KeyCode::Comma) && time_warp.multiplier / 10.0 >= MIN_TIME_WARP {
         time_warp.multiplier /= 10.0;
     }
 
-    physics_time.set_relative_speed_f64(time_warp.multiplier);
+    if time_warp.multiplier > 1.0 {
+        physics_time.pause();
+    } else {
+        physics_time.unpause();
+        physics_time.set_relative_speed_f64(time_warp.multiplier as f64);
+    }
 }
 
 pub fn toggle_origin(
