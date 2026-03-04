@@ -44,13 +44,16 @@ pub fn change_time_warp(
     mut time_warp: ResMut<TimeWarp>,
     mut physics_time: ResMut<Time<Physics>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Period) && time_warp.multiplier * 10.0 <= MAX_TIME_WARP {
-        time_warp.multiplier *= 10.0;
-    } else if keyboard_input.just_pressed(KeyCode::Comma) && time_warp.multiplier / 10.0 >= MIN_TIME_WARP {
-        time_warp.multiplier /= 10.0;
+    if keyboard_input.just_pressed(KeyCode::Period) && time_warp.multiplier * 2.0 <= MAX_TIME_WARP
+    {
+        time_warp.multiplier *= 2.0;
+    } else if keyboard_input.just_pressed(KeyCode::Comma)
+        && time_warp.multiplier / 2.0 >= MIN_TIME_WARP
+    {
+        time_warp.multiplier /= 2.0;
     }
 
-    if time_warp.multiplier > 1.0 {
+    if time_warp.multiplier > 4.0 {
         physics_time.pause();
     } else {
         physics_time.unpause();

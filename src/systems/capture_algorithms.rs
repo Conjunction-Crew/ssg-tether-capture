@@ -1,11 +1,10 @@
-use std::char::MAX;
-
 use avian3d::{
     math::PI,
-    prelude::{Forces, LinearVelocity, Position, RigidBodyForces, RigidBodyQuery},
+    prelude::{Forces, LinearVelocity, Position, RigidBodyForces, RigidBodyQuery, Rotation},
 };
 use bevy::{
     color::palettes::css::{GREEN, ORANGE, RED},
+    math::FloatPow,
     prelude::*,
 };
 
@@ -17,17 +16,19 @@ use crate::{
     },
 };
 
-const MAX_SPEED: f32 = 5.0;
-const MAX_FORCE: f32 = 1000.0;
+const MAX_VELOCITY: f32 = 5.0;
+const MAX_FORCE: f32 = 100.0;
 const MIN_NODE_PROXIMITY: f32 = 20.0;
 
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct CaptureGizmoConfigGroup;
+
 pub fn capture_state_machine_update(
-    mut commands: Commands,
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
     capture_plan_lib: ResMut<CapturePlanLibrary>,
     orbital_entities: Res<OrbitalEntities>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
-    mut gizmos: Gizmos,
+    mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
     time: Res<Time>,
     approach_radius: Res<RadiusSliderResource>,
 ) {
@@ -37,9 +38,11 @@ pub fn capture_state_machine_update(
         // Get current position and velocity of capture entity
         let capture_entity_position: Position;
         let capture_entity_linvel: LinearVelocity;
+        let capture_entity_rotation: Rotation;
         if let Ok(capture_entity_rb) = rb_forces.p0().get(capture_entity) {
             capture_entity_position = capture_entity_rb.position.clone();
             capture_entity_linvel = capture_entity_rb.linear_velocity.clone();
+            capture_entity_rotation = capture_entity_rb.rotation.clone();
         } else {
             return;
         }
@@ -76,29 +79,31 @@ pub fn capture_state_machine_update(
 
                     // Get force for node
                     let mut force_vec: Vec3 = Vec3::ZERO;
-                    // If this node is not 0 idx and is close, repel against 0 idx
-                    if idx != 0
-                        && let Ok(n0) = rb_forces.p0().get(nodes[0])
-                        && let rel_n0 = world_r - n0.position.0
-                        && rel_n0.length() < MIN_NODE_PROXIMITY
-                    {
-                        force_vec = rel_n0.normalize_or_zero();
+
+                    // Max speed and force  for node
+                    let mut max_velocity = (rel_r.length() * 0.2).clamp(3.0, MAX_VELOCITY);
+                    let mut max_force = MAX_FORCE;
+
+                    // If this node is not root, reduce max velocity and force
+                    if idx != 0 {
+                        max_velocity /= 2.0;
+                        max_force /= 2.0;
                     }
-                    // If vel is high or angle is very large, kill vel
-                    if rel_v.length() > MAX_SPEED {
+
+                    // If vel is high, kill vel
+                    if rel_v.length() > max_velocity {
                         force_vec += -rel_v.normalize_or_zero();
                     }
-                    // If vel angle is slightly off, get perpendicular force
-                    // if rel_v.angle_between(rel_r) > 0.1 {
-                    //     force_vec += rel_v.cross(rel_r.cross(rel_v)).normalize_or_zero()
-                    // }
-
                     // If too close, force in opposite dir
-                    if rel_r.length() < approach_radius.radius * 0.9 {
+                    if rel_r.length() < approach_radius.radius * 0.8 {
                         force_vec += -rel_r.normalize_or_zero();
                     }
-                    // If we are outside a tolerance of the sphere radius, force in target dir
+                    // If we are outside the sphere radius, force in target dir (or slow down)
                     else if rel_r.length() > approach_radius.radius {
+                        if rel_v.angle_between(rel_r) > PI / 2.0 {
+                            force_vec += -rel_v.normalize_or_zero();
+                        }
+
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
@@ -116,7 +121,7 @@ pub fn capture_state_machine_update(
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        node_forces.apply_force(force_vec * rel_r.length().clamp(10.0, MAX_FORCE));
+                        node_forces.apply_force(force_vec * rel_r.length().clamp(1.0, max_force));
                     } else {
                         println!("Faled to apply force for node")
                     };

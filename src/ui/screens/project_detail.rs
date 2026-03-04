@@ -353,9 +353,6 @@ pub fn spawn_project_detail_screen(
                                             ));
                                         });
 
-                                    // Observer for slider
-                                    object_info.spawn(());
-
                                     object_info
                                         .spawn((
                                             observe(slider_self_update),
@@ -384,8 +381,8 @@ pub fn spawn_project_detail_screen(
                                             Slider {
                                                 track_click: TrackClick::Snap,
                                             },
-                                            SliderValue(50.0),
-                                            SliderRange::new(0.0, 50.0),
+                                            SliderValue(25.0),
+                                            SliderRange::new(0.0, 25.0),
                                             TabIndex(0),
                                         ))
                                         .with_children(|slider| {
@@ -396,7 +393,7 @@ pub fn spawn_project_detail_screen(
                                                     border_radius: BorderRadius::all(px(3)),
                                                     ..default()
                                                 },
-                                                BackgroundColor(theme.button_background), // Border color for the slider
+                                                BackgroundColor(theme.panel_background_soft),
                                             ));
 
                                             slider
@@ -411,7 +408,6 @@ pub fn spawn_project_detail_screen(
                                                         bottom: px(0),
                                                         ..default()
                                                     },
-                                                    BackgroundColor(theme.background),
                                                 ))
                                                 .with_children(|thumb| {
                                                     thumb.spawn((

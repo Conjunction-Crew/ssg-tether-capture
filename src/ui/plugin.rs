@@ -133,8 +133,8 @@ fn handle_ui_events(
     }
 }
 
-const SLIDER_TRACK: Color = Color::srgb(0.05, 0.05, 0.05);
-const SLIDER_THUMB: Color = Color::srgb(0.35, 0.75, 0.35);
+const SLIDER_TRACK: Color = Color::srgb(0.059, 0.078, 0.133);
+const SLIDER_THUMB: Color = Color::srgb(0.137, 0.286, 0.914);
 const ELEMENT_FILL_DISABLED: Color = Color::srgb(0.5019608, 0.5019608, 0.5019608);
 
 

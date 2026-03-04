@@ -23,7 +23,7 @@ use crate::resources::capture_plans::{CapturePlanLibrary, RadiusSliderResource};
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::time_warp::TimeWarp;
-use crate::systems::capture_algorithms::capture_state_machine_update;
+use crate::systems::capture_algorithms::{CaptureGizmoConfigGroup, capture_state_machine_update};
 use crate::systems::gizmos::orbital_gizmos;
 use crate::systems::propagation::{
     floating_origin, physics_bubble_add_remove, target_entity_reset_origin,
@@ -54,6 +54,13 @@ pub fn run() {
             DefaultGizmoConfigGroup,
             GizmoConfig {
                 render_layers: RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
+                ..default()
+            },
+        )
+        .insert_gizmo_config(
+            CaptureGizmoConfigGroup,
+            GizmoConfig {
+                render_layers: RenderLayers::layer(SCENE_LAYER),
                 ..default()
             },
         )
@@ -94,7 +101,7 @@ pub fn create_app() -> App {
         .init_resource::<OrbitalEntities>()
         .init_resource::<TimeWarp>()
         .init_resource::<CapturePlanLibrary>()
-        .init_resource::<RadiusSliderResource>();
+        .insert_resource(RadiusSliderResource { radius: 25.0 });
 
     app
 }

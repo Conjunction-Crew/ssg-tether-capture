@@ -219,10 +219,10 @@ pub fn setup_entities(
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
                 AngularVelocity {
-                    0: Vec3::new(2.0, 2.0, 0.0),
+                    0: Vec3::new(0.2, 0.2, 0.0),
                     ..default()
                 },
-                Transform::from_xyz(0.0, 4.0, 40.0),
+                Transform::from_xyz(0.0, 4.0, 100.0),
             ))
             .id(),
     );
@@ -234,13 +234,19 @@ pub fn setup_tether(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut orbital_entities: ResMut<OrbitalEntities>,
 ) {
-    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(0.5)));
-    let sphere_collider = Collider::sphere(0.5);
+    let root_tail_radius = 0.50;
+    let rope_radius = 0.25;
+
+    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius)));
+    let sphere_collider = Collider::sphere(root_tail_radius);
     let sphere_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         perceptual_roughness: 1.0,
         ..default()
     });
+
+    let sphere_mesh_small = meshes.add(Mesh::from(Sphere::new(rope_radius)));
+    let sphere_collider_small = Collider::sphere(rope_radius);
 
     // The root tether node
     let tether_root = commands
@@ -251,6 +257,7 @@ pub fn setup_tether(
             sphere_collider.clone(),
             Mesh3d(sphere_mesh.clone()),
             MeshMaterial3d(sphere_material.clone()),
+            Mass::from(2.0),
             Transform::from_xyz(0.0, 0.0, 0.0),
             Orbit::FromElements(ISS_ORBIT),
         ))
@@ -261,31 +268,45 @@ pub fn setup_tether(
         .insert("Tether1".to_string(), vec![tether_root]);
 
     let mut prev_sphere = tether_root;
+    let mut prev_radius = root_tail_radius;
+    let mut prev_y = 0.0;
+    let surface_gap = 0.02;
 
     for i in 1..NUM_TETHER_JOINTS {
+        let (mesh, collider, mass, curr_radius) = if i == NUM_TETHER_JOINTS - 1 {
+            (sphere_mesh.clone(), sphere_collider.clone(), 1.0, root_tail_radius)
+        } else {
+            (
+                sphere_mesh_small.clone(),
+                sphere_collider_small.clone(),
+                0.1,
+                rope_radius,
+            )
+        };
+
+        let link_spacing = prev_radius + curr_radius + surface_gap;
+        let y = prev_y + link_spacing;
+
         let sphere = commands
             .spawn((
                 RenderLayers::layer(SCENE_LAYER),
                 TetherNode { root: tether_root },
                 RigidBody::Dynamic,
-                ConstantForce::new(0.0, 0.0, 0.0),
-                sphere_collider.clone(),
-                Mesh3d(sphere_mesh.clone()),
+                collider,
+                Mesh3d(mesh),
                 MeshMaterial3d(sphere_material.clone()),
-                Transform::from_xyz(0.0, i as f32 * DIST_BETWEEN_JOINTS, 0.0),
+                Mass::from(mass),
+                Transform::from_xyz(0.0, y, 0.0),
             ))
             .id();
 
-        let anchor = Vec3::new(
-            0.0,
-            i as f32 * DIST_BETWEEN_JOINTS - DIST_BETWEEN_JOINTS / 2.0,
-            0.0,
-        );
+        let anchor = Vec3::new(0.0, prev_y + link_spacing * 0.5, 0.0);
 
         commands.spawn(SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor));
 
         prev_sphere = sphere;
-        commands.entity(tether_root).add_child(sphere);
+        prev_radius = curr_radius;
+        prev_y = y;
     }
 
     // Add tail node to tether entity
