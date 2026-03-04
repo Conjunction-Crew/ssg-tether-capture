@@ -11,12 +11,15 @@ use bevy::{
 
 use crate::{
     components::capture_components::CaptureComponent,
-    resources::{capture_plans::CapturePlanLibrary, orbital_entities::OrbitalEntities},
+    resources::{
+        capture_plans::{CapturePlanLibrary, RadiusSliderResource},
+        orbital_entities::OrbitalEntities,
+    },
 };
 
 const MAX_SPEED: f32 = 5.0;
 const MAX_FORCE: f32 = 1000.0;
-const APPROACH_RADIUS: f32 = 20.0;
+const MIN_NODE_PROXIMITY: f32 = 20.0;
 
 pub fn capture_state_machine_update(
     mut commands: Commands,
@@ -26,6 +29,7 @@ pub fn capture_state_machine_update(
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut gizmos: Gizmos,
     time: Res<Time>,
+    approach_radius: Res<RadiusSliderResource>,
 ) {
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s = time.elapsed_secs_f64();
@@ -66,7 +70,7 @@ pub fn capture_state_machine_update(
                             capture_entity_position.0.clone(),
                             Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, 0.0),
                         ),
-                        APPROACH_RADIUS,
+                        approach_radius.radius,
                         ORANGE,
                     );
 
@@ -76,7 +80,7 @@ pub fn capture_state_machine_update(
                     if idx != 0
                         && let Ok(n0) = rb_forces.p0().get(nodes[0])
                         && let rel_n0 = world_r - n0.position.0
-                        && rel_n0.length() < 10.0
+                        && rel_n0.length() < MIN_NODE_PROXIMITY
                     {
                         force_vec = rel_n0.normalize_or_zero();
                     }
@@ -90,18 +94,18 @@ pub fn capture_state_machine_update(
                     // }
 
                     // If too close, force in opposite dir
-                    if rel_r.length() < APPROACH_RADIUS  * 0.9 {
+                    if rel_r.length() < approach_radius.radius * 0.9 {
                         force_vec += -rel_r.normalize_or_zero();
                     }
                     // If we are outside a tolerance of the sphere radius, force in target dir
-                    else if rel_r.length() > APPROACH_RADIUS {
+                    else if rel_r.length() > approach_radius.radius {
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
-                        let tangent_axis = if rel_r.cross(Vec3::Y).length_squared() > 1e-6 {
-                            Vec3::Y
-                        } else {
+                        let tangent_axis = if rel_r.cross(Vec3::X).length_squared() > 1e-6 {
                             Vec3::X
+                        } else {
+                            Vec3::Y
                         };
 
                         force_vec += tangent_axis.cross(rel_r).normalize_or_zero();

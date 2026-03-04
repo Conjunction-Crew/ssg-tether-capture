@@ -6,3 +6,8 @@ use crate::components::capture_components::CapturePlan;
 pub struct CapturePlanLibrary {
     pub plans: HashMap<String, CapturePlan>,
 }
+
+#[derive(Resource, Debug, Default)]
+pub struct RadiusSliderResource {
+    pub radius: f32,
+}

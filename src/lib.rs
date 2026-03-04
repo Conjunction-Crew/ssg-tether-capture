@@ -9,15 +9,17 @@ mod ui;
 use avian3d::prelude::*;
 use avian3d::schedule::PhysicsSystems;
 use bevy::camera::visibility::RenderLayers;
+use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin};
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::ui_widgets::UiWidgetsPlugins;
 use systems::propagation::ssg_propagate_keplerian;
 use systems::setup::*;
 
 use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
-use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::capture_plans::{CapturePlanLibrary, RadiusSliderResource};
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::time_warp::TimeWarp;
@@ -34,6 +36,9 @@ use crate::ui::plugin::UiPlugin;
 pub fn run() {
     let mut app = create_app();
     app.add_plugins(DefaultPlugins.build())
+        .add_plugins(InputDispatchPlugin)
+        .add_plugins(TabNavigationPlugin)
+        .add_plugins(UiWidgetsPlugins)
         .add_plugins(UiPlugin)
         .add_plugins(AutoExposurePlugin)
         .add_systems(
@@ -88,7 +93,8 @@ pub fn create_app() -> App {
         .init_resource::<Celestials>()
         .init_resource::<OrbitalEntities>()
         .init_resource::<TimeWarp>()
-        .init_resource::<CapturePlanLibrary>();
+        .init_resource::<CapturePlanLibrary>()
+        .init_resource::<RadiusSliderResource>();
 
     app
 }

@@ -2,8 +2,11 @@ use astrora_core::core::Duration;
 use bevy::asset::uuid::Timestamp;
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
+use bevy::ui::InteractionDisabled;
+use bevy::ui_widgets::{CoreSliderDragState, SliderRange, SliderValue};
 
 use crate::components::capture_components::CaptureComponent;
 use crate::constants::UI_LAYER;
@@ -12,7 +15,8 @@ use crate::resources::orbital_entities::{self, OrbitalEntities};
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
 use crate::ui::screens::project_detail::{
-    cleanup_project_detail_screen, project_detail_interactions, spawn_project_detail_screen,
+    RadiusSlider, RadiusSliderThumb, cleanup_project_detail_screen, project_detail_interactions,
+    spawn_project_detail_screen,
 };
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
@@ -42,7 +46,8 @@ impl Plugin for UiPlugin {
                 cleanup_project_detail_screen,
             )
             .add_systems(Update, project_detail_interactions)
-            .add_systems(Update, handle_ui_events);
+            .add_systems(Update, handle_ui_events)
+            .add_systems(Update, update_slider_style);
     }
 }
 
@@ -123,6 +128,60 @@ fn handle_ui_events(
                     // TODO: button should probably be removed to prevent being able to make this call to
                     // the same entity?
                 }
+            }
+        }
+    }
+}
+
+const SLIDER_TRACK: Color = Color::srgb(0.05, 0.05, 0.05);
+const SLIDER_THUMB: Color = Color::srgb(0.35, 0.75, 0.35);
+const ELEMENT_FILL_DISABLED: Color = Color::srgb(0.5019608, 0.5019608, 0.5019608);
+
+
+fn thumb_color(disabled: bool, hovered: bool) -> Color {
+    match (disabled, hovered) {
+        (true, _) => ELEMENT_FILL_DISABLED,
+
+        (false, true) => SLIDER_THUMB.lighter(0.3),
+
+        _ => SLIDER_THUMB,
+    }
+}
+
+fn update_slider_style(
+    sliders: Query<
+        (
+            Entity,
+            &SliderValue,
+            &SliderRange,
+            &Hovered,
+            &CoreSliderDragState,
+            Has<InteractionDisabled>,
+        ),
+        (
+            Or<(
+                Changed<SliderValue>,
+                Changed<SliderRange>,
+                Changed<Hovered>,
+                Changed<CoreSliderDragState>,
+                Added<InteractionDisabled>,
+            )>,
+            With<RadiusSlider>,
+        ),
+    >,
+    children: Query<&Children>,
+    mut thumbs: Query<
+        (&mut Node, &mut BackgroundColor, Has<RadiusSliderThumb>),
+        Without<RadiusSlider>,
+    >,
+) {
+    for (slider_ent, value, range, hovered, drag_state, disabled) in sliders.iter() {
+        for child in children.iter_descendants(slider_ent) {
+            if let Ok((mut thumb_node, mut thumb_bg, is_thumb)) = thumbs.get_mut(child)
+                && is_thumb
+            {
+                thumb_node.left = percent(range.thumb_position(value.0) * 100.0);
+                thumb_bg.0 = thumb_color(disabled, hovered.0 | drag_state.dragging);
             }
         }
     }

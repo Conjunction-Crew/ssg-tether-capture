@@ -1002,6 +1002,7 @@ dependencies = [
  "bevy_transform",
  "bevy_ui",
  "bevy_ui_render",
+ "bevy_ui_widgets",
  "bevy_utils",
  "bevy_window",
  "bevy_winit",
@@ -1578,6 +1579,25 @@ dependencies = [
  "bytemuck",
  "derive_more",
  "tracing",
+]
+
+[[package]]
+name = "bevy_ui_widgets"
+version = "0.18.0"
+source = "git+https://github.com/Conjunction-Crew/ssg-bevy.git?branch=ssg-bevy-0.18.0#f93dee9e299d46e2af62a8d753fa62227ee3c802"
+dependencies = [
+ "accesskit",
+ "bevy_a11y",
+ "bevy_app",
+ "bevy_camera",
+ "bevy_ecs",
+ "bevy_input",
+ "bevy_input_focus",
+ "bevy_log",
+ "bevy_math",
+ "bevy_picking",
+ "bevy_reflect",
+ "bevy_ui",
 ]
 
 [[package]]
