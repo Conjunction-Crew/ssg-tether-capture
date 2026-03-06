@@ -3,7 +3,7 @@ use bevy::camera::visibility::RenderLayers;
 
 use crate::components::user_interface::{OrbitLabel, TrackObject};
 use crate::constants::UI_LAYER;
-use crate::resources::devices::Devices;
+use crate::resources::orbital_entities::OrbitalEntities;
 use crate::ui::events::UiEvent;
 use crate::ui::state::{ProjectCatalog, SelectedProject};
 use crate::ui::theme::UiTheme;
@@ -21,7 +21,7 @@ pub fn spawn_project_detail_screen(
     theme: Res<UiTheme>,
     selected_project: Res<SelectedProject>,
     catalog: Res<ProjectCatalog>,
-    devices: Res<Devices>,
+    orbital_entities: Res<OrbitalEntities>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
@@ -46,7 +46,7 @@ pub fn spawn_project_detail_screen(
         .map(|project| project.file_name.clone())
         .unwrap_or_else(|| "Unknown file".to_string());
 
-    let tether_entity = selected.and_then(|project| devices.tethers.get(&project.tether_id).copied());
+    let tether_entity = selected.and_then(|project| orbital_entities.tethers.get(&project.tether_id).copied());
 
     commands
         .spawn((
@@ -259,7 +259,7 @@ pub fn spawn_project_detail_screen(
                 OrbitLabel {
                     entity: tether_entity,
                 },
-                Text::new("─ Orbit Label"),
+                Text::new("─ Tether1"),
                 TextFont {
                     font,
                     font_size: 14.0,

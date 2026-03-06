@@ -21,17 +21,35 @@ pub struct TetherNode {
     pub root: Entity,
 }
 
+// True position and velocity of an orbital object.
+// This is the ground truth from which all other positional data is derived from.
+// Format: rx, ry, rz, vx, vy, vz
+#[derive(Component, Default, Debug, Clone)]
+pub struct TrueParams {
+    pub r: [f64; 3],
+    pub v: [f64; 3],
+}
+
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone)]
+#[require(TrueParams)]
 pub struct Orbital {
     pub object_id: String,
     pub parent_entity: Option<Entity>,
-    pub primary_id: String,
     pub tle: Option<TleData>,
     pub elements: Option<OrbitalElements>,
     pub attitude: AttitudeState,
     pub state: PhysicsState,
     pub approach: ApproachMetrics,
+}
+
+// Init methods for orbital objects
+#[derive(Component, Debug, Clone)]
+#[require(Orbital, TrueParams)]
+pub enum Orbit {
+    FromTle(String),
+    FromElements(OrbitalElements),
+    FromParams(TrueParams),
 }
 
 #[derive(Debug, Clone)]
@@ -99,7 +117,6 @@ impl Default for Orbital {
         Self {
             object_id: String::new(),
             parent_entity: None,
-            primary_id: String::new(),
             tle: None,
             elements: None,
             attitude: AttitudeState::default(),

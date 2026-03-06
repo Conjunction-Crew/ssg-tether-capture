@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
+use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::create_app;
 use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
@@ -80,6 +80,7 @@ fn apply_force_to_target() {
     let sphere_body = app
         .world_mut()
         .spawn((
+            CameraTarget,
             RigidBody::Dynamic,
             ConstantForce::new(0.0, 0.0, 0.0),
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
@@ -92,10 +93,7 @@ fn apply_force_to_target() {
         Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
         OrbitCamera {
             map_params: OrbitCameraParams::default(),
-            scene_params: OrbitCameraParams {
-                target: Some(sphere_body),
-                ..default()
-            },
+            scene_params: OrbitCameraParams::default(),
         },
     ));
 

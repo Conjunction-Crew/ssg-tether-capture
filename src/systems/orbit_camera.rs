@@ -1,9 +1,9 @@
 use crate::{
     components::{
-        orbit::Orbital,
-        orbit_camera::{OrbitCamera, OrbitCameraParams},
+        orbit::{Earth, Orbital},
+        orbit_camera::{CameraTarget, OrbitCamera},
     },
-    constants::{MAP_LAYER, SCENE_LAYER},
+    constants::SCENE_LAYER,
 };
 use avian3d::prelude::*;
 use bevy::{
@@ -46,86 +46,100 @@ pub fn orbit_camera_input(
             .distance
             .clamp(camera.min_distance, camera.max_distance);
     }
-
-    // Adjust the actual transform of the camera
-    let new_rot = Quat::from_euler(EulerRot::YXZ, camera.yaw, camera.pitch, 0.0);
-    transform.rotation = new_rot;
-
-    let new_pos = camera.focus - transform.forward() * camera.distance;
-
-    let delta_pos = new_pos - transform.translation;
-
-    transform.translation += delta_pos;
 }
 
 pub fn orbit_camera_track(
-    targets: Query<&Transform, Without<Camera3d>>,
-    cam_q: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
+    targets: Query<&Transform, (With<CameraTarget>, Without<Camera3d>, Without<Earth>)>,
+    cam_q: Single<
+        (&mut OrbitCamera, &mut Transform, &RenderLayers),
+        (With<Camera3d>, Without<Earth>),
+    >,
+    earth: Single<&Transform, With<Earth>>,
 ) {
-    let (mut orbit_cameras, render_layers) = cam_q.into_inner();
-
+    let (mut orbit_camera, mut transform, render_layers) = cam_q.into_inner();
     let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-        &mut orbit_cameras.scene_params
+        &mut orbit_camera.scene_params
     } else {
-        &mut orbit_cameras.map_params
+        &mut orbit_camera.map_params
     };
+    let earth_transform = earth.into_inner();
 
-    if let Some(entity) = camera.target {
-        if let Ok(target) = targets.get(entity) {
+    if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        if let Ok(target) = targets.single() {
             camera.focus = target.translation;
+            camera.up = -(earth_transform.translation - target.translation).normalize_or(Vec3::NEG_Y);
         }
     }
+
+    let up = camera.up.normalize_or(Vec3::Y);
+    let earth_axis = (earth_transform.rotation * Vec3::Y).normalize_or(Vec3::Y);
+    let base_forward =
+        (earth_axis - up * earth_axis.dot(up)).normalize_or((Vec3::NEG_Z - up * Vec3::NEG_Z.dot(up)).normalize_or(Vec3::X));
+    let right = base_forward.cross(up).normalize_or(Vec3::X);
+    let forward = up.cross(right).normalize_or(Vec3::NEG_Z);
+    let up_frame = Quat::from_mat3(&Mat3::from_cols(right, up, -forward));
+
+    // Adjust the actual transform of the camera
+    let new_rot = Quat::from_euler(EulerRot::YXZ, camera.yaw, camera.pitch, 0.0);
+    transform.rotation = (up_frame * new_rot).normalize();
+
+    let new_pos = camera.focus - transform.forward() * camera.distance;
+
+    // let delta_pos = new_pos - transform.translation;
+
+    transform.translation = new_pos;
 }
 
 pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    bodies: Query<Entity, (With<RigidBody>, With<Orbital>)>,
-    cam_q: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
+    mut commands: Commands,
+    bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Tab) {
-        let mut entities: Vec<Entity> = bodies.iter().collect();
-
-        if entities.is_empty() {
-            return;
-        }
-
-        entities.sort_by_key(|e| e.index());
-
-        let (mut orbit_cameras, _render_layers) = cam_q.into_inner();
-
-        // Only switch scene targets (TODO: implement switch targets for map view)
-        let camera = &mut orbit_cameras.scene_params;
-
-        camera.target = Some(match camera.target {
-            None => entities[0],
-            Some(t) => {
-                let i = entities.iter().position(|&e| e == t).unwrap_or(0);
-                entities[(i + 1) % entities.len()]
-            }
-        })
+    if !keyboard_input.just_pressed(KeyCode::Tab) {
+        return;
     }
+
+    let mut entities: Vec<(Entity, bool)> = bodies.iter().collect();
+    if entities.is_empty() {
+        return;
+    }
+
+    entities.sort_by_key(|(entity, _)| entity.index());
+
+    let current_index = entities
+        .iter()
+        .position(|(_, is_target)| *is_target)
+        .unwrap_or(0);
+    let next_target = entities[(current_index + 1) % entities.len()].0;
+
+    for (entity, is_target) in &entities {
+        if *is_target {
+            commands.entity(*entity).remove::<CameraTarget>();
+        }
+    }
+    commands.entity(next_target).insert(CameraTarget);
 }
 
 pub fn orbit_camera_control_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut bodies: Query<&mut ConstantForce>,
+    target_q: Query<Entity, With<CameraTarget>>,
     s: Single<(&mut OrbitCamera, &mut Transform), With<Camera3d>>,
     time: Res<Time>,
 ) {
+    let Ok(target_entity) = target_q.single() else {
+        return;
+    };
+
     if keyboard_input.pressed(KeyCode::KeyW) {
-        let (camera, transform) = s.into_inner();
-        if let Some(t) = camera.scene_params.target {
-            if let Ok(mut v) = bodies.get_mut(t) {
-                let force_dir = transform.forward() * time.delta().as_secs_f32() * 10000.0;
-                *v = ConstantForce::new(force_dir.x, force_dir.y, force_dir.z);
-            }
+        let (_camera, transform) = s.into_inner();
+        if let Ok(mut v) = bodies.get_mut(target_entity) {
+            let force_dir = transform.forward() * time.delta().as_secs_f32() * 10000.0;
+            *v = ConstantForce::new(force_dir.x, force_dir.y, force_dir.z);
         }
     } else if keyboard_input.just_released(KeyCode::KeyW) {
-        let (camera, _transform) = s.into_inner();
-        if let Some(t) = camera.scene_params.target {
-            if let Ok(mut v) = bodies.get_mut(t) {
-                *v = ConstantForce::new(0.0, 0.0, 0.0);
-            }
+        if let Ok(mut v) = bodies.get_mut(target_entity) {
+            *v = ConstantForce::new(0.0, 0.0, 0.0);
         }
     }
 }

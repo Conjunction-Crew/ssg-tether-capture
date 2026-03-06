@@ -5038,6 +5038,7 @@ dependencies = [
  "astrora_core",
  "avian3d",
  "bevy",
+ "ndarray",
 ]
 
 [[package]]
