@@ -16,9 +16,9 @@ pub fn orbit_camera_input(
     buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
-    s: Single<(&mut OrbitCamera, &mut Transform, &RenderLayers), With<Camera3d>>,
+    s: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
 ) {
-    let (mut orbit_cameras, mut transform, render_layers) = s.into_inner();
+    let (mut orbit_cameras, render_layers) = s.into_inner();
 
     let delta = mouse_motion.delta;
 
@@ -67,14 +67,15 @@ pub fn orbit_camera_track(
     if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
         if let Ok(target) = targets.single() {
             camera.focus = target.translation;
-            camera.up = -(earth_transform.translation - target.translation).normalize_or(Vec3::NEG_Y);
+            camera.up =
+                -(earth_transform.translation - target.translation).normalize_or(Vec3::NEG_Y);
         }
     }
 
     let up = camera.up.normalize_or(Vec3::Y);
     let earth_axis = (earth_transform.rotation * Vec3::Y).normalize_or(Vec3::Y);
-    let base_forward =
-        (earth_axis - up * earth_axis.dot(up)).normalize_or((Vec3::NEG_Z - up * Vec3::NEG_Z.dot(up)).normalize_or(Vec3::X));
+    let base_forward = (earth_axis - up * earth_axis.dot(up))
+        .normalize_or((Vec3::NEG_Z - up * Vec3::NEG_Z.dot(up)).normalize_or(Vec3::X));
     let right = base_forward.cross(up).normalize_or(Vec3::X);
     let forward = up.cross(right).normalize_or(Vec3::NEG_Z);
     let up_frame = Quat::from_mat3(&Mat3::from_cols(right, up, -forward));
@@ -118,28 +119,4 @@ pub fn orbit_camera_switch_target(
         }
     }
     commands.entity(next_target).insert(CameraTarget);
-}
-
-pub fn orbit_camera_control_target(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut bodies: Query<&mut ConstantForce>,
-    target_q: Query<Entity, With<CameraTarget>>,
-    s: Single<(&mut OrbitCamera, &mut Transform), With<Camera3d>>,
-    time: Res<Time>,
-) {
-    let Ok(target_entity) = target_q.single() else {
-        return;
-    };
-
-    if keyboard_input.pressed(KeyCode::KeyW) {
-        let (_camera, transform) = s.into_inner();
-        if let Ok(mut v) = bodies.get_mut(target_entity) {
-            let force_dir = transform.forward() * time.delta().as_secs_f32() * 10000.0;
-            *v = ConstantForce::new(force_dir.x, force_dir.y, force_dir.z);
-        }
-    } else if keyboard_input.just_released(KeyCode::KeyW) {
-        if let Ok(mut v) = bodies.get_mut(target_entity) {
-            *v = ConstantForce::new(0.0, 0.0, 0.0);
-        }
-    }
 }

@@ -1,7 +1,7 @@
 use crate::components::orbit::{Earth, Orbit, Orbital, TetherNode, TrueParams};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
-    MAP_LAYER, MAX_LINVEL, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
+    MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
 use crate::resources::time_warp::TimeWarp;
 
@@ -9,12 +9,9 @@ use astrora_core::core::constants::GM_EARTH;
 use astrora_core::core::elements::{coe_to_rv, rv_to_coe};
 use astrora_core::core::linalg::Vector3;
 use astrora_core::propagators::keplerian::batch_propagate_states;
-use avian3d::prelude::{
-    ComputedCenterOfMass, LinearVelocity, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery,
-    RigidBodyQueryReadOnly,
-};
+use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
-use bevy::math::{DVec3, VectorSpace};
+use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use ndarray::ArrayView2;
