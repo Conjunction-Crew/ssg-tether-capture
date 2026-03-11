@@ -222,7 +222,7 @@ pub fn setup_entities(
                     0: Vec3::new(0.2, 0.2, 0.0),
                     ..default()
                 },
-                Transform::from_xyz(0.0, 4.0, 100.0),
+                Transform::from_xyz(0.0, 4.0, 20.0),
             ))
             .id(),
     );
@@ -240,7 +240,7 @@ pub fn setup_tether(
     let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius)));
     let sphere_collider = Collider::sphere(root_tail_radius);
     let sphere_material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
+        base_color: Color::Srgba(Srgba { red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0 }),
         perceptual_roughness: 1.0,
         ..default()
     });
@@ -270,7 +270,7 @@ pub fn setup_tether(
     let mut prev_sphere = tether_root;
     let mut prev_radius = root_tail_radius;
     let mut prev_y = 0.0;
-    let surface_gap = 0.02;
+    let surface_gap = 0.00;
 
     for i in 1..NUM_TETHER_JOINTS {
         let (mesh, collider, mass, curr_radius) = if i == NUM_TETHER_JOINTS - 1 {

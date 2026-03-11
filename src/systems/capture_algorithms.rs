@@ -64,42 +64,32 @@ pub fn capture_state_machine_update(
                         continue;
                     }
 
-                    // Draw rel_v
-                    gizmos.ray(world_r, rel_v, GREEN);
-
-                    // Draw sphere
-                    gizmos.sphere(
-                        Isometry3d::new(
-                            capture_entity_position.0.clone(),
-                            Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, 0.0),
-                        ),
-                        approach_radius.radius,
-                        ORANGE,
-                    );
-
                     // Get force for node
                     let mut force_vec: Vec3 = Vec3::ZERO;
 
                     // Max speed and force  for node
                     let mut max_velocity = (rel_r.length() * 0.2).clamp(3.0, MAX_VELOCITY);
                     let mut max_force = MAX_FORCE;
+                    let mut capture_radius = approach_radius.radius;
 
-                    // If this node is not root, reduce max velocity and force
+                    // If this node is not root, reduce max velocity, and sphere radius
                     if idx != 0 {
                         max_velocity /= 2.0;
-                        max_force /= 2.0;
+                        max_force /= 4.0;
+                        capture_radius *= 0.8;
                     }
 
                     // If vel is high, kill vel
                     if rel_v.length() > max_velocity {
                         force_vec += -rel_v.normalize_or_zero();
                     }
+
                     // If too close, force in opposite dir
-                    if rel_r.length() < approach_radius.radius * 0.8 {
+                    if rel_r.length() < capture_radius * 0.8 {
                         force_vec += -rel_r.normalize_or_zero();
                     }
                     // If we are outside the sphere radius, force in target dir (or slow down)
-                    else if rel_r.length() > approach_radius.radius {
+                    else if rel_r.length() > capture_radius {
                         if rel_v.angle_between(rel_r) > PI / 2.0 {
                             force_vec += -rel_v.normalize_or_zero();
                         }
@@ -107,17 +97,46 @@ pub fn capture_state_machine_update(
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
-                        let tangent_axis = if rel_r.cross(Vec3::X).length_squared() > 1e-6 {
-                            Vec3::X
+                        let up = (capture_entity_rotation * Vec3::X).normalize_or(Vec3::X);
+
+                        let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
+                            up
                         } else {
-                            Vec3::Y
+                            Vec3::X
                         };
 
-                        force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
+                        if idx != 0 {
+                            force_vec -= tangent_axis.cross(rel_r).normalize_or_zero();
+                        } else {
+                            force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
+                        }
                     }
 
                     // Draw force
-                    gizmos.ray(world_r, force_vec, RED);
+                    gizmos.ray(world_r, force_vec, Srgba::new(1.0, 0.0, 0.0, 0.5));
+
+                    // Draw rel_v
+                    gizmos.ray(world_r, rel_v, Srgba::new(0.0, 1.0, 0.0, 0.5));
+
+                    // Draw outer sphere
+                    gizmos.sphere(
+                        Isometry3d::new(
+                            capture_entity_position.0.clone(),
+                            capture_entity_rotation.0.clone(),
+                        ),
+                        approach_radius.radius,
+                        Srgba::new(1.0, 0.5, 0.0, 0.5),
+                    );
+
+                    // Draw inner sphere
+                    gizmos.sphere(
+                        Isometry3d::new(
+                            capture_entity_position.0.clone(),
+                            capture_entity_rotation.0.clone(),
+                        ),
+                        approach_radius.radius * 0.8,
+                        Srgba::new(0.0, 0.8, 0.4, 0.5),
+                    );
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
