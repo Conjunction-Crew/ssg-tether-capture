@@ -2,11 +2,7 @@ use avian3d::{
     math::PI,
     prelude::{Forces, LinearVelocity, Position, RigidBodyForces, RigidBodyQuery, Rotation},
 };
-use bevy::{
-    color::palettes::css::{GREEN, ORANGE, RED},
-    math::FloatPow,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use crate::{
     components::capture_components::CaptureComponent,
@@ -142,7 +138,7 @@ pub fn capture_state_machine_update(
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
                         node_forces.apply_force(force_vec * rel_r.length().clamp(1.0, max_force));
                     } else {
-                        println!("Faled to apply force for node")
+                        println!("Faled to apply force for node");
                     };
                 }
             }

@@ -49,21 +49,6 @@ pub fn run() {
                 (setup_celestial, setup_tether, setup_entities).chain(),
             ),
         )
-        .add_systems(Last, orbital_gizmos)
-        .insert_gizmo_config(
-            DefaultGizmoConfigGroup,
-            GizmoConfig {
-                render_layers: RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
-                ..default()
-            },
-        )
-        .insert_gizmo_config(
-            CaptureGizmoConfigGroup,
-            GizmoConfig {
-                render_layers: RenderLayers::layer(SCENE_LAYER),
-                ..default()
-            },
-        )
         .run();
 }
 
@@ -94,6 +79,21 @@ pub fn create_app() -> App {
                 target_entity_reset_origin.in_set(PhysicsSystems::First),
                 ssg_propagate_keplerian.in_set(PhysicsSystems::Last),
             ),
+        )
+        .add_systems(Last, orbital_gizmos)
+        .insert_gizmo_config(
+            DefaultGizmoConfigGroup,
+            GizmoConfig {
+                render_layers: RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
+                ..default()
+            },
+        )
+        .insert_gizmo_config(
+            CaptureGizmoConfigGroup,
+            GizmoConfig {
+                render_layers: RenderLayers::layer(SCENE_LAYER),
+                ..default()
+            },
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(Gravity(Vec3::ZERO))

@@ -1,5 +1,3 @@
-use astrora_core::core::Duration;
-use bevy::asset::uuid::Timestamp;
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::picking::hover::Hovered;
@@ -11,7 +9,6 @@ use bevy::ui_widgets::{CoreSliderDragState, SliderRange, SliderValue};
 use crate::components::capture_components::CaptureComponent;
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::orbital_entities::{self, OrbitalEntities};
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
 use crate::ui::screens::project_detail::{

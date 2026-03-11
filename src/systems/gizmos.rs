@@ -3,10 +3,7 @@ use avian3d::prelude::{LinearVelocity, Position, RigidBodyDisabled};
 use bevy::{camera::visibility::RenderLayers, prelude::*};
 
 use crate::{
-    components::{
-        capture_components::CaptureComponent,
-        orbit::{Orbital, TrueParams},
-    },
+    components::orbit::{Orbital, TrueParams},
     constants::{MAP_UNITS_TO_M, SCENE_LAYER},
 };
 

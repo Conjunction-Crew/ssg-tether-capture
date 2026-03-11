@@ -7,8 +7,7 @@ use crate::{
     resources::time_warp::TimeWarp,
 };
 
-use astrora_core::core::{constants::GM_EARTH, elements::coe_to_rv};
-use avian3d::prelude::{LinearVelocity, RigidBodyDisabled, RigidBodyQueryReadOnly};
+use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 
 pub fn track_objects(

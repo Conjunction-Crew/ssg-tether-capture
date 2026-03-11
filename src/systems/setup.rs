@@ -3,7 +3,6 @@ use std::fs;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
-use crate::components::capture_components::CapturePlan;
 use crate::components::dev_components::Origin;
 use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
