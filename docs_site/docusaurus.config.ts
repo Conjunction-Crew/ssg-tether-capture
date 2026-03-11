@@ -70,7 +70,7 @@ const config: Config = {
           label: 'Tutorial',
         },
         {
-          href: 'https://github.com/facebook/docusaurus',
+          href: 'https://github.com/conjunction-crew/ssg-tether-capture',
           label: 'GitHub',
           position: 'right',
         },
@@ -93,12 +93,12 @@ const config: Config = {
           items: [
             {
               label: 'GitHub',
-              href: 'https://github.com/facebook/docusaurus',
+              href: 'https://github.com/conjunction-crew/ssg-tether-capture',
             },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Conjunction Crew. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
