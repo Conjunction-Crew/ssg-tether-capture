@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust"] }
+bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
 avian3d = { version = "0.5.0", features = ["simd"] }
 astrora_core = { version = "0.1.1", default-features = false }
 ndarray = { version = "0.16.1" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149" }
 
 [patch.crates-io]
 bevy = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }

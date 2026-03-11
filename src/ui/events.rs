@@ -4,4 +4,5 @@ use bevy::prelude::*;
 pub enum UiEvent {
 	OpenProject(String),
 	BackToHome,
+	CaptureDebris(Option<Entity>),
 }

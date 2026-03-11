@@ -7,14 +7,7 @@ pub struct OrbitCameraPlugin;
 
 impl Plugin for OrbitCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                orbit_camera_input,
-                orbit_camera_switch_target,
-                orbit_camera_control_target,
-            ),
-        )
-        .add_systems(PostUpdate, orbit_camera_track.after(floating_origin));
+        app.add_systems(Update, (orbit_camera_input, orbit_camera_switch_target))
+            .add_systems(PostUpdate, orbit_camera_track.after(floating_origin));
     }
 }

@@ -7,8 +7,7 @@ use crate::{
     resources::time_warp::TimeWarp,
 };
 
-use astrora_core::core::{constants::GM_EARTH, elements::coe_to_rv};
-use avian3d::prelude::{LinearVelocity, RigidBodyDisabled, RigidBodyQueryReadOnly};
+use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 
 pub fn track_objects(
@@ -22,7 +21,6 @@ pub fn track_objects(
                 if let Some(elements) = orbital.elements {
                     text.0 = format!(
                         concat!(
-                            "Position: ({:.2}, {:.2}, {:.2})\n",
                             "Velocity: {:.2}m/s\n",
                             "Semi-major axis (m): {:.2}\n",
                             "Eccentricity: {:.2}\n",
@@ -33,9 +31,6 @@ pub fn track_objects(
                             "Time warp: {}x\n",
                             "Height: {:.1}m\n",
                         ),
-                        rb.position.x,
-                        rb.position.y,
-                        rb.position.z,
                         DVec3::new(true_params.v[0], true_params.v[1], true_params.v[2]).length()
                             + rb.linear_velocity.length() as f64,
                         elements.a,

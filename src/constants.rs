@@ -12,15 +12,15 @@ pub const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 // Map constants
 pub const MAP_UNITS_TO_M: f32 = 100000.0;
 
-// Tether testing constants
-pub const NUM_TETHER_JOINTS: u32 = 15;
-pub const DIST_BETWEEN_JOINTS: f32 = 1.1;
-
 // Floating origin constants
 pub const PHYSICS_ENABLE_RADIUS: f64 = 2000.0;
 pub const PHYSICS_DISABLE_RADIUS: f64 = PHYSICS_ENABLE_RADIUS * 1.1;
 pub const MAX_ORIGIN_OFFSET: f32 = PHYSICS_ENABLE_RADIUS as f32 / 2.0;
 pub const MAX_LINVEL: f32 = 1000.0;
+
+// Tether testing constants
+pub const NUM_TETHER_JOINTS: u32 = 30;
+pub const DIST_BETWEEN_JOINTS: f32 = 0.5;
 
 // Other constants
 pub const ISS_ORBIT: OrbitalElements = OrbitalElements {
