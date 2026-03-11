@@ -11,32 +11,33 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Easy to Use',
+    title: 'Orbital Mechanics Simulation',
     Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
     description: (
       <>
-        Docusaurus was designed from the ground up to be easily installed and
-        used to get your website up and running quickly.
+        Keplerian orbit propagation with TLE and classical orbital element (COE)
+        support, powered by the <code>astrora_core</code> library.
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
+    title: 'Space Tether Dynamics',
     Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
     description: (
       <>
-        Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
-        ahead and move your docs into the <code>docs</code> directory.
+        Physics-based multi-joint tether modelling using{' '}
+        <a href="https://github.com/Jondolf/avian">Avian3D</a> rigid-body
+        simulation, with configurable joint count and spacing.
       </>
     ),
   },
   {
-    title: 'Powered by React',
+    title: '3D Bevy Visualization',
     Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
     description: (
       <>
-        Extend or customize your website layout by reusing React. Docusaurus can
-        be extended while reusing the same header and footer.
+        Real-time 3D Earth rendering with atmospheric scattering, a dual render
+        layer scene/map view, and an interactive orbit camera.
       </>
     ),
   },
