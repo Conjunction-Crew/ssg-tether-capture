@@ -83,3 +83,26 @@
 [data-theme='dark'] .hero--primary .hero__subtitle {
   color: #94a3b8;
 }
+
+/* Navbar sizing */
+:root {
+  --ifm-navbar-height: 5rem;
+}
+
+.navbar__logo {
+  display: flex;
+  align-items: center;
+  margin-right: 0.75rem;
+}
+
+.navbar__logo img {
+  height: 3.5rem;
+}
+
+.navbar__title {
+  font-size: 1.4rem;
+}
+
+.navbar__link {
+  font-size: 1.1rem;
+}
