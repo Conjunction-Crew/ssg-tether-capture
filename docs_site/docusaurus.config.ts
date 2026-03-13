@@ -59,8 +59,8 @@ const config: Config = {
     navbar: {
       title: 'Tether Capture',
       logo: {
-        alt: 'My Site Logo',
-        src: 'img/logo.svg',
+        alt: 'Tether Capture Logo',
+        src: 'img/tether-capture-logo.svg',
       },
       items: [
         {
