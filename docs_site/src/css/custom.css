@@ -89,6 +89,13 @@
   --ifm-navbar-height: 5rem;
 }
 
+/* Navbar dark mode — space header matching the Figma app */
+[data-theme='dark'] .navbar {
+  border-bottom: 1px solid #1e293b;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 .navbar__logo {
   display: flex;
   align-items: center;
@@ -105,4 +112,20 @@
 
 .navbar__link {
   font-size: 1.1rem;
+}
+
+/* Hero banner — space gradient matching the Figma home screen */
+[data-theme='dark'] .hero--primary {
+  background: linear-gradient(
+    135deg,
+    #020617 0%,
+    #0c1a3d 40%,
+    #0a0f1e 70%,
+    #020617 100%
+  );
+  color: #f8fafc;
+}
+
+[data-theme='dark'] .hero--primary .hero__subtitle {
+  color: #94a3b8;
 }
