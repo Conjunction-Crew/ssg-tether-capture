@@ -51,7 +51,7 @@ pub fn orbital_gizmos(
             let map_scale = MAP_UNITS_TO_M as f64;
             let semi_major = (elements.x / map_scale) as f32;
             let semi_minor =
-                (elements.a * (1.0 - elements.y * elements.y).sqrt() / map_scale) as f32;
+                (elements.x * (1.0 - elements.y * elements.y).sqrt() / map_scale) as f32;
 
             let rotation = Quat::from_axis_angle(Vec3::Z, elements.w as f32)
                 * Quat::from_axis_angle(Vec3::X, elements.z as f32)

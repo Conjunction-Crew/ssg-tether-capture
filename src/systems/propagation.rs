@@ -12,7 +12,7 @@ use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
-use brahe::{Epoch, KeplerianPropagator, par_propagate_to_s};
+use brahe::{Epoch, KeplerianPropagator};
 use nalgebra::Vector6;
 
 pub fn ssg_propagate_keplerian(
@@ -24,13 +24,8 @@ pub fn ssg_propagate_keplerian(
     let dt = time.delta_secs_f64() * world_time.multiplier;
     world_time.epoch += dt;
 
-    par_propagate_to_s(
-        orbital_entities.propagators.as_mut_slice(),
-        world_time.epoch,
-    );
-
     for (_entity, mut true_params, orbital) in orbitals {
-        let propagator = orbital_entities.propagators[orbital.propagator_id].clone();
+        let propagator = &orbital_entities.propagators[orbital.propagator_id];
         if let Ok(eci) = propagator.state_eci(world_time.epoch) {
             true_params.rv = eci;
         }
@@ -47,7 +42,6 @@ pub fn init_orbitals(
             Orbit::FromParams(params) => params.rv,
             Orbit::FromElements(elements) => {
                 let epoch = Epoch::now();
-                orbital.elements = Some(*elements);
                 let propagator = KeplerianPropagator::from_keplerian(
                     epoch,
                     *elements,
@@ -220,7 +214,7 @@ pub fn physics_bubble_add_remove(
             && (relative_pos).length() < PHYSICS_ENABLE_RADIUS
         {
             let relative_vel =
-                DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]) - origin_vel;
+                DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5]) - origin_vel;
             println!("rel: {}", relative_pos);
 
             true_params.rv[0] -= relative_pos.x;
