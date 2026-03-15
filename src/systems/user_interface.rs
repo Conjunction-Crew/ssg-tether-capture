@@ -4,21 +4,25 @@ use crate::{
         user_interface::{OrbitLabel, TrackObject},
     },
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::world_time::WorldTime,
+    resources::{orbital_entities::OrbitalEntities, world_time::WorldTime},
 };
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
+use brahe::utils::DOrbitStateProvider;
 
 pub fn track_objects(
     bodies: Query<(RigidBodyQueryReadOnly, &TrueParams, &Orbital)>,
     mut trackers: Query<(&mut Text, &TrackObject)>,
     time_warp: Res<WorldTime>,
+    orbital_elements: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     for (mut text, tracker) in &mut trackers {
         if let Some(entity) = &tracker.entity {
             if let Ok((rb, true_params, orbital)) = bodies.get(*entity) {
-                if let Some(elements) = orbital.elements {
+                let propagator = orbital_elements.propagators[orbital.propagator_id].clone();
+                if let Ok(elements) = propagator.state_eci(world_time.epoch) {
                     text.0 = format!(
                         concat!(
                             "Velocity: {:.2}m/s\n",
@@ -31,7 +35,8 @@ pub fn track_objects(
                             "Time warp: {}x\n",
                             "Height: {:.1}m\n",
                         ),
-                        DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]).length()
+                        DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2])
+                            .length()
                             + rb.linear_velocity.length() as f64,
                         elements.x,
                         elements.y,
@@ -40,7 +45,8 @@ pub fn track_objects(
                         elements.a,
                         elements.b,
                         time_warp.multiplier,
-                        DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5]).length()
+                        DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5])
+                            .length()
                             + rb.position.length() as f64
                             - EARTH_RADIUS as f64
                     );

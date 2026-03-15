@@ -62,7 +62,6 @@ pub fn create_app() -> App {
         .add_systems(
             Update,
             (
-                ssg_propagate_keplerian,
                 toggle_map_view,
                 toggle_origin,
                 change_time_warp,
