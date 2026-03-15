@@ -206,7 +206,7 @@ fn orbit_propagation() {
     let new_params = new_params_o.unwrap().clone();
 
     // Expect true orbital positions to have updated
-    assert_ne!(current_params.r, new_params.r);
+    assert_ne!(current_params.rv, new_params.rv);
 }
 
 #[test]

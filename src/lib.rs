@@ -22,7 +22,7 @@ use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::{CapturePlanLibrary, RadiusSliderResource};
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
-use crate::resources::time_warp::TimeWarp;
+use crate::resources::world_time::WorldTime;
 use crate::systems::capture_algorithms::{CaptureGizmoConfigGroup, capture_state_machine_update};
 use crate::systems::gizmos::orbital_gizmos;
 use crate::systems::propagation::{
@@ -99,7 +99,7 @@ pub fn create_app() -> App {
         .insert_resource(Gravity(Vec3::ZERO))
         .init_resource::<Celestials>()
         .init_resource::<OrbitalEntities>()
-        .init_resource::<TimeWarp>()
+        .init_resource::<WorldTime>()
         .init_resource::<CapturePlanLibrary>()
         .insert_resource(RadiusSliderResource { radius: 25.0 });
 

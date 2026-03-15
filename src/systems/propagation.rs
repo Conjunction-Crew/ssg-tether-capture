@@ -3,100 +3,70 @@ use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
-use crate::resources::time_warp::TimeWarp;
+use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::world_time::WorldTime;
 
-use astrora_core::core::constants::GM_EARTH;
-use astrora_core::core::elements::{coe_to_rv, rv_to_coe};
-use astrora_core::core::linalg::Vector3;
-use astrora_core::propagators::keplerian::batch_propagate_states;
 use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
-use ndarray::ArrayView2;
-
-#[derive(Default)]
-pub(crate) struct BatchScratch {
-    entities: Vec<Entity>,
-    true_params: Vec<f64>,
-}
+use brahe::utils::DOrbitStateProvider;
+use brahe::{Epoch, KeplerianPropagator, par_propagate_to_s};
+use nalgebra::Vector6;
 
 pub fn ssg_propagate_keplerian(
     mut orbitals: Query<(Entity, &mut TrueParams, &mut Orbital), With<RigidBody>>,
+    mut world_time: ResMut<WorldTime>,
+    mut orbital_entities: ResMut<OrbitalEntities>,
     time: Res<Time>,
-    time_warp: Res<TimeWarp>,
-    mut scratch: Local<BatchScratch>,
 ) {
-    let dt = time.delta_secs_f64() * time_warp.multiplier;
+    let dt = time.delta_secs_f64() * world_time.multiplier;
+    world_time.epoch += dt;
 
-    scratch.entities.clear();
-    scratch.true_params.clear();
-    scratch.entities.reserve(orbitals.iter().len());
-    scratch.true_params.reserve(orbitals.iter().len());
+    par_propagate_to_s(
+        orbital_entities.propagators.as_mut_slice(),
+        world_time.epoch,
+    );
 
-    for (entity, true_params, orbital) in &orbitals {
-        if orbital.elements.is_none() {
-            continue;
-        }
-        scratch.entities.push(entity);
-        scratch.true_params.extend_from_slice(&true_params.r);
-        scratch.true_params.extend_from_slice(&true_params.v);
-    }
-    if scratch.entities.is_empty() {
-        return;
-    }
-
-    if let Ok(batch_view) =
-        ArrayView2::from_shape((scratch.entities.len(), 6), &scratch.true_params)
-    {
-        let batch_out = match batch_propagate_states(batch_view, &[dt], GM_EARTH) {
-            Ok(out) => out,
-            Err(_) => return,
-        };
-
-        for (i, entity) in scratch.entities.iter().enumerate() {
-            if let Ok((_entity, mut true_params, mut orbital)) = orbitals.get_mut(*entity) {
-                if let Some(row) = batch_out.row(i).as_slice() {
-                    true_params.r.copy_from_slice(&row[0..3]);
-                    true_params.v.copy_from_slice(&row[3..6]);
-                    if let Ok(new_elements) = rv_to_coe(
-                        &Vector3::from(true_params.r),
-                        &Vector3::from(true_params.v),
-                        GM_EARTH,
-                        1e-8,
-                    ) {
-                        orbital.elements = Some(new_elements);
-                    }
-                }
-            }
+    for (_entity, mut true_params, orbital) in orbitals {
+        let propagator = orbital_entities.propagators[orbital.propagator_id].clone();
+        if let Ok(eci) = propagator.state_eci(world_time.epoch) {
+            true_params.rv = eci;
         }
     }
 }
 
 pub fn init_orbitals(
     mut commands: Commands,
+    mut orbital_entities: ResMut<OrbitalEntities>,
     mut q: Query<(Entity, &Orbit, &mut Orbital, &mut TrueParams), Added<Orbit>>,
 ) {
     for (entity, init, mut orbital, mut true_params) in &mut q {
-        let (r, v) = match init {
-            Orbit::FromParams(params) => (params.r, params.v),
+        true_params.rv = match init {
+            Orbit::FromParams(params) => params.rv,
             Orbit::FromElements(elements) => {
-                let (r, v) = coe_to_rv(elements, GM_EARTH);
-                ([r.x, r.y, r.z], [v.x, v.y, v.z])
+                let epoch = Epoch::now();
+                orbital.elements = Some(*elements);
+                let propagator = KeplerianPropagator::from_keplerian(
+                    epoch,
+                    *elements,
+                    brahe::AngleFormat::Radians,
+                    1.0,
+                );
+                if let Ok(eci) = propagator.state_eci(epoch) {
+                    orbital_entities.propagators.push(propagator);
+                    orbital.propagator_id = orbital_entities.propagators.len() - 1;
+                    eci
+                } else {
+                    Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                }
             }
             Orbit::FromTle(tle) => {
                 // TODO: init logic from TLE data (sgp4)
-                ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+                Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
             }
         };
-
-        true_params.r = r;
-        true_params.v = v;
-
-        if let Ok(elements) = rv_to_coe(&Vector3::from(r), &Vector3::from(v), GM_EARTH, 1e-8) {
-            orbital.elements = Some(elements);
-        }
 
         commands.entity(entity).remove::<Orbit>();
     }
@@ -135,9 +105,9 @@ pub fn floating_origin(
     // Earth translation becomes new position
     let mut earth_transform = earth.into_inner();
     let new_translation = -Vec3::new(
-        (target_params.r[0]) as f32,
-        (target_params.r[1]) as f32,
-        (target_params.r[2]) as f32,
+        (target_params.rv[0]) as f32,
+        (target_params.rv[1]) as f32,
+        (target_params.rv[2]) as f32,
     );
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;
@@ -145,9 +115,9 @@ pub fn floating_origin(
     // Loop over each other true params to get position
     for (true_params, mut transform) in true_params_q {
         let new_translation = Vec3::new(
-            (true_params.r[0] - target_params.r[0]) as f32,
-            (true_params.r[1] - target_params.r[1]) as f32,
-            (true_params.r[2] - target_params.r[2]) as f32,
+            (true_params.rv[0] - target_params.rv[0]) as f32,
+            (true_params.rv[1] - target_params.rv[1]) as f32,
+            (true_params.rv[2] - target_params.rv[2]) as f32,
         );
         transform.translation = new_translation;
     }
@@ -204,12 +174,12 @@ pub fn target_entity_reset_origin(
 
     // Accumulate current linvel and position into true_params before reset
     for mut true_params in true_params_query {
-        true_params.r[0] += com_pos.x as f64;
-        true_params.r[1] += com_pos.y as f64;
-        true_params.r[2] += com_pos.z as f64;
-        true_params.v[0] += com_linvel.x as f64;
-        true_params.v[1] += com_linvel.y as f64;
-        true_params.v[2] += com_linvel.z as f64;
+        true_params.rv[0] += com_pos.x as f64;
+        true_params.rv[1] += com_pos.y as f64;
+        true_params.rv[2] += com_pos.z as f64;
+        true_params.rv[3] += com_linvel.x as f64;
+        true_params.rv[4] += com_linvel.y as f64;
+        true_params.rv[5] += com_linvel.z as f64;
     }
 
     // Finally, reset all rigidbodies by the com params for the target
@@ -227,38 +197,38 @@ pub fn physics_bubble_add_remove(
     let target_true = target_entity.into_inner();
 
     // Floating origin is currently at target_true
-    let origin_pos = DVec3::new(target_true.r[0], target_true.r[1], target_true.r[2]);
-    let origin_vel = DVec3::new(target_true.v[0], target_true.v[1], target_true.v[2]);
+    let origin_pos = DVec3::new(target_true.rv[0], target_true.rv[1], target_true.rv[2]);
+    let origin_vel = DVec3::new(target_true.rv[3], target_true.rv[4], target_true.rv[5]);
 
     // Loop through entities to see if any should be disabled/enabled
     for (entity, mut true_params, mut rb) in orbital_entities {
         let relative_pos =
-            DVec3::new(true_params.r[0], true_params.r[1], true_params.r[2]) - origin_pos;
+            DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]) - origin_pos;
 
         if !disabled_entities.contains(entity)
             && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS as f32
         {
-            true_params.r[0] += rb.position.x as f64;
-            true_params.r[1] += rb.position.y as f64;
-            true_params.r[2] += rb.position.z as f64;
-            true_params.v[0] += rb.linear_velocity.x as f64;
-            true_params.v[1] += rb.linear_velocity.y as f64;
-            true_params.v[2] += rb.linear_velocity.z as f64;
+            true_params.rv[0] += rb.position.x as f64;
+            true_params.rv[1] += rb.position.y as f64;
+            true_params.rv[2] += rb.position.z as f64;
+            true_params.rv[3] += rb.linear_velocity.x as f64;
+            true_params.rv[4] += rb.linear_velocity.y as f64;
+            true_params.rv[5] += rb.linear_velocity.z as f64;
             commands.entity(entity).insert(RigidBodyDisabled);
             println!("DISABLED SOMETHING");
         } else if disabled_entities.contains(entity)
             && (relative_pos).length() < PHYSICS_ENABLE_RADIUS
         {
             let relative_vel =
-                DVec3::new(true_params.v[0], true_params.v[1], true_params.v[2]) - origin_vel;
+                DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]) - origin_vel;
             println!("rel: {}", relative_pos);
 
-            true_params.r[0] -= relative_pos.x;
-            true_params.r[1] -= relative_pos.y;
-            true_params.r[2] -= relative_pos.z;
-            true_params.v[0] -= relative_vel.x;
-            true_params.v[1] -= relative_vel.y;
-            true_params.v[2] -= relative_vel.z;
+            true_params.rv[0] -= relative_pos.x;
+            true_params.rv[1] -= relative_pos.y;
+            true_params.rv[2] -= relative_pos.z;
+            true_params.rv[3] -= relative_vel.x;
+            true_params.rv[4] -= relative_vel.y;
+            true_params.rv[5] -= relative_vel.z;
 
             rb.position.0 = relative_pos.as_vec3();
             rb.linear_velocity.0 = relative_vel.as_vec3();

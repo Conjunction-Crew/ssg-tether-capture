@@ -1,7 +1,7 @@
 use crate::{
     components::dev_components::Origin,
     constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::time_warp::TimeWarp,
+    resources::world_time::WorldTime,
 };
 
 use avian3d::prelude::{Physics, PhysicsTime};
@@ -41,23 +41,23 @@ const MIN_TIME_WARP: f64 = 0.001;
 
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut time_warp: ResMut<TimeWarp>,
+    mut world_time: ResMut<WorldTime>,
     mut physics_time: ResMut<Time<Physics>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Period) && time_warp.multiplier * 2.0 <= MAX_TIME_WARP
+    if keyboard_input.just_pressed(KeyCode::Period) && world_time.multiplier * 2.0 <= MAX_TIME_WARP
     {
-        time_warp.multiplier *= 2.0;
+        world_time.multiplier *= 2.0;
     } else if keyboard_input.just_pressed(KeyCode::Comma)
-        && time_warp.multiplier / 2.0 >= MIN_TIME_WARP
+        && world_time.multiplier / 2.0 >= MIN_TIME_WARP
     {
-        time_warp.multiplier /= 2.0;
+        world_time.multiplier /= 2.0;
     }
 
-    if time_warp.multiplier > 4.0 {
+    if world_time.multiplier > 4.0 {
         physics_time.pause();
     } else {
         physics_time.unpause();
-        physics_time.set_relative_speed_f64(time_warp.multiplier as f64);
+        physics_time.set_relative_speed_f64(world_time.multiplier as f64);
     }
 }
 
