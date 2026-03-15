@@ -1,4 +1,4 @@
-use astrora_core::core::elements::OrbitalElements;
+use nalgebra::Vector6;
 
 // Camera layers
 pub const SCENE_LAYER: usize = 0;
@@ -23,18 +23,17 @@ pub const NUM_TETHER_JOINTS: u32 = 30;
 pub const DIST_BETWEEN_JOINTS: f32 = 0.5;
 
 // Other constants
-pub const ISS_ORBIT: OrbitalElements = OrbitalElements {
+pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
     // Semi-major axis (meters)
-    a: 6_799_130.0,
+    6_799_130.0,
     // Eccentricity (dimensionless)
-    e: 0.00112,
+    0.00112,
     // Inclination (radians)
-    i: 0.90114,
+    0.90114,
     // Right ascension of ascending node (radians)
-    raan: 3.54993,
-    // raan: 6.28,
+    3.54993,
     // Argument of periapsis (radians)
-    argp: 1.51296,
+    1.51296,
     // True anomaly (radians)
-    nu: 4.77190,
-};
+    4.77190,
+);
