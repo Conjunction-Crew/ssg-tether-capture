@@ -14,7 +14,8 @@ const FeatureList: FeatureItem[] = [
     description: (
       <>
         Keplerian orbit propagation with TLE and classical orbital element (COE)
-        support, powered by the <code>astrora_core</code> library.
+        support, powered by the{' '}
+        <a href="https://github.com/duncaneddy/brahe">brahe</a> library.
       </>
     ),
   },
