@@ -78,6 +78,11 @@ pub fn spawn_home_screen(
             "s"
         }
     );
+    let capture_plan_count_label = format!(
+        "{} capture plan{} in workspace",
+        capture_plan_lib.plans.len(),
+        if capture_plan_lib.plans.len() == 1 { "" } else { "s" }
+    );
     let working_directory = projects
         .projects
         .first()
