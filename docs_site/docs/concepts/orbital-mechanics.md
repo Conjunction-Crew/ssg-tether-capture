@@ -37,15 +37,20 @@ All other positional representations (Bevy `Transform`, map view position, appro
 
 Each simulation step, `ssg_propagate_keplerian` advances every active `Orbital` entity forward in time:
 
-1. Collects all active orbitals into a batch buffer (`BatchScratch`) to minimise allocation.
-2. Calls `astrora_core::propagators::keplerian::batch_propagate_states` with the current time step (scaled by `TimeWarp::multiplier`).
-3. Writes updated position/velocity back into each entity's `TrueParams`.
+1. Iterates over all active orbitals, each of which owns a `brahe::KeplerianPropagator` instance stored in the `OrbitalEntities` resource.
+2. Calls `propagator.state_eci(epoch)` — where `epoch` is derived from `WorldTime` scaled by `TimeWarp::multiplier` — to obtain a `nalgebra::Vector6<f64>` containing the current ECI position and velocity.
+3. Writes the updated position/velocity back into each entity's `TrueParams`.
 
 Keplerian propagation assumes two-body dynamics (no perturbations). This is accurate for short time spans and illustrative for longer ones.
 
 ## COE ↔ RV conversion
 
-`astrora_core` provides `coe_to_rv` and `rv_to_coe` to convert between classical orbital elements and Cartesian state vectors. These are used during initialisation when an entity is spawned `FromElements`.
+`brahe` handles orbital element conversion through the `KeplerianPropagator` API:
+
+- **Elements → state**: `KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, gm)` initialises a propagator directly from classical orbital elements (semi-major axis, eccentricity, inclination, RAAN, argument of perigee, true anomaly).
+- **State → elements**: `propagator.state_koe_osc(epoch, AngleFormat::Radians)` returns the osculating Keplerian elements as a fixed-size array `[f64; 6]`.
+
+These are used during initialisation when an entity is spawned `FromElements`.
 
 ## Approach metrics
 
@@ -60,11 +65,13 @@ The `Orbital` component carries an `ApproachMetrics` struct that is updated each
 | `time_to_closest_approach_s` | Predicted time until closest approach (if converging) |
 | `closest_approach_distance_km` | Predicted closest approach distance |
 
-## astrora_core
+## brahe
 
-The `astrora_core` crate is the underlying orbital mechanics library. It provides:
+[`brahe`](https://github.com/duncaneddy/brahe) is the underlying orbital mechanics library. It provides:
 
-- Orbital element types (`OrbitalElements`)
-- Gravitational constants (`GM_EARTH`)
-- Keplerian batch propagator
-- Linear algebra primitives (`Vector3`)
+- `KeplerianPropagator` — per-entity two-body propagator; initialised from Keplerian elements (`from_keplerian`) or an ECI state vector (`from_eci`)
+- `Epoch` — time representation used for propagation queries
+- `DOrbitStateProvider` — trait implemented by propagators, providing `state_eci()` and `state_koe_osc()`
+- `AngleFormat` — enum controlling whether angles are expressed in radians or degrees
+
+State vectors are represented as `nalgebra::Vector6<f64>` (3 position components followed by 3 velocity components).
