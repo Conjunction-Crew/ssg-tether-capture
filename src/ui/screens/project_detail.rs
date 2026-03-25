@@ -83,6 +83,28 @@ pub struct ToggleOriginButton;
 #[derive(Component)]
 pub struct TimeWarpLabel;
 
+#[derive(Component, Clone, PartialEq, Eq)]
+pub enum CollapsibleSection {
+    SimulationHud,
+    NearbyDebris,
+}
+
+#[derive(Component)]
+pub struct CollapsibleToggle {
+    pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct CollapsibleContent {
+    pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct TelemetryValue {
+    pub entity: Option<Entity>,
+    pub field_index: usize,
+}
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,

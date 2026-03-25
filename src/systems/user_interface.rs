@@ -16,6 +16,8 @@ use crate::{
     },
 };
 
+use crate::components::user_interface::OrbitLabel;
+
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 use brahe::utils::DOrbitStateProvider;
