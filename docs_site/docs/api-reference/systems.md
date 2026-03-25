@@ -44,7 +44,7 @@ Processes newly-spawned `Orbit` components. Converts TLE/COE/params into a fully
 
 **Schedule:** `Update`
 
-Batch-propagates all `Orbital` entities with an active `RigidBody` by `dt * TimeWarp::multiplier` using `astrora_core::batch_propagate_states`. Updates `TrueParams` and syncs Avian3D `Position` / `LinearVelocity`.
+Propagates all `Orbital` entities with an active `RigidBody` by `dt * TimeWarp::multiplier`. For each entity, calls `state_eci(epoch)` on its `brahe::KeplerianPropagator` to obtain a `nalgebra::Vector6<f64>` ECI state, then writes the result into `TrueParams` and syncs Avian3D `Position` / `LinearVelocity`.
 
 ### `floating_origin`
 

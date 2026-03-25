@@ -17,7 +17,7 @@ sidebar_position: 1
 
 | Capability | Detail |
 |---|---|
-| Orbital propagation | Keplerian batch propagation via `astrora_core` |
+| Orbital propagation | Per-entity Keplerian propagation via [`brahe`](https://github.com/duncaneddy/brahe) |
 | Orbit initialisation | TLE string, classical orbital elements, or raw position/velocity |
 | Tether physics | Multi-joint rigid body chain (Avian3D) |
 | Camera | Orbit camera with scene/map view toggle |
