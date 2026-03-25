@@ -7,7 +7,7 @@ use bevy::ui_widgets::{
     slider_self_update,
 };
 
-use crate::components::user_interface::{OrbitLabel, TrackObject};
+use crate::components::user_interface::OrbitLabel;
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plans::RadiusSliderResource;
 use crate::resources::orbital_entities::OrbitalEntities;
@@ -47,6 +47,28 @@ pub struct ToggleOriginButton;
 
 #[derive(Component)]
 pub struct TimeWarpLabel;
+
+#[derive(Component, Clone, PartialEq, Eq)]
+pub enum CollapsibleSection {
+    SimulationHud,
+    NearbyDebris,
+}
+
+#[derive(Component)]
+pub struct CollapsibleToggle {
+    pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct CollapsibleContent {
+    pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct TelemetryValue {
+    pub entity: Option<Entity>,
+    pub field_index: usize,
+}
 
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
@@ -197,11 +219,13 @@ pub fn spawn_project_detail_screen(
                             flex_direction: FlexDirection::Column,
                             row_gap: px(10.0),
                             padding: UiRect::all(px(12.0)),
+                            overflow: Overflow::scroll_y(),
                             ..default()
                         },
                         BackgroundColor(theme.panel_background_soft),
                     ))
                     .with_children(|sidebar| {
+                        // Project Information
                         sidebar
                             .spawn((
                                 Node {
@@ -253,196 +277,6 @@ pub fn spawn_project_detail_screen(
                                     },
                                     TextColor(theme.text_primary),
                                 ));
-                            });
-
-                        // Current Scene Information
-                        sidebar
-                            .spawn((
-                                Node {
-                                    width: percent(100),
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: px(8.0),
-                                    padding: UiRect::all(px(12.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(theme.panel_background),
-                            ))
-                            .with_children(|hud| {
-                                hud.spawn((
-                                    Text::new("Simulation HUD"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 17.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                hud.spawn((
-                                    TrackObject {
-                                        entity: tether_entity.get(0).cloned(),
-                                    },
-                                    Text::new("Waiting for tether telemetry..."),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 12.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-                            });
-
-                        // Nearby Objects Information
-                        sidebar
-                            .spawn((
-                                Node {
-                                    width: percent(100),
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: px(8.0),
-                                    padding: UiRect::all(px(12.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(theme.panel_background),
-                            ))
-                            .with_children(|hud| {
-                                hud.spawn((
-                                    Text::new("Nearby Debris"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 17.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                hud.spawn(Node {
-                                    width: percent(100),
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: px(8.0),
-                                    ..default()
-                                })
-                                .with_children(|object_info| {
-                                    object_info.spawn((
-                                        TrackObject {
-                                            entity: orbital_entities
-                                                .debris
-                                                .get("Satellite1")
-                                                .copied(),
-                                        },
-                                        Text::new("Waiting for object telemetry..."),
-                                        TextFont {
-                                            font: font.clone(),
-                                            font_size: 12.0,
-                                            ..default()
-                                        },
-                                        TextColor(theme.text_primary),
-                                    ));
-
-                                    object_info
-                                        .spawn((
-                                            Button,
-                                            CaptureButton {
-                                                entity: orbital_entities
-                                                    .debris
-                                                    .get("Satellite1")
-                                                    .copied(),
-                                            },
-                                            Node {
-                                                min_width: px(120.0),
-                                                min_height: px(40.0),
-                                                align_items: AlignItems::Center,
-                                                justify_content: JustifyContent::Center,
-                                                ..default()
-                                            },
-                                            BackgroundColor(theme.panel_background_soft),
-                                        ))
-                                        .with_children(|button| {
-                                            button.spawn((
-                                                Text::new("Capture"),
-                                                TextFont {
-                                                    font: font.clone(),
-                                                    font_size: 14.0,
-                                                    ..default()
-                                                },
-                                                TextColor(theme.text_primary),
-                                            ));
-                                        });
-
-                                    object_info
-                                        .spawn((
-                                            observe(slider_self_update),
-                                            observe(
-                                                |value_change: On<ValueChange<f32>>,
-                                                 mut widget_states: ResMut<
-                                                    RadiusSliderResource,
-                                                >| {
-                                                    widget_states.radius = value_change.value;
-                                                },
-                                            ),
-                                            Node {
-                                                display: Display::Flex,
-                                                flex_direction: FlexDirection::Column,
-                                                justify_content: JustifyContent::Center,
-                                                align_items: AlignItems::Stretch,
-                                                justify_items: JustifyItems::Center,
-                                                column_gap: px(4),
-                                                height: px(12),
-                                                width: percent(100),
-                                                ..default()
-                                            },
-                                            Name::new("Slider"),
-                                            Hovered::default(),
-                                            RadiusSlider,
-                                            Slider {
-                                                track_click: TrackClick::Snap,
-                                            },
-                                            SliderValue(25.0),
-                                            SliderRange::new(0.0, 25.0),
-                                            TabIndex(0),
-                                        ))
-                                        .with_children(|slider| {
-                                            // Background rail
-                                            slider.spawn((
-                                                Node {
-                                                    height: px(6),
-                                                    border_radius: BorderRadius::all(px(3)),
-                                                    ..default()
-                                                },
-                                                BackgroundColor(theme.panel_background_soft),
-                                            ));
-
-                                            slider
-                                                .spawn((
-                                                    Node {
-                                                        display: Display::Flex,
-                                                        position_type: PositionType::Absolute,
-                                                        left: px(0),
-                                                        // Track is short by 12px to accommodate the thumb.
-                                                        right: px(12),
-                                                        top: px(0),
-                                                        bottom: px(0),
-                                                        ..default()
-                                                    },
-                                                ))
-                                                .with_children(|thumb| {
-                                                    thumb.spawn((
-                                                        // Thumb
-                                                        RadiusSliderThumb,
-                                                        SliderThumb,
-                                                        Node {
-                                                            display: Display::Flex,
-                                                            width: px(12),
-                                                            height: px(12),
-                                                            position_type: PositionType::Absolute,
-                                                            left: percent(0), // This will be updated by the slider's value
-                                                            border_radius: BorderRadius::MAX,
-                                                            ..default()
-                                                        },
-                                                        BackgroundColor(theme.panel_background),
-                                                    ));
-                                                });
-                                        });
-                                });
                             });
 
                         // Simulation Controls
@@ -594,6 +428,355 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
                             });
+
+                        // Simulation HUD
+                        sidebar
+                            .spawn((
+                                Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|hud| {
+                                hud.spawn(Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                })
+                                .with_children(|header_row| {
+                                    header_row.spawn((
+                                        Text::new("Simulation HUD"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 17.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.text_primary),
+                                    ));
+                                    header_row
+                                        .spawn((
+                                            Button,
+                                            CollapsibleToggle {
+                                                section: CollapsibleSection::SimulationHud,
+                                            },
+                                            Node {
+                                                min_width: px(30.0),
+                                                min_height: px(30.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_children(|btn| {
+                                            btn.spawn((
+                                                Text::new("▼"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_muted),
+                                            ));
+                                        });
+                                });
+
+                                hud.spawn((
+                                    CollapsibleContent {
+                                        section: CollapsibleSection::SimulationHud,
+                                    },
+                                    Node {
+                                        width: percent(100),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: px(4.0),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|content| {
+                                    let entity = tether_entity.get(0).cloned();
+                                    let labels = [
+                                        "Velocity",
+                                        "Semi-major axis",
+                                        "Eccentricity",
+                                        "Inclination",
+                                        "RAAN",
+                                        "Arg of periapsis",
+                                        "True anomaly",
+                                        "Height",
+                                    ];
+                                    for (i, label) in labels.iter().enumerate() {
+                                        content
+                                            .spawn(Node {
+                                                width: percent(100),
+                                                flex_direction: FlexDirection::Row,
+                                                justify_content: JustifyContent::SpaceBetween,
+                                                column_gap: px(8.0),
+                                                ..default()
+                                            })
+                                            .with_children(|row| {
+                                                row.spawn((
+                                                    Text::new(format!("{}:", label)),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 12.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_accent),
+                                                ));
+                                                row.spawn((
+                                                    TelemetryValue {
+                                                        entity,
+                                                        field_index: i,
+                                                    },
+                                                    Text::new("--"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 12.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_primary),
+                                                ));
+                                            });
+                                    }
+                                });
+                            });
+
+                        // Nearby Debris
+                        sidebar
+                            .spawn((
+                                Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|debris_section| {
+                                debris_section
+                                    .spawn(Node {
+                                        width: percent(100),
+                                        flex_direction: FlexDirection::Row,
+                                        justify_content: JustifyContent::SpaceBetween,
+                                        align_items: AlignItems::Center,
+                                        ..default()
+                                    })
+                                    .with_children(|header_row| {
+                                        header_row.spawn((
+                                            Text::new("Nearby Debris"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 17.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                        header_row
+                                            .spawn((
+                                                Button,
+                                                CollapsibleToggle {
+                                                    section: CollapsibleSection::NearbyDebris,
+                                                },
+                                                Node {
+                                                    min_width: px(30.0),
+                                                    min_height: px(30.0),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    ..default()
+                                                },
+                                                BackgroundColor(theme.panel_background_soft),
+                                            ))
+                                            .with_children(|btn| {
+                                                btn.spawn((
+                                                    Text::new("▼"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 14.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_muted),
+                                                ));
+                                            });
+                                    });
+
+                                debris_section
+                                    .spawn((
+                                        CollapsibleContent {
+                                            section: CollapsibleSection::NearbyDebris,
+                                        },
+                                        Node {
+                                            width: percent(100),
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: px(4.0),
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|content| {
+                                        let entity = orbital_entities
+                                            .debris
+                                            .get("Satellite1")
+                                            .copied();
+                                        let labels = [
+                                            "Velocity",
+                                            "Semi-major axis",
+                                            "Eccentricity",
+                                            "Inclination",
+                                            "RAAN",
+                                            "Arg of periapsis",
+                                            "True anomaly",
+                                            "Height",
+                                        ];
+                                        for (i, label) in labels.iter().enumerate() {
+                                            content
+                                                .spawn(Node {
+                                                    width: percent(100),
+                                                    flex_direction: FlexDirection::Row,
+                                                    justify_content: JustifyContent::SpaceBetween,
+                                                    column_gap: px(8.0),
+                                                    ..default()
+                                                })
+                                                .with_children(|row| {
+                                                    row.spawn((
+                                                        Text::new(format!("{}:", label)),
+                                                        TextFont {
+                                                            font: font.clone(),
+                                                            font_size: 12.0,
+                                                            ..default()
+                                                        },
+                                                        TextColor(theme.text_accent),
+                                                    ));
+                                                    row.spawn((
+                                                        TelemetryValue {
+                                                            entity,
+                                                            field_index: i,
+                                                        },
+                                                        Text::new("--"),
+                                                        TextFont {
+                                                            font: font.clone(),
+                                                            font_size: 12.0,
+                                                            ..default()
+                                                        },
+                                                        TextColor(theme.text_primary),
+                                                    ));
+                                                });
+                                        }
+
+                                        content
+                                            .spawn((
+                                                Button,
+                                                CaptureButton {
+                                                    entity: orbital_entities
+                                                        .debris
+                                                        .get("Satellite1")
+                                                        .copied(),
+                                                },
+                                                Node {
+                                                    min_width: px(120.0),
+                                                    min_height: px(40.0),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    margin: UiRect::top(px(4.0)),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(theme.panel_background_soft),
+                                            ))
+                                            .with_children(|button| {
+                                                button.spawn((
+                                                    Text::new("Capture"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 14.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_primary),
+                                                ));
+                                            });
+
+                                        content
+                                            .spawn((
+                                                observe(slider_self_update),
+                                                observe(
+                                                    |value_change: On<ValueChange<f32>>,
+                                                     mut widget_states: ResMut<
+                                                        RadiusSliderResource,
+                                                    >| {
+                                                        widget_states.radius =
+                                                            value_change.value;
+                                                    },
+                                                ),
+                                                Node {
+                                                    display: Display::Flex,
+                                                    flex_direction: FlexDirection::Column,
+                                                    justify_content: JustifyContent::Center,
+                                                    align_items: AlignItems::Stretch,
+                                                    justify_items: JustifyItems::Center,
+                                                    column_gap: px(4),
+                                                    height: px(12),
+                                                    width: percent(100),
+                                                    ..default()
+                                                },
+                                                Name::new("Slider"),
+                                                Hovered::default(),
+                                                RadiusSlider,
+                                                Slider {
+                                                    track_click: TrackClick::Snap,
+                                                },
+                                                SliderValue(25.0),
+                                                SliderRange::new(0.0, 25.0),
+                                                TabIndex(0),
+                                            ))
+                                            .with_children(|slider| {
+                                                // Background rail
+                                                slider.spawn((
+                                                    Node {
+                                                        height: px(6),
+                                                        border_radius: BorderRadius::all(px(3)),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(theme.panel_background_soft),
+                                                ));
+
+                                                slider
+                                                    .spawn((Node {
+                                                        display: Display::Flex,
+                                                        position_type: PositionType::Absolute,
+                                                        left: px(0),
+                                                        // Track is short by 12px to accommodate the thumb.
+                                                        right: px(12),
+                                                        top: px(0),
+                                                        bottom: px(0),
+                                                        ..default()
+                                                    },))
+                                                    .with_children(|thumb| {
+                                                        thumb.spawn((
+                                                            // Thumb
+                                                            RadiusSliderThumb,
+                                                            SliderThumb,
+                                                            Node {
+                                                                display: Display::Flex,
+                                                                width: px(12),
+                                                                height: px(12),
+                                                                position_type:
+                                                                    PositionType::Absolute,
+                                                                left: percent(0),
+                                                                border_radius: BorderRadius::MAX,
+                                                                ..default()
+                                                            },
+                                                            BackgroundColor(
+                                                                theme.panel_background,
+                                                            ),
+                                                        ));
+                                                    });
+                                            });
+                                    });
+                            });
                     });
             });
 
@@ -670,6 +853,43 @@ pub fn project_detail_interactions(
             }
             Interaction::None => {
                 *background_color = BackgroundColor(theme.panel_background_soft);
+            }
+        }
+    }
+}
+
+pub fn collapsible_toggle_interaction(
+    toggles: Query<
+        (Entity, &Interaction, &CollapsibleToggle),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut contents: Query<(&mut Node, &CollapsibleContent)>,
+    children_query: Query<&Children>,
+    mut texts: Query<&mut Text>,
+) {
+    for (entity, interaction, toggle) in &toggles {
+        if *interaction == Interaction::Pressed {
+            let mut collapsed = false;
+            for (mut node, content) in &mut contents {
+                if content.section == toggle.section {
+                    if node.display == Display::None {
+                        node.display = Display::Flex;
+                    } else {
+                        node.display = Display::None;
+                        collapsed = true;
+                    }
+                }
+            }
+            if let Ok(children) = children_query.get(entity) {
+                for child in children {
+                    if let Ok(mut text) = texts.get_mut(*child) {
+                        text.0 = if collapsed {
+                            "▶".to_string()
+                        } else {
+                            "▼".to_string()
+                        };
+                    }
+                }
             }
         }
     }

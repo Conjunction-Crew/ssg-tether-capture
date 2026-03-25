@@ -18,7 +18,7 @@ use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
 use crate::ui::screens::project_detail::{
     RadiusSlider, RadiusSliderThumb, TimeWarpLabel, cleanup_project_detail_screen,
-    project_detail_interactions, spawn_project_detail_screen,
+    collapsible_toggle_interaction, project_detail_interactions, spawn_project_detail_screen,
 };
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
@@ -48,6 +48,7 @@ impl Plugin for UiPlugin {
                 cleanup_project_detail_screen,
             )
             .add_systems(Update, project_detail_interactions)
+            .add_systems(Update, collapsible_toggle_interaction)
             .add_systems(Update, handle_ui_events)
             .add_systems(Update, handle_simulation_control_events)
             .add_systems(Update, update_slider_style)

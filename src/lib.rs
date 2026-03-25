@@ -29,7 +29,7 @@ use crate::systems::propagation::{
     floating_origin, physics_bubble_add_remove, target_entity_reset_origin,
 };
 use crate::systems::user_input::{change_time_warp, toggle_map_view, toggle_origin};
-use crate::systems::user_interface::{map_orbitals, track_objects};
+use crate::systems::user_interface::{map_orbitals, update_telemetry_values};
 use crate::ui::plugin::UiPlugin;
 
 // Main entrypoint to run the desktop application.
@@ -65,7 +65,7 @@ pub fn create_app() -> App {
                 toggle_map_view,
                 toggle_origin,
                 change_time_warp,
-                track_objects,
+                update_telemetry_values,
                 map_orbitals,
                 capture_state_machine_update,
             ),

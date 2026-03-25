@@ -1,55 +1,54 @@
 use crate::{
-    components::{
-        orbit::{Orbital, TrueParams},
-        user_interface::{OrbitLabel, TrackObject},
-    },
+    components::orbit::{Orbital, TrueParams},
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
     resources::{orbital_entities::OrbitalEntities, world_time::WorldTime},
+    ui::screens::project_detail::TelemetryValue,
 };
+
+use crate::components::user_interface::OrbitLabel;
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 use brahe::utils::DOrbitStateProvider;
 
-pub fn track_objects(
+pub fn update_telemetry_values(
     bodies: Query<(RigidBodyQueryReadOnly, &TrueParams, &Orbital)>,
-    mut trackers: Query<(&mut Text, &TrackObject)>,
-    time_warp: Res<WorldTime>,
+    mut values: Query<(&mut Text, &TelemetryValue)>,
     orbital_elements: Res<OrbitalEntities>,
     world_time: Res<WorldTime>,
 ) {
-    for (mut text, tracker) in &mut trackers {
-        if let Some(entity) = &tracker.entity {
+    for (mut text, telemetry) in &mut values {
+        if let Some(entity) = &telemetry.entity {
             if let Ok((rb, true_params, orbital)) = bodies.get(*entity) {
                 let propagator = orbital_elements.propagators[orbital.propagator_id].clone();
                 if let Ok(elements) = propagator.state_eci(world_time.epoch) {
-                    text.0 = format!(
-                        concat!(
-                            "Velocity: {:.2}m/s\n",
-                            "Semi-major axis (m): {:.2}\n",
-                            "Eccentricity: {:.2}\n",
-                            "Inclination (radians): {:.2}\n",
-                            "RAAN (radians): {:.2}\n",
-                            "Argument of periapsis (radians): {:.2}\n",
-                            "True anomaly (radians): {:.2}\n",
-                            "Time warp: {}x\n",
-                            "Height: {:.1}m\n",
-                        ),
-                        DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2])
-                            .length()
-                            + rb.linear_velocity.length() as f64,
-                        elements.x,
-                        elements.y,
-                        elements.z,
-                        elements.w,
-                        elements.a,
-                        elements.b,
-                        time_warp.multiplier,
-                        DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5])
-                            .length()
-                            + rb.position.length() as f64
-                            - EARTH_RADIUS as f64
-                    );
+                    let velocity = DVec3::new(
+                        true_params.rv[0],
+                        true_params.rv[1],
+                        true_params.rv[2],
+                    )
+                    .length()
+                        + rb.linear_velocity.length() as f64;
+                    let height = DVec3::new(
+                        true_params.rv[3],
+                        true_params.rv[4],
+                        true_params.rv[5],
+                    )
+                    .length()
+                        + rb.position.length() as f64
+                        - EARTH_RADIUS as f64;
+
+                    text.0 = match telemetry.field_index {
+                        0 => format!("{:.2} m/s", velocity),
+                        1 => format!("{:.2} m", elements.x),
+                        2 => format!("{:.2}", elements.y),
+                        3 => format!("{:.2} rad", elements.z),
+                        4 => format!("{:.2} rad", elements.w),
+                        5 => format!("{:.2} rad", elements.a),
+                        6 => format!("{:.2} rad", elements.b),
+                        7 => format!("{:.1} m", height),
+                        _ => "--".to_string(),
+                    };
                 }
             }
         }
