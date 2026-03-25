@@ -68,6 +68,21 @@ pub struct CycleCameraButton;
 #[derive(Component)]
 pub struct SidebarPanel;
 
+#[derive(Component)]
+pub struct MapViewButton;
+
+#[derive(Component)]
+pub struct TimeWarpIncreaseButton;
+
+#[derive(Component)]
+pub struct TimeWarpDecreaseButton;
+
+#[derive(Component)]
+pub struct ToggleOriginButton;
+
+#[derive(Component)]
+pub struct TimeWarpLabel;
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,

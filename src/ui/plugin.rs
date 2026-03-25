@@ -5,6 +5,8 @@ use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 
+use avian3d::prelude::{Physics, PhysicsTime};
+
 use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
@@ -176,6 +178,7 @@ fn handle_ui_events(
                     commands.entity(next_target).insert(CameraTarget);
                 }
             }
+            _ => {}
         }
     }
 }
