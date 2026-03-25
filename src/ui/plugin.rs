@@ -1,19 +1,24 @@
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
+use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::{CoreSliderDragState, SliderRange, SliderValue};
 
+use avian3d::prelude::{Physics, PhysicsTime};
+
 use crate::components::capture_components::CaptureComponent;
-use crate::constants::UI_LAYER;
+use crate::components::dev_components::Origin;
+use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::world_time::WorldTime;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
 use crate::ui::screens::project_detail::{
-    RadiusSlider, RadiusSliderThumb, cleanup_project_detail_screen, project_detail_interactions,
-    spawn_project_detail_screen,
+    RadiusSlider, RadiusSliderThumb, TimeWarpLabel, cleanup_project_detail_screen,
+    project_detail_interactions, spawn_project_detail_screen,
 };
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
@@ -44,7 +49,9 @@ impl Plugin for UiPlugin {
             )
             .add_systems(Update, project_detail_interactions)
             .add_systems(Update, handle_ui_events)
-            .add_systems(Update, update_slider_style);
+            .add_systems(Update, handle_simulation_control_events)
+            .add_systems(Update, update_slider_style)
+            .add_systems(Update, update_time_warp_label);
     }
 }
 
@@ -126,7 +133,81 @@ fn handle_ui_events(
                     // the same entity?
                 }
             }
+            _ => {}
         }
+    }
+}
+
+fn handle_simulation_control_events(
+    mut commands: Commands,
+    mut ui_events: MessageReader<UiEvent>,
+    mut scene_camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings)>,
+    mut world_time: ResMut<WorldTime>,
+    mut physics_time: ResMut<Time<Physics>>,
+    origin: Single<(Entity, &Visibility), With<Origin>>,
+) {
+    let (origin_entity, origin_vis) = origin.into_inner();
+    let (ref mut render_layers, ref mut atmosphere, ref mut atmosphere_settings) =
+        *scene_camera;
+
+    for event in ui_events.read() {
+        match event {
+            UiEvent::ToggleMapView => {
+                if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+                    **render_layers = RenderLayers::layer(MAP_LAYER);
+                    atmosphere.world_position = Vec3::ZERO;
+                    atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M;
+                } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+                    **render_layers = RenderLayers::layer(SCENE_LAYER);
+                    atmosphere_settings.scene_units_to_m = 1.0;
+                }
+            }
+            UiEvent::TimeWarpIncrease => {
+                if world_time.multiplier * 2.0 <= MAX_TIME_WARP {
+                    world_time.multiplier *= 2.0;
+                }
+                sync_physics_time(&world_time, &mut physics_time);
+            }
+            UiEvent::TimeWarpDecrease => {
+                if world_time.multiplier / 2.0 >= MIN_TIME_WARP {
+                    world_time.multiplier /= 2.0;
+                }
+                sync_physics_time(&world_time, &mut physics_time);
+            }
+            UiEvent::ToggleOrigin => {
+                match origin_vis {
+                    Visibility::Visible => {
+                        commands.entity(origin_entity).insert(Visibility::Hidden);
+                    }
+                    Visibility::Hidden => {
+                        commands.entity(origin_entity).insert(Visibility::Visible);
+                    }
+                    Visibility::Inherited => {}
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn sync_physics_time(world_time: &WorldTime, physics_time: &mut Time<Physics>) {
+    if world_time.multiplier > 4.0 {
+        physics_time.pause();
+    } else {
+        physics_time.unpause();
+        physics_time.set_relative_speed_f64(world_time.multiplier as f64);
+    }
+}
+
+const MAX_TIME_WARP: f64 = 1000.0;
+const MIN_TIME_WARP: f64 = 0.001;
+
+fn update_time_warp_label(
+    mut labels: Query<&mut Text, With<TimeWarpLabel>>,
+    world_time: Res<WorldTime>,
+) {
+    for mut text in &mut labels {
+        **text = format!("{}x", world_time.multiplier);
     }
 }
 

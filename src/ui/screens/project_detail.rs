@@ -33,6 +33,21 @@ pub struct RadiusSlider;
 #[derive(Component, Default)]
 pub struct RadiusSliderThumb;
 
+#[derive(Component)]
+pub struct MapViewButton;
+
+#[derive(Component)]
+pub struct TimeWarpIncreaseButton;
+
+#[derive(Component)]
+pub struct TimeWarpDecreaseButton;
+
+#[derive(Component)]
+pub struct ToggleOriginButton;
+
+#[derive(Component)]
+pub struct TimeWarpLabel;
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -429,6 +444,156 @@ pub fn spawn_project_detail_screen(
                                         });
                                 });
                             });
+
+                        // Simulation Controls
+                        sidebar
+                            .spawn((
+                                Node {
+                                    width: percent(100),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|controls| {
+                                controls.spawn((
+                                    Text::new("Simulation Controls"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 17.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+
+                                // Map View button
+                                controls
+                                    .spawn((
+                                        Button,
+                                        MapViewButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            Text::new("Map View (M)"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Time Warp controls row
+                                controls
+                                    .spawn(Node {
+                                        width: percent(100),
+                                        flex_direction: FlexDirection::Row,
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::SpaceBetween,
+                                        column_gap: px(6.0),
+                                        ..default()
+                                    })
+                                    .with_children(|row| {
+                                        // Decrease button
+                                        row.spawn((
+                                            Button,
+                                            TimeWarpDecreaseButton,
+                                            Node {
+                                                min_width: px(40.0),
+                                                min_height: px(40.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_children(|button| {
+                                            button.spawn((
+                                                Text::new("<"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_primary),
+                                            ));
+                                        });
+
+                                        // Time warp label
+                                        row.spawn((
+                                            TimeWarpLabel,
+                                            Text::new("1x"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_accent),
+                                        ));
+
+                                        // Increase button
+                                        row.spawn((
+                                            Button,
+                                            TimeWarpIncreaseButton,
+                                            Node {
+                                                min_width: px(40.0),
+                                                min_height: px(40.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_children(|button| {
+                                            button.spawn((
+                                                Text::new(">"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_primary),
+                                            ));
+                                        });
+                                    });
+
+                                // Toggle Origin button
+                                controls
+                                    .spawn((
+                                        Button,
+                                        ToggleOriginButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|button| {
+                                        button.spawn((
+                                            Text::new("Toggle Origin (O)"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+                            });
                     });
             });
 
@@ -466,6 +631,10 @@ pub fn project_detail_interactions(
             &Interaction,
             Option<&BackButton>,
             Option<&CaptureButton>,
+            Option<&MapViewButton>,
+            Option<&TimeWarpIncreaseButton>,
+            Option<&TimeWarpDecreaseButton>,
+            Option<&ToggleOriginButton>,
             &mut BackgroundColor,
         ),
         (Changed<Interaction>, With<Button>),
@@ -478,7 +647,7 @@ pub fn project_detail_interactions(
         return;
     }
 
-    for (interaction, back_button, capture_button, mut background_color) in &mut interactions {
+    for (interaction, back_button, capture_button, map_view, warp_inc, warp_dec, toggle_origin, mut background_color) in &mut interactions {
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(theme.button_background_hover);
@@ -486,6 +655,14 @@ pub fn project_detail_interactions(
                     events.write(UiEvent::BackToHome);
                 } else if let Some(capture_entity) = capture_button {
                     events.write(UiEvent::CaptureDebris(capture_entity.entity));
+                } else if map_view.is_some() {
+                    events.write(UiEvent::ToggleMapView);
+                } else if warp_inc.is_some() {
+                    events.write(UiEvent::TimeWarpIncrease);
+                } else if warp_dec.is_some() {
+                    events.write(UiEvent::TimeWarpDecrease);
+                } else if toggle_origin.is_some() {
+                    events.write(UiEvent::ToggleOrigin);
                 }
             }
             Interaction::Hovered => {
