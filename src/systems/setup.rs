@@ -21,6 +21,7 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use nalgebra::Vector6;
 
 pub fn setup_lighting(mut commands: Commands) {
     let sun_rotation = Quat::from_rotation_x(0.0);
@@ -86,8 +87,7 @@ pub fn setup_celestial(
                 Earth,
                 RenderLayers::layer(SCENE_LAYER),
                 Orbit::FromParams(TrueParams {
-                    r: [0.0, 0.0, 0.0],
-                    v: [0.0, 0.0, 0.0],
+                    rv: Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
                 }),
                 Mesh3d(meshes.add(earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
@@ -239,7 +239,12 @@ pub fn setup_tether(
     let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius)));
     let sphere_collider = Collider::sphere(root_tail_radius);
     let sphere_material = materials.add(StandardMaterial {
-        base_color: Color::Srgba(Srgba { red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0 }),
+        base_color: Color::Srgba(Srgba {
+            red: 1.0,
+            green: 0.0,
+            blue: 0.0,
+            alpha: 1.0,
+        }),
         perceptual_roughness: 1.0,
         ..default()
     });
@@ -273,7 +278,12 @@ pub fn setup_tether(
 
     for i in 1..NUM_TETHER_JOINTS {
         let (mesh, collider, mass, curr_radius) = if i == NUM_TETHER_JOINTS - 1 {
-            (sphere_mesh.clone(), sphere_collider.clone(), 1.0, root_tail_radius)
+            (
+                sphere_mesh.clone(),
+                sphere_collider.clone(),
+                1.0,
+                root_tail_radius,
+            )
         } else {
             (
                 sphere_mesh_small.clone(),

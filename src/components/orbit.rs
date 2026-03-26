@@ -1,15 +1,9 @@
-use astrora_core::core::elements::OrbitalElements;
 use bevy::{
     ecs::entity::Entity,
     math::DVec3,
     prelude::{Component, Quat, Vec3},
 };
-
-#[derive(Debug, Clone)]
-pub enum PhysicsState {
-    INACTIVE,
-    ACTIVE,
-}
+use nalgebra::Vector6;
 
 // Component to query Earth.
 #[derive(Component)]
@@ -26,8 +20,7 @@ pub struct TetherNode {
 // Format: rx, ry, rz, vx, vy, vz
 #[derive(Component, Default, Debug, Clone)]
 pub struct TrueParams {
-    pub r: [f64; 3],
-    pub v: [f64; 3],
+    pub rv: Vector6<f64>
 }
 
 // Orbital parameters and state for a body approaching another object.
@@ -37,9 +30,8 @@ pub struct Orbital {
     pub object_id: String,
     pub parent_entity: Option<Entity>,
     pub tle: Option<TleData>,
-    pub elements: Option<OrbitalElements>,
+    pub propagator_id: usize,
     pub attitude: AttitudeState,
-    pub state: PhysicsState,
     pub approach: ApproachMetrics,
 }
 
@@ -48,7 +40,7 @@ pub struct Orbital {
 #[require(Orbital, TrueParams)]
 pub enum Orbit {
     FromTle(String),
-    FromElements(OrbitalElements),
+    FromElements(Vector6<f64>),
     FromParams(TrueParams),
 }
 
@@ -118,9 +110,8 @@ impl Default for Orbital {
             object_id: String::new(),
             parent_entity: None,
             tle: None,
-            elements: None,
+            propagator_id: 0,
             attitude: AttitudeState::default(),
-            state: PhysicsState::INACTIVE,
             approach: ApproachMetrics::default(),
         }
     }

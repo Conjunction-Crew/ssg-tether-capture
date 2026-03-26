@@ -4,21 +4,25 @@ use crate::{
         user_interface::{OrbitLabel, TrackObject},
     },
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::time_warp::TimeWarp,
+    resources::{orbital_entities::OrbitalEntities, world_time::WorldTime},
 };
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
+use brahe::utils::DOrbitStateProvider;
 
 pub fn track_objects(
     bodies: Query<(RigidBodyQueryReadOnly, &TrueParams, &Orbital)>,
     mut trackers: Query<(&mut Text, &TrackObject)>,
-    time_warp: Res<TimeWarp>,
+    time_warp: Res<WorldTime>,
+    orbital_elements: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     for (mut text, tracker) in &mut trackers {
         if let Some(entity) = &tracker.entity {
             if let Ok((rb, true_params, orbital)) = bodies.get(*entity) {
-                if let Some(elements) = orbital.elements {
+                let propagator = orbital_elements.propagators[orbital.propagator_id].clone();
+                if let Ok(elements) = propagator.state_eci(world_time.epoch) {
                     text.0 = format!(
                         concat!(
                             "Velocity: {:.2}m/s\n",
@@ -31,16 +35,18 @@ pub fn track_objects(
                             "Time warp: {}x\n",
                             "Height: {:.1}m\n",
                         ),
-                        DVec3::new(true_params.v[0], true_params.v[1], true_params.v[2]).length()
+                        DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2])
+                            .length()
                             + rb.linear_velocity.length() as f64,
+                        elements.x,
+                        elements.y,
+                        elements.z,
+                        elements.w,
                         elements.a,
-                        elements.e,
-                        elements.i,
-                        elements.raan,
-                        elements.argp,
-                        elements.nu,
+                        elements.b,
                         time_warp.multiplier,
-                        DVec3::new(true_params.r[0], true_params.r[1], true_params.r[2]).length()
+                        DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5])
+                            .length()
                             + rb.position.length() as f64
                             - EARTH_RADIUS as f64
                     );
@@ -68,9 +74,9 @@ pub fn map_orbitals(
         if let Some(entity) = label.entity {
             if let Ok(true_params) = true_params_query.get(entity) {
                 let mut world_position = Vec3::new(
-                    true_params.r[0] as f32 / MAP_UNITS_TO_M,
-                    true_params.r[1] as f32 / MAP_UNITS_TO_M,
-                    true_params.r[2] as f32 / MAP_UNITS_TO_M,
+                    true_params.rv[0] as f32 / MAP_UNITS_TO_M,
+                    true_params.rv[1] as f32 / MAP_UNITS_TO_M,
+                    true_params.rv[2] as f32 / MAP_UNITS_TO_M,
                 );
 
                 if let Ok(rb) = rigidbodies.get(entity)
