@@ -8,6 +8,6 @@ pub struct CapturePlanLibrary {
 }
 
 #[derive(Resource, Debug, Default)]
-pub struct RadiusSliderResource {
+pub struct CaptureSphereRadius {
     pub radius: f32,
 }

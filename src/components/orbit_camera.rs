@@ -1,6 +1,4 @@
-use bevy::{
-    prelude::{Component, Vec3},
-};
+use bevy::prelude::{Component, Vec3};
 
 // Component to query the camera target
 #[derive(Component, Debug, Clone)]

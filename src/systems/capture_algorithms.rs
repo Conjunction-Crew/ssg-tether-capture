@@ -1,20 +1,19 @@
 use avian3d::{
     math::PI,
-    prelude::{Forces, LinearVelocity, Position, RigidBodyForces, RigidBodyQuery, Rotation},
+    prelude::{
+        Forces, LinearVelocity, Physics, Position, RigidBodyForces, RigidBodyQuery, Rotation,
+    },
 };
 use bevy::prelude::*;
 
 use crate::{
     components::capture_components::CaptureComponent,
     resources::{
-        capture_plans::{CapturePlanLibrary, RadiusSliderResource},
+        capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
         orbital_entities::OrbitalEntities,
     },
+    systems::physics::PHYS_DT,
 };
-
-const MAX_VELOCITY: f32 = 5.0;
-const MAX_FORCE: f32 = 100.0;
-const MIN_NODE_PROXIMITY: f32 = 20.0;
 
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct CaptureGizmoConfigGroup;
@@ -25,11 +24,10 @@ pub fn capture_state_machine_update(
     orbital_entities: Res<OrbitalEntities>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
-    time: Res<Time>,
-    approach_radius: Res<RadiusSliderResource>,
+    mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
 ) {
     for (capture_entity, mut capture_component) in capture_entities {
-        capture_component.state_elapsed_time_s = time.elapsed_secs_f64();
+        capture_component.state_elapsed_time_s += PHYS_DT;
 
         // Get current position and velocity of capture entity
         let capture_entity_position: Position;
@@ -64,22 +62,168 @@ pub fn capture_state_machine_update(
                     let mut force_vec: Vec3 = Vec3::ZERO;
 
                     // Max speed and force  for node
-                    let mut max_velocity = (rel_r.length() * 0.2).clamp(3.0, MAX_VELOCITY);
-                    let mut max_force = MAX_FORCE;
-                    let mut capture_radius = approach_radius.radius;
+                    let mut max_velocity = 0.0;
+                    let mut max_force = 0.0;
+                    let mut capture_radius = capture_sphere_radius.radius;
+
+                    // Check if state should transition
+                    for state in &plan.states {
+                        if state.id == capture_component.current_state {
+                            // Get parameters for this state
+                            if let Some(parameters) = &state.parameters {
+                                if let Some(parsed_max_velocity) = parameters.get("max_velocity") {
+                                    if let Some(val) = parsed_max_velocity.as_f64() {
+                                        max_velocity = val as f32;
+                                    }
+                                }
+                                if let Some(parsed_max_force) = parameters.get("max_force") {
+                                    if let Some(val) = parsed_max_force.as_f64() {
+                                        max_force = val as f32;
+                                    }
+                                }
+
+                                if idx == 0 {
+                                    if let Some(parsed_shrink_rate) = parameters.get("shrink_rate")
+                                    {
+                                        if let Some(val) = parsed_shrink_rate.as_f64() {
+                                            if capture_sphere_radius.radius > 0.1 {
+                                                capture_sphere_radius.radius -=
+                                                    (val * PHYS_DT) as f32;
+                                            }
+                                        }
+                                    }
+
+                                    // Loop through transitions
+                                    if let Some(transitions) = &state.transitions {
+                                        for transition in transitions {
+                                            if let Some(to) = transition.get("to") {
+                                                // Check distance transition conditions
+                                                if let Some(distance) = transition.get("distance") {
+                                                    if let Some(less_than) =
+                                                        distance.get("less_than")
+                                                    {
+                                                        if let Some(val) = less_than.as_f64() {
+                                                            if rel_r.length() < val as f32 {
+                                                                // Transition to 'to'
+                                                                if let Some(new_state) = to.as_str()
+                                                                {
+                                                                    println!(
+                                                                        "Transition: {}, Reason: distance {} < {}",
+                                                                        new_state,
+                                                                        rel_r.length(),
+                                                                        val
+                                                                    );
+                                                                    capture_component
+                                                                        .current_state =
+                                                                        String::from(new_state);
+                                                                    capture_component
+                                                                        .state_enter_time_s = 0.0;
+                                                                    capture_component
+                                                                        .state_elapsed_time_s = 0.0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(greater_than) =
+                                                        distance.get("greater_than")
+                                                    {
+                                                        if let Some(val) = greater_than.as_f64() {
+                                                            if rel_r.length() > val as f32 {
+                                                                // Transition to 'to'
+                                                                if let Some(new_state) = to.as_str()
+                                                                {
+                                                                    println!(
+                                                                        "Transition: {}, Reason: distance {} > {}",
+                                                                        new_state,
+                                                                        rel_r.length(),
+                                                                        val
+                                                                    );
+                                                                    capture_component
+                                                                        .current_state =
+                                                                        String::from(new_state);
+                                                                    capture_component
+                                                                        .state_enter_time_s = 0.0;
+                                                                    capture_component
+                                                                        .state_elapsed_time_s = 0.0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                // Check velocity transition conditions
+                                                if let Some(distance) =
+                                                    transition.get("relative_velocity")
+                                                {
+                                                    if let Some(less_than) =
+                                                        distance.get("less_than")
+                                                    {
+                                                        if let Some(val) = less_than.as_f64() {
+                                                            if rel_v.length() < val as f32 {
+                                                                // Transition to 'to'
+                                                                if let Some(new_state) = to.as_str()
+                                                                {
+                                                                    println!(
+                                                                        "Transition: {}, Reason: velocity {} < {}",
+                                                                        new_state,
+                                                                        rel_v.length(),
+                                                                        val
+                                                                    );
+                                                                    capture_component
+                                                                        .current_state =
+                                                                        String::from(new_state);
+                                                                    capture_component
+                                                                        .state_enter_time_s = 0.0;
+                                                                    capture_component
+                                                                        .state_elapsed_time_s = 0.0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(greater_than) =
+                                                        distance.get("greater_than")
+                                                    {
+                                                        if let Some(val) = greater_than.as_f64() {
+                                                            if rel_v.length() > val as f32 {
+                                                                // Transition to 'to'
+                                                                if let Some(new_state) = to.as_str()
+                                                                {
+                                                                    println!(
+                                                                        "Transition: {}, Reason: velocity {} > {}",
+                                                                        new_state,
+                                                                        rel_v.length(),
+                                                                        val
+                                                                    );
+                                                                    capture_component
+                                                                        .current_state =
+                                                                        String::from(new_state);
+                                                                    capture_component
+                                                                        .state_enter_time_s = 0.0;
+                                                                    capture_component
+                                                                        .state_elapsed_time_s = 0.0;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // If this node is not root, reduce max velocity, and sphere radius
                     if idx != 0 {
-                        max_velocity /= 2.0;
-                        max_force /= 4.0;
-                        capture_radius *= 0.8;
+                        max_velocity *= 0.9;
+                        max_force /= 2.0;
+                        capture_radius += 1.0;
                     }
 
                     // If vel is high, kill vel
                     if rel_v.length() > max_velocity {
                         force_vec += -rel_v.normalize_or_zero();
                     }
-
                     // If too close, force in opposite dir
                     if rel_r.length() < capture_radius * 0.8 {
                         force_vec += -rel_r.normalize_or_zero();
@@ -101,7 +245,7 @@ pub fn capture_state_machine_update(
                             Vec3::X
                         };
 
-                        if idx != 0 {
+                        if idx != 0 && capture_component.current_state == "capture" {
                             force_vec -= tangent_axis.cross(rel_r).normalize_or_zero();
                         } else {
                             force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
@@ -109,20 +253,10 @@ pub fn capture_state_machine_update(
                     }
 
                     // Draw force
-                    gizmos.ray(world_r, force_vec, Srgba::new(1.0, 0.0, 0.0, 0.5));
+                    gizmos.ray(world_r, force_vec, Srgba::new(1.0, 0.0, 0.0, 0.2));
 
                     // Draw rel_v
-                    gizmos.ray(world_r, rel_v, Srgba::new(0.0, 1.0, 0.0, 0.5));
-
-                    // Draw outer sphere
-                    gizmos.sphere(
-                        Isometry3d::new(
-                            capture_entity_position.0.clone(),
-                            capture_entity_rotation.0.clone(),
-                        ),
-                        approach_radius.radius,
-                        Srgba::new(1.0, 0.5, 0.0, 0.5),
-                    );
+                    gizmos.ray(world_r, rel_v, Srgba::new(0.0, 1.0, 0.0, 0.2));
 
                     // Draw inner sphere
                     gizmos.sphere(
@@ -130,13 +264,23 @@ pub fn capture_state_machine_update(
                             capture_entity_position.0.clone(),
                             capture_entity_rotation.0.clone(),
                         ),
-                        approach_radius.radius * 0.8,
-                        Srgba::new(0.0, 0.8, 0.4, 0.5),
+                        capture_sphere_radius.radius,
+                        Srgba::new(1.0, 0.5, 0.0, 0.2),
+                    );
+
+                    // Draw outer sphere
+                    gizmos.sphere(
+                        Isometry3d::new(
+                            capture_entity_position.0.clone(),
+                            capture_entity_rotation.0.clone(),
+                        ),
+                        capture_sphere_radius.radius + 1.0,
+                        Srgba::new(0.0, 0.8, 0.4, 0.2),
                     );
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        node_forces.apply_force(force_vec * rel_r.length().clamp(1.0, max_force));
+                        node_forces.apply_force(force_vec.normalize() * max_force);
                     } else {
                         println!("Faled to apply force for node");
                     };

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::{Orbit, TrueParams};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
@@ -7,16 +5,14 @@ use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
 use crate::create_app;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_entities::OrbitalEntities;
-use crate::systems::setup::load_capture_plans;
+use crate::ui::screens::home::load_capture_plans;
+use crate::ui::state::UiScreen;
 use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
 use avian3d::prelude::*;
 use bevy::ecs::relationship::RelationshipSourceCollection;
-use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
-use bevy::time::TimeUpdateStrategy;
-use bevy::ui::UiPlugin;
-use bevy::ui_widgets::UiWidgetsPlugins;
+use bevy::state::app::StatesPlugin;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
 
 // Minimal test app harness for unit testing
@@ -27,14 +23,15 @@ fn test_app() -> App {
         AssetPlugin::default(),
         InputPlugin,
         ScenePlugin,
+        StatesPlugin,
     ))
+    .init_state::<UiScreen>()
     .init_asset::<Mesh>()
     .init_asset::<StandardMaterial>()
     .init_asset::<GizmoAsset>()
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>()
-    .add_systems(Startup, load_capture_plans);
+    .init_resource::<SolverDiagnostics>();
     app
 }
 
@@ -82,9 +79,11 @@ fn orbit_camera() {
 #[test]
 fn apply_force_to_target() {
     let mut app = test_app();
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(
-        1.0 / 60.0,
-    )));
+
+    let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
+    next_screen.set(UiScreen::Sim);
+
+    app.update();
 
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
@@ -93,9 +92,8 @@ fn apply_force_to_target() {
         .spawn((
             CameraTarget,
             RigidBody::Dynamic,
-            ConstantForce::new(0.0, 0.0, 0.0),
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(40.0, 40.0, 40.0),
+            Transform::from_xyz(0.0, 0.0, 0.0),
         ))
         .id();
 
@@ -104,7 +102,6 @@ fn apply_force_to_target() {
         .spawn((
             CameraTarget,
             RigidBody::Dynamic,
-            ConstantForce::new(0.0, 0.0, 0.0),
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(40.0, 40.0, 40.0),
         ))
@@ -114,15 +111,6 @@ fn apply_force_to_target() {
         .resource_mut::<OrbitalEntities>()
         .tethers
         .insert("Tether1".to_string(), vec![sphere_body]);
-
-    app.world_mut().spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
-        OrbitCamera {
-            map_params: OrbitCameraParams::default(),
-            scene_params: OrbitCameraParams::default(),
-        },
-    ));
 
     app.update();
 
@@ -135,12 +123,12 @@ fn apply_force_to_target() {
         Vec3::ZERO
     );
 
+    // Load capture plans
+    let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
+    load_capture_plans(&mut capture_plan_lib);
+
     // Get plan information
-    let plan_res = app
-        .world()
-        .resource::<CapturePlanLibrary>()
-        .plans
-        .get("example_plan");
+    let plan_res = capture_plan_lib.plans.get("example_plan");
     assert!(plan_res.is_some());
     let plan = plan_res.unwrap().clone();
 
@@ -177,9 +165,9 @@ fn apply_force_to_target() {
 #[test]
 fn orbit_propagation() {
     let mut app = test_app();
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(
-        1.0 / 60.0,
-    )));
+
+    let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
+    next_screen.set(UiScreen::Sim);
 
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
@@ -188,7 +176,6 @@ fn orbit_propagation() {
         .spawn((
             CameraTarget,
             RigidBody::Dynamic,
-            ConstantForce::new(0.0, 0.0, 0.0),
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(40.0, 40.0, 40.0),
             Orbit::FromElements(ISS_ORBIT),
@@ -212,9 +199,9 @@ fn orbit_propagation() {
 #[test]
 fn floating_origin_resets() {
     let mut app = test_app();
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(
-        1.0 / 60.0,
-    )));
+
+    let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
+    next_screen.set(UiScreen::Sim);
 
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
@@ -223,7 +210,6 @@ fn floating_origin_resets() {
         .spawn((
             CameraTarget,
             RigidBody::Dynamic,
-            ConstantForce::new(0.0, 0.0, 0.0),
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(MAX_ORIGIN_OFFSET - 10.0, 0.0, 0.0),
             Orbit::FromElements(ISS_ORBIT),
