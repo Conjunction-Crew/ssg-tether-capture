@@ -6,25 +6,80 @@
 
 /* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  /* Space blue — matches logo star accent palette */
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-darkest: #1e3a8a;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-color-primary-lightest: #93c5fd;
   --ifm-code-font-size: 95%;
+  --ifm-heading-font-weight: 500;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* Dark mode — space theme matching the Figma app */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  /* blue-400 as primary, matching the logo star accents */
+  --ifm-color-primary: #60a5fa;
+  --ifm-color-primary-dark: #3b82f6;
+  --ifm-color-primary-darker: #2563eb;
+  --ifm-color-primary-darkest: #1d4ed8;
+  --ifm-color-primary-light: #93c5fd;
+  --ifm-color-primary-lighter: #bfdbfe;
+  --ifm-color-primary-lightest: #dbeafe;
+  /* slate-950 body background matching App.tsx bg-slate-950 */
+  --ifm-background-color: #020617;
+  --ifm-background-surface-color: #0f172a;
+  --ifm-navbar-background-color: rgba(2, 6, 23, 0.8);
+  --ifm-toc-border-color: #1e293b;
+  --ifm-color-emphasis-300: #1e293b;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.4);
+}
+
+/* Navbar sizing */
+:root {
+  --ifm-navbar-height: 5rem;
+}
+
+/* Navbar dark mode — space header matching the Figma app */
+[data-theme='dark'] .navbar {
+  border-bottom: 1px solid #1e293b;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.navbar__logo {
+  display: flex;
+  align-items: center;
+  margin-right: 0.75rem;
+}
+
+.navbar__logo img {
+  height: 3.5rem;
+}
+
+.navbar__title {
+  font-size: 1.4rem;
+}
+
+.navbar__link {
+  font-size: 1.1rem;
+}
+
+/* Hero banner — space gradient matching the Figma home screen */
+[data-theme='dark'] .hero--primary {
+  background: linear-gradient(
+    135deg,
+    #020617 0%,
+    #0c1a3d 40%,
+    #0a0f1e 70%,
+    #020617 100%
+  );
+  color: #f8fafc;
+}
+
+[data-theme='dark'] .hero--primary .hero__subtitle {
+  color: #94a3b8;
 }

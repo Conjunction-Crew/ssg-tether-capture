@@ -67,5 +67,5 @@ See [Plugins](./plugins) for what each plugin registers.
 |---|---|
 | `bevy` | Game engine / ECS framework |
 | `avian3d` | Rigid-body physics |
-| `astrora_core` | Orbital mechanics (propagation, COE↔RV conversion) |
-| `ndarray` | Batch propagation scratch buffers |
+| `brahe` | Orbital mechanics (propagation, COE↔RV conversion) |
+| `nalgebra` | 6-element state vectors (`Vector6`) for ECI position/velocity |
