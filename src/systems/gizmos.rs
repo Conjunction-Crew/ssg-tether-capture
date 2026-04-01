@@ -5,8 +5,8 @@ use nalgebra::Vector6;
 
 use crate::{
     components::orbit::{Orbital, TrueParams},
-    constants::{MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::world_time::WorldTime,
+    constants::{MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER},
+    resources::{settings::Settings, world_time::WorldTime},
 };
 
 pub fn orbital_gizmos(
@@ -68,4 +68,33 @@ pub fn orbital_gizmos(
                 .resolution(512);
         }
     }
+}
+
+pub fn dev_gizmos(mut gizmos: Gizmos, settings: Res<Settings>) {
+    if !settings.dev_gizmos {
+        return;
+    }
+
+    // Origin gizmo
+    gizmos.axes(Transform::from_xyz(0.0, 0.0, 0.0), 2.0);
+
+    // Physics enable radius gizmo
+    gizmos.sphere(
+        Isometry3d::new(
+            Vec3::new(0.0, 0.0, 0.0),
+            Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, 0.0),
+        ),
+        PHYSICS_ENABLE_RADIUS as f32,
+        Srgba::new(1.0, 0.0, 0.0, 0.2),
+    );
+
+    // Floating origin reset gizmo
+    gizmos.sphere(
+        Isometry3d::new(
+            Vec3::new(0.0, 0.0, 0.0),
+            Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, 0.0),
+        ),
+        MAX_ORIGIN_OFFSET as f32,
+        Srgba::new(1.0, 0.0, 1.0, 0.2),
+    );
 }

@@ -2,12 +2,10 @@ use avian3d::prelude::{Physics, RigidBody};
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
-use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 
 use crate::components::capture_components::CaptureComponent;
-use crate::components::dev_components::Origin;
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
@@ -81,7 +79,10 @@ fn handle_ui_events(
     project_catalog: Res<ProjectCatalog>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut scene_camera: Query<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), Without<UiCamera>>,
+    mut scene_camera: Query<
+        (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
+        Without<UiCamera>,
+    >,
     origin_query: Query<(Entity, &Visibility), With<Origin>>,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
 ) {
@@ -136,7 +137,7 @@ fn handle_ui_events(
                     if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
                         *render_layers = RenderLayers::layer(MAP_LAYER);
                         atmosphere.world_position = Vec3::ZERO;
-                        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M;
+                        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
                     } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
                         *render_layers = RenderLayers::layer(SCENE_LAYER);
                         atmosphere_settings.scene_units_to_m = 1.0;

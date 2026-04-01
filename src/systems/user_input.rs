@@ -1,7 +1,6 @@
 use crate::{
-    components::dev_components::Origin,
     constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::world_time::WorldTime,
+    resources::{settings::Settings, world_time::WorldTime},
 };
 
 use avian3d::prelude::{Physics, PhysicsTime};
@@ -52,23 +51,8 @@ pub fn change_time_warp(
     }
 }
 
-pub fn toggle_origin(
-    mut commands: Commands,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    origin: Single<(Entity, &Visibility), With<Origin>>,
-) {
+pub fn toggle_origin(keyboard_input: Res<ButtonInput<KeyCode>>, mut settings: ResMut<Settings>) {
     if keyboard_input.just_pressed(KeyCode::KeyO) {
-        let (origin_entity, origin_vis) = origin.into_inner();
-
-        match origin_vis {
-            Visibility::Visible => {
-                commands.entity(origin_entity).insert(Visibility::Hidden);
-            }
-            Visibility::Hidden => {
-                commands.entity(origin_entity).insert(Visibility::Visible);
-            }
-
-            Visibility::Inherited => {}
-        }
+        settings.dev_gizmos = !settings.dev_gizmos;
     }
 }

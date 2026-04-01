@@ -1,7 +1,6 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use crate::components::dev_components::Origin;
 use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
@@ -128,21 +127,6 @@ pub fn setup_entities(
     asset_server: Res<AssetServer>,
 ) {
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
-
-    // Origin Sphere
-    commands.spawn((
-        DespawnOnExit(UiScreen::Sim),
-        Origin,
-        Visibility::Hidden,
-        RenderLayers::layer(SCENE_LAYER),
-        Mesh3d(meshes.add(test_sphere_mesh.clone())),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.2, 1.0, 0.2),
-            perceptual_roughness: 1.0,
-            ..default()
-        })),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-    ));
 
     // Skybox
     let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
