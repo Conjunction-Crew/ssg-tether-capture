@@ -20,7 +20,7 @@ pub struct TetherNode {
 // Format: rx, ry, rz, vx, vy, vz
 #[derive(Component, Default, Debug, Clone)]
 pub struct TrueParams {
-    pub rv: Vector6<f64>
+    pub rv: Vector6<f64>,
 }
 
 // Orbital parameters and state for a body approaching another object.

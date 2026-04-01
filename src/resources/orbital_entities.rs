@@ -1,5 +1,5 @@
 use bevy::{platform::collections::HashMap, prelude::*};
-use brahe::{KeplerianPropagator};
+use brahe::KeplerianPropagator;
 
 #[derive(Resource, Debug, Default)]
 pub struct OrbitalEntities {
