@@ -5,7 +5,6 @@ use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
 use crate::constants::UI_LAYER;
-use crate::resources::capture_plans::RadiusSliderResource;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::ui::events::UiEvent;
 use crate::ui::state::{ProjectCatalog, SelectedProject};
@@ -23,6 +22,36 @@ pub struct CaptureButton {
     pub entity: Option<Entity>,
     pub plan_id: String,
 }
+
+#[derive(Component, PartialEq, Eq, Clone, Copy)]
+pub enum CollapsibleSection {
+    SimulationHud,
+}
+
+#[derive(Component)]
+pub struct CollapsibleToggle {
+    pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct CollapsibleContent {
+    pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct MapViewButton;
+
+#[derive(Component)]
+pub struct TimeWarpDecreaseButton;
+
+#[derive(Component)]
+pub struct TimeWarpLabel;
+
+#[derive(Component)]
+pub struct TimeWarpIncreaseButton;
+
+#[derive(Component)]
+pub struct ToggleOriginButton;
 
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
@@ -320,7 +349,7 @@ pub fn spawn_project_detail_screen(
                                 ));
 
                                 // Map View button
-                                controls
+                                capture_panel
                                     .spawn((
                                         Button,
                                         MapViewButton,
@@ -346,7 +375,7 @@ pub fn spawn_project_detail_screen(
                                     });
 
                                 // Time Warp controls row
-                                controls
+                                capture_panel
                                     .spawn(Node {
                                         width: percent(100),
                                         flex_direction: FlexDirection::Row,
@@ -420,7 +449,7 @@ pub fn spawn_project_detail_screen(
                                     });
 
                                 // Toggle Origin button
-                                controls
+                                capture_panel
                                     .spawn((
                                         Button,
                                         ToggleOriginButton,
@@ -504,7 +533,7 @@ pub fn spawn_project_detail_screen(
                                         });
                                 });
 
-                                capture_panel.spawn((
+                                hud.spawn((
                                     CaptureTelemetryReadout {
                                         target_entity: capture_target_entity,
                                         reference_entity: tether_root_entity,
@@ -519,7 +548,7 @@ pub fn spawn_project_detail_screen(
                                     TextColor(theme.text_primary),
                                 ));
 
-                                capture_panel
+                                hud
                                     .spawn((
                                         Button,
                                         CaptureButton {
@@ -548,7 +577,7 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
 
-                                capture_panel
+                                hud
                                     .spawn((
                                         Node {
                                             width: percent(100),
