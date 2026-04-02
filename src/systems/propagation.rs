@@ -122,7 +122,7 @@ pub fn floating_origin(
     >,
     camera_s: Single<(&mut Atmosphere, &RenderLayers), (With<Camera3d>, Without<Orbital>)>,
     earth: Single<&mut Transform, (With<Earth>, Without<CameraTarget>)>,
-    mut orbitals: ResMut<OrbitalEntities>,
+    orbitals: ResMut<OrbitalEntities>,
     world_time: Res<WorldTime>,
 ) {
     let (mut atmosphere, render_layers) = camera_s.into_inner();
@@ -154,7 +154,7 @@ pub fn floating_origin(
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;
 
-    // Loop over each other true params to get position
+    // Loop through disabled bodies to set their relative positions
     for (orbital, mut rb) in rb_disabled {
         let Some(prop) = orbitals.propagators.get(orbital.propagator_id) else {
             continue;
@@ -164,22 +164,22 @@ pub fn floating_origin(
         };
 
         // Set disabled bodies rigidbody values to their global relative state (for capture algorithm)
-        rb.position.0 = Vec3::new(
-            (entity_rv[0] - target_rv[0]) as f32,
-            (entity_rv[1] - target_rv[1]) as f32,
-            (entity_rv[2] - target_rv[2]) as f32,
+        rb.position.0 = DVec3::new(
+            entity_rv[0] - target_rv[0],
+            entity_rv[1] - target_rv[1],
+            entity_rv[2] - target_rv[2],
         );
-        rb.linear_velocity.0 = Vec3::new(
-            (entity_rv[3] - target_rv[3]) as f32,
-            (entity_rv[4] - target_rv[4]) as f32,
-            (entity_rv[5] - target_rv[5]) as f32,
+        rb.linear_velocity.0 = DVec3::new(
+            entity_rv[3] - target_rv[3],
+            entity_rv[4] - target_rv[4],
+            entity_rv[5] - target_rv[5],
         );
     }
 }
 
 pub fn target_entity_reset_origin(
     true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
-    mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
+    rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
     nodes: Query<(Entity, &TetherNode)>,
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
     mut orbitals: ResMut<OrbitalEntities>,
@@ -242,7 +242,7 @@ pub fn physics_bubble_add_remove(
     let target_orbital = target_entity.into_inner();
 
     // Get current cartesian state of our target
-    let Some(mut prop) = orbitals.propagators.get_mut(target_orbital.propagator_id) else {
+    let Some(prop) = orbitals.propagators.get_mut(target_orbital.propagator_id) else {
         return;
     };
 
@@ -266,8 +266,7 @@ pub fn physics_bubble_add_remove(
 
         let relative_pos = DVec3::new(entity_rv[0], entity_rv[1], entity_rv[2]) - origin_pos;
 
-        if !disabled_entities.contains(entity)
-            && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS
+        if !disabled_entities.contains(entity) && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS
         {
             entity_rv[0] += rb.position.x as f64;
             entity_rv[1] += rb.position.y as f64;
@@ -283,20 +282,19 @@ pub fn physics_bubble_add_remove(
         } else if disabled_entities.contains(entity)
             && (relative_pos).length() < PHYSICS_ENABLE_RADIUS
         {
-            let relative_vel = DVec3::new(entity_rv[3], entity_rv[4], entity_rv[5]) - origin_vel;
-            println!("rel: {}", relative_pos);
-
-            entity_rv[0] -= relative_pos.x;
-            entity_rv[1] -= relative_pos.y;
-            entity_rv[2] -= relative_pos.z;
-            entity_rv[3] -= relative_vel.x;
-            entity_rv[4] -= relative_vel.y;
-            entity_rv[5] -= relative_vel.z;
+            // let relative_vel = DVec3::new(entity_rv[3], entity_rv[4], entity_rv[5]) - origin_vel;
+            // println!("rel: {}", relative_pos);
+            entity_rv[0] -= rb.position.x as f64;
+            entity_rv[1] -= rb.position.y as f64;
+            entity_rv[2] -= rb.position.z as f64;
+            entity_rv[3] -= rb.linear_velocity.x as f64;
+            entity_rv[4] -= rb.linear_velocity.y as f64;
+            entity_rv[5] -= rb.linear_velocity.z as f64;
 
             *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
 
-            rb.position.0 = relative_pos;
-            rb.linear_velocity.0 = relative_vel;
+            // rb.position.0 = relative_pos.as_vec3();
+            // rb.linear_velocity.0 = relative_vel.as_vec3();
             commands.entity(entity).remove::<RigidBodyDisabled>();
             println!("ENABLED SOMETHING");
         }
