@@ -13,6 +13,7 @@ pub fn fixed_physics_step(world: &mut World) {
         world
             .resource_mut::<Time<Physics>>()
             .advance_by(Duration::from_secs_f64(PHYS_DT));
+        world.resource_mut::<WorldTime>().epoch += PHYS_DT;
 
         world.run_schedule(ManualPhysics);
     }

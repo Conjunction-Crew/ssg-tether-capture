@@ -1,11 +1,10 @@
-use crate::components::orbit::{Earth, Orbit, Orbital, TetherNode, TrueParams};
+use crate::components::orbit::{Earth, Orbit, Orbital, TetherNode};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
 use crate::resources::orbital_entities::OrbitalEntities;
-use crate::resources::world_time::{self, WorldTime};
-use crate::systems::physics::PHYS_DT;
+use crate::resources::world_time::WorldTime;
 
 use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
@@ -14,11 +13,11 @@ use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, KeplerianPropagator};
-use nalgebra::Vector6;
+use nalgebra::{DVector, Vector6};
 
 fn calculate_com_rv(
     target_entity: Entity,
-    rigidbodies: &Query<RigidBodyQuery>,
+    rigidbodies: &Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
     nodes: &Query<(Entity, &TetherNode)>,
 ) -> Option<(DVec3, DVec3)> {
     let Ok(target_rb) = rigidbodies.get(target_entity) else {
@@ -54,30 +53,26 @@ fn calculate_com_rv(
 }
 
 pub fn ssg_propagate_keplerian(
-    orbitals: Query<(Entity, &mut TrueParams), With<RigidBody>>,
-    mut world_time: ResMut<WorldTime>,
+    orbitals: Query<(Entity, &Orbital), With<RigidBody>>,
+    world_time: Res<WorldTime>,
+    mut orbital_entities: ResMut<OrbitalEntities>,
 ) {
-    let prev_epoch = world_time.epoch;
-    let next_epoch = prev_epoch + PHYS_DT;
+    // for (_entity, orbital) in orbitals {
+    //     let Some(prop) = orbital_entities.propagators.get_mut(orbital.propagator_id) else {
+    //         return;
+    //     };
 
-    for (_entity, mut true_params) in orbitals {
-        let current = true_params.rv;
-        let propagator = KeplerianPropagator::from_eci(prev_epoch, current, 1.0);
-        if let Ok(next) = propagator.state_eci(next_epoch) {
-            true_params.rv = next;
-        }
-    }
-
-    world_time.epoch = next_epoch;
+    //     prop.propagate_to(world_time.epoch);
+    // }
 }
 
 pub fn init_orbitals(
     mut commands: Commands,
     mut orbital_entities: ResMut<OrbitalEntities>,
-    mut q: Query<(Entity, &Orbit, &mut Orbital, &mut TrueParams), Added<Orbit>>,
+    mut q: Query<(Entity, &Orbit, &mut Orbital), Added<Orbit>>,
 ) {
-    for (entity, init, mut orbital, mut true_params) in &mut q {
-        true_params.rv = match init {
+    for (entity, init, mut orbital) in &mut q {
+        match init {
             Orbit::FromParams(params) => params.rv,
             Orbit::FromElements(elements) => {
                 let epoch = Epoch::now();
@@ -107,7 +102,7 @@ pub fn init_orbitals(
 
 pub fn floating_origin(
     true_params_q: Query<
-        (&mut TrueParams, &mut Transform),
+        (&Orbital, &mut Transform),
         (
             With<RigidBodyDisabled>,
             Without<CameraTarget>,
@@ -115,7 +110,7 @@ pub fn floating_origin(
         ),
     >,
     target_params_s: Single<
-        (&mut TrueParams, &Transform),
+        &Orbital,
         (
             Without<RigidBodyDisabled>,
             With<CameraTarget>,
@@ -124,6 +119,8 @@ pub fn floating_origin(
     >,
     camera_s: Single<(&mut Atmosphere, &RenderLayers), (With<Camera3d>, Without<Orbital>)>,
     earth: Single<&mut Transform, (With<Earth>, Without<CameraTarget>)>,
+    mut orbitals: ResMut<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     let (mut atmosphere, render_layers) = camera_s.into_inner();
 
@@ -133,105 +130,157 @@ pub fn floating_origin(
     }
 
     // We want to position orbital objects relative to the camera's current target
-    let (target_params, target_transform) = target_params_s.into_inner();
+    let orbital = target_params_s.into_inner();
+
+    // Get current cartesian state of our target
+    let Some(prop) = orbitals.propagators.get(orbital.propagator_id) else {
+        return;
+    };
+
+    let Ok(target_rv) = prop.state_eci(world_time.epoch) else {
+        return;
+    };
 
     // Earth translation becomes new position
     let mut earth_transform = earth.into_inner();
     let new_translation = -Vec3::new(
-        (target_params.rv[0]) as f32,
-        (target_params.rv[1]) as f32,
-        (target_params.rv[2]) as f32,
+        (target_rv[0]) as f32,
+        (target_rv[1]) as f32,
+        (target_rv[2]) as f32,
     );
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;
 
     // Loop over each other true params to get position
-    for (true_params, mut transform) in true_params_q {
-        let new_translation = Vec3::new(
-            (true_params.rv[0] - target_params.rv[0]) as f32,
-            (true_params.rv[1] - target_params.rv[1]) as f32,
-            (true_params.rv[2] - target_params.rv[2]) as f32,
+    for (orbital, mut transform) in true_params_q {
+        let Some(prop) = orbitals.propagators.get(orbital.propagator_id) else {
+            continue;
+        };
+        let Ok(entity_rv) = prop.state_eci(world_time.epoch) else {
+            continue;
+        };
+
+        transform.translation = Vec3::new(
+            (entity_rv[0] - target_rv[0]) as f32,
+            (entity_rv[1] - target_rv[1]) as f32,
+            (entity_rv[2] - target_rv[2]) as f32,
         );
-        transform.translation = new_translation;
     }
 }
 
 pub fn target_entity_reset_origin(
-    true_params_query: Query<&mut TrueParams, Without<RigidBodyDisabled>>,
-    rigidbodies: Query<RigidBodyQuery>,
+    true_params_query: Query<(Entity, &mut Orbital), Without<RigidBodyDisabled>>,
+    mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
     nodes: Query<(Entity, &TetherNode)>,
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
+    mut orbitals: ResMut<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     let Ok(target_entity) = target_entity_q.single() else {
         return;
     };
 
-    let Some((com_pos, com_linvel)) = calculate_com_rv(target_entity, &rigidbodies, &nodes) else {
+    let Some((com_r, com_v)) = calculate_com_rv(target_entity, &rigidbodies, &nodes) else {
         return;
     };
 
-    if com_pos.length() <= MAX_ORIGIN_OFFSET {
+    if com_r.length() <= MAX_ORIGIN_OFFSET {
         return;
     }
 
-    // Accumulate current linvel and position into true_params before reset
-    for mut true_params in true_params_query {
-        true_params.rv[0] += com_pos.x as f64;
-        true_params.rv[1] += com_pos.y as f64;
-        true_params.rv[2] += com_pos.z as f64;
-        true_params.rv[3] += com_linvel.x as f64;
-        true_params.rv[4] += com_linvel.y as f64;
-        true_params.rv[5] += com_linvel.z as f64;
+    // Accumulate current linvel and position into rigidbodies
+    for (entity, orbital) in true_params_query {
+        if let Some(prop) = orbitals.propagators.get_mut(orbital.propagator_id) {
+            let Ok(rv) = prop.state_eci(world_time.epoch) else {
+                continue;
+            };
+
+            // Rebuild propagator
+            *prop = KeplerianPropagator::from_eci(
+                world_time.epoch,
+                rv + DVector::<f64>::from_vec(vec![
+                    com_r.x as f64,
+                    com_r.y as f64,
+                    com_r.z as f64,
+                    com_v.x as f64,
+                    com_v.y as f64,
+                    com_v.z as f64,
+                ]),
+                1.0,
+            );
+        }
     }
 
-    // Finally, reset all rigidbodies by the com params for the target
+    // Reset rigidbodies
     for mut rb in rigidbodies {
-        rb.position.0 -= com_pos;
-        rb.linear_velocity.0 -= com_linvel;
+        rb.position.0 -= com_r;
+        rb.linear_velocity.0 -= com_v;
     }
 }
 
 pub fn physics_bubble_add_remove(
     mut commands: Commands,
     disabled_entities: Query<(Entity, &RigidBodyDisabled)>,
-    orbital_entities: Query<(Entity, &mut TrueParams, RigidBodyQuery), Without<CameraTarget>>,
-    target_entity: Single<&TrueParams, With<CameraTarget>>,
+    orbital_entities: Query<(Entity, &mut Orbital, RigidBodyQuery), Without<CameraTarget>>,
+    target_entity: Single<&Orbital, With<CameraTarget>>,
+    mut orbitals: ResMut<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
-    let target_true = target_entity.into_inner();
+    let target_orbital = target_entity.into_inner();
+
+    // Get current cartesian state of our target
+    let Some(mut prop) = orbitals.propagators.get_mut(target_orbital.propagator_id) else {
+        return;
+    };
+
+    let Ok(target_rv) = prop.state_eci(world_time.epoch) else {
+        return;
+    };
 
     // Floating origin is currently at target_true
-    let origin_pos = DVec3::new(target_true.rv[0], target_true.rv[1], target_true.rv[2]);
-    let origin_vel = DVec3::new(target_true.rv[3], target_true.rv[4], target_true.rv[5]);
+    let origin_pos = DVec3::new(target_rv[0], target_rv[1], target_rv[2]);
+    let origin_vel = DVec3::new(target_rv[3], target_rv[4], target_rv[5]);
 
     // Loop through entities to see if any should be disabled/enabled
-    for (entity, mut true_params, mut rb) in orbital_entities {
-        let relative_pos =
-            DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]) - origin_pos;
+    for (entity, entity_orbital, mut rb) in orbital_entities {
+        let Some(prop) = orbitals.propagators.get_mut(entity_orbital.propagator_id) else {
+            continue;
+        };
+
+        let Ok(mut entity_rv) = prop.state_eci(world_time.epoch) else {
+            continue;
+        };
+
+        let relative_pos = DVec3::new(entity_rv[0], entity_rv[1], entity_rv[2]) - origin_pos;
 
         if !disabled_entities.contains(entity)
             && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS
         {
-            true_params.rv[0] += rb.position.x as f64;
-            true_params.rv[1] += rb.position.y as f64;
-            true_params.rv[2] += rb.position.z as f64;
-            true_params.rv[3] += rb.linear_velocity.x as f64;
-            true_params.rv[4] += rb.linear_velocity.y as f64;
-            true_params.rv[5] += rb.linear_velocity.z as f64;
+            entity_rv[0] += rb.position.x as f64;
+            entity_rv[1] += rb.position.y as f64;
+            entity_rv[2] += rb.position.z as f64;
+            entity_rv[3] += rb.linear_velocity.x as f64;
+            entity_rv[4] += rb.linear_velocity.y as f64;
+            entity_rv[5] += rb.linear_velocity.z as f64;
+
+            *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
+
             commands.entity(entity).insert(RigidBodyDisabled);
             println!("DISABLED SOMETHING");
         } else if disabled_entities.contains(entity)
             && (relative_pos).length() < PHYSICS_ENABLE_RADIUS
         {
-            let relative_vel =
-                DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5]) - origin_vel;
+            let relative_vel = DVec3::new(entity_rv[3], entity_rv[4], entity_rv[5]) - origin_vel;
             println!("rel: {}", relative_pos);
 
-            true_params.rv[0] -= relative_pos.x;
-            true_params.rv[1] -= relative_pos.y;
-            true_params.rv[2] -= relative_pos.z;
-            true_params.rv[3] -= relative_vel.x;
-            true_params.rv[4] -= relative_vel.y;
-            true_params.rv[5] -= relative_vel.z;
+            entity_rv[0] -= relative_pos.x;
+            entity_rv[1] -= relative_pos.y;
+            entity_rv[2] -= relative_pos.z;
+            entity_rv[3] -= relative_vel.x;
+            entity_rv[4] -= relative_vel.y;
+            entity_rv[5] -= relative_vel.z;
+
+            *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
 
             rb.position.0 = relative_pos;
             rb.linear_velocity.0 = relative_vel;
