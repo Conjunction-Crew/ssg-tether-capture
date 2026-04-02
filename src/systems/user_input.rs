@@ -56,3 +56,12 @@ pub fn toggle_origin(keyboard_input: Res<ButtonInput<KeyCode>>, mut settings: Re
         settings.dev_gizmos = !settings.dev_gizmos;
     }
 }
+
+pub fn toggle_capture_gizmos(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut settings: ResMut<Settings>,
+) {
+    if keyboard_input.just_pressed(KeyCode::KeyC) {
+        settings.capture_gizmos = !settings.capture_gizmos;
+    }
+}

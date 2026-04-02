@@ -26,7 +26,7 @@
       "parameters": {
         "max_velocity": 0.2,
         "max_force": 2.0,
-        "shrink_rate": 0.125
+        "shrink_rate": 0.01
       },
       "transitions": [
         {
@@ -49,7 +49,7 @@
       "parameters": {
         "max_velocity": 0.1,
         "max_force": 2.0,
-        "shrink_rate": 0.025
+        "shrink_rate": 0.005
       }
     }
   ]

@@ -208,10 +208,10 @@ pub fn setup_entities(
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
-                AngularVelocity {
-                    0: DVec3::new(0.01, 0.01, 0.01),
-                    ..default()
-                },
+                // AngularVelocity {
+                //     0: Vec3::new(0.01, 0.01, 0.01),
+                //     ..default()
+                // },
                 Transform::from_xyz(150.0, 0.0, 300.0),
             ))
             .id(),
@@ -242,7 +242,10 @@ pub fn setup_tether(
         ..default()
     });
 
-    let tether_node_mesh = Mesh::from(Cylinder::new((rope_radius / 8.0) as f32, tether_node_length as f32));
+    let tether_node_mesh = Mesh::from(Cylinder::new(
+        (rope_radius / 8.0) as f32,
+        tether_node_length as f32,
+    ));
     let tether_node_collider = Collider::convex_hull_from_mesh(&tether_node_mesh).unwrap();
     let tether_node_mesh = meshes.add(tether_node_mesh);
 

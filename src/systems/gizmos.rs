@@ -1,13 +1,25 @@
-use avian3d::prelude::{LinearVelocity, Position, RigidBodyDisabled};
+use avian3d::{
+    math::PI,
+    prelude::{LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery},
+};
 use bevy::{camera::visibility::RenderLayers, prelude::*};
 use brahe::{AngleFormat, KeplerianPropagator, utils::DOrbitStateProvider};
 use nalgebra::Vector6;
 
 use crate::{
+    components::capture_components::CaptureComponent,
     components::orbit::{Orbital, TrueParams},
     constants::{MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER},
-    resources::{settings::Settings, world_time::WorldTime},
+    resources::{
+        capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
+        orbital_entities::OrbitalEntities,
+        settings::Settings,
+        world_time::WorldTime,
+    },
 };
+
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct CaptureGizmoConfigGroup;
 
 pub fn orbital_gizmos(
     orbitals: Query<(
@@ -66,6 +78,131 @@ pub fn orbital_gizmos(
                     Srgba::new(0.0, 0.0, 1.0, 0.1),
                 )
                 .resolution(512);
+        }
+    }
+}
+
+fn capture_force_direction(
+    rel_r: Vec3,
+    rel_v: Vec3,
+    capture_entity_rotation: Quat,
+    capture_radius: f32,
+    max_velocity: f32,
+    tangent_sign: f32,
+) -> Vec3 {
+    let mut force_vec = Vec3::ZERO;
+
+    if rel_v.length() > max_velocity {
+        force_vec += -rel_v.normalize_or_zero();
+    }
+
+    if rel_r.length() < capture_radius * 0.8 {
+        force_vec += -rel_r.normalize_or_zero();
+    } else if rel_r.length() > capture_radius {
+        if rel_v.angle_between(rel_r) > PI / 2.0 {
+            force_vec += -rel_v.normalize_or_zero();
+        }
+
+        force_vec += rel_r.normalize_or_zero();
+    } else {
+        let up = (capture_entity_rotation * Vec3::X).normalize_or(Vec3::X);
+        let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
+            up
+        } else {
+            Vec3::X
+        };
+
+        force_vec += tangent_sign * tangent_axis.cross(rel_r).normalize_or_zero();
+    }
+
+    force_vec
+}
+
+pub fn capture_gizmos(
+    capture_entities: Query<(Entity, &CaptureComponent)>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    orbital_entities: Res<OrbitalEntities>,
+    rigidbodies: Query<RigidBodyQuery>,
+    capture_sphere_radius: Res<CaptureSphereRadius>,
+    settings: Res<Settings>,
+    mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
+) {
+    if !settings.capture_gizmos {
+        return;
+    }
+
+    for (capture_entity, capture_component) in capture_entities {
+        let Ok(capture_entity_rb) = rigidbodies.get(capture_entity) else {
+            continue;
+        };
+        let Some(plan) = capture_plan_lib.plans.get(&capture_component.plan_id) else {
+            continue;
+        };
+        let Some(state) = plan
+            .states
+            .iter()
+            .find(|state| state.id == capture_component.current_state)
+        else {
+            continue;
+        };
+        let Some(nodes) = orbital_entities.tethers.get(&plan.tether) else {
+            continue;
+        };
+
+        gizmos.sphere(
+            Isometry3d::new(
+                capture_entity_rb.position.0,
+                capture_entity_rb.rotation.0,
+            ),
+            capture_sphere_radius.radius,
+            Srgba::new(1.0, 0.5, 0.0, 0.2),
+        );
+        gizmos.sphere(
+            Isometry3d::new(
+                capture_entity_rb.position.0,
+                capture_entity_rb.rotation.0,
+            ),
+            capture_sphere_radius.radius + 1.0,
+            Srgba::new(0.0, 0.8, 0.4, 0.2),
+        );
+
+        let (base_max_velocity, capture_state) = if let Some(parameters) = &state.parameters {
+            let max_velocity = parameters
+                .get("max_velocity")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0) as f32;
+            (max_velocity, capture_component.current_state == "capture")
+        } else {
+            (0.0, capture_component.current_state == "capture")
+        };
+
+        for (idx, &node) in nodes.iter().enumerate() {
+            let Ok(rb) = rigidbodies.get(node) else {
+                continue;
+            };
+
+            let rel_r = capture_entity_rb.position.0 - rb.position.0;
+            let rel_v = rb.linear_velocity.0 - capture_entity_rb.linear_velocity.0;
+
+            let mut max_velocity = base_max_velocity;
+            let mut capture_radius = capture_sphere_radius.radius;
+            if idx != 0 {
+                max_velocity *= 0.9;
+                capture_radius += 1.0;
+            }
+
+            let tangent_sign = if idx != 0 && capture_state { -1.0 } else { 1.0 };
+            let force_vec = capture_force_direction(
+                rel_r,
+                rel_v,
+                capture_entity_rb.rotation.0,
+                capture_radius,
+                max_velocity,
+                tangent_sign,
+            );
+
+            gizmos.ray(rb.position.0, force_vec, Srgba::new(1.0, 0.0, 0.0, 0.2));
+            gizmos.ray(rb.position.0, rel_v, Srgba::new(0.0, 1.0, 0.0, 0.2));
         }
     }
 }

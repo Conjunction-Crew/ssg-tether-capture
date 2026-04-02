@@ -19,11 +19,12 @@ use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::systems::capture_algorithms::CaptureGizmoConfigGroup;
-use crate::systems::gizmos::orbital_gizmos;
+use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
 use crate::systems::physics::fixed_physics_step;
 use crate::systems::propagation::floating_origin;
-use crate::systems::user_input::{change_time_warp, toggle_map_view, toggle_origin};
+use crate::systems::user_input::{
+    change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
+};
 use crate::systems::user_interface::{
     map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
 };
@@ -87,6 +88,7 @@ pub fn create_app() -> App {
             (
                 toggle_map_view,
                 toggle_origin,
+                toggle_capture_gizmos,
                 change_time_warp,
                 update_time_warp_readout,
                 update_capture_telemetry,
