@@ -4,7 +4,8 @@ use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
 use crate::resources::orbital_entities::OrbitalEntities;
-use crate::resources::world_time::WorldTime;
+use crate::resources::world_time::{self, WorldTime};
+use crate::systems::physics::PHYS_DT;
 
 use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
@@ -15,21 +16,59 @@ use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, KeplerianPropagator};
 use nalgebra::Vector6;
 
-pub fn ssg_propagate_keplerian(
-    mut orbitals: Query<(Entity, &mut TrueParams, &mut Orbital), With<RigidBody>>,
-    mut world_time: ResMut<WorldTime>,
-    mut orbital_entities: ResMut<OrbitalEntities>,
-    time: Res<Time>,
-) {
-    let dt = time.delta_secs_f64() * world_time.multiplier;
-    world_time.epoch += dt;
+fn calculate_com_rv(
+    target_entity: Entity,
+    rigidbodies: &Query<RigidBodyQuery>,
+    nodes: &Query<(Entity, &TetherNode)>,
+) -> Option<(Vec3, Vec3)> {
+    let Ok(target_rb) = rigidbodies.get(target_entity) else {
+        return None;
+    };
 
-    for (_entity, mut true_params, orbital) in orbitals {
-        let propagator = &orbital_entities.propagators[orbital.propagator_id];
-        if let Ok(eci) = propagator.state_eci(world_time.epoch) {
-            true_params.rv = eci;
+    let mut weighted_pos = (target_rb.position.0
+        + target_rb.rotation.0 * target_rb.center_of_mass.0)
+        * target_rb.mass.value();
+    let mut weighted_linvel = target_rb.linear_velocity.0 * target_rb.mass.value();
+    let mut total_mass = target_rb.mass.value();
+
+    for (node_entity, node) in nodes.iter() {
+        if node.root != target_entity {
+            continue;
+        }
+
+        let Ok(node_rb) = rigidbodies.get(node_entity) else {
+            continue;
+        };
+
+        weighted_pos += (node_rb.position.0 + node_rb.rotation.0 * node_rb.center_of_mass.0)
+            * node_rb.mass.value();
+        weighted_linvel += node_rb.linear_velocity.0 * node_rb.mass.value();
+        total_mass += node_rb.mass.value();
+    }
+
+    if total_mass <= 0.0 {
+        return None;
+    }
+
+    Some((weighted_pos / total_mass, weighted_linvel / total_mass))
+}
+
+pub fn ssg_propagate_keplerian(
+    orbitals: Query<(Entity, &mut TrueParams), With<RigidBody>>,
+    mut world_time: ResMut<WorldTime>,
+) {
+    let prev_epoch = world_time.epoch;
+    let next_epoch = prev_epoch + PHYS_DT;
+
+    for (_entity, mut true_params) in orbitals {
+        let current = true_params.rv;
+        let propagator = KeplerianPropagator::from_eci(prev_epoch, current, 1.0);
+        if let Ok(next) = propagator.state_eci(next_epoch) {
+            true_params.rv = next;
         }
     }
+
+    world_time.epoch = next_epoch;
 }
 
 pub fn init_orbitals(
@@ -127,42 +166,11 @@ pub fn target_entity_reset_origin(
         return;
     };
 
-    let com_pos: Vec3;
-    let com_linvel: Vec3;
+    let Some((com_pos, com_linvel)) = calculate_com_rv(target_entity, &rigidbodies, &nodes) else {
+        return;
+    };
 
-    if let Ok(target_rb) = rigidbodies.get(target_entity) {
-        // Check if we are too far from the origin, or if linvel is too high
-        if target_rb.position.length() > MAX_ORIGIN_OFFSET {
-            // Calculate the average velocity/position relative to center of mass (COM)
-            let mut weighted_pos = (target_rb.position.0
-                + target_rb.rotation.0 * target_rb.center_of_mass.0)
-                * target_rb.mass.value();
-            let mut weighted_linvel = target_rb.linear_velocity.0 * target_rb.mass.value();
-            let mut total_mass = target_rb.mass.value();
-
-            for (node_entity, node) in nodes {
-                if node.root == target_entity {
-                    if let Ok(node_rb) = rigidbodies.get(node_entity) {
-                        weighted_pos += (node_rb.position.0
-                            + node_rb.rotation.0 * node_rb.center_of_mass.0)
-                            * node_rb.mass.value();
-                        weighted_linvel += node_rb.linear_velocity.0 * node_rb.mass.value();
-                        total_mass += node_rb.mass.value();
-                    }
-                }
-            }
-
-            // Total mass must be > 0
-            if total_mass <= 0.0 {
-                return;
-            }
-
-            com_pos = weighted_pos / total_mass;
-            com_linvel = weighted_linvel / total_mass;
-        } else {
-            return;
-        }
-    } else {
+    if com_pos.length() <= MAX_ORIGIN_OFFSET {
         return;
     }
 
@@ -182,6 +190,7 @@ pub fn target_entity_reset_origin(
         rb.linear_velocity.0 -= com_linvel;
     }
 }
+
 pub fn physics_bubble_add_remove(
     mut commands: Commands,
     disabled_entities: Query<(Entity, &RigidBodyDisabled)>,

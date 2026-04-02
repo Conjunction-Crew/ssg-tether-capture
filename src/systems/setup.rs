@@ -10,6 +10,7 @@ use crate::constants::*;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
+use crate::ui::state::UiScreen;
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
@@ -29,6 +30,7 @@ pub fn setup_lighting(mut commands: Commands) {
 
     // Sun
     commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
         RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
         DirectionalLight {
             illuminance: light_consts::lux::AMBIENT_DAYLIGHT,
@@ -45,9 +47,10 @@ pub fn setup_lighting(mut commands: Commands) {
 
     // Moon
     commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
         RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
         DirectionalLight {
-            illuminance: light_consts::lux::CIVIL_TWILIGHT,
+            illuminance: light_consts::lux::FULL_MOON_NIGHT,
             shadows_enabled: true,
             ..default()
         },
@@ -84,6 +87,7 @@ pub fn setup_celestial(
         "Earth".to_string(),
         commands
             .spawn((
+                DespawnOnExit(UiScreen::Sim),
                 Earth,
                 RenderLayers::layer(SCENE_LAYER),
                 Orbit::FromParams(TrueParams {
@@ -106,6 +110,7 @@ pub fn setup_celestial(
         "Map_Earth".to_string(),
         commands
             .spawn((
+                DespawnOnExit(UiScreen::Sim),
                 RenderLayers::layer(MAP_LAYER),
                 Mesh3d(meshes.add(map_earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
@@ -129,6 +134,7 @@ pub fn setup_entities(
 
     // Origin Sphere
     commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
         Origin,
         Visibility::Hidden,
         RenderLayers::layer(SCENE_LAYER),
@@ -146,6 +152,7 @@ pub fn setup_entities(
 
     // Set up 3D scene camera
     commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
         RenderLayers::layer(SCENE_LAYER),
         Camera3d::default(),
         Bloom {
@@ -153,14 +160,15 @@ pub fn setup_entities(
             ..default()
         },
         AutoExposure {
-            filter: RangeInclusive::new(0.005, 0.995),
-            speed_brighten: 5.0,
-            speed_darken: 5.0,
+            filter: RangeInclusive::new(0.10, 0.90),
+            speed_brighten: 3.0,
+            speed_darken: 1.0,
             compensation_curve: compensation_curves.add(
                 AutoExposureCompensationCurve::from_curve(LinearSpline::new([
-                    vec2(-4.0, -4.0),
-                    vec2(0.0, 0.0),
+                    vec2(-4.0, -1.0),
+                    vec2(0.0, 0.75),
                     vec2(2.0, 1.0),
+                    vec2(4.0, 1.5),
                 ]))
                 .unwrap(),
             ),
@@ -211,6 +219,7 @@ pub fn setup_entities(
         "Satellite1".to_string(),
         commands
             .spawn((
+                DespawnOnExit(UiScreen::Sim),
                 SceneRoot(scene),
                 RigidBody::Dynamic,
                 Orbit::FromElements(ISS_ORBIT),
@@ -218,10 +227,10 @@ pub fn setup_entities(
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
                 AngularVelocity {
-                    0: Vec3::new(0.2, 0.2, 0.0),
+                    0: Vec3::new(0.01, 0.01, 0.01),
                     ..default()
                 },
-                Transform::from_xyz(0.0, 4.0, 20.0),
+                Transform::from_xyz(150.0, 0.0, 300.0),
             ))
             .id(),
     );
@@ -235,6 +244,8 @@ pub fn setup_tether(
 ) {
     let root_tail_radius = 0.50;
     let rope_radius = 0.25;
+    let tether_node_length = DIST_BETWEEN_JOINTS;
+    let tether_node_half_length = tether_node_length * 0.5;
 
     let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius)));
     let sphere_collider = Collider::sphere(root_tail_radius);
@@ -249,12 +260,14 @@ pub fn setup_tether(
         ..default()
     });
 
-    let sphere_mesh_small = meshes.add(Mesh::from(Sphere::new(rope_radius)));
-    let sphere_collider_small = Collider::sphere(rope_radius);
+    let tether_node_mesh = Mesh::from(Cylinder::new(rope_radius / 8.0, tether_node_length));
+    let tether_node_collider = Collider::convex_hull_from_mesh(&tether_node_mesh).unwrap();
+    let tether_node_mesh = meshes.add(tether_node_mesh);
 
     // The root tether node
     let tether_root = commands
         .spawn((
+            DespawnOnExit(UiScreen::Sim),
             CameraTarget,
             RenderLayers::layer(SCENE_LAYER),
             RigidBody::Dynamic,
@@ -272,32 +285,42 @@ pub fn setup_tether(
         .insert("Tether1".to_string(), vec![tether_root]);
 
     let mut prev_sphere = tether_root;
-    let mut prev_radius = root_tail_radius;
+    let mut prev_half_extent = root_tail_radius;
     let mut prev_y = 0.0;
-    let surface_gap = 0.00;
+    let interior_node_count =
+        ((TETHER_LENGTH - 2.0 * root_tail_radius) / tether_node_length).max(0.0) as u32;
+    let interval_count = interior_node_count + 1;
+    let surface_gap = if interval_count > 0 {
+        (TETHER_LENGTH - 2.0 * root_tail_radius - interior_node_count as f32 * tether_node_length)
+            / interval_count as f32
+    } else {
+        0.0
+    };
+    let tail_index = interior_node_count + 1;
 
-    for i in 1..NUM_TETHER_JOINTS {
-        let (mesh, collider, mass, curr_radius) = if i == NUM_TETHER_JOINTS - 1 {
+    for i in 1..=tail_index {
+        let (mesh, collider, mass, curr_half_extent) = if i == tail_index {
             (
                 sphere_mesh.clone(),
                 sphere_collider.clone(),
-                1.0,
+                2.0,
                 root_tail_radius,
             )
         } else {
             (
-                sphere_mesh_small.clone(),
-                sphere_collider_small.clone(),
+                tether_node_mesh.clone(),
+                tether_node_collider.clone(),
                 0.1,
-                rope_radius,
+                tether_node_half_length,
             )
         };
 
-        let link_spacing = prev_radius + curr_radius + surface_gap;
+        let link_spacing = prev_half_extent + curr_half_extent + surface_gap;
         let y = prev_y + link_spacing;
 
         let sphere = commands
             .spawn((
+                DespawnOnExit(UiScreen::Sim),
                 RenderLayers::layer(SCENE_LAYER),
                 TetherNode { root: tether_root },
                 RigidBody::Dynamic,
@@ -309,12 +332,21 @@ pub fn setup_tether(
             ))
             .id();
 
-        let anchor = Vec3::new(0.0, prev_y + link_spacing * 0.5, 0.0);
+        let anchor = Vec3::new(0.0, prev_y + prev_half_extent + surface_gap * 0.5, 0.0);
 
-        commands.spawn(SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor));
+        commands.spawn((
+            DespawnOnExit(UiScreen::Sim),
+            // SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor),
+            DistanceJoint::new(prev_sphere, sphere).with_anchor(anchor),
+            JointDamping {
+                linear: 1.0,  // Linear damping
+                angular: 1.0, // Angular damping
+            },
+            JointCollisionDisabled,
+        ));
 
         prev_sphere = sphere;
-        prev_radius = curr_radius;
+        prev_half_extent = curr_half_extent;
         prev_y = y;
     }
 
@@ -324,31 +356,4 @@ pub fn setup_tether(
         .get_mut(&"Tether1".to_string())
         .expect("Error getting tether")
         .push(prev_sphere);
-}
-
-pub fn load_capture_plans(mut capture_plan_lib: ResMut<CapturePlanLibrary>) {
-    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
-
-    for plan_file_result in fs::read_dir(&plans_dir).expect("failed to read capture_plans dir") {
-        if let Ok(plan_file) = plan_file_result {
-            let path = plan_file.path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "json")
-            {
-                if let Ok(raw_json) = fs::read_to_string(&path) {
-                    if let Ok(plan) = serde_json::from_str(&raw_json) {
-                        if let Some(plan_id) = path.file_stem() {
-                            capture_plan_lib.plans.insert(
-                                String::from(plan_id.to_str().expect("failed to get plan name!")),
-                                plan,
-                            );
-                        }
-                    } else {
-                        println!("Failed to parse plan json");
-                    }
-                }
-            }
-        }
-    }
 }

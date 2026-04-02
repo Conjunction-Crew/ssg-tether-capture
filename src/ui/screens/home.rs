@@ -1,5 +1,8 @@
-use bevy::prelude::*;
+use std::fs;
+use std::path::PathBuf;
+
 use bevy::camera::visibility::RenderLayers;
+use bevy::prelude::*;
 
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plans::CapturePlanLibrary;
@@ -16,23 +19,64 @@ pub struct HomeProjectButton {
     pub project_id: String,
 }
 
+pub fn load_capture_plans(capture_plan_lib: &mut CapturePlanLibrary) {
+    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
+
+    for plan_file_result in fs::read_dir(&plans_dir).expect("failed to read capture_plans dir") {
+        if let Ok(plan_file) = plan_file_result {
+            let path = plan_file.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                if let Ok(raw_json) = fs::read_to_string(&path) {
+                    if let Ok(plan) = serde_json::from_str(&raw_json) {
+                        if let Some(plan_id) = path.file_stem() {
+                            capture_plan_lib.plans.insert(
+                                String::from(plan_id.to_str().expect("failed to get plan name!")),
+                                plan,
+                            );
+                        }
+                    } else {
+                        println!("Failed to parse plan json");
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn spawn_home_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
     projects: Res<ProjectCatalog>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
+    mut capture_plan_lib: ResMut<CapturePlanLibrary>,
 ) {
+    load_capture_plans(&mut capture_plan_lib);
+
+    println!(
+        "num plans loaded (plugin): {}",
+        capture_plan_lib.plans.len()
+    );
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     let project_count_label = format!(
         "{} project{} in workspace",
         projects.projects.len(),
-        if projects.projects.len() == 1 { "" } else { "s" }
+        if projects.projects.len() == 1 {
+            ""
+        } else {
+            "s"
+        }
     );
     let capture_plan_count_label = format!(
         "{} capture plan{} in workspace",
         capture_plan_lib.plans.len(),
-        if capture_plan_lib.plans.len() == 1 { "" } else { "s" }
+        if capture_plan_lib.plans.len() == 1 {
+            ""
+        } else {
+            "s"
+        }
     );
     let working_directory = projects
         .projects
@@ -304,21 +348,26 @@ pub fn spawn_home_screen(
                                 ..default()
                             })
                             .with_children(|list| {
-                                for (plan_name, _plan) in &capture_plan_lib.plans {
+                                for (plan_name, plan) in &capture_plan_lib.plans {
                                     list.spawn((
+                                        Button,
+                                        HomeProjectButton {
+                                            project_id: plan_name.clone(),
+                                        },
                                         Node {
                                             width: px(340.0),
                                             max_width: percent(100),
-                                            min_height: px(80.0),
+                                            min_height: px(148.0),
                                             flex_direction: FlexDirection::Column,
+                                            justify_content: JustifyContent::SpaceBetween,
                                             padding: UiRect::all(px(14.0)),
                                             row_gap: px(8.0),
                                             ..default()
                                         },
                                         BackgroundColor(theme.panel_background),
                                     ))
-                                    .with_children(|card| {
-                                        card.spawn((
+                                    .with_children(|button| {
+                                        button.spawn((
                                             Text::new(plan_name.clone()),
                                             TextFont {
                                                 font: font.clone(),
@@ -328,7 +377,7 @@ pub fn spawn_home_screen(
                                             TextColor(theme.text_primary),
                                         ));
 
-                                        card.spawn((
+                                        button.spawn((
                                             Text::new(plan_name.clone()),
                                             TextFont {
                                                 font: font.clone(),

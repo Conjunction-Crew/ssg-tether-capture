@@ -50,6 +50,6 @@ Responsible for the entire Bevy-native UI layer. Registers:
 - `ProjectCatalog` and `SelectedProject` resources
 - `UiTheme` resource
 - `UiEvent` message type
-- Screen lifecycle systems: spawn/cleanup/interaction handlers for `HomeScreen` and `ProjectDetailScreen`
+- Screen lifecycle systems: spawn/cleanup/interaction handlers for `HomeScreen` and `SimScreen`
 
-State transitions are driven by `UiEvent` messages — `OpenProject(id)` transitions to `ProjectDetail`, `BackToHome` returns to `Home`.
+State transitions are driven by `UiEvent` messages — `OpenProject(id)` transitions to `Sim`, `BackToHome` returns to `Home`.

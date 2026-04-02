@@ -1,13 +1,41 @@
 use bevy::prelude::*;
 
 #[derive(Component, Debug, Clone)]
-pub struct TrackObject {
-    pub entity: Option<Entity>,
+pub struct TimeWarpReadout;
+
+#[derive(Component, Debug, Clone)]
+pub struct CaptureTelemetryReadout {
+    pub target_entity: Option<Entity>,
+    pub reference_entity: Option<Entity>,
+    pub target_label: String,
 }
 
-impl Default for TrackObject {
+impl Default for CaptureTelemetryReadout {
     fn default() -> Self {
-        Self { entity: None }
+        Self {
+            target_entity: None,
+            reference_entity: None,
+            target_label: String::new(),
+        }
+    }
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct CaptureGuidanceReadout {
+    pub target_entity: Option<Entity>,
+    pub reference_entity: Option<Entity>,
+    pub target_label: String,
+    pub plan_id: String,
+}
+
+impl Default for CaptureGuidanceReadout {
+    fn default() -> Self {
+        Self {
+            target_entity: None,
+            reference_entity: None,
+            target_label: String::new(),
+            plan_id: String::new(),
+        }
     }
 }
 

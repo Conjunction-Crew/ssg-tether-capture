@@ -23,7 +23,7 @@ The UI screen is controlled by a Bevy `States` enum:
 ```rust
 pub enum UiScreen {
     Home,          // default
-    ProjectDetail,
+    Sim,
 }
 ```
 
@@ -37,8 +37,8 @@ State transitions happen via `UiEvent`. Each state change triggers:
 
 ```rust
 pub enum UiEvent {
-    OpenProject(String),  // transition Home → ProjectDetail
-    BackToHome,           // transition ProjectDetail → Home
+    OpenProject(String),  // transition Home → Sim
+    BackToHome,           // transition Sim → Home
 }
 ```
 
@@ -55,7 +55,7 @@ Shown on `UiScreen::Home`. Displays:
 - A workspace path and project count summary.
 - A list of project buttons, one per `ProjectCatalog` entry.
 
-Clicking a project button sends `UiEvent::OpenProject(id)`, transitioning to `ProjectDetail`.
+Clicking a project button sends `UiEvent::OpenProject(id)`, transitioning to `Sim`.
 
 Key components:
 - `HomeScreen` — marker for the root node (used for cleanup).
@@ -63,14 +63,14 @@ Key components:
 
 ### Project detail screen (`screens/project_detail.rs`)
 
-Shown on `UiScreen::ProjectDetail`. Displays details of the `SelectedProject` and lists its associated orbital entities from `OrbitalEntities`.
+Shown on `UiScreen::Sim`. Displays details of the `SelectedProject` and lists its associated orbital entities from `OrbitalEntities`.
 
 Includes a back button that sends `UiEvent::BackToHome`.
 
 Also spawns `TrackObject` and `OrbitLabel` components to connect UI labels to orbital entities.
 
 Key components:
-- `ProjectDetailScreen` — marker for the root node (used for cleanup).
+- `SimScreen` — marker for the root node (used for cleanup).
 - `BackButton` — marks the back navigation button.
 
 ---
