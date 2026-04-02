@@ -210,8 +210,8 @@ pub fn capture_state_machine_update(
 
                     // If this node is not root, reduce max velocity, and sphere radius
                     if idx != 0 {
-                        max_velocity *= 0.9;
-                        max_force /= 2.0;
+                        // max_velocity *= 0.7;
+                        // max_force /= 2.0;
                         capture_radius += 1.0;
                     }
 

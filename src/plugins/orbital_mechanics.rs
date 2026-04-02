@@ -39,7 +39,6 @@ impl Plugin for OrbitalMechanicsPlugin {
                     dev_gizmos,
                     capture_gizmos,
                 )
-                    .chain()
                     .run_if(in_state(UiScreen::Sim)),
             )
             .add_systems(

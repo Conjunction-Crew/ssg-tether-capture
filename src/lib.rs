@@ -114,7 +114,7 @@ pub fn create_app() -> App {
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(Gravity(DVec3::ZERO))
-        .insert_resource(SubstepCount(12))
+        .insert_resource(SubstepCount(4))
         .init_resource::<CapturePlanLibrary>();
 
     app

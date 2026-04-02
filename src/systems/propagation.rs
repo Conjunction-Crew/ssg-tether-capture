@@ -189,15 +189,19 @@ pub fn target_entity_reset_origin(
         return;
     };
 
-    let Some((com_r, com_v)) = calculate_com_rv(target_entity, &rigidbodies, &nodes) else {
+    let Ok(target_rb) = rigidbodies.get(target_entity) else {
         return;
     };
 
-    if com_r.length() <= MAX_ORIGIN_OFFSET {
+    if target_rb.position.0.length() <= MAX_ORIGIN_OFFSET {
         return;
     }
 
     println!("RESETTING! EPOCH: {}", world_time.epoch);
+
+    let Some((com_r, com_v)) = calculate_com_rv(target_entity, &rigidbodies, &nodes) else {
+        return;
+    };
 
     // Accumulate current linvel and position into rigidbodies
     println!("Num to reset: {}", true_params_query.iter().len());
@@ -242,17 +246,13 @@ pub fn physics_bubble_add_remove(
     let target_orbital = target_entity.into_inner();
 
     // Get current cartesian state of our target
-    let Some(prop) = orbitals.propagators.get_mut(target_orbital.propagator_id) else {
+    let Some(origin_prop) = orbitals.propagators.get_mut(target_orbital.propagator_id) else {
         return;
     };
 
-    let Ok(target_rv) = prop.state_eci(world_time.epoch) else {
+    let Ok(mut target_rv) = origin_prop.state_eci(world_time.epoch) else {
         return;
     };
-
-    // Floating origin is currently at target_true
-    let origin_pos = DVec3::new(target_rv[0], target_rv[1], target_rv[2]);
-    let origin_vel = DVec3::new(target_rv[3], target_rv[4], target_rv[5]);
 
     // Loop through entities to see if any should be disabled/enabled
     for (entity, entity_orbital, mut rb) in orbital_entities {
@@ -264,25 +264,21 @@ pub fn physics_bubble_add_remove(
             continue;
         };
 
-        let relative_pos = DVec3::new(entity_rv[0], entity_rv[1], entity_rv[2]) - origin_pos;
+        if !disabled_entities.contains(entity) && rb.position.0.length() > PHYSICS_DISABLE_RADIUS {
+            target_rv[0] += rb.position.x as f64;
+            target_rv[1] += rb.position.y as f64;
+            target_rv[2] += rb.position.z as f64;
+            target_rv[3] += rb.linear_velocity.x as f64;
+            target_rv[4] += rb.linear_velocity.y as f64;
+            target_rv[5] += rb.linear_velocity.z as f64;
 
-        if !disabled_entities.contains(entity) && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS
-        {
-            entity_rv[0] += rb.position.x as f64;
-            entity_rv[1] += rb.position.y as f64;
-            entity_rv[2] += rb.position.z as f64;
-            entity_rv[3] += rb.linear_velocity.x as f64;
-            entity_rv[4] += rb.linear_velocity.y as f64;
-            entity_rv[5] += rb.linear_velocity.z as f64;
-
-            *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
+            *prop = KeplerianPropagator::from_eci(world_time.epoch, target_rv, 1.0);
 
             commands.entity(entity).insert(RigidBodyDisabled);
             println!("DISABLED SOMETHING");
         } else if disabled_entities.contains(entity)
-            && (relative_pos).length() < PHYSICS_ENABLE_RADIUS
+            && rb.position.0.length() < PHYSICS_ENABLE_RADIUS
         {
-            // let relative_vel = DVec3::new(entity_rv[3], entity_rv[4], entity_rv[5]) - origin_vel;
             // println!("rel: {}", relative_pos);
             entity_rv[0] -= rb.position.x as f64;
             entity_rv[1] -= rb.position.y as f64;
@@ -291,10 +287,8 @@ pub fn physics_bubble_add_remove(
             entity_rv[4] -= rb.linear_velocity.y as f64;
             entity_rv[5] -= rb.linear_velocity.z as f64;
 
-            *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
+            // *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
 
-            // rb.position.0 = relative_pos.as_vec3();
-            // rb.linear_velocity.0 = relative_vel.as_vec3();
             commands.entity(entity).remove::<RigidBodyDisabled>();
             println!("ENABLED SOMETHING");
         }

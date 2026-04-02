@@ -2,7 +2,11 @@ use avian3d::{
     math::PI,
     prelude::{LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery},
 };
-use bevy::{camera::visibility::RenderLayers, prelude::*};
+use bevy::{
+    camera::visibility::RenderLayers,
+    math::{DQuat, DVec3},
+    prelude::*,
+};
 use brahe::{AngleFormat, KeplerianPropagator, utils::DOrbitStateProvider};
 use nalgebra::Vector6;
 
@@ -83,14 +87,14 @@ pub fn orbital_gizmos(
 }
 
 fn capture_force_direction(
-    rel_r: Vec3,
-    rel_v: Vec3,
-    capture_entity_rotation: Quat,
-    capture_radius: f32,
-    max_velocity: f32,
-    tangent_sign: f32,
-) -> Vec3 {
-    let mut force_vec = Vec3::ZERO;
+    rel_r: DVec3,
+    rel_v: DVec3,
+    capture_entity_rotation: DQuat,
+    capture_radius: f64,
+    max_velocity: f64,
+    tangent_sign: f64,
+) -> DVec3 {
+    let mut force_vec = DVec3::ZERO;
 
     if rel_v.length() > max_velocity {
         force_vec += -rel_v.normalize_or_zero();
@@ -105,11 +109,11 @@ fn capture_force_direction(
 
         force_vec += rel_r.normalize_or_zero();
     } else {
-        let up = (capture_entity_rotation * Vec3::X).normalize_or(Vec3::X);
+        let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
         let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
             up
         } else {
-            Vec3::X
+            DVec3::X
         };
 
         force_vec += tangent_sign * tangent_axis.cross(rel_r).normalize_or_zero();
@@ -151,18 +155,18 @@ pub fn capture_gizmos(
 
         gizmos.sphere(
             Isometry3d::new(
-                capture_entity_rb.position.0,
-                capture_entity_rb.rotation.0,
+                capture_entity_rb.position.as_vec3(),
+                capture_entity_rb.rotation.as_quat(),
             ),
-            capture_sphere_radius.radius,
+            capture_sphere_radius.radius as f32,
             Srgba::new(1.0, 0.5, 0.0, 0.2),
         );
         gizmos.sphere(
             Isometry3d::new(
-                capture_entity_rb.position.0,
-                capture_entity_rb.rotation.0,
+                capture_entity_rb.position.as_vec3(),
+                capture_entity_rb.rotation.as_quat(),
             ),
-            capture_sphere_radius.radius + 1.0,
+            capture_sphere_radius.radius as f32 + 1.0,
             Srgba::new(0.0, 0.8, 0.4, 0.2),
         );
 
@@ -170,7 +174,7 @@ pub fn capture_gizmos(
             let max_velocity = parameters
                 .get("max_velocity")
                 .and_then(|value| value.as_f64())
-                .unwrap_or(0.0) as f32;
+                .unwrap_or(0.0) as f64;
             (max_velocity, capture_component.current_state == "capture")
         } else {
             (0.0, capture_component.current_state == "capture")
@@ -201,8 +205,16 @@ pub fn capture_gizmos(
                 tangent_sign,
             );
 
-            gizmos.ray(rb.position.0, force_vec, Srgba::new(1.0, 0.0, 0.0, 0.2));
-            gizmos.ray(rb.position.0, rel_v, Srgba::new(0.0, 1.0, 0.0, 0.2));
+            gizmos.ray(
+                rb.position.as_vec3(),
+                force_vec.as_vec3(),
+                Srgba::new(1.0, 0.0, 0.0, 0.2),
+            );
+            gizmos.ray(
+                rb.position.as_vec3(),
+                rel_v.as_vec3(),
+                Srgba::new(0.0, 1.0, 0.0, 0.2),
+            );
         }
     }
 }
