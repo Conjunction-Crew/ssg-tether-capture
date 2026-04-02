@@ -85,6 +85,7 @@ pub fn setup_celestial(
             .spawn((
                 DespawnOnExit(UiScreen::Sim),
                 Earth,
+                RigidBodyDisabled,
                 RenderLayers::layer(SCENE_LAYER),
                 Orbit::FromParams(TrueParams {
                     rv: Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),

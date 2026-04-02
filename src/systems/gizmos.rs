@@ -70,7 +70,11 @@ pub fn orbital_gizmos(
     }
 }
 
-pub fn dev_gizmos(mut gizmos: Gizmos, settings: Res<Settings>) {
+pub fn dev_gizmos(
+    true_params_query: Query<(&Orbital, &Transform), Without<RigidBodyDisabled>>,
+    mut gizmos: Gizmos,
+    settings: Res<Settings>,
+) {
     if !settings.dev_gizmos {
         return;
     }
@@ -97,4 +101,12 @@ pub fn dev_gizmos(mut gizmos: Gizmos, settings: Res<Settings>) {
         MAX_ORIGIN_OFFSET as f32,
         Srgba::new(1.0, 0.0, 1.0, 0.2),
     );
+
+    for (orbital, transform) in true_params_query {
+        gizmos.arrow(
+            transform.translation + Vec3::new(10.0, 10.0, 10.0),
+            transform.translation,
+            Color::srgb(0.0, 1.0, 0.5),
+        );
+    }
 }

@@ -83,8 +83,11 @@ pub fn init_orbitals(
                     1.0,
                 );
                 if let Ok(eci) = propagator.state_eci(epoch) {
-                    orbital_entities.propagators.push(propagator);
+                    orbital_entities
+                        .propagators
+                        .push(KeplerianPropagator::from_eci(epoch, eci, 1.0));
                     orbital.propagator_id = orbital_entities.propagators.len() - 1;
+                    println!("ECI Initialized to: {}", eci);
                     eci
                 } else {
                     Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -101,8 +104,8 @@ pub fn init_orbitals(
 }
 
 pub fn floating_origin(
-    true_params_q: Query<
-        (&Orbital, &mut Transform),
+    rb_disabled: Query<
+        (&Orbital, RigidBodyQuery),
         (
             With<RigidBodyDisabled>,
             Without<CameraTarget>,
@@ -110,7 +113,7 @@ pub fn floating_origin(
         ),
     >,
     target_params_s: Single<
-        &Orbital,
+        (&Orbital, &Transform),
         (
             Without<RigidBodyDisabled>,
             With<CameraTarget>,
@@ -130,10 +133,10 @@ pub fn floating_origin(
     }
 
     // We want to position orbital objects relative to the camera's current target
-    let orbital = target_params_s.into_inner();
+    let (target_orbital, target_transform) = target_params_s.into_inner();
 
     // Get current cartesian state of our target
-    let Some(prop) = orbitals.propagators.get(orbital.propagator_id) else {
+    let Some(prop) = orbitals.propagators.get(target_orbital.propagator_id) else {
         return;
     };
 
@@ -144,15 +147,15 @@ pub fn floating_origin(
     // Earth translation becomes new position
     let mut earth_transform = earth.into_inner();
     let new_translation = -Vec3::new(
-        (target_rv[0]) as f32,
-        (target_rv[1]) as f32,
-        (target_rv[2]) as f32,
+        (target_rv[0]) as f32 + target_transform.translation.x,
+        (target_rv[1]) as f32 + target_transform.translation.y,
+        (target_rv[2]) as f32 + target_transform.translation.z,
     );
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;
 
     // Loop over each other true params to get position
-    for (orbital, mut transform) in true_params_q {
+    for (orbital, mut rb) in rb_disabled {
         let Some(prop) = orbitals.propagators.get(orbital.propagator_id) else {
             continue;
         };
@@ -160,16 +163,22 @@ pub fn floating_origin(
             continue;
         };
 
-        transform.translation = Vec3::new(
+        // Set disabled bodies rigidbody values to their global relative state (for capture algorithm)
+        rb.position.0 = Vec3::new(
             (entity_rv[0] - target_rv[0]) as f32,
             (entity_rv[1] - target_rv[1]) as f32,
             (entity_rv[2] - target_rv[2]) as f32,
+        );
+        rb.linear_velocity.0 = Vec3::new(
+            (entity_rv[3] - target_rv[3]) as f32,
+            (entity_rv[4] - target_rv[4]) as f32,
+            (entity_rv[5] - target_rv[5]) as f32,
         );
     }
 }
 
 pub fn target_entity_reset_origin(
-    true_params_query: Query<(Entity, &mut Orbital), Without<RigidBodyDisabled>>,
+    true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
     mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
     nodes: Query<(Entity, &TetherNode)>,
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
@@ -188,26 +197,30 @@ pub fn target_entity_reset_origin(
         return;
     }
 
+    println!("RESETTING! EPOCH: {}", world_time.epoch);
+
     // Accumulate current linvel and position into rigidbodies
-    for (entity, orbital) in true_params_query {
+    println!("Num to reset: {}", true_params_query.iter().len());
+    for orbital in true_params_query {
         if let Some(prop) = orbitals.propagators.get_mut(orbital.propagator_id) {
             let Ok(rv) = prop.state_eci(world_time.epoch) else {
                 continue;
             };
 
-            // Rebuild propagator
-            *prop = KeplerianPropagator::from_eci(
-                world_time.epoch,
-                rv + DVector::<f64>::from_vec(vec![
+            let new_rv = rv
+                + DVector::<f64>::from_vec(vec![
                     com_r.x as f64,
                     com_r.y as f64,
                     com_r.z as f64,
                     com_v.x as f64,
                     com_v.y as f64,
                     com_v.z as f64,
-                ]),
-                1.0,
-            );
+                ]);
+
+            // Rebuild propagator
+            *prop = KeplerianPropagator::from_eci(world_time.epoch, new_rv, 1.0);
+
+            println!("New propagator, New rv: {}", new_rv);
         }
     }
 
