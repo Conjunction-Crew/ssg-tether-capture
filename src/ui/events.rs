@@ -8,4 +8,8 @@ pub enum UiEvent {
         entity: Option<Entity>,
         plan_id: String,
     },
+    ToggleMapView,
+    ToggleOrigin,
+    ChangeTimeWarp { increase: bool },
+    CycleCameraTarget,
 }
