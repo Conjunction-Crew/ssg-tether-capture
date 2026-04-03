@@ -46,10 +46,21 @@ Registers three input systems in `Update` and one tracking system in `PostUpdate
 Responsible for the entire Bevy-native UI layer. Registers:
 
 - A dedicated `UiCamera` entity on its own render layer (`UI_LAYER = 2`)
-- `UiScreen` state (an enum-based Bevy `States`)
-- `ProjectCatalog` and `SelectedProject` resources
-- `UiTheme` resource
+- `UiScreen` state (`WorkingDirectorySetup` → `Home` → `Sim` state machine)
+- `SelectedProject`, `UiTheme`, `WorkingDirectory`, `NewCapturePlanForm` resources
 - `UiEvent` message type
-- Screen lifecycle systems: spawn/cleanup/interaction handlers for `HomeScreen` and `SimScreen`
+- Screen lifecycle systems: spawn/cleanup/interaction handlers for `WorkingDirectorySetupScreen`, `HomeScreen`, `SimScreen`, and `NewCapturePlanModal`
+- Input field systems: `input_field_interaction`, `input_field_keyboard`, `input_field_display`
+- Form sync system: `sync_form_fields`
+- Polling systems: `poll_file_dialog_task`, `poll_new_plan_modal`, `poll_home_plan_refresh`
 
-State transitions are driven by `UiEvent` messages — `OpenProject(id)` transitions to `Sim`, `BackToHome` returns to `Home`.
+State transitions are driven by `UiEvent` messages processed by `handle_ui_events`:
+
+| Event | Transition |
+|---|---|
+| `WorkingDirectorySelected(path)` | `WorkingDirectorySetup` → `Home` |
+| `ChangeWorkingDirectory` | `Home` → `WorkingDirectorySetup` |
+| `OpenProject(id)` | `Home` → `Sim` (only if `id` exists in `CapturePlanLibrary`) |
+| `BackToHome` | `Sim` → `Home` |
+
+The `poll_home_plan_refresh` system watches the `UserPlansDirty` flag. When set, it rebuilds the home screen plan list in-place without triggering a full screen transition.
