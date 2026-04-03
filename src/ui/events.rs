@@ -4,6 +4,8 @@ use bevy::prelude::*;
 pub enum UiEvent {
     OpenProject(String),
     BackToHome,
+    WorkingDirectorySelected(String),
+    BrowseForWorkingDirectory,
     CaptureDebris {
         entity: Option<Entity>,
         plan_id: String,

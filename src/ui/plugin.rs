@@ -21,8 +21,15 @@ use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     spawn_project_detail_screen,
 };
+use crate::ui::screens::working_directory_setup::{
+    cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
+    working_directory_setup_interactions, DirectoryPathText,
+};
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
+
+#[derive(Resource, Default)]
+struct FileDialogTask(Option<Task<Option<PathBuf>>>);
 
 pub struct UiPlugin;
 
@@ -35,8 +42,20 @@ impl Plugin for UiPlugin {
             .init_resource::<ProjectCatalog>()
             .init_resource::<SelectedProject>()
             .init_resource::<UiTheme>()
+            .init_resource::<WorkingDirectory>()
+            .init_resource::<FileDialogTask>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
+            .add_systems(
+                OnEnter(UiScreen::WorkingDirectorySetup),
+                spawn_working_directory_setup_screen,
+            )
+            .add_systems(
+                OnExit(UiScreen::WorkingDirectorySetup),
+                cleanup_working_directory_setup_screen,
+            )
+            .add_systems(Update, working_directory_setup_interactions)
+            .add_systems(Update, poll_file_dialog_task)
             .add_systems(OnEnter(UiScreen::Home), spawn_home_screen)
             .add_systems(OnExit(UiScreen::Home), cleanup_home_screen)
             .add_systems(
@@ -72,11 +91,32 @@ fn setup_ui_camera(mut commands: Commands, camera_query: Query<Entity, With<UiCa
     ));
 }
 
+fn poll_file_dialog_task(
+    mut file_dialog_task: ResMut<FileDialogTask>,
+    mut working_directory: ResMut<WorkingDirectory>,
+    mut path_text: Query<&mut Text, With<DirectoryPathText>>,
+) {
+    if let Some(ref mut task) = file_dialog_task.0 {
+        if let Some(result) = block_on(future::poll_once(task)) {
+            if let Some(path) = result {
+                let path_str = path.to_string_lossy().to_string();
+                working_directory.pending_path = path_str.clone();
+                for mut text in &mut path_text {
+                    text.0 = path_str.clone();
+                }
+            }
+            file_dialog_task.0 = None;
+        }
+    }
+}
+
 fn handle_ui_events(
     mut commands: Commands,
     mut ui_events: MessageReader<UiEvent>,
     mut next_screen: ResMut<NextState<UiScreen>>,
     mut selected_project: ResMut<SelectedProject>,
+    mut working_directory: ResMut<WorkingDirectory>,
+    mut file_dialog_task: ResMut<FileDialogTask>,
     mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
     project_catalog: Res<ProjectCatalog>,
@@ -103,6 +143,23 @@ fn handle_ui_events(
             }
             UiEvent::BackToHome => {
                 next_screen.set(UiScreen::Home);
+            }
+            UiEvent::WorkingDirectorySelected(path) => {
+                working_directory.path = path.clone();
+                if let Err(e) = std::fs::create_dir_all(path) {
+                    eprintln!("Failed to create working directory: {e}");
+                }
+                next_screen.set(UiScreen::Home);
+            }
+            UiEvent::BrowseForWorkingDirectory => {
+                let pool = AsyncComputeTaskPool::get();
+                let task = pool.spawn(async {
+                    rfd::AsyncFileDialog::new()
+                        .pick_folder()
+                        .await
+                        .map(|handle| handle.path().to_owned())
+                });
+                file_dialog_task.0 = Some(task);
             }
             UiEvent::CaptureDebris { entity, plan_id } => {
                 println!("Trying to capture");
