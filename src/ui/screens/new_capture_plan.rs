@@ -1,0 +1,952 @@
+use bevy::camera::visibility::RenderLayers;
+use bevy::ecs::hierarchy::ChildSpawnerCommands;
+use bevy::prelude::*;
+
+use crate::constants::UI_LAYER;
+use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm};
+use crate::ui::events::UiEvent;
+use crate::ui::state::UiScreen;
+use crate::ui::theme::UiTheme;
+use crate::ui::widgets::{InputField, InputFieldText};
+
+// ── Marker components ──────────────────────────────────────────────────────
+
+#[derive(Component)]
+pub struct NewCapturePlanModal;
+
+#[derive(Component)]
+pub struct NewPlanCancelButton;
+
+#[derive(Component)]
+pub struct NewPlanSaveButton;
+
+#[derive(Component)]
+pub struct AddApproachTransitionButton;
+
+#[derive(Component)]
+pub struct RemoveApproachTransitionButton(pub usize);
+
+#[derive(Component)]
+pub struct AddTerminalTransitionButton;
+
+#[derive(Component)]
+pub struct RemoveTerminalTransitionButton(pub usize);
+
+#[derive(Component)]
+pub struct ConfirmOverwriteButton;
+
+#[derive(Component)]
+pub struct CancelOverwriteButton;
+
+// ── Field ID tags so the keyboard system knows which field to update ──────
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub enum FormFieldId {
+    PlanName,
+    TetherName,
+    TetherType,
+    NumJoints,
+    ApproachMaxVelocity,
+    ApproachMaxForce,
+    ApproachTransitionTo(usize),
+    ApproachTransitionDistanceKind(usize),
+    ApproachTransitionDistanceValue(usize),
+    ApproachTransitionUnits(usize),
+    TerminalMaxVelocity,
+    TerminalMaxForce,
+    TerminalShrinkRate,
+    TerminalTransitionTo(usize),
+    TerminalTransitionDistanceKind(usize),
+    TerminalTransitionDistanceValue(usize),
+    TerminalTransitionUnits(usize),
+    CaptureMaxVelocity,
+    CaptureMaxForce,
+    CaptureShrinkRate,
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+fn section_header<'a>(parent: &mut ChildSpawnerCommands<'a>, label: &str, font: &Handle<Font>, theme: &UiTheme) {
+    parent.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
+            border: UiRect::bottom(Val::Px(1.0)),
+            ..default()
+        },
+        BorderColor::all(theme.panel_background),
+        BackgroundColor(Color::NONE),
+    ))
+    .with_children(|row| {
+        row.spawn((
+            Text::new(label),
+            TextFont {
+                font: font.clone(),
+                font_size: 15.0,
+                ..default()
+            },
+            TextColor(theme.text_accent),
+        ));
+    });
+}
+
+fn field_row<'a>(
+    parent: &mut ChildSpawnerCommands<'a>,
+    label: &str,
+    field_id: FormFieldId,
+    placeholder: &str,
+    value: &str,
+    is_numeric: bool,
+    has_error: bool,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+) {
+    let border_color = if has_error {
+        Color::srgb(0.9, 0.3, 0.3)
+    } else {
+        theme.panel_background
+    };
+
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            ..default()
+        })
+        .with_children(|col| {
+            col.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(theme.text_muted),
+            ));
+
+            let display = if value.is_empty() {
+                placeholder.to_string()
+            } else {
+                value.to_string()
+            };
+            let text_color = if value.is_empty() {
+                theme.text_muted
+            } else {
+                theme.text_primary
+            };
+
+            col.spawn((
+                Button,
+                InputField {
+                    value: value.to_string(),
+                    focused: false,
+                    placeholder: placeholder.to_string(),
+                    is_numeric,
+                    error: has_error,
+                },
+                field_id,
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BorderColor::all(border_color),
+                BackgroundColor(theme.panel_background_soft),
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    InputFieldText,
+                    Text::new(display),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(text_color),
+                ));
+            });
+        });
+}
+
+fn transition_rows<'a>(
+    parent: &mut ChildSpawnerCommands<'a>,
+    transitions: &[TransitionForm],
+    is_approach: bool,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+) {
+    for (i, t) in transitions.iter().enumerate() {
+        parent
+            .spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                ..default()
+            })
+            .with_children(|row| {
+                // Header row with "Transition N" + remove button
+                row.spawn(Node {
+                    width: Val::Percent(100.0),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|hdr| {
+                    hdr.spawn((
+                        Text::new(format!("Transition {}", i + 1)),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(theme.text_muted),
+                    ));
+
+                    if is_approach {
+                        hdr.spawn((
+                            Button,
+                            RemoveApproachTransitionButton(i),
+                            Node {
+                                padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background),
+                        ));
+                    } else {
+                        hdr.spawn((
+                            Button,
+                            RemoveTerminalTransitionButton(i),
+                            Node {
+                                padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background),
+                        ));
+                    }
+                });
+
+                // Fields: To, Kind, Value, Units
+                let (to_id, kind_id, val_id, units_id) = if is_approach {
+                    (
+                        FormFieldId::ApproachTransitionTo(i),
+                        FormFieldId::ApproachTransitionDistanceKind(i),
+                        FormFieldId::ApproachTransitionDistanceValue(i),
+                        FormFieldId::ApproachTransitionUnits(i),
+                    )
+                } else {
+                    (
+                        FormFieldId::TerminalTransitionTo(i),
+                        FormFieldId::TerminalTransitionDistanceKind(i),
+                        FormFieldId::TerminalTransitionDistanceValue(i),
+                        FormFieldId::TerminalTransitionUnits(i),
+                    )
+                };
+
+                field_row(row, "To State", to_id, "e.g. terminal", &t.to, false, false, font, theme);
+                field_row(row, "Condition (less_than / greater_than)", kind_id, "less_than", &t.distance_kind, false, false, font, theme);
+                field_row(row, "Distance Value", val_id, "50.0", &t.distance_value, true, false, font, theme);
+                field_row(row, "Units (optional, e.g. m)", units_id, "", &t.units, false, false, font, theme);
+            });
+    }
+}
+
+// ── spawn / cleanup / interactions ────────────────────────────────────────
+
+pub fn spawn_new_capture_plan_modal(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    theme: &UiTheme,
+    form: &NewCapturePlanForm,
+    render_layer: usize,
+) {
+    let font: Handle<Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
+    let has_errors = !form.validation_errors.is_empty();
+
+    commands
+        .spawn((
+            NewCapturePlanModal,
+            RenderLayers::layer(render_layer),
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.3)),
+            ZIndex(10),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: Val::Px(680.0),
+                        max_width: Val::Percent(94.0),
+                        max_height: Val::Percent(88.0),
+                        flex_direction: FlexDirection::Column,
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ))
+                .with_children(|panel| {
+                    // ── Title bar ────────────────────────────────────────
+                    panel
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                justify_content: JustifyContent::SpaceBetween,
+                                align_items: AlignItems::Center,
+                                padding: UiRect::all(Val::Px(20.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.header_background),
+                        ))
+                        .with_children(|bar| {
+                            bar.spawn((
+                                Text::new("New Capture Plan"),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 20.0,
+                                    ..default()
+                                },
+                                TextColor(theme.text_primary),
+                            ));
+
+                            bar.spawn((
+                                Button,
+                                NewPlanCancelButton,
+                                Node {
+                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background),
+                            ))
+                            .with_children(|btn| {
+                                btn.spawn((
+                                    Text::new("✕ Cancel"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_muted),
+                                ));
+                            });
+                        });
+
+                    // ── Scroll body ──────────────────────────────────────
+                    panel
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(20.0),
+                            padding: UiRect::all(Val::Px(20.0)),
+                            ..default()
+                        })
+                        .with_children(|body| {
+                            // ── Validation errors ────────────────────────
+                            if has_errors {
+                                body.spawn((
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: Val::Px(4.0),
+                                        padding: UiRect::all(Val::Px(12.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgba(0.6, 0.1, 0.1, 0.5)),
+                                ))
+                                .with_children(|err_box| {
+                                    err_box.spawn((
+                                        Text::new("Please fix the following errors:"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(Color::srgb(1.0, 0.7, 0.7)),
+                                    ));
+                                    for err in &form.validation_errors {
+                                        err_box.spawn((
+                                            Text::new(format!("• {}", err)),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 12.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgb(1.0, 0.7, 0.7)),
+                                        ));
+                                    }
+                                });
+                            }
+
+                            // ── GENERAL ──────────────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "General", &font, theme);
+                                field_row(sec, "Plan Name *", FormFieldId::PlanName, "My Capture Plan", &form.plan_name, false, false, &font, theme);
+                            });
+
+                            // ── TETHER ───────────────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "Tether", &font, theme);
+                                field_row(sec, "Tether Name *", FormFieldId::TetherName, "Tether1", &form.tether_name, false, false, &font, theme);
+                                field_row(sec, "Tether Type *", FormFieldId::TetherType, "tether", &form.tether_type, false, false, &font, theme);
+                                field_row(sec, "Number of Joints *", FormFieldId::NumJoints, "20", &form.num_joints, true, false, &font, theme);
+                            });
+
+                            // ── APPROACH STATE ───────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "Approach State", &font, theme);
+                                field_row(sec, "Max Velocity *", FormFieldId::ApproachMaxVelocity, "1.0", &form.approach_max_velocity, true, false, &font, theme);
+                                field_row(sec, "Max Force *", FormFieldId::ApproachMaxForce, "2.0", &form.approach_max_force, true, false, &font, theme);
+
+                                sec.spawn((
+                                    Text::new("Transitions"),
+                                    TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                    TextColor(theme.text_muted),
+                                ));
+                                transition_rows(sec, &form.approach_transitions, true, &font, theme);
+
+                                sec.spawn((
+                                    Button,
+                                    AddApproachTransitionButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                                        align_self: AlignSelf::Start,
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.panel_background_soft),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("+ Add Transition"),
+                                        TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                        TextColor(theme.text_accent),
+                                    ));
+                                });
+                            });
+
+                            // ── TERMINAL STATE ───────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "Terminal State", &font, theme);
+                                field_row(sec, "Max Velocity *", FormFieldId::TerminalMaxVelocity, "0.2", &form.terminal_max_velocity, true, false, &font, theme);
+                                field_row(sec, "Max Force *", FormFieldId::TerminalMaxForce, "2.0", &form.terminal_max_force, true, false, &font, theme);
+                                field_row(sec, "Shrink Rate *", FormFieldId::TerminalShrinkRate, "0.125", &form.terminal_shrink_rate, true, false, &font, theme);
+
+                                sec.spawn((
+                                    Text::new("Transitions"),
+                                    TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                    TextColor(theme.text_muted),
+                                ));
+                                transition_rows(sec, &form.terminal_transitions, false, &font, theme);
+
+                                sec.spawn((
+                                    Button,
+                                    AddTerminalTransitionButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                                        align_self: AlignSelf::Start,
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.panel_background_soft),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("+ Add Transition"),
+                                        TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                        TextColor(theme.text_accent),
+                                    ));
+                                });
+                            });
+
+                            // ── CAPTURE STATE ────────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "Capture State", &font, theme);
+                                field_row(sec, "Max Velocity *", FormFieldId::CaptureMaxVelocity, "0.1", &form.capture_max_velocity, true, false, &font, theme);
+                                field_row(sec, "Max Force *", FormFieldId::CaptureMaxForce, "2.0", &form.capture_max_force, true, false, &font, theme);
+                                field_row(sec, "Shrink Rate *", FormFieldId::CaptureShrinkRate, "0.025", &form.capture_shrink_rate, true, false, &font, theme);
+                            });
+
+                            // ── Save / Cancel buttons ────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                justify_content: JustifyContent::End,
+                                column_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|btns| {
+                                btns.spawn((
+                                    Button,
+                                    NewPlanCancelButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(18.0), Val::Px(9.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.panel_background_soft),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("Cancel"),
+                                        TextFont { font: font.clone(), font_size: 14.0, ..default() },
+                                        TextColor(theme.text_primary),
+                                    ));
+                                });
+
+                                btns.spawn((
+                                    Button,
+                                    NewPlanSaveButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(18.0), Val::Px(9.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.button_background),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("Save"),
+                                        TextFont { font: font.clone(), font_size: 14.0, ..default() },
+                                        TextColor(theme.button_text),
+                                    ));
+                                });
+                            });
+                        });
+
+                    // ── Overwrite confirmation sub-modal ─────────────────
+                    if let Some(conflict_path) = &form.overwrite_conflict_path {
+                        panel
+                            .spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                                ZIndex(20),
+                            ))
+                            .with_children(|overlay| {
+                                overlay
+                                    .spawn((
+                                        Node {
+                                            width: Val::Px(460.0),
+                                            max_width: Val::Percent(90.0),
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: Val::Px(14.0),
+                                            padding: UiRect::all(Val::Px(24.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background),
+                                    ))
+                                    .with_children(|dlg| {
+                                        dlg.spawn((
+                                            Text::new("Overwrite Existing Plan?"),
+                                            TextFont { font: font.clone(), font_size: 17.0, ..default() },
+                                            TextColor(theme.text_primary),
+                                        ));
+
+                                        dlg.spawn((
+                                            Text::new("A plan already exists at:"),
+                                            TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                            TextColor(theme.text_muted),
+                                        ));
+
+                                        dlg.spawn((
+                                            Text::new(conflict_path.clone()),
+                                            TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                            TextColor(theme.text_accent),
+                                        ));
+
+                                        dlg.spawn(Node {
+                                            width: Val::Percent(100.0),
+                                            justify_content: JustifyContent::End,
+                                            column_gap: Val::Px(10.0),
+                                            ..default()
+                                        })
+                                        .with_children(|btns| {
+                                            btns.spawn((
+                                                Button,
+                                                CancelOverwriteButton,
+                                                Node {
+                                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(theme.panel_background_soft),
+                                            ))
+                                            .with_children(|btn| {
+                                                btn.spawn((
+                                                    Text::new("Keep Original Name"),
+                                                    TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                                    TextColor(theme.text_primary),
+                                                ));
+                                            });
+
+                                            btns.spawn((
+                                                Button,
+                                                ConfirmOverwriteButton,
+                                                Node {
+                                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(Color::srgb(0.7, 0.2, 0.2)),
+                                            ))
+                                            .with_children(|btn| {
+                                                btn.spawn((
+                                                    Text::new("Overwrite"),
+                                                    TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                                    TextColor(theme.button_text),
+                                                ));
+                                            });
+                                        });
+                                    });
+                            });
+                    }
+                });
+        });
+}
+
+pub fn cleanup_new_capture_plan_modal(
+    mut commands: Commands,
+    modals: Query<Entity, With<NewCapturePlanModal>>,
+) {
+    for e in &modals {
+        commands.entity(e).despawn();
+    }
+}
+
+// ── Sync form fields from InputField components back into the resource ────
+
+pub fn sync_form_fields(
+    field_query: Query<(&InputField, &FormFieldId), Changed<InputField>>,
+    mut form: ResMut<NewCapturePlanForm>,
+) {
+    for (field, id) in &field_query {
+        match id {
+            FormFieldId::PlanName => form.plan_name = field.value.clone(),
+            FormFieldId::TetherName => form.tether_name = field.value.clone(),
+            FormFieldId::TetherType => form.tether_type = field.value.clone(),
+            FormFieldId::NumJoints => form.num_joints = field.value.clone(),
+            FormFieldId::ApproachMaxVelocity => form.approach_max_velocity = field.value.clone(),
+            FormFieldId::ApproachMaxForce => form.approach_max_force = field.value.clone(),
+            FormFieldId::TerminalMaxVelocity => form.terminal_max_velocity = field.value.clone(),
+            FormFieldId::TerminalMaxForce => form.terminal_max_force = field.value.clone(),
+            FormFieldId::TerminalShrinkRate => form.terminal_shrink_rate = field.value.clone(),
+            FormFieldId::CaptureMaxVelocity => form.capture_max_velocity = field.value.clone(),
+            FormFieldId::CaptureMaxForce => form.capture_max_force = field.value.clone(),
+            FormFieldId::CaptureShrinkRate => form.capture_shrink_rate = field.value.clone(),
+            FormFieldId::ApproachTransitionTo(i) => {
+                if let Some(t) = form.approach_transitions.get_mut(*i) {
+                    t.to = field.value.clone();
+                }
+            }
+            FormFieldId::ApproachTransitionDistanceKind(i) => {
+                if let Some(t) = form.approach_transitions.get_mut(*i) {
+                    t.distance_kind = field.value.clone();
+                }
+            }
+            FormFieldId::ApproachTransitionDistanceValue(i) => {
+                if let Some(t) = form.approach_transitions.get_mut(*i) {
+                    t.distance_value = field.value.clone();
+                }
+            }
+            FormFieldId::ApproachTransitionUnits(i) => {
+                if let Some(t) = form.approach_transitions.get_mut(*i) {
+                    t.units = field.value.clone();
+                }
+            }
+            FormFieldId::TerminalTransitionTo(i) => {
+                if let Some(t) = form.terminal_transitions.get_mut(*i) {
+                    t.to = field.value.clone();
+                }
+            }
+            FormFieldId::TerminalTransitionDistanceKind(i) => {
+                if let Some(t) = form.terminal_transitions.get_mut(*i) {
+                    t.distance_kind = field.value.clone();
+                }
+            }
+            FormFieldId::TerminalTransitionDistanceValue(i) => {
+                if let Some(t) = form.terminal_transitions.get_mut(*i) {
+                    t.distance_value = field.value.clone();
+                }
+            }
+            FormFieldId::TerminalTransitionUnits(i) => {
+                if let Some(t) = form.terminal_transitions.get_mut(*i) {
+                    t.units = field.value.clone();
+                }
+            }
+        }
+    }
+}
+
+// ── Button interaction system ─────────────────────────────────────────────
+
+pub fn new_capture_plan_interactions(
+    mut buttons: Query<
+        (
+            &Interaction,
+            &mut BackgroundColor,
+            Option<&NewPlanCancelButton>,
+            Option<&NewPlanSaveButton>,
+            Option<&AddApproachTransitionButton>,
+            Option<&AddTerminalTransitionButton>,
+            Option<&RemoveApproachTransitionButton>,
+            Option<&RemoveTerminalTransitionButton>,
+            Option<&ConfirmOverwriteButton>,
+            Option<&CancelOverwriteButton>,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut events: MessageWriter<UiEvent>,
+    screen: Res<State<UiScreen>>,
+    form: Res<NewCapturePlanForm>,
+    theme: Res<UiTheme>,
+) {
+    if *screen.get() != UiScreen::Home || !form.open {
+        return;
+    }
+
+    for (
+        interaction,
+        mut bg,
+        cancel,
+        save,
+        add_approach,
+        add_terminal,
+        remove_approach,
+        remove_terminal,
+        confirm_overwrite,
+        cancel_overwrite,
+    ) in &mut buttons
+    {
+        if cancel.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::CloseNewCapturePlanForm); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background_soft),
+                Interaction::None => *bg = BackgroundColor(theme.panel_background),
+            }
+        } else if save.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::SaveCapturePlan); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+                Interaction::None => *bg = BackgroundColor(theme.button_background),
+            }
+        } else if add_approach.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::AddApproachTransition); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
+                Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
+            }
+        } else if add_terminal.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::AddTerminalTransition); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
+                Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
+            }
+        } else if let Some(btn) = remove_approach {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::RemoveApproachTransition(btn.0)); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background_soft),
+                Interaction::None => *bg = BackgroundColor(theme.panel_background),
+            }
+        } else if let Some(btn) = remove_terminal {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::RemoveTerminalTransition(btn.0)); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background_soft),
+                Interaction::None => *bg = BackgroundColor(theme.panel_background),
+            }
+        } else if confirm_overwrite.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::ConfirmOverwriteCapturePlan); }
+                Interaction::Hovered => *bg = BackgroundColor(Color::srgb(0.8, 0.25, 0.25)),
+                Interaction::None => *bg = BackgroundColor(Color::srgb(0.7, 0.2, 0.2)),
+            }
+        } else if cancel_overwrite.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::CancelOverwriteCapturePlan); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
+                Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
+            }
+        }
+    }
+}
+
+// ── Validation and serialization helpers ─────────────────────────────────
+
+pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
+    let mut errors: Vec<String> = Vec::new();
+
+    let require_text = |val: &str, label: &str, errs: &mut Vec<String>| {
+        if val.trim().is_empty() {
+            errs.push(format!("{} is required", label));
+        }
+    };
+    let require_number = |val: &str, label: &str, errs: &mut Vec<String>| {
+        if val.trim().is_empty() {
+            errs.push(format!("{} is required", label));
+        } else if val.parse::<f64>().is_err() {
+            errs.push(format!("{} must be a number", label));
+        }
+    };
+
+    require_text(&form.plan_name, "Plan Name", &mut errors);
+    require_text(&form.tether_name, "Tether Name", &mut errors);
+    require_text(&form.tether_type, "Tether Type", &mut errors);
+
+    if form.num_joints.trim().is_empty() {
+        errors.push("Number of Joints is required".to_string());
+    } else if form.num_joints.parse::<u32>().is_err() {
+        errors.push("Number of Joints must be a whole number".to_string());
+    }
+
+    require_number(&form.approach_max_velocity, "Approach Max Velocity", &mut errors);
+    require_number(&form.approach_max_force, "Approach Max Force", &mut errors);
+    require_number(&form.terminal_max_velocity, "Terminal Max Velocity", &mut errors);
+    require_number(&form.terminal_max_force, "Terminal Max Force", &mut errors);
+    require_number(&form.terminal_shrink_rate, "Terminal Shrink Rate", &mut errors);
+    require_number(&form.capture_max_velocity, "Capture Max Velocity", &mut errors);
+    require_number(&form.capture_max_force, "Capture Max Force", &mut errors);
+    require_number(&form.capture_shrink_rate, "Capture Shrink Rate", &mut errors);
+
+    for (i, t) in form.approach_transitions.iter().enumerate() {
+        if t.to.trim().is_empty() {
+            errors.push(format!("Approach Transition {} 'To State' is required", i + 1));
+        }
+        if t.distance_kind.trim().is_empty() {
+            errors.push(format!("Approach Transition {} condition is required", i + 1));
+        }
+        if t.distance_value.trim().is_empty() {
+            errors.push(format!("Approach Transition {} distance value is required", i + 1));
+        } else if t.distance_value.parse::<f64>().is_err() {
+            errors.push(format!("Approach Transition {} distance value must be a number", i + 1));
+        }
+    }
+
+    for (i, t) in form.terminal_transitions.iter().enumerate() {
+        if t.to.trim().is_empty() {
+            errors.push(format!("Terminal Transition {} 'To State' is required", i + 1));
+        }
+        if t.distance_kind.trim().is_empty() {
+            errors.push(format!("Terminal Transition {} condition is required", i + 1));
+        }
+        if t.distance_value.trim().is_empty() {
+            errors.push(format!("Terminal Transition {} distance value is required", i + 1));
+        } else if t.distance_value.parse::<f64>().is_err() {
+            errors.push(format!("Terminal Transition {} distance value must be a number", i + 1));
+        }
+    }
+
+    errors
+}
+
+pub fn generate_filename(plan_name: &str) -> String {
+    // Characters illegal on Windows (superset of what POSIX disallows)
+    const ILLEGAL: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let sanitized: String = plan_name
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c == ' ' {
+                '_'
+            } else if ILLEGAL.contains(&c) || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    format!("{}.json", sanitized)
+}
+
+pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
+    use serde_json::{json, Value};
+
+    let make_transitions = |transitions: &[TransitionForm]| -> Value {
+        let arr: Vec<Value> = transitions
+            .iter()
+            .map(|t| {
+                let distance_val = t.distance_value.parse::<f64>().unwrap_or(0.0);
+                let mut dist = json!({ t.distance_kind.clone(): distance_val });
+                if !t.units.trim().is_empty() {
+                    dist["units"] = json!(t.units.trim());
+                }
+                json!({ "to": t.to.trim(), "distance": dist })
+            })
+            .collect();
+        Value::Array(arr)
+    };
+
+    let approach_transitions = make_transitions(&form.approach_transitions);
+    let terminal_transitions = make_transitions(&form.terminal_transitions);
+
+    json!({
+        "name": form.plan_name.trim(),
+        "tether": form.tether_name.trim(),
+        "device": {
+            "type": form.tether_type.trim(),
+            "num_joints": form.num_joints.parse::<u32>().unwrap_or(0)
+        },
+        "states": [
+            {
+                "id": "approach",
+                "parameters": {
+                    "max_velocity": form.approach_max_velocity.parse::<f64>().unwrap_or(0.0),
+                    "max_force": form.approach_max_force.parse::<f64>().unwrap_or(0.0)
+                },
+                "transitions": approach_transitions
+            },
+            {
+                "id": "terminal",
+                "parameters": {
+                    "max_velocity": form.terminal_max_velocity.parse::<f64>().unwrap_or(0.0),
+                    "max_force": form.terminal_max_force.parse::<f64>().unwrap_or(0.0),
+                    "shrink_rate": form.terminal_shrink_rate.parse::<f64>().unwrap_or(0.0)
+                },
+                "transitions": terminal_transitions
+            },
+            {
+                "id": "capture",
+                "parameters": {
+                    "max_velocity": form.capture_max_velocity.parse::<f64>().unwrap_or(0.0),
+                    "max_force": form.capture_max_force.parse::<f64>().unwrap_or(0.0),
+                    "shrink_rate": form.capture_shrink_rate.parse::<f64>().unwrap_or(0.0)
+                }
+            }
+        ]
+    })
+}

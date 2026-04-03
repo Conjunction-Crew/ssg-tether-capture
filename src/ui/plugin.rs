@@ -19,6 +19,11 @@ use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{
     cleanup_home_screen, home_interactions, spawn_home_screen, update_home_working_directory_label,
 };
+use crate::ui::screens::new_capture_plan::{
+    build_capture_plan_json, cleanup_new_capture_plan_modal, generate_filename,
+    new_capture_plan_interactions, spawn_new_capture_plan_modal, sync_form_fields, validate_form,
+    NewCapturePlanModal,
+};
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     spawn_project_detail_screen,
@@ -29,6 +34,7 @@ use crate::ui::screens::working_directory_setup::{
 };
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
+use crate::ui::widgets::{input_field_display, input_field_interaction, input_field_keyboard};
 
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);
@@ -45,6 +51,7 @@ impl Plugin for UiPlugin {
             .init_resource::<SelectedProject>()
             .init_resource::<UiTheme>()
             .init_resource::<WorkingDirectory>()
+            .init_resource::<NewCapturePlanForm>()
             .init_resource::<FileDialogTask>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
@@ -69,6 +76,12 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(Update, project_detail_interactions)
             .add_systems(Update, collapsible_toggle_interaction)
+            .add_systems(Update, input_field_interaction)
+            .add_systems(Update, input_field_keyboard)
+            .add_systems(Update, input_field_display)
+            .add_systems(Update, sync_form_fields)
+            .add_systems(Update, new_capture_plan_interactions)
+            .add_systems(Update, poll_new_plan_modal)
             .add_systems(Update, handle_ui_events);
     }
 }
@@ -113,6 +126,32 @@ fn poll_file_dialog_task(
     }
 }
 
+fn poll_new_plan_modal(
+    mut commands: Commands,
+    form: Res<NewCapturePlanForm>,
+    asset_server: Res<AssetServer>,
+    theme: Res<UiTheme>,
+    modals: Query<Entity, With<NewCapturePlanModal>>,
+) {
+    if !form.is_changed() {
+        return;
+    }
+    let modal_exists = !modals.is_empty();
+    if form.open && !modal_exists {
+        spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
+    } else if !form.open && modal_exists {
+        for e in &modals {
+            commands.entity(e).despawn();
+        }
+    } else if form.open && modal_exists {
+        // Re-render the modal when form state changes (e.g. transitions added/removed)
+        for e in &modals {
+            commands.entity(e).despawn();
+        }
+        spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
+    }
+}
+
 fn handle_ui_events(
     mut commands: Commands,
     mut ui_events: MessageReader<UiEvent>,
@@ -120,10 +159,11 @@ fn handle_ui_events(
     mut selected_project: ResMut<SelectedProject>,
     mut working_directory: ResMut<WorkingDirectory>,
     mut file_dialog_task: ResMut<FileDialogTask>,
+    mut form: ResMut<NewCapturePlanForm>,
+    mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
     project_catalog: Res<ProjectCatalog>,
-    capture_plans: Res<CapturePlanLibrary>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut scene_camera: Query<
         (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
@@ -178,7 +218,7 @@ fn handle_ui_events(
                             commands.entity(marked_entity).remove::<CaptureComponent>();
                         }
                         // Get plan information
-                        if let Some(plan) = capture_plans.plans.get(plan_id) {
+                        if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
                             // Now, mark the entity for capture
                             commands.entity(*capture_entity).insert(CaptureComponent {
                                 plan_id: plan.name.clone(),

@@ -3,8 +3,8 @@ use crate::components::orbit::{Orbit, Orbital};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
 use crate::create_app;
-use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
+use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::world_time::{self, WorldTime};
 use crate::systems::physics::fixed_physics_step;
 use crate::ui::screens::home::load_capture_plans;
@@ -128,8 +128,11 @@ fn apply_force_to_target() {
     );
 
     // Load capture plans
+    let example_plans = load_plans_from_dir(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans"),
+    );
     let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
-    load_capture_plans(&mut capture_plan_lib);
+    capture_plan_lib.plans = example_plans;
 
     // Get plan information
     let plan_res = capture_plan_lib.plans.get("example_plan");
