@@ -16,7 +16,9 @@ use crate::resources::settings::Settings;
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
-use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
+use crate::ui::screens::home::{
+    cleanup_home_screen, home_interactions, spawn_home_screen, update_home_working_directory_label,
+};
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     spawn_project_detail_screen,
@@ -63,6 +65,7 @@ impl Plugin for UiPlugin {
                 spawn_project_detail_screen.after(setup_entities),
             )
             .add_systems(Update, home_interactions)
+            .add_systems(Update, update_home_working_directory_label)
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(Update, project_detail_interactions)
             .add_systems(Update, collapsible_toggle_interaction)
@@ -160,6 +163,10 @@ fn handle_ui_events(
                         .map(|handle| handle.path().to_owned())
                 });
                 file_dialog_task.0 = Some(task);
+            }
+            UiEvent::ChangeWorkingDirectory => {
+                working_directory.pending_path = working_directory.path.clone();
+                next_screen.set(UiScreen::WorkingDirectorySetup);
             }
             UiEvent::CaptureDebris { entity, plan_id } => {
                 println!("Trying to capture");

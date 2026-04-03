@@ -6,8 +6,9 @@ use bevy::prelude::*;
 
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
-use crate::ui::state::ProjectCatalog;
+use crate::ui::state::{ProjectCatalog, UiScreen};
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
 
@@ -18,6 +19,12 @@ pub struct HomeScreen;
 pub struct HomeProjectButton {
     pub project_id: String,
 }
+
+#[derive(Component)]
+pub struct HomeWorkingDirectoryLabel;
+
+#[derive(Component)]
+pub struct ChangeDirectoryButton;
 
 pub fn load_capture_plans(capture_plan_lib: &mut CapturePlanLibrary) {
     let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
@@ -52,6 +59,7 @@ pub fn spawn_home_screen(
     theme: Res<UiTheme>,
     projects: Res<ProjectCatalog>,
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
+    working_directory: Res<WorkingDirectory>,
 ) {
     load_capture_plans(&mut capture_plan_lib);
 
@@ -187,6 +195,7 @@ pub fn spawn_home_screen(
                                 ));
 
                                 workspace.spawn((
+                                    HomeWorkingDirectoryLabel,
                                     Text::new(working_directory),
                                     TextFont {
                                         font: font.clone(),
@@ -195,6 +204,36 @@ pub fn spawn_home_screen(
                                     },
                                     TextColor(theme.text_primary),
                                 ));
+
+                                workspace
+                                    .spawn(Node {
+                                        width: percent(100),
+                                        justify_content: JustifyContent::End,
+                                        margin: UiRect::top(px(4.0)),
+                                        ..default()
+                                    })
+                                    .with_children(|row| {
+                                        row.spawn((
+                                            Button,
+                                            ChangeDirectoryButton,
+                                            Node {
+                                                padding: UiRect::axes(px(14.0), px(7.0)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background),
+                                        ))
+                                        .with_children(|btn| {
+                                            btn.spawn((
+                                                Text::new("Change Directory"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 12.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_muted),
+                                            ));
+                                        });
+                                    });
                             });
 
                         content
@@ -406,19 +445,23 @@ pub fn cleanup_home_screen(mut commands: Commands, roots: Query<Entity, With<Hom
 }
 
 pub fn home_interactions(
-    mut interactions: Query<
+    mut project_interactions: Query<
         (&Interaction, &HomeProjectButton, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>),
+        (Changed<Interaction>, With<Button>, Without<ChangeDirectoryButton>),
+    >,
+    mut change_dir_interactions: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>, With<ChangeDirectoryButton>),
     >,
     mut events: MessageWriter<UiEvent>,
-    screen: Res<State<crate::ui::state::UiScreen>>,
+    screen: Res<State<UiScreen>>,
     theme: Res<UiTheme>,
 ) {
-    if *screen.get() != crate::ui::state::UiScreen::Home {
+    if *screen.get() != UiScreen::Home {
         return;
     }
 
-    for (interaction, project_button, mut background_color) in &mut interactions {
+    for (interaction, project_button, mut background_color) in &mut project_interactions {
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(theme.button_background_hover);
@@ -431,5 +474,31 @@ pub fn home_interactions(
                 *background_color = BackgroundColor(theme.panel_background);
             }
         }
+    }
+
+    for (interaction, mut background_color) in &mut change_dir_interactions {
+        match *interaction {
+            Interaction::Pressed => {
+                events.write(UiEvent::ChangeWorkingDirectory);
+            }
+            Interaction::Hovered => {
+                *background_color = BackgroundColor(theme.panel_background_soft);
+            }
+            Interaction::None => {
+                *background_color = BackgroundColor(theme.panel_background);
+            }
+        }
+    }
+}
+
+pub fn update_home_working_directory_label(
+    working_directory: Res<WorkingDirectory>,
+    mut label_query: Query<&mut Text, With<HomeWorkingDirectoryLabel>>,
+) {
+    if !working_directory.is_changed() {
+        return;
+    }
+    for mut text in &mut label_query {
+        text.0 = working_directory.path.clone();
     }
 }

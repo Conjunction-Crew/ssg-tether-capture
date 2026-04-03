@@ -6,6 +6,7 @@ pub enum UiEvent {
     BackToHome,
     WorkingDirectorySelected(String),
     BrowseForWorkingDirectory,
+    ChangeWorkingDirectory,
     CaptureDebris {
         entity: Option<Entity>,
         plan_id: String,
