@@ -84,13 +84,22 @@ pub fn input_field_keyboard(
     }
 }
 
-/// System: update the InputFieldText child to reflect the current value.
+/// System: update the InputFieldText child and border to reflect the current value/focus.
 pub fn input_field_display(
-    field_query: Query<(Entity, &InputField), Changed<InputField>>,
+    mut field_query: Query<(Entity, &InputField, &mut BorderColor), Changed<InputField>>,
     children_query: Query<&Children>,
     mut text_query: Query<&mut Text, With<InputFieldText>>,
 ) {
-    for (entity, field) in &field_query {
+    for (entity, field, mut border) in &mut field_query {
+        // Update border to reflect focus / error state
+        *border = if field.focused {
+            BorderColor::all(Color::srgb(0.38, 0.66, 0.99))
+        } else if field.error {
+            BorderColor::all(Color::srgb(0.9, 0.3, 0.3))
+        } else {
+            BorderColor::all(Color::srgba(0.059, 0.078, 0.133, 0.88))
+        };
+        // Update text to reflect value / placeholder / cursor
         if let Ok(children) = children_query.get(entity) {
             for child in children.iter() {
                 if let Ok(mut text) = text_query.get_mut(child) {

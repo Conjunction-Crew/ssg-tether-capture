@@ -132,6 +132,8 @@ fn poll_new_plan_modal(
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
     modals: Query<Entity, With<NewCapturePlanModal>>,
+    // (approach_count, terminal_count, has_overwrite, error_count)
+    mut last: Local<(usize, usize, bool, usize)>,
 ) {
     if !form.is_changed() {
         return;
@@ -139,16 +141,31 @@ fn poll_new_plan_modal(
     let modal_exists = !modals.is_empty();
     if form.open && !modal_exists {
         spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
+        *last = (
+            form.approach_transitions.len(),
+            form.terminal_transitions.len(),
+            form.overwrite_conflict_path.is_some(),
+            form.validation_errors.len(),
+        );
     } else if !form.open && modal_exists {
         for e in &modals {
             commands.entity(e).despawn();
         }
     } else if form.open && modal_exists {
-        // Re-render the modal when form state changes (e.g. transitions added/removed)
-        for e in &modals {
-            commands.entity(e).despawn();
+        // Only re-render on structural changes (transitions added/removed, validation, overwrite)
+        let current = (
+            form.approach_transitions.len(),
+            form.terminal_transitions.len(),
+            form.overwrite_conflict_path.is_some(),
+            form.validation_errors.len(),
+        );
+        if current != *last {
+            for e in &modals {
+                commands.entity(e).despawn();
+            }
+            spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
+            *last = current;
         }
-        spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
     }
 }
 

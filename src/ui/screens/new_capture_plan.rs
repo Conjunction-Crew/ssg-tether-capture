@@ -1,6 +1,10 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
+use bevy::ecs::observer::On;
+use bevy::input::mouse::MouseScrollUnit;
+use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
+use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::constants::UI_LAYER;
 use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm};
@@ -288,10 +292,9 @@ pub fn spawn_new_capture_plan_modal(
                         max_width: Val::Percent(94.0),
                         max_height: Val::Percent(88.0),
                         flex_direction: FlexDirection::Column,
-                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
-                    BackgroundColor(theme.panel_background),
+                    BackgroundColor(Color::srgba(0.059, 0.078, 0.133, 1.0)),
                 ))
                 .with_children(|panel| {
                     // ── Title bar ────────────────────────────────────────
@@ -328,7 +331,7 @@ pub fn spawn_new_capture_plan_modal(
                             ))
                             .with_children(|btn| {
                                 btn.spawn((
-                                    Text::new("✕ Cancel"),
+                                    Text::new("× Cancel"),
                                     TextFont {
                                         font: font.clone(),
                                         font_size: 13.0,
@@ -343,12 +346,42 @@ pub fn spawn_new_capture_plan_modal(
                     panel
                         .spawn(Node {
                             width: Val::Percent(100.0),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(20.0),
-                            padding: UiRect::all(Val::Px(20.0)),
+                            flex_grow: 1.0,
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Row,
                             ..default()
                         })
-                        .with_children(|body| {
+                        .with_children(|scroll_row| {
+                            let scroll_id = scroll_row
+                                .spawn((
+                                    Interaction::default(),
+                                    ScrollPosition::default(),
+                                    Node {
+                                        flex_grow: 1.0,
+                                        min_height: Val::Px(0.0),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: Val::Px(20.0),
+                                        padding: UiRect::all(Val::Px(20.0)),
+                                        overflow: Overflow::scroll_y(),
+                                        scrollbar_width: 8.0,
+                                        ..default()
+                                    },
+                                ))
+                                .observe(
+                                    |mut ev: On<Pointer<Scroll>>,
+                                     mut query: Query<&mut ScrollPosition>| {
+                                        ev.propagate(false);
+                                        let scroll_amount = match ev.event.unit {
+                                            MouseScrollUnit::Line => ev.event.y * 24.0,
+                                            MouseScrollUnit::Pixel => ev.event.y,
+                                        };
+                                        if let Ok(mut scroll_pos) = query.get_mut(ev.entity) {
+                                            scroll_pos.0.y -= scroll_amount;
+                                            scroll_pos.0.y = scroll_pos.0.y.max(0.0);
+                                        }
+                                    },
+                                )
+                                .with_children(|body| {
                             // ── Validation errors ────────────────────────
                             if has_errors {
                                 body.spawn((
@@ -544,6 +577,30 @@ pub fn spawn_new_capture_plan_modal(
                                     ));
                                 });
                             });
+                                })
+                                .id();
+
+                            scroll_row
+                                .spawn((
+                                    Scrollbar::new(
+                                        scroll_id,
+                                        ControlOrientation::Vertical,
+                                        20.0,
+                                    ),
+                                    Node {
+                                        width: Val::Px(8.0),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                                ))
+                                .with_child((
+                                    CoreScrollbarThumb,
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.3)),
+                                ));
                         });
 
                     // ── Overwrite confirmation sub-modal ─────────────────
