@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
+use crate::components::orbit::{Earth, Orbit, TetherNode};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::celestials::Celestials;
@@ -87,9 +87,9 @@ pub fn setup_celestial(
                 Earth,
                 RigidBodyDisabled,
                 RenderLayers::layer(SCENE_LAYER),
-                Orbit::FromParams(TrueParams {
-                    rv: Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-                }),
+                // Orbit::FromParams(TrueParams {
+                //     rv: Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+                // }),
                 Mesh3d(meshes.add(earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
                 Transform::from_xyz(0.0, 0.0, 0.0)

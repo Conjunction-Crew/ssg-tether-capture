@@ -73,7 +73,6 @@ pub fn init_orbitals(
 ) {
     for (entity, init, mut orbital) in &mut q {
         match init {
-            Orbit::FromParams(params) => params.rv,
             Orbit::FromElements(elements) => {
                 let epoch = Epoch::now();
                 let propagator = KeplerianPropagator::from_keplerian(

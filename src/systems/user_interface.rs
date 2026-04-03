@@ -3,7 +3,7 @@ use std::fmt::Write;
 use crate::{
     components::{
         capture_components::{CaptureComponent, State},
-        orbit::{Orbital, TrueParams},
+        orbit::Orbital,
         user_interface::{
             CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
         },
@@ -11,7 +11,7 @@ use crate::{
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
-        orbital_entities::OrbitalEntities,
+        orbital_entities::{self, OrbitalEntities},
         world_time::WorldTime,
     },
 };
@@ -211,9 +211,9 @@ pub fn update_capture_guidance(
 pub fn map_orbitals(
     camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
     mut labels: Query<(&mut Node, &OrbitLabel)>,
-    true_params_query: Query<&TrueParams>,
-    rigidbodies: Query<RigidBodyQueryReadOnly>,
-    disabled_bodies: Query<(), With<RigidBodyDisabled>>,
+    rigidbodies: Query<(RigidBodyQueryReadOnly, &Orbital)>,
+    orbital_entities: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     let (cam, cam_transform, render_layers) = camera.into_inner();
 
@@ -223,27 +223,34 @@ pub fn map_orbitals(
         } else {
             node.display = Display::Block;
         }
-        if let Some(entity) = label.entity {
-            if let Ok(true_params) = true_params_query.get(entity) {
-                let mut world_position = DVec3::new(
-                    true_params.rv[0] / MAP_UNITS_TO_M,
-                    true_params.rv[1] / MAP_UNITS_TO_M,
-                    true_params.rv[2] / MAP_UNITS_TO_M,
-                );
+        let Some(entity) = label.entity else {
+            return;
+        };
+        let Ok((rb, orbital)) = rigidbodies.get(entity) else {
+            return;
+        };
 
-                if let Ok(rb) = rigidbodies.get(entity)
-                    && !disabled_bodies.contains(entity)
-                {
-                    world_position += rb.position.0 / MAP_UNITS_TO_M;
-                }
+        let Some(prop) = orbital_entities.propagators.get(orbital.propagator_id) else {
+            return;
+        };
 
-                if let Ok(viewport_position) =
-                    cam.world_to_viewport(cam_transform, world_position.as_vec3())
-                {
-                    node.top = Val::Px(viewport_position.y);
-                    node.left = Val::Px(viewport_position.x);
-                }
-            }
+        let Ok(params) = prop.state_eci(world_time.epoch) else {
+            return;
+        };
+
+        let mut world_position = DVec3::new(
+            params[0] / MAP_UNITS_TO_M,
+            params[1] / MAP_UNITS_TO_M,
+            params[2] / MAP_UNITS_TO_M,
+        );
+
+        world_position += rb.position.0 / MAP_UNITS_TO_M;
+
+        if let Ok(viewport_position) =
+            cam.world_to_viewport(cam_transform, world_position.as_vec3())
+        {
+            node.top = Val::Px(viewport_position.y);
+            node.left = Val::Px(viewport_position.x);
         }
     }
 }

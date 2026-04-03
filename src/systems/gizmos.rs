@@ -11,9 +11,8 @@ use brahe::{AngleFormat, KeplerianPropagator, utils::DOrbitStateProvider};
 use nalgebra::Vector6;
 
 use crate::{
-    components::capture_components::CaptureComponent,
-    components::orbit::{Orbital, TrueParams},
-    constants::{MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER},
+    components::{capture_components::CaptureComponent, orbit::Orbital},
+    constants::{MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER},
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
         orbital_entities::OrbitalEntities,
@@ -27,14 +26,15 @@ pub struct CaptureGizmoConfigGroup;
 
 pub fn orbital_gizmos(
     orbitals: Query<(
-        &TrueParams,
+        &Orbital,
         &Position,
         &LinearVelocity,
         Option<&RigidBodyDisabled>,
     )>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
-    world_time: Res<WorldTime>,
     mut gizmos: Gizmos,
+    orbital_entities: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     let render_layers = camera_s.into_inner();
 
@@ -43,17 +43,25 @@ pub fn orbital_gizmos(
         return;
     }
 
-    for (true_params, r, v, disabled) in orbitals {
+    for (orbital, r, v, disabled) in orbitals {
+        let Some(prop) = orbital_entities.propagators.get(orbital.propagator_id) else {
+            return;
+        };
+
+        let Ok(params) = prop.state_eci(world_time.epoch) else {
+            return;
+        };
+
         let rv_world = if disabled.is_some() {
-            true_params.rv
+            params
         } else {
             Vector6::new(
-                true_params.rv[0] + r.x as f64,
-                true_params.rv[1] + r.y as f64,
-                true_params.rv[2] + r.z as f64,
-                true_params.rv[3] + v.x as f64,
-                true_params.rv[4] + v.y as f64,
-                true_params.rv[5] + v.z as f64,
+                params[0] + r.x,
+                params[1] + r.y,
+                params[2] + r.z,
+                params[3] + v.x,
+                params[4] + v.y,
+                params[5] + v.z,
             )
         };
 
@@ -130,8 +138,11 @@ pub fn capture_gizmos(
     capture_sphere_radius: Res<CaptureSphereRadius>,
     settings: Res<Settings>,
     mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
+    camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
 ) {
-    if !settings.capture_gizmos {
+    let render_layers = camera_s.into_inner();
+
+    if !settings.capture_gizmos || render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
         return;
     }
 
@@ -223,8 +234,11 @@ pub fn dev_gizmos(
     true_params_query: Query<(&Orbital, &Transform), Without<RigidBodyDisabled>>,
     mut gizmos: Gizmos,
     settings: Res<Settings>,
+    camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
 ) {
-    if !settings.dev_gizmos {
+    let render_layers = camera_s.into_inner();
+
+    if !settings.dev_gizmos || render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
         return;
     }
 
