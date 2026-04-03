@@ -522,7 +522,7 @@ pub fn spawn_project_detail_screen(
                                         ))
                                         .with_children(|btn| {
                                             btn.spawn((
-                                                Text::new("▼"),
+                                                Text::new("v"),
                                                 TextFont {
                                                     font: font.clone(),
                                                     font_size: 14.0,
@@ -533,81 +533,26 @@ pub fn spawn_project_detail_screen(
                                         });
                                 });
 
-                                hud.spawn((
-                                    CaptureTelemetryReadout {
-                                        target_entity: capture_target_entity,
-                                        reference_entity: tether_root_entity,
-                                        target_label: capture_target_label.clone(),
-                                    },
-                                    Text::new("Waiting for live capture telemetry..."),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 12.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
                                 hud
                                     .spawn((
-                                        Button,
-                                        CaptureButton {
-                                            entity: capture_target_entity,
-                                            plan_id: capture_plan_id.clone(),
+                                        CollapsibleContent {
+                                            section: CollapsibleSection::SimulationHud,
                                         },
-                                        Node {
-                                            min_width: px(140.0),
-                                            min_height: px(42.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            margin: UiRect::top(px(4.0)),
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|button| {
-                                        button.spawn((
-                                            Text::new("Capture"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                hud
-                                    .spawn((
                                         Node {
                                             width: percent(100),
                                             flex_direction: FlexDirection::Column,
                                             row_gap: px(8.0),
-                                            padding: UiRect::all(px(12.0)),
-                                            margin: UiRect::top(px(4.0)),
                                             ..default()
                                         },
-                                        BackgroundColor(theme.panel_background_soft),
                                     ))
-                                    .with_children(|guidance| {
-                                        guidance.spawn((
-                                            Text::new("Capture Guidance"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 13.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_accent),
-                                        ));
-
-                                        guidance.spawn((
-                                            CaptureGuidanceReadout {
+                                    .with_children(|content| {
+                                        content.spawn((
+                                            CaptureTelemetryReadout {
                                                 target_entity: capture_target_entity,
                                                 reference_entity: tether_root_entity,
                                                 target_label: capture_target_label.clone(),
-                                                plan_id: capture_plan_id.clone(),
                                             },
-                                            Text::new("Waiting for capture plan telemetry..."),
+                                            Text::new("Waiting for live capture telemetry..."),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 12.0,
@@ -615,6 +560,75 @@ pub fn spawn_project_detail_screen(
                                             },
                                             TextColor(theme.text_primary),
                                         ));
+
+                                        content
+                                            .spawn((
+                                                Button,
+                                                CaptureButton {
+                                                    entity: capture_target_entity,
+                                                    plan_id: capture_plan_id.clone(),
+                                                },
+                                                Node {
+                                                    min_width: px(140.0),
+                                                    min_height: px(42.0),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    margin: UiRect::top(px(4.0)),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(theme.panel_background_soft),
+                                            ))
+                                            .with_children(|button| {
+                                                button.spawn((
+                                                    Text::new("Capture"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 14.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_primary),
+                                                ));
+                                            });
+
+                                        content
+                                            .spawn((
+                                                Node {
+                                                    width: percent(100),
+                                                    flex_direction: FlexDirection::Column,
+                                                    row_gap: px(8.0),
+                                                    padding: UiRect::all(px(12.0)),
+                                                    margin: UiRect::top(px(4.0)),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(theme.panel_background_soft),
+                                            ))
+                                            .with_children(|guidance| {
+                                                guidance.spawn((
+                                                    Text::new("Capture Guidance"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 13.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_accent),
+                                                ));
+
+                                                guidance.spawn((
+                                                    CaptureGuidanceReadout {
+                                                        target_entity: capture_target_entity,
+                                                        reference_entity: tether_root_entity,
+                                                        target_label: capture_target_label.clone(),
+                                                        plan_id: capture_plan_id.clone(),
+                                                    },
+                                                    Text::new("Waiting for capture plan telemetry..."),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 12.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_primary),
+                                                ));
+                                            });
                                     });
                             });
 
@@ -750,9 +764,9 @@ pub fn collapsible_toggle_interaction(
                 for child in children {
                     if let Ok(mut text) = texts.get_mut(*child) {
                         text.0 = if collapsed {
-                            "▶".to_string()
+                            "<".to_string()
                         } else {
-                            "▼".to_string()
+                            "v".to_string()
                         };
                     }
                 }

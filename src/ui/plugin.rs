@@ -13,7 +13,8 @@ use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
 use crate::ui::screens::project_detail::{
-    cleanup_project_detail_screen, project_detail_interactions, spawn_project_detail_screen,
+    cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
+    spawn_project_detail_screen,
 };
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
@@ -40,6 +41,7 @@ impl Plugin for UiPlugin {
             .add_systems(Update, home_interactions)
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(Update, project_detail_interactions)
+            .add_systems(Update, collapsible_toggle_interaction)
             .add_systems(Update, handle_ui_events);
     }
 }
