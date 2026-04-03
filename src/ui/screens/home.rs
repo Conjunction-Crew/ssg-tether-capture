@@ -18,6 +18,11 @@ pub struct HomeProjectButton {
 }
 
 #[derive(Component)]
+pub struct EditCapturePlanButton {
+    pub plan_id: String,
+}
+
+#[derive(Component)]
 pub struct HomeWorkingDirectoryLabel;
 
 #[derive(Component)]
@@ -316,15 +321,53 @@ pub fn spawn_home_screen_inner(
                                         BackgroundColor(theme.panel_background),
                                     ))
                                     .with_children(|button| {
-                                        button.spawn((
-                                            Text::new(plan_name.clone()),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 18.0,
+                                        // Top row: plan name + edit icon button
+                                        button
+                                            .spawn(Node {
+                                                width: percent(100),
+                                                flex_direction: FlexDirection::Row,
+                                                justify_content: JustifyContent::SpaceBetween,
+                                                align_items: AlignItems::Center,
                                                 ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
+                                            })
+                                            .with_children(|row| {
+                                                row.spawn((
+                                                    Text::new(plan_name.clone()),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 18.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_primary),
+                                                ));
+
+                                                row.spawn((
+                                                    Button,
+                                                    EditCapturePlanButton {
+                                                        plan_id: plan_name.clone(),
+                                                    },
+                                                    Node {
+                                                        min_width: px(36.0),
+                                                        min_height: px(28.0),
+                                                        align_items: AlignItems::Center,
+                                                        justify_content: JustifyContent::Center,
+                                                        padding: UiRect::axes(px(6.0), px(0.0)),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(theme.panel_background_soft),
+                                                ))
+                                                .with_children(|btn| {
+                                                    btn.spawn((
+                                                        Text::new("edit"),
+                                                        TextFont {
+                                                            font: font.clone(),
+                                                            font_size: 11.0,
+                                                            ..default()
+                                                        },
+                                                        TextColor(theme.text_muted),
+                                                    ));
+                                                });
+                                            });
 
                                         button.spawn((
                                             Text::new(plan_name.clone()),
@@ -434,15 +477,19 @@ pub fn cleanup_home_screen(mut commands: Commands, roots: Query<Entity, With<Hom
 pub fn home_interactions(
     mut project_interactions: Query<
         (&Interaction, &HomeProjectButton, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, Without<ChangeDirectoryButton>, Without<NewPlanButton>),
+        (Changed<Interaction>, With<Button>, Without<ChangeDirectoryButton>, Without<NewPlanButton>, Without<EditCapturePlanButton>),
     >,
     mut change_dir_interactions: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, With<ChangeDirectoryButton>, Without<NewPlanButton>),
+        (Changed<Interaction>, With<Button>, With<ChangeDirectoryButton>, Without<NewPlanButton>, Without<EditCapturePlanButton>),
     >,
     mut new_plan_interactions: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, With<NewPlanButton>),
+        (Changed<Interaction>, With<Button>, With<NewPlanButton>, Without<EditCapturePlanButton>),
+    >,
+    mut edit_interactions: Query<
+        (&Interaction, &EditCapturePlanButton, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>),
     >,
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<UiScreen>>,
@@ -491,6 +538,20 @@ pub fn home_interactions(
             }
             Interaction::None => {
                 *background_color = BackgroundColor(theme.button_background);
+            }
+        }
+    }
+
+    for (interaction, edit_button, mut background_color) in &mut edit_interactions {
+        match *interaction {
+            Interaction::Pressed => {
+                events.write(UiEvent::EditCapturePlan(edit_button.plan_id.clone()));
+            }
+            Interaction::Hovered => {
+                *background_color = BackgroundColor(theme.panel_background);
+            }
+            Interaction::None => {
+                *background_color = BackgroundColor(theme.panel_background_soft);
             }
         }
     }

@@ -6,7 +6,6 @@ use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
-use crate::constants::UI_LAYER;
 use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
 use crate::ui::events::UiEvent;
 use crate::ui::state::UiScreen;
@@ -325,8 +324,13 @@ pub fn spawn_new_capture_plan_modal(
                             BackgroundColor(theme.header_background),
                         ))
                         .with_children(|bar| {
+                            let form_title = if form.editing_plan_id.is_some() {
+                                "Edit Capture Plan"
+                            } else {
+                                "New Capture Plan"
+                            };
                             bar.spawn((
-                                Text::new("New Capture Plan"),
+                                Text::new(form_title),
                                 TextFont {
                                     font: font.clone(),
                                     font_size: 20.0,

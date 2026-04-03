@@ -25,9 +25,19 @@ pub struct State {
     pub next_conditions: Option<Value>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct CapturePlanDevice {
+    #[serde(rename = "type", default)]
+    pub device_type: String,
+    #[serde(default)]
+    pub num_joints: u64,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CapturePlan {
     pub name: String,
     pub states: Vec<State>,
     pub tether: String,
+    #[serde(default)]
+    pub device: Option<CapturePlanDevice>,
 }

@@ -18,6 +18,7 @@ pub enum UiEvent {
     SaveCapturePlan,
     ConfirmOverwriteCapturePlan,
     CancelOverwriteCapturePlan,
+    EditCapturePlan(String),
     CaptureDebris {
         entity: Option<Entity>,
         plan_id: String,

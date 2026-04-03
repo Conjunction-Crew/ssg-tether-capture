@@ -11,8 +11,9 @@ use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
-use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::settings::Settings;
+use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
+use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
@@ -21,7 +22,7 @@ use crate::ui::screens::home::{
     update_home_working_directory_label, HomeScreen,
 };
 use crate::ui::screens::new_capture_plan::{
-    build_capture_plan_json, cleanup_new_capture_plan_modal, generate_filename,
+    build_capture_plan_json, generate_filename,
     new_capture_plan_interactions, spawn_new_capture_plan_modal, sync_form_fields, validate_form,
     NewCapturePlanModal, NewCapturePlanScrollBody,
 };
@@ -33,7 +34,7 @@ use crate::ui::screens::working_directory_setup::{
     cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
     working_directory_setup_interactions, DirectoryPathText,
 };
-use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
+use crate::ui::state::{SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{input_field_display, input_field_interaction, input_field_keyboard};
 
@@ -51,7 +52,6 @@ struct UiCamera;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<UiScreen>()
-            .init_resource::<ProjectCatalog>()
             .init_resource::<SelectedProject>()
             .init_resource::<UiTheme>()
             .init_resource::<WorkingDirectory>()
@@ -195,7 +195,6 @@ fn handle_ui_events(
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
-    project_catalog: Res<ProjectCatalog>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut scene_camera: Query<
         (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
@@ -207,11 +206,7 @@ fn handle_ui_events(
     for event in ui_events.read() {
         match event {
             UiEvent::OpenProject(project_id) => {
-                if project_catalog
-                    .projects
-                    .iter()
-                    .any(|project| project.id == *project_id)
-                {
+                if capture_plan_lib.plans.contains_key(project_id.as_str()) {
                     selected_project.project_id = Some(project_id.clone());
                     next_screen.set(UiScreen::Sim);
                 }
@@ -314,7 +309,200 @@ fn handle_ui_events(
                     commands.entity(next_target).insert(CameraTarget);
                 }
             }
-            _ => {}
+            UiEvent::OpenNewCapturePlanForm => {
+                form.reset();
+                form.open = true;
+            }
+            UiEvent::CloseNewCapturePlanForm => {
+                form.open = false;
+                form.reset();
+            }
+            UiEvent::AddApproachTransition => {
+                form.approach_transitions.push(Default::default());
+            }
+            UiEvent::RemoveApproachTransition(i) => {
+                if *i < form.approach_transitions.len() {
+                    form.approach_transitions.remove(*i);
+                }
+            }
+            UiEvent::AddTerminalTransition => {
+                form.terminal_transitions.push(Default::default());
+            }
+            UiEvent::RemoveTerminalTransition(i) => {
+                if *i < form.terminal_transitions.len() {
+                    form.terminal_transitions.remove(*i);
+                }
+            }
+            UiEvent::SaveCapturePlan => {
+                let errors = validate_form(&form);
+                if !errors.is_empty() {
+                    form.validation_errors = errors;
+                } else {
+                    form.validation_errors.clear();
+                    let filename = generate_filename(&form.plan_name);
+                    let dest = std::path::Path::new(&working_directory.path).join(&filename);
+                    // In edit mode, skip overwrite dialog and always overwrite
+                    let skip_overwrite_check = form.editing_plan_id.is_some();
+                    if dest.exists() && form.overwrite_conflict_path.is_none() && !skip_overwrite_check {
+                        form.overwrite_conflict_path =
+                            Some(dest.to_string_lossy().to_string());
+                    } else {
+                        let json = build_capture_plan_json(&form);
+                        match serde_json::to_string_pretty(&json) {
+                            Ok(content) => {
+                                if let Err(e) = std::fs::write(&dest, content) {
+                                    eprintln!("Failed to save capture plan: {e}");
+                                } else {
+                                    // Reload user plans
+                                    let new_user_plans = load_plans_from_dir(
+                                        std::path::Path::new(&working_directory.path),
+                                    );
+                                    capture_plan_lib.user_plans = new_user_plans;
+                                    capture_plan_lib.plans = capture_plan_lib
+                                        .example_plans
+                                        .iter()
+                                        .chain(capture_plan_lib.user_plans.iter())
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect();
+                                    user_plans_dirty.0 = true;
+                                    form.open = false;
+                                    form.reset();
+                                }
+                            }
+                            Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
+                        }
+                    }
+                }
+            }
+            UiEvent::ConfirmOverwriteCapturePlan => {
+                let filename = generate_filename(&form.plan_name);
+                let dest = std::path::Path::new(&working_directory.path).join(&filename);
+                let json = build_capture_plan_json(&form);
+                match serde_json::to_string_pretty(&json) {
+                    Ok(content) => {
+                        if let Err(e) = std::fs::write(&dest, content) {
+                            eprintln!("Failed to save capture plan: {e}");
+                        } else {
+                            let new_user_plans = load_plans_from_dir(
+                                std::path::Path::new(&working_directory.path),
+                            );
+                            capture_plan_lib.user_plans = new_user_plans;
+                            capture_plan_lib.plans = capture_plan_lib
+                                .example_plans
+                                .iter()
+                                .chain(capture_plan_lib.user_plans.iter())
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+                            user_plans_dirty.0 = true;
+                            form.open = false;
+                            form.reset();
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
+                }
+            }
+            UiEvent::CancelOverwriteCapturePlan => {
+                form.overwrite_conflict_path = None;
+            }
+            UiEvent::EditCapturePlan(plan_id) => {
+                if let Some(plan) = capture_plan_lib.user_plans.get(plan_id.as_str()).cloned() {
+                    form.reset();
+                    form.plan_name = plan.name.clone();
+                    form.tether_name = plan.tether.clone();
+                    if let Some(device) = &plan.device {
+                        form.tether_type = device.device_type.clone();
+                        form.num_joints = device.num_joints.to_string();
+                    }
+                    for state in &plan.states {
+                        let transitions: Vec<TransitionForm> = state
+                            .transitions
+                            .as_ref()
+                            .map(|trans| {
+                                trans
+                                    .iter()
+                                    .filter_map(|t| {
+                                        let to = t.get("to")?.as_str()?.to_string();
+                                        let dist = t.get("distance")?;
+                                        let (kind, val) = if let Some(v) = dist.get("less_than") {
+                                            ("less_than".to_string(), v.to_string())
+                                        } else if let Some(v) = dist.get("greater_than") {
+                                            ("greater_than".to_string(), v.to_string())
+                                        } else {
+                                            return None;
+                                        };
+                                        let units = dist
+                                            .get("units")
+                                            .and_then(|u| u.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        Some(TransitionForm {
+                                            to,
+                                            distance_kind: kind,
+                                            distance_value: val,
+                                            units,
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        match state.id.as_str() {
+                            "approach" => {
+                                if let Some(params) = &state.parameters {
+                                    form.approach_max_velocity = params
+                                        .get("max_velocity")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                    form.approach_max_force = params
+                                        .get("max_force")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                }
+                                form.approach_transitions = transitions;
+                            }
+                            "terminal" => {
+                                if let Some(params) = &state.parameters {
+                                    form.terminal_max_velocity = params
+                                        .get("max_velocity")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                    form.terminal_max_force = params
+                                        .get("max_force")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                    form.terminal_shrink_rate = params
+                                        .get("shrink_rate")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                }
+                                form.terminal_transitions = transitions;
+                            }
+                            "capture" => {
+                                if let Some(params) = &state.parameters {
+                                    form.capture_max_velocity = params
+                                        .get("max_velocity")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                    form.capture_max_force = params
+                                        .get("max_force")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                    form.capture_shrink_rate = params
+                                        .get("shrink_rate")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    form.editing_plan_id = Some(plan_id.clone());
+                    form.open = true;
+                }
+            }
+            UiEvent::SetUnitSystem(unit) => {
+                form.unit_system = *unit;
+            }
         }
     }
 }

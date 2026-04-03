@@ -11,8 +11,10 @@ use crate::components::user_interface::{
 };
 use crate::constants::UI_LAYER;
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
-use crate::ui::state::{ProjectCatalog, SelectedProject};
+use crate::ui::state::SelectedProject;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
 
@@ -52,9 +54,6 @@ pub struct MapViewButton;
 
 #[derive(Component)]
 pub struct TimeWarpDecreaseButton;
-
-#[derive(Component)]
-pub struct TimeWarpLabel;
 
 #[derive(Component)]
 pub struct TimeWarpIncreaseButton;
@@ -112,39 +111,41 @@ pub fn spawn_project_detail_screen(
     selected_project: Res<SelectedProject>,
     catalog: Res<ProjectCatalog>,
     orbital_entities: Res<OrbitalCache>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    working_directory: Res<WorkingDirectory>,
+    orbital_entities: Res<OrbitalEntities>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
-    let selected = selected_project.project_id.as_ref().and_then(|project_id| {
-        catalog
-            .projects
-            .iter()
-            .find(|project| &project.id == project_id)
-    });
+    let plan_id = selected_project
+        .project_id
+        .as_deref()
+        .unwrap_or("");
 
-    let project_title = selected
-        .map(|project| project.title.clone())
-        .unwrap_or_else(|| "No project selected".to_string());
+    let plan = capture_plan_lib.plans.get(plan_id);
 
-    let project_description = selected
-        .map(|project| project.description.clone())
-        .unwrap_or_else(|| "Return to Home and choose a project.".to_string());
+    let project_title = plan
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "No plan selected".to_string());
 
-    let project_directory = selected
-        .map(|project| project.working_directory.clone())
-        .unwrap_or_else(|| "Unknown directory".to_string());
+    let project_description = String::new();
 
-    let project_file = selected
-        .map(|project| project.file_name.clone())
-        .unwrap_or_else(|| "Unknown file".to_string());
+    let project_directory = working_directory.path.clone();
 
-    let tether_entity = selected
-        .and_then(|project| orbital_entities.tethers.get(&project.tether_id))
-        .expect("Failed to get tether entity");
-    let tether_root_entity = tether_entity.get(0).copied();
+    let project_file = if plan_id.is_empty() {
+        "Unknown file".to_string()
+    } else {
+        format!("{plan_id}.json")
+    };
+
+    let tether_name = plan.map(|p| p.tether.as_str()).unwrap_or("");
+    let tether_root_entity: Option<Entity> = orbital_entities
+        .tethers
+        .get(tether_name)
+        .and_then(|v| v.first().copied());
     let capture_target_entity = orbital_entities.debris.get("Satellite1").copied();
     let capture_target_label = String::from("Satellite1");
-    let capture_plan_id = String::from("example_plan");
+    let capture_plan_id = plan_id.to_string();
 
     commands
         .spawn((
@@ -655,7 +656,7 @@ pub fn spawn_project_detail_screen(
 
             root.spawn((
                 OrbitLabel {
-                    entity: tether_entity.get(0).cloned(),
+                    entity: tether_root_entity,
                 },
                 Text::new("─ Tether1"),
                 TextFont {

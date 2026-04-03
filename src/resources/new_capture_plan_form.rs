@@ -51,6 +51,8 @@ pub struct NewCapturePlanForm {
     pub overwrite_conflict_path: Option<String>,
     pub validation_errors: Vec<String>,
     pub unit_system: UnitSystem,
+    /// Some(plan_id) when editing an existing plan; None when creating new.
+    pub editing_plan_id: Option<String>,
 }
 
 impl NewCapturePlanForm {
