@@ -1,20 +1,16 @@
 use std::f32::consts::PI;
-use std::fs;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
 
 use crate::components::dev_components::Origin;
 use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
-use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::ui::state::UiScreen;
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
-use bevy::color::palettes::css::WHITE;
 use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
 use bevy::math::cubic_splines::LinearSpline;

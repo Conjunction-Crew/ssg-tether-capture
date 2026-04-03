@@ -1,6 +1,7 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
+use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
@@ -60,6 +61,9 @@ pub struct ToggleOriginButton;
 
 #[derive(Component)]
 pub struct CycleCameraButton;
+
+#[derive(Component)]
+pub struct SidebarPanel;
 
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
@@ -176,7 +180,9 @@ pub fn spawn_project_detail_screen(
 
             root.spawn(Node {
                 width: percent(100),
-                height: percent(100),
+                flex_grow: 1.0,
+                flex_shrink: 1.0,
+                min_height: px(0.0),
                 flex_direction: FlexDirection::Row,
                 ..default()
             })
@@ -210,16 +216,33 @@ pub fn spawn_project_detail_screen(
                         Node {
                             width: px(420.0),
                             max_width: percent(42.0),
-                            height: percent(100),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: px(10.0),
-                            padding: UiRect::all(px(12.0)),
-                            overflow: Overflow::scroll_y(),
+                            flex_grow: 1.0,
+                            flex_shrink: 1.0,
+                            min_height: px(0.0),
+                            flex_direction: FlexDirection::Row,
                             ..default()
                         },
-                        BackgroundColor(theme.panel_background_soft),
                     ))
-                    .with_children(|sidebar| {
+                    .with_children(|sidebar_wrapper| {
+                        let sidebar_id = sidebar_wrapper
+                            .spawn((
+                                SidebarPanel,
+                                Interaction::default(),
+                                Node {
+                                    width: percent(100.0),
+                                    flex_grow: 1.0,
+                                    flex_shrink: 1.0,
+                                    min_height: px(0.0),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(10.0),
+                                    padding: UiRect::all(px(12.0)),
+                                    overflow: Overflow::scroll_y(),
+                                    scrollbar_width: 8.0,
+                                    ..default()
+                                },
+                                BackgroundColor(theme.panel_background_soft),
+                            ))
+                            .with_children(|sidebar| {
                         // === Project Information (collapsible) ===
                         spawn_collapsible_section(
                             sidebar,
@@ -547,6 +570,31 @@ pub fn spawn_project_detail_screen(
                                 ));
                             },
                         );
+                    })
+                    .id();
+
+                        // Scrollbar
+                        sidebar_wrapper
+                            .spawn((
+                                Scrollbar::new(
+                                    sidebar_id,
+                                    ControlOrientation::Vertical,
+                                    20.0,
+                                ),
+                                Node {
+                                    width: px(8.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.05)),
+                            ))
+                            .with_child((
+                                CoreScrollbarThumb,
+                                Node {
+                                    width: percent(100.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.3)),
+                            ));
                     });
             });
 

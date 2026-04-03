@@ -17,6 +17,7 @@ pub fn orbit_camera_input(
     mouse_motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     s: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
+    ui_interactions: Query<&Interaction, With<Node>>,
 ) {
     let (mut orbit_cameras, render_layers) = s.into_inner();
 
@@ -26,6 +27,11 @@ pub fn orbit_camera_input(
         MouseScrollUnit::Line => scroll.delta.y,
         MouseScrollUnit::Pixel => scroll.delta.y * 0.01,
     };
+
+    // Skip scroll zoom if pointer is hovering over a UI element
+    let pointer_over_ui = ui_interactions
+        .iter()
+        .any(|interaction| *interaction != Interaction::None);
 
     let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
         &mut orbit_cameras.scene_params
@@ -40,7 +46,7 @@ pub fn orbit_camera_input(
         camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch)
     }
 
-    if scroll_y != 0.0 {
+    if scroll_y != 0.0 && !pointer_over_ui {
         camera.distance -= scroll_y;
         camera.distance = camera
             .distance

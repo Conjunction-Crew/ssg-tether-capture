@@ -11,7 +11,6 @@ use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
 use avian3d::prelude::*;
 use bevy::ecs::relationship::RelationshipSourceCollection;
-use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
@@ -32,8 +31,7 @@ fn test_app() -> App {
     .init_asset::<GizmoAsset>()
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>()
-    .add_systems(Startup, load_capture_plans);
+    .init_resource::<SolverDiagnostics>();
     app
 }
 
