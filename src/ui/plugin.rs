@@ -1,4 +1,4 @@
-use avian3d::prelude::Physics;
+use avian3d::prelude::{Physics, RigidBody};
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
@@ -7,8 +7,12 @@ use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 
 use crate::components::capture_components::CaptureComponent;
-use crate::constants::UI_LAYER;
+use crate::components::dev_components::Origin;
+use crate::components::orbit::Orbital;
+use crate::components::orbit_camera::CameraTarget;
+use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{cleanup_home_screen, home_interactions, spawn_home_screen};
@@ -72,10 +76,14 @@ fn handle_ui_events(
     mut ui_events: MessageReader<UiEvent>,
     mut next_screen: ResMut<NextState<UiScreen>>,
     mut selected_project: ResMut<SelectedProject>,
+    mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
     project_catalog: Res<ProjectCatalog>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
+    mut scene_camera: Query<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), Without<UiCamera>>,
+    origin_query: Query<(Entity, &Visibility), With<Origin>>,
+    bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
 ) {
     for event in ui_events.read() {
         match event {
@@ -119,9 +127,61 @@ fn handle_ui_events(
                     } else {
                         println!("entity already marked for capture!");
                     }
-                    // We will do nothing if the selected entity is already marked for capture
-                    // TODO: button should probably be removed to prevent being able to make this call to
-                    // the same entity?
+                }
+            }
+            UiEvent::ToggleMapView => {
+                if let Ok((mut render_layers, mut atmosphere, mut atmosphere_settings)) =
+                    scene_camera.single_mut()
+                {
+                    if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+                        *render_layers = RenderLayers::layer(MAP_LAYER);
+                        atmosphere.world_position = Vec3::ZERO;
+                        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M;
+                    } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+                        *render_layers = RenderLayers::layer(SCENE_LAYER);
+                        atmosphere_settings.scene_units_to_m = 1.0;
+                    }
+                }
+            }
+            UiEvent::ToggleOrigin => {
+                if let Ok((origin_entity, origin_vis)) = origin_query.single() {
+                    match origin_vis {
+                        Visibility::Visible => {
+                            commands.entity(origin_entity).insert(Visibility::Hidden);
+                        }
+                        Visibility::Hidden => {
+                            commands.entity(origin_entity).insert(Visibility::Visible);
+                        }
+                        Visibility::Inherited => {}
+                    }
+                }
+            }
+            UiEvent::ChangeTimeWarp { increase } => {
+                if let Some(ref mut world_time) = world_time {
+                    const MAX_TIME_WARP: u32 = 10000;
+                    const MIN_TIME_WARP: u32 = 1;
+                    if *increase && world_time.multiplier * 2 <= MAX_TIME_WARP {
+                        world_time.multiplier *= 2;
+                    } else if !increase && world_time.multiplier / 2 >= MIN_TIME_WARP {
+                        world_time.multiplier /= 2;
+                    }
+                }
+            }
+            UiEvent::CycleCameraTarget => {
+                let mut entities: Vec<(Entity, bool)> = bodies.iter().collect();
+                if !entities.is_empty() {
+                    entities.sort_by_key(|(entity, _)| entity.index());
+                    let current_index = entities
+                        .iter()
+                        .position(|(_, is_target)| *is_target)
+                        .unwrap_or(0);
+                    let next_target = entities[(current_index + 1) % entities.len()].0;
+                    for (entity, is_target) in &entities {
+                        if *is_target {
+                            commands.entity(*entity).remove::<CameraTarget>();
+                        }
+                    }
+                    commands.entity(next_target).insert(CameraTarget);
                 }
             }
         }
