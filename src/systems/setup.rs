@@ -13,6 +13,7 @@ use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
+use bevy::math::DVec3;
 use bevy::math::cubic_splines::LinearSpline;
 use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium};
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
@@ -98,7 +99,7 @@ pub fn setup_celestial(
     );
 
     // Set up Earth map rendering
-    let map_earth_mesh = Sphere::new(EARTH_RADIUS / MAP_UNITS_TO_M)
+    let map_earth_mesh = Sphere::new(EARTH_RADIUS / MAP_UNITS_TO_M as f32)
         .mesh()
         .uv(512, 256);
 
@@ -184,9 +185,9 @@ pub fn setup_entities(
         OrbitCamera {
             scene_params: OrbitCameraParams::default(),
             map_params: OrbitCameraParams {
-                distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M
-                    + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M),
-                min_distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M,
+                distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32
+                    + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32),
+                min_distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32,
                 ..default()
             },
         },
@@ -223,7 +224,7 @@ pub fn setup_entities(
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
                 AngularVelocity {
-                    0: Vec3::new(0.01, 0.01, 0.01),
+                    0: DVec3::new(0.01, 0.01, 0.01),
                     ..default()
                 },
                 Transform::from_xyz(150.0, 0.0, 300.0),
@@ -238,12 +239,12 @@ pub fn setup_tether(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut orbital_entities: ResMut<OrbitalEntities>,
 ) {
-    let root_tail_radius = 0.50;
-    let rope_radius = 0.25;
+    let root_tail_radius: f64 = 0.50;
+    let rope_radius: f64 = 0.25;
     let tether_node_length = DIST_BETWEEN_JOINTS;
     let tether_node_half_length = tether_node_length * 0.5;
 
-    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius)));
+    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius as f32)));
     let sphere_collider = Collider::sphere(root_tail_radius);
     let sphere_material = materials.add(StandardMaterial {
         base_color: Color::Srgba(Srgba {
@@ -256,7 +257,7 @@ pub fn setup_tether(
         ..default()
     });
 
-    let tether_node_mesh = Mesh::from(Cylinder::new(rope_radius / 8.0, tether_node_length));
+    let tether_node_mesh = Mesh::from(Cylinder::new((rope_radius / 8.0) as f32, tether_node_length as f32));
     let tether_node_collider = Collider::convex_hull_from_mesh(&tether_node_mesh).unwrap();
     let tether_node_mesh = meshes.add(tether_node_mesh);
 
@@ -287,8 +288,8 @@ pub fn setup_tether(
         ((TETHER_LENGTH - 2.0 * root_tail_radius) / tether_node_length).max(0.0) as u32;
     let interval_count = interior_node_count + 1;
     let surface_gap = if interval_count > 0 {
-        (TETHER_LENGTH - 2.0 * root_tail_radius - interior_node_count as f32 * tether_node_length)
-            / interval_count as f32
+        (TETHER_LENGTH - 2.0 * root_tail_radius - interior_node_count as f64 * tether_node_length)
+            / interval_count as f64
     } else {
         0.0
     };
@@ -324,11 +325,11 @@ pub fn setup_tether(
                 Mesh3d(mesh),
                 MeshMaterial3d(sphere_material.clone()),
                 Mass::from(mass),
-                Transform::from_xyz(0.0, y, 0.0),
+                Transform::from_xyz(0.0, y as f32, 0.0),
             ))
             .id();
 
-        let anchor = Vec3::new(0.0, prev_y + prev_half_extent + surface_gap * 0.5, 0.0);
+        let anchor = DVec3::new(0.0, prev_y + prev_half_extent + surface_gap * 0.5, 0.0);
 
         commands.spawn((
             DespawnOnExit(UiScreen::Sim),

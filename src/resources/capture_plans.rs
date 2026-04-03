@@ -9,5 +9,5 @@ pub struct CapturePlanLibrary {
 
 #[derive(Resource, Debug, Default)]
 pub struct CaptureSphereRadius {
-    pub radius: f32,
+    pub radius: f64,
 }

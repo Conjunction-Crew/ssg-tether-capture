@@ -7,10 +7,12 @@ use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::ui::screens::home::load_capture_plans;
 use crate::ui::state::UiScreen;
+use avian3d::collider_tree::ColliderTreeDiagnostics;
 use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
 use avian3d::prelude::*;
 use bevy::ecs::relationship::RelationshipSourceCollection;
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
@@ -31,7 +33,8 @@ fn test_app() -> App {
     .init_asset::<GizmoAsset>()
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>();
+    .init_resource::<SolverDiagnostics>()
+    .init_resource::<ColliderTreeDiagnostics>();
     app
 }
 
@@ -120,7 +123,7 @@ fn apply_force_to_target() {
             .get::<LinearVelocity>(sphere_body)
             .unwrap()
             .0,
-        Vec3::ZERO
+        DVec3::ZERO
     );
 
     // Load capture plans
@@ -158,7 +161,7 @@ fn apply_force_to_target() {
             .get::<LinearVelocity>(sphere_body)
             .unwrap()
             .0,
-        Vec3::ZERO
+        DVec3::ZERO
     );
 }
 
@@ -211,7 +214,7 @@ fn floating_origin_resets() {
             CameraTarget,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(MAX_ORIGIN_OFFSET - 10.0, 0.0, 0.0),
+            Transform::from_xyz(MAX_ORIGIN_OFFSET as f32 - 10.0, 0.0, 0.0),
             Orbit::FromElements(ISS_ORBIT),
         ))
         .id();
@@ -233,7 +236,11 @@ fn floating_origin_resets() {
     // Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
-        .insert(Transform::from_xyz(MAX_ORIGIN_OFFSET + 10.0, 0.0, 0.0));
+        .insert(Transform::from_xyz(
+            MAX_ORIGIN_OFFSET as f32 + 10.0,
+            0.0,
+            0.0,
+        ));
 
     app.update();
     app.update();

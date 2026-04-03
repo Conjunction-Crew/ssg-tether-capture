@@ -25,7 +25,7 @@ pub fn toggle_map_view(
 
             // Adjust atmosphere
             atmosphere.world_position = Vec3::ZERO;
-            atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M;
+            atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
         } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
             println!("Switching to scene view");
             *render_layers = RenderLayers::layer(SCENE_LAYER);

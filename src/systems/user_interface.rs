@@ -210,10 +210,10 @@ pub fn map_orbitals(
         }
         if let Some(entity) = label.entity {
             if let Ok(true_params) = true_params_query.get(entity) {
-                let mut world_position = Vec3::new(
-                    true_params.rv[0] as f32 / MAP_UNITS_TO_M,
-                    true_params.rv[1] as f32 / MAP_UNITS_TO_M,
-                    true_params.rv[2] as f32 / MAP_UNITS_TO_M,
+                let mut world_position = DVec3::new(
+                    true_params.rv[0] / MAP_UNITS_TO_M,
+                    true_params.rv[1] / MAP_UNITS_TO_M,
+                    true_params.rv[2] / MAP_UNITS_TO_M,
                 );
 
                 if let Ok(rb) = rigidbodies.get(entity)
@@ -222,7 +222,8 @@ pub fn map_orbitals(
                     world_position += rb.position.0 / MAP_UNITS_TO_M;
                 }
 
-                if let Ok(viewport_position) = cam.world_to_viewport(cam_transform, world_position)
+                if let Ok(viewport_position) =
+                    cam.world_to_viewport(cam_transform, world_position.as_vec3())
                 {
                     node.top = Val::Px(viewport_position.y);
                     node.left = Val::Px(viewport_position.x);
@@ -277,21 +278,17 @@ fn capture_metrics(
     })
 }
 
-fn world_position(true_params: &TrueParams, position: Vec3, disabled: bool) -> DVec3 {
+fn world_position(true_params: &TrueParams, position: DVec3, disabled: bool) -> DVec3 {
     let base = DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]);
-    if disabled {
-        base
-    } else {
-        base + position.as_dvec3()
-    }
+    if disabled { base } else { base + position }
 }
 
-fn world_velocity(true_params: &TrueParams, linear_velocity: Vec3, disabled: bool) -> DVec3 {
+fn world_velocity(true_params: &TrueParams, linear_velocity: DVec3, disabled: bool) -> DVec3 {
     let base = DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5]);
     if disabled {
         base
     } else {
-        base + linear_velocity.as_dvec3()
+        base + linear_velocity
     }
 }
 

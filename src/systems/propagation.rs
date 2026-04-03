@@ -20,7 +20,7 @@ fn calculate_com_rv(
     target_entity: Entity,
     rigidbodies: &Query<RigidBodyQuery>,
     nodes: &Query<(Entity, &TetherNode)>,
-) -> Option<(Vec3, Vec3)> {
+) -> Option<(DVec3, DVec3)> {
     let Ok(target_rb) = rigidbodies.get(target_entity) else {
         return None;
     };
@@ -209,7 +209,7 @@ pub fn physics_bubble_add_remove(
             DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]) - origin_pos;
 
         if !disabled_entities.contains(entity)
-            && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS as f32
+            && (rb.position.0).length() > PHYSICS_DISABLE_RADIUS
         {
             true_params.rv[0] += rb.position.x as f64;
             true_params.rv[1] += rb.position.y as f64;
@@ -233,8 +233,8 @@ pub fn physics_bubble_add_remove(
             true_params.rv[4] -= relative_vel.y;
             true_params.rv[5] -= relative_vel.z;
 
-            rb.position.0 = relative_pos.as_vec3();
-            rb.linear_velocity.0 = relative_vel.as_vec3();
+            rb.position.0 = relative_pos;
+            rb.linear_velocity.0 = relative_vel;
             commands.entity(entity).remove::<RigidBodyDisabled>();
             println!("ENABLED SOMETHING");
         }

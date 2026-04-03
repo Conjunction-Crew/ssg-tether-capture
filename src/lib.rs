@@ -9,6 +9,7 @@ mod ui;
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
 use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin};
+use bevy::math::DVec3;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
 use bevy::ui_widgets::UiWidgetsPlugins;
@@ -110,7 +111,8 @@ pub fn create_app() -> App {
             },
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
-        .insert_resource(Gravity(Vec3::ZERO))
+        .insert_resource(Gravity(DVec3::ZERO))
+        .insert_resource(SubstepCount(12))
         .init_resource::<CapturePlanLibrary>();
 
     app
