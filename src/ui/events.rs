@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::resources::new_capture_plan_form::UnitSystem;
+
 #[derive(Message, Debug, Clone)]
 pub enum UiEvent {
     OpenProject(String),
@@ -24,4 +26,5 @@ pub enum UiEvent {
     ToggleOrigin,
     ChangeTimeWarp { increase: bool },
     CycleCameraTarget,
+    SetUnitSystem(UnitSystem),
 }

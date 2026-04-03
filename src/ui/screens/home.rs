@@ -48,7 +48,17 @@ pub fn spawn_home_screen(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
+    spawn_home_screen_inner(&mut commands, &asset_server, &theme, &capture_plan_lib, &working_directory.path);
+}
+
+pub fn spawn_home_screen_inner(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    theme: &UiTheme,
+    capture_plan_lib: &CapturePlanLibrary,
+    working_directory_path: &str,
+) {
+    let font: Handle<Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
     let user_plan_count_label = format!(
         "{} plan{} in working directory",
         capture_plan_lib.user_plans.len(),

@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::constants::UI_LAYER;
-use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm};
+use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
 use crate::ui::events::UiEvent;
 use crate::ui::state::UiScreen;
 use crate::ui::theme::UiTheme;
@@ -41,6 +41,15 @@ pub struct ConfirmOverwriteButton;
 
 #[derive(Component)]
 pub struct CancelOverwriteButton;
+
+#[derive(Component)]
+pub struct NewCapturePlanScrollBody;
+
+#[derive(Component)]
+pub struct UnitMetricButton;
+
+#[derive(Component)]
+pub struct UnitImperialButton;
 
 // ── Field ID tags so the keyboard system knows which field to update ──────
 
@@ -178,6 +187,7 @@ fn transition_rows<'a>(
     parent: &mut ChildSpawnerCommands<'a>,
     transitions: &[TransitionForm],
     is_approach: bool,
+    dist_unit: &str,
     font: &Handle<Font>,
     theme: &UiTheme,
 ) {
@@ -251,7 +261,7 @@ fn transition_rows<'a>(
 
                 field_row(row, "To State", to_id, "e.g. terminal", &t.to, false, false, font, theme);
                 field_row(row, "Condition (less_than / greater_than)", kind_id, "less_than", &t.distance_kind, false, false, font, theme);
-                field_row(row, "Distance Value", val_id, "50.0", &t.distance_value, true, false, font, theme);
+                field_row(row, &format!("Distance ({dist_unit})"), val_id, "50.0", &t.distance_value, true, false, font, theme);
                 field_row(row, "Units (optional, e.g. m)", units_id, "", &t.units, false, false, font, theme);
             });
     }
@@ -265,9 +275,14 @@ pub fn spawn_new_capture_plan_modal(
     theme: &UiTheme,
     form: &NewCapturePlanForm,
     render_layer: usize,
+    initial_scroll_y: f32,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
     let has_errors = !form.validation_errors.is_empty();
+    let (vel_unit, force_unit, dist_unit) = match form.unit_system {
+        UnitSystem::Metric => ("m/s", "N", "m"),
+        UnitSystem::Imperial => ("ft/s", "lbf", "ft"),
+    };
 
     commands
         .spawn((
@@ -320,25 +335,52 @@ pub fn spawn_new_capture_plan_modal(
                                 TextColor(theme.text_primary),
                             ));
 
-                            bar.spawn((
-                                Button,
-                                NewPlanCancelButton,
-                                Node {
-                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(theme.panel_background),
-                            ))
-                            .with_children(|btn| {
-                                btn.spawn((
-                                    Text::new("× Cancel"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 13.0,
+                            bar.spawn(Node {
+                                align_items: AlignItems::Center,
+                                column_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|right| {
+                                right.spawn((
+                                    Button,
+                                    NewPlanSaveButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
                                         ..default()
                                     },
-                                    TextColor(theme.text_muted),
-                                ));
+                                    BackgroundColor(theme.button_background),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("Save"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 13.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.button_text),
+                                    ));
+                                });
+                                right.spawn((
+                                    Button,
+                                    NewPlanCancelButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.panel_background),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("× Cancel"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 13.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.text_muted),
+                                    ));
+                                });
                             });
                         });
 
@@ -354,8 +396,9 @@ pub fn spawn_new_capture_plan_modal(
                         .with_children(|scroll_row| {
                             let scroll_id = scroll_row
                                 .spawn((
+                                    NewCapturePlanScrollBody,
                                     Interaction::default(),
-                                    ScrollPosition::default(),
+                                    ScrollPosition(Vec2::new(0.0, initial_scroll_y)),
                                     Node {
                                         flex_grow: 1.0,
                                         min_height: Val::Px(0.0),
@@ -418,6 +461,80 @@ pub fn spawn_new_capture_plan_modal(
                                 });
                             }
 
+                            // ── UNITS ─────────────────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(8.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                sec.spawn((
+                                    Text::new("Units"),
+                                    TextFont { font: font.clone(), font_size: 11.0, ..default() },
+                                    TextColor(theme.text_muted),
+                                ));
+                                sec.spawn(Node {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(6.0),
+                                    ..default()
+                                })
+                                .with_children(|row| {
+                                    let metric_bg = if form.unit_system == UnitSystem::Metric {
+                                        theme.button_background
+                                    } else {
+                                        theme.panel_background_soft
+                                    };
+                                    let imperial_bg = if form.unit_system == UnitSystem::Imperial {
+                                        theme.button_background
+                                    } else {
+                                        theme.panel_background_soft
+                                    };
+                                    let metric_text = if form.unit_system == UnitSystem::Metric {
+                                        theme.button_text
+                                    } else {
+                                        theme.text_muted
+                                    };
+                                    let imperial_text = if form.unit_system == UnitSystem::Imperial {
+                                        theme.button_text
+                                    } else {
+                                        theme.text_muted
+                                    };
+                                    row.spawn((
+                                        Button,
+                                        UnitMetricButton,
+                                        Node {
+                                            padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(metric_bg),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("m (metric)"),
+                                            TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                            TextColor(metric_text),
+                                        ));
+                                    });
+                                    row.spawn((
+                                        Button,
+                                        UnitImperialButton,
+                                        Node {
+                                            padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(imperial_bg),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("ft (imperial)"),
+                                            TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                            TextColor(imperial_text),
+                                        ));
+                                    });
+                                });
+                            });
+
                             // ── GENERAL ──────────────────────────────────
                             body.spawn(Node {
                                 width: Val::Percent(100.0),
@@ -453,15 +570,15 @@ pub fn spawn_new_capture_plan_modal(
                             })
                             .with_children(|sec| {
                                 section_header(sec, "Approach State", &font, theme);
-                                field_row(sec, "Max Velocity *", FormFieldId::ApproachMaxVelocity, "1.0", &form.approach_max_velocity, true, false, &font, theme);
-                                field_row(sec, "Max Force *", FormFieldId::ApproachMaxForce, "2.0", &form.approach_max_force, true, false, &font, theme);
+                                field_row(sec, &format!("Max Velocity * ({vel_unit})"), FormFieldId::ApproachMaxVelocity, "1.0", &form.approach_max_velocity, true, false, &font, theme);
+                                field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::ApproachMaxForce, "2.0", &form.approach_max_force, true, false, &font, theme);
 
                                 sec.spawn((
                                     Text::new("Transitions"),
                                     TextFont { font: font.clone(), font_size: 12.0, ..default() },
                                     TextColor(theme.text_muted),
                                 ));
-                                transition_rows(sec, &form.approach_transitions, true, &font, theme);
+                                transition_rows(sec, &form.approach_transitions, true, dist_unit, &font, theme);
 
                                 sec.spawn((
                                     Button,
@@ -491,16 +608,16 @@ pub fn spawn_new_capture_plan_modal(
                             })
                             .with_children(|sec| {
                                 section_header(sec, "Terminal State", &font, theme);
-                                field_row(sec, "Max Velocity *", FormFieldId::TerminalMaxVelocity, "0.2", &form.terminal_max_velocity, true, false, &font, theme);
-                                field_row(sec, "Max Force *", FormFieldId::TerminalMaxForce, "2.0", &form.terminal_max_force, true, false, &font, theme);
-                                field_row(sec, "Shrink Rate *", FormFieldId::TerminalShrinkRate, "0.125", &form.terminal_shrink_rate, true, false, &font, theme);
+                                field_row(sec, &format!("Max Velocity * ({vel_unit})"), FormFieldId::TerminalMaxVelocity, "0.2", &form.terminal_max_velocity, true, false, &font, theme);
+                                field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::TerminalMaxForce, "2.0", &form.terminal_max_force, true, false, &font, theme);
+                                field_row(sec, &format!("Shrink Rate * ({vel_unit})"), FormFieldId::TerminalShrinkRate, "0.125", &form.terminal_shrink_rate, true, false, &font, theme);
 
                                 sec.spawn((
                                     Text::new("Transitions"),
                                     TextFont { font: font.clone(), font_size: 12.0, ..default() },
                                     TextColor(theme.text_muted),
                                 ));
-                                transition_rows(sec, &form.terminal_transitions, false, &font, theme);
+                                transition_rows(sec, &form.terminal_transitions, false, dist_unit, &font, theme);
 
                                 sec.spawn((
                                     Button,
@@ -530,53 +647,11 @@ pub fn spawn_new_capture_plan_modal(
                             })
                             .with_children(|sec| {
                                 section_header(sec, "Capture State", &font, theme);
-                                field_row(sec, "Max Velocity *", FormFieldId::CaptureMaxVelocity, "0.1", &form.capture_max_velocity, true, false, &font, theme);
-                                field_row(sec, "Max Force *", FormFieldId::CaptureMaxForce, "2.0", &form.capture_max_force, true, false, &font, theme);
-                                field_row(sec, "Shrink Rate *", FormFieldId::CaptureShrinkRate, "0.025", &form.capture_shrink_rate, true, false, &font, theme);
+                                field_row(sec, &format!("Max Velocity * ({vel_unit})"), FormFieldId::CaptureMaxVelocity, "0.1", &form.capture_max_velocity, true, false, &font, theme);
+                                field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::CaptureMaxForce, "2.0", &form.capture_max_force, true, false, &font, theme);
+                                field_row(sec, &format!("Shrink Rate * ({vel_unit})"), FormFieldId::CaptureShrinkRate, "0.025", &form.capture_shrink_rate, true, false, &font, theme);
                             });
 
-                            // ── Save / Cancel buttons ────────────────────
-                            body.spawn(Node {
-                                width: Val::Percent(100.0),
-                                justify_content: JustifyContent::End,
-                                column_gap: Val::Px(10.0),
-                                ..default()
-                            })
-                            .with_children(|btns| {
-                                btns.spawn((
-                                    Button,
-                                    NewPlanCancelButton,
-                                    Node {
-                                        padding: UiRect::axes(Val::Px(18.0), Val::Px(9.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme.panel_background_soft),
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new("Cancel"),
-                                        TextFont { font: font.clone(), font_size: 14.0, ..default() },
-                                        TextColor(theme.text_primary),
-                                    ));
-                                });
-
-                                btns.spawn((
-                                    Button,
-                                    NewPlanSaveButton,
-                                    Node {
-                                        padding: UiRect::axes(Val::Px(18.0), Val::Px(9.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme.button_background),
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new("Save"),
-                                        TextFont { font: font.clone(), font_size: 14.0, ..default() },
-                                        TextColor(theme.button_text),
-                                    ));
-                                });
-                            });
                                 })
                                 .id();
 
@@ -786,6 +861,8 @@ pub fn new_capture_plan_interactions(
             Option<&RemoveTerminalTransitionButton>,
             Option<&ConfirmOverwriteButton>,
             Option<&CancelOverwriteButton>,
+            Option<&UnitMetricButton>,
+            Option<&UnitImperialButton>,
         ),
         (Changed<Interaction>, With<Button>),
     >,
@@ -809,6 +886,8 @@ pub fn new_capture_plan_interactions(
         remove_terminal,
         confirm_overwrite,
         cancel_overwrite,
+        unit_metric,
+        unit_imperial,
     ) in &mut buttons
     {
         if cancel.is_some() {
@@ -858,6 +937,18 @@ pub fn new_capture_plan_interactions(
                 Interaction::Pressed => { events.write(UiEvent::CancelOverwriteCapturePlan); }
                 Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
                 Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
+            }
+        } else if unit_metric.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::SetUnitSystem(UnitSystem::Metric)); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+                Interaction::None => {}
+            }
+        } else if unit_imperial.is_some() {
+            match *interaction {
+                Interaction::Pressed => { events.write(UiEvent::SetUnitSystem(UnitSystem::Imperial)); }
+                Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+                Interaction::None => {}
             }
         }
     }
@@ -950,14 +1041,25 @@ pub fn generate_filename(plan_name: &str) -> String {
     format!("{}.json", sanitized)
 }
 
+fn unit_conv_linear(s: &str, unit: UnitSystem) -> f64 {
+    let v = s.parse::<f64>().unwrap_or(0.0);
+    if unit == UnitSystem::Imperial { v * 0.3048 } else { v }
+}
+
+fn unit_conv_force(s: &str, unit: UnitSystem) -> f64 {
+    let v = s.parse::<f64>().unwrap_or(0.0);
+    if unit == UnitSystem::Imperial { v * 4.44822 } else { v }
+}
+
 pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
     use serde_json::{json, Value};
 
+    let unit = form.unit_system;
     let make_transitions = |transitions: &[TransitionForm]| -> Value {
         let arr: Vec<Value> = transitions
             .iter()
             .map(|t| {
-                let distance_val = t.distance_value.parse::<f64>().unwrap_or(0.0);
+                let distance_val = unit_conv_linear(&t.distance_value, unit);
                 let mut dist = json!({ t.distance_kind.clone(): distance_val });
                 if !t.units.trim().is_empty() {
                     dist["units"] = json!(t.units.trim());
@@ -982,26 +1084,26 @@ pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
             {
                 "id": "approach",
                 "parameters": {
-                    "max_velocity": form.approach_max_velocity.parse::<f64>().unwrap_or(0.0),
-                    "max_force": form.approach_max_force.parse::<f64>().unwrap_or(0.0)
+                    "max_velocity": unit_conv_linear(&form.approach_max_velocity, unit),
+                    "max_force": unit_conv_force(&form.approach_max_force, unit)
                 },
                 "transitions": approach_transitions
             },
             {
                 "id": "terminal",
                 "parameters": {
-                    "max_velocity": form.terminal_max_velocity.parse::<f64>().unwrap_or(0.0),
-                    "max_force": form.terminal_max_force.parse::<f64>().unwrap_or(0.0),
-                    "shrink_rate": form.terminal_shrink_rate.parse::<f64>().unwrap_or(0.0)
+                    "max_velocity": unit_conv_linear(&form.terminal_max_velocity, unit),
+                    "max_force": unit_conv_force(&form.terminal_max_force, unit),
+                    "shrink_rate": unit_conv_linear(&form.terminal_shrink_rate, unit)
                 },
                 "transitions": terminal_transitions
             },
             {
                 "id": "capture",
                 "parameters": {
-                    "max_velocity": form.capture_max_velocity.parse::<f64>().unwrap_or(0.0),
-                    "max_force": form.capture_max_force.parse::<f64>().unwrap_or(0.0),
-                    "shrink_rate": form.capture_shrink_rate.parse::<f64>().unwrap_or(0.0)
+                    "max_velocity": unit_conv_linear(&form.capture_max_velocity, unit),
+                    "max_force": unit_conv_force(&form.capture_max_force, unit),
+                    "shrink_rate": unit_conv_linear(&form.capture_shrink_rate, unit)
                 }
             }
         ]

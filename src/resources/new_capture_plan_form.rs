@@ -1,5 +1,12 @@
 use bevy::prelude::*;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum UnitSystem {
+    #[default]
+    Metric,
+    Imperial,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct TransitionForm {
     pub to: String,
@@ -43,6 +50,7 @@ pub struct NewCapturePlanForm {
     /// Contains the full path of the conflicting file.
     pub overwrite_conflict_path: Option<String>,
     pub validation_errors: Vec<String>,
+    pub unit_system: UnitSystem,
 }
 
 impl NewCapturePlanForm {

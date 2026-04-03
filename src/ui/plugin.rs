@@ -17,12 +17,13 @@ use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::home::{
-    cleanup_home_screen, home_interactions, spawn_home_screen, update_home_working_directory_label,
+    cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
+    update_home_working_directory_label, HomeScreen,
 };
 use crate::ui::screens::new_capture_plan::{
     build_capture_plan_json, cleanup_new_capture_plan_modal, generate_filename,
     new_capture_plan_interactions, spawn_new_capture_plan_modal, sync_form_fields, validate_form,
-    NewCapturePlanModal,
+    NewCapturePlanModal, NewCapturePlanScrollBody,
 };
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
@@ -39,6 +40,9 @@ use crate::ui::widgets::{input_field_display, input_field_interaction, input_fie
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);
 
+#[derive(Resource, Default)]
+struct UserPlansDirty(bool);
+
 pub struct UiPlugin;
 
 #[derive(Component)]
@@ -53,6 +57,7 @@ impl Plugin for UiPlugin {
             .init_resource::<WorkingDirectory>()
             .init_resource::<NewCapturePlanForm>()
             .init_resource::<FileDialogTask>()
+            .init_resource::<UserPlansDirty>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
@@ -82,6 +87,7 @@ impl Plugin for UiPlugin {
             .add_systems(Update, sync_form_fields)
             .add_systems(Update, new_capture_plan_interactions)
             .add_systems(Update, poll_new_plan_modal)
+            .add_systems(Update, poll_home_plan_refresh)
             .add_systems(Update, handle_ui_events);
     }
 }
@@ -132,39 +138,48 @@ fn poll_new_plan_modal(
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
     modals: Query<Entity, With<NewCapturePlanModal>>,
-    // (approach_count, terminal_count, has_overwrite, error_count)
-    mut last: Local<(usize, usize, bool, usize)>,
+    scroll_body: Query<&ScrollPosition, With<NewCapturePlanScrollBody>>,
+    // (approach_count, terminal_count, has_overwrite, error_count, scroll_y, unit_system)
+    mut last: Local<(usize, usize, bool, usize, f32, UnitSystem)>,
 ) {
     if !form.is_changed() {
         return;
     }
     let modal_exists = !modals.is_empty();
     if form.open && !modal_exists {
-        spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
+        spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, 0.0);
         *last = (
             form.approach_transitions.len(),
             form.terminal_transitions.len(),
             form.overwrite_conflict_path.is_some(),
             form.validation_errors.len(),
+            0.0,
+            form.unit_system,
         );
     } else if !form.open && modal_exists {
         for e in &modals {
             commands.entity(e).despawn();
         }
     } else if form.open && modal_exists {
-        // Only re-render on structural changes (transitions added/removed, validation, overwrite)
-        let current = (
-            form.approach_transitions.len(),
-            form.terminal_transitions.len(),
-            form.overwrite_conflict_path.is_some(),
-            form.validation_errors.len(),
-        );
-        if current != *last {
+        let needs_rerender = form.approach_transitions.len() != last.0
+            || form.terminal_transitions.len() != last.1
+            || form.overwrite_conflict_path.is_some() != last.2
+            || form.validation_errors.len() != last.3
+            || form.unit_system != last.5;
+        if needs_rerender {
+            let scroll_y = scroll_body.single().map(|sp| sp.0.y).unwrap_or(last.4);
             for e in &modals {
                 commands.entity(e).despawn();
             }
-            spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER);
-            *last = current;
+            spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, scroll_y);
+            *last = (
+                form.approach_transitions.len(),
+                form.terminal_transitions.len(),
+                form.overwrite_conflict_path.is_some(),
+                form.validation_errors.len(),
+                scroll_y,
+                form.unit_system,
+            );
         }
     }
 }
@@ -302,4 +317,29 @@ fn handle_ui_events(
             _ => {}
         }
     }
+}
+
+fn poll_home_plan_refresh(
+    mut commands: Commands,
+    mut user_plans_dirty: ResMut<UserPlansDirty>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    home_screens: Query<Entity, With<HomeScreen>>,
+    asset_server: Res<AssetServer>,
+    theme: Res<UiTheme>,
+    working_directory: Res<WorkingDirectory>,
+) {
+    if !user_plans_dirty.0 || home_screens.is_empty() {
+        return;
+    }
+    for entity in &home_screens {
+        commands.entity(entity).despawn();
+    }
+    spawn_home_screen_inner(
+        &mut commands,
+        &asset_server,
+        &theme,
+        &capture_plan_lib,
+        &working_directory.path,
+    );
+    user_plans_dirty.0 = false;
 }
