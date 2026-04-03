@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
-avian3d = { version = "0.5.0", features = ["simd"] }
+avian3d = { version = "0.6.1", default-features = false, features = ["simd", "parallel", "3d", "f64", "parry-f64", "xpbd_joints", "collider-from-mesh", "bevy_scene"] }
 ndarray = { version = "0.16.1" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149" }

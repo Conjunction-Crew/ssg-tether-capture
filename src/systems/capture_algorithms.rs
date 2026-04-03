@@ -1,10 +1,10 @@
 use avian3d::{
     math::PI,
     prelude::{
-        Forces, LinearVelocity, Physics, Position, RigidBodyForces, RigidBodyQuery, Rotation,
+        Forces, LinearVelocity, Physics, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
     },
 };
-use bevy::prelude::*;
+use bevy::{math::DVec3, prelude::*};
 
 use crate::{
     components::capture_components::CaptureComponent,
@@ -46,9 +46,9 @@ pub fn capture_state_machine_update(
             if let Some(nodes) = orbital_entities.tethers.get(&plan.tether) {
                 for (idx, &node) in nodes.iter().enumerate() {
                     // Get rigidbody of node
-                    let world_r: Vec3;
-                    let rel_r: Vec3;
-                    let rel_v: Vec3;
+                    let world_r: DVec3;
+                    let rel_r: DVec3;
+                    let rel_v: DVec3;
                     if let Ok(rb) = rb_forces.p0().get(node) {
                         // Calculate relative position / velocity to the target
                         world_r = rb.position.0.clone();
@@ -59,7 +59,7 @@ pub fn capture_state_machine_update(
                     }
 
                     // Get force for node
-                    let mut force_vec: Vec3 = Vec3::ZERO;
+                    let mut force_vec: DVec3 = DVec3::ZERO;
 
                     // Max speed and force  for node
                     let mut max_velocity = 0.0;
@@ -73,12 +73,12 @@ pub fn capture_state_machine_update(
                             if let Some(parameters) = &state.parameters {
                                 if let Some(parsed_max_velocity) = parameters.get("max_velocity") {
                                     if let Some(val) = parsed_max_velocity.as_f64() {
-                                        max_velocity = val as f32;
+                                        max_velocity = val;
                                     }
                                 }
                                 if let Some(parsed_max_force) = parameters.get("max_force") {
                                     if let Some(val) = parsed_max_force.as_f64() {
-                                        max_force = val as f32;
+                                        max_force = val;
                                     }
                                 }
 
@@ -87,8 +87,7 @@ pub fn capture_state_machine_update(
                                     {
                                         if let Some(val) = parsed_shrink_rate.as_f64() {
                                             if capture_sphere_radius.radius > 0.1 {
-                                                capture_sphere_radius.radius -=
-                                                    (val * PHYS_DT) as f32;
+                                                capture_sphere_radius.radius -= val * PHYS_DT;
                                             }
                                         }
                                     }
@@ -103,7 +102,7 @@ pub fn capture_state_machine_update(
                                                         distance.get("less_than")
                                                     {
                                                         if let Some(val) = less_than.as_f64() {
-                                                            if rel_r.length() < val as f32 {
+                                                            if rel_r.length() < val {
                                                                 // Transition to 'to'
                                                                 if let Some(new_state) = to.as_str()
                                                                 {
@@ -128,7 +127,7 @@ pub fn capture_state_machine_update(
                                                         distance.get("greater_than")
                                                     {
                                                         if let Some(val) = greater_than.as_f64() {
-                                                            if rel_r.length() > val as f32 {
+                                                            if rel_r.length() > val {
                                                                 // Transition to 'to'
                                                                 if let Some(new_state) = to.as_str()
                                                                 {
@@ -158,7 +157,7 @@ pub fn capture_state_machine_update(
                                                         distance.get("less_than")
                                                     {
                                                         if let Some(val) = less_than.as_f64() {
-                                                            if rel_v.length() < val as f32 {
+                                                            if rel_v.length() < val {
                                                                 // Transition to 'to'
                                                                 if let Some(new_state) = to.as_str()
                                                                 {
@@ -183,7 +182,7 @@ pub fn capture_state_machine_update(
                                                         distance.get("greater_than")
                                                     {
                                                         if let Some(val) = greater_than.as_f64() {
-                                                            if rel_v.length() > val as f32 {
+                                                            if rel_v.length() > val {
                                                                 // Transition to 'to'
                                                                 if let Some(new_state) = to.as_str()
                                                                 {
@@ -237,12 +236,12 @@ pub fn capture_state_machine_update(
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
-                        let up = (capture_entity_rotation * Vec3::X).normalize_or(Vec3::X);
+                        let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
 
                         let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
                             up
                         } else {
-                            Vec3::X
+                            DVec3::X
                         };
 
                         if idx != 0 && capture_component.current_state == "capture" {
@@ -253,28 +252,36 @@ pub fn capture_state_machine_update(
                     }
 
                     // Draw force
-                    gizmos.ray(world_r, force_vec, Srgba::new(1.0, 0.0, 0.0, 0.2));
+                    gizmos.ray(
+                        world_r.as_vec3(),
+                        force_vec.as_vec3(),
+                        Srgba::new(1.0, 0.0, 0.0, 0.2),
+                    );
 
                     // Draw rel_v
-                    gizmos.ray(world_r, rel_v, Srgba::new(0.0, 1.0, 0.0, 0.2));
+                    gizmos.ray(
+                        world_r.as_vec3(),
+                        rel_v.as_vec3(),
+                        Srgba::new(0.0, 1.0, 0.0, 0.2),
+                    );
 
                     // Draw inner sphere
                     gizmos.sphere(
                         Isometry3d::new(
-                            capture_entity_position.0.clone(),
-                            capture_entity_rotation.0.clone(),
+                            capture_entity_position.0.as_vec3().clone(),
+                            capture_entity_rotation.0.as_quat().clone(),
                         ),
-                        capture_sphere_radius.radius,
+                        capture_sphere_radius.radius as f32,
                         Srgba::new(1.0, 0.5, 0.0, 0.2),
                     );
 
                     // Draw outer sphere
                     gizmos.sphere(
                         Isometry3d::new(
-                            capture_entity_position.0.clone(),
-                            capture_entity_rotation.0.clone(),
+                            capture_entity_position.0.as_vec3().clone(),
+                            capture_entity_rotation.0.as_quat().clone(),
                         ),
-                        capture_sphere_radius.radius + 1.0,
+                        capture_sphere_radius.radius as f32 + 1.0,
                         Srgba::new(0.0, 0.8, 0.4, 0.2),
                     );
 

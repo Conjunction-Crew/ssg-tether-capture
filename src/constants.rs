@@ -10,16 +10,16 @@ pub const EARTH_RADIUS: f32 = 6_360_000.0;
 pub const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 
 // Map constants
-pub const MAP_UNITS_TO_M: f32 = 100000.0;
+pub const MAP_UNITS_TO_M: f64 = 100000.0;
 
 // Floating origin constants
 pub const PHYSICS_ENABLE_RADIUS: f64 = 2500.0;
 pub const PHYSICS_DISABLE_RADIUS: f64 = PHYSICS_ENABLE_RADIUS * 1.1;
-pub const MAX_ORIGIN_OFFSET: f32 = PHYSICS_ENABLE_RADIUS as f32 / 2.0;
+pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
 
 // Tether testing constants
-pub const TETHER_LENGTH: f32 = 20.0;
-pub const DIST_BETWEEN_JOINTS: f32 = 0.1;
+pub const TETHER_LENGTH: f64 = 20.0;
+pub const DIST_BETWEEN_JOINTS: f64 = 0.1;
 
 // Other constants
 pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
