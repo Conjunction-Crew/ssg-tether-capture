@@ -1,0 +1,214 @@
+name: Release
+
+# Triggers on SemVer tags:
+#   v1.2.3          → production GitHub Release (latest)
+#   v1.2.3-beta.1   → pre-release GitHub Release
+#
+# Push a tag to trigger:
+#   git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Linux build → tar.gz
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  build-linux:
+    name: Build (Linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libasound2-dev libudev-dev
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: linux-cargo-release-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package tar.gz
+        run: |
+          TAG="${{ github.ref_name }}"
+          ARCHIVE="ssg-tether-capture-${TAG}-linux-x86_64.tar.gz"
+          mkdir -p dist
+          cp target/release/ssg_tether_capture dist/
+          cp -r assets dist/
+          tar -C dist -czf "$ARCHIVE" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ env.ARCHIVE }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Windows build → .msi
+#
+# WiX v3.11 is pre-installed on windows-latest runners at %WIX%.
+# assets/ is harvested at build time by heat.exe to avoid maintaining a
+# static file list in source control.
+# ─────────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Build (Windows x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: windows-cargo-release-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Harvest assets (WiX heat)
+        run: |
+          & "$env:WIX\bin\heat.exe" dir "assets" `
+            -out "wix\assets_fragment.wxs" `
+            -cg AssetsComponentGroup `
+            -dr INSTALLDIR `
+            -scom -sfrag -srd -sreg `
+            -var "var.AssetsDir"
+
+      - name: Build MSI
+        run: |
+          $tag     = "${{ github.ref_name }}"
+          # WiX version must be X.Y.Z — strip 'v' prefix and any pre-release suffix
+          $version = $tag -replace '^v', '' -replace '-.*$', ''
+          $msi     = "ssg-tether-capture-${tag}-windows-x86_64.msi"
+
+          & "$env:WIX\bin\candle.exe" `
+            -dVersion="$version" `
+            -dSourceDir="target\release" `
+            -dAssetsDir="assets" `
+            -arch x64 `
+            "wix\main.wxs" `
+            "wix\assets_fragment.wxs" `
+            -out "wix\"
+
+          & "$env:WIX\bin\light.exe" `
+            -ext WixUIExtension `
+            "wix\main.wixobj" `
+            "wix\assets_fragment.wixobj" `
+            -out "$msi"
+
+          echo "MSI=$msi" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ env.MSI }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# macOS build → .dmg
+#
+# cargo-bundle creates a .app with the binary + assets inside Contents/Resources/.
+# hdiutil (built-in) wraps the .app in a compressed DMG ready for distribution.
+# The macOS CWD fix in src/main.rs ensures Bevy finds assets/ at runtime.
+#
+# NOTE: The .app is ad-hoc unsigned. Users on macOS 13+ must right-click → Open
+# to bypass Gatekeeper on first launch. Add Apple Developer ID signing here when
+# a certificate is available.
+# ─────────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build (macOS ARM64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: macos-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-cargo-release-
+
+      - name: Install cargo-bundle
+        run: |
+          if ! command -v cargo-bundle &> /dev/null; then
+            cargo install cargo-bundle
+          fi
+
+      - name: Build and bundle .app
+        run: cargo bundle --release
+
+      - name: Package DMG
+        run: |
+          TAG="${{ github.ref_name }}"
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          DMG="ssg-tether-capture-${TAG}-macos-arm64.dmg"
+
+          hdiutil create \
+            -volname "SSG Tether Capture" \
+            -srcfolder "$APP_PATH" \
+            -ov -format UDZO \
+            "$DMG"
+
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ env.DMG }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Publish GitHub Release
+# ─────────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+
+      - name: Detect pre-release
+        id: flags
+        run: |
+          if [[ "${{ github.ref_name }}" == *"-beta"* ]]; then
+            echo "prerelease=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ncipollo/release-action@v1
+        with:
+          artifacts: "artifacts/*"
+          generateReleaseNotes: true
+          prerelease: ${{ steps.flags.outputs.prerelease }}
+          makeLatest: ${{ steps.flags.outputs.prerelease == 'false' }}

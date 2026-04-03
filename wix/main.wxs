@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v3 installer definition for SSG Tether Capture.
+
+  BUILD PROCESS (handled automatically by release.yml):
+    1. heat.exe harvests the 'assets/' directory into wix/assets_fragment.wxs at build time.
+    2. candle.exe compiles this file and assets_fragment.wxs into .wixobj files.
+    3. light.exe links the .wixobj files into the final .msi.
+
+  UPGRADE GUID: must never change — it uniquely identifies this product family across versions.
+    Changing it would break the upgrade path and cause duplicate installations.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <Product
+    Id="*"
+    Name="SSG Tether Capture"
+    Manufacturer="Conjunction Crew"
+    Version="$(var.Version)"
+    Language="1033"
+    UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068">
+
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64"
+      Description="SSG Tether Capture $(var.Version) Installer" />
+
+    <!-- Prevent downgrading and cleanly remove previous versions before installing -->
+    <MajorUpgrade
+      Schedule="afterInstallInitialize"
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
+
+    <Icon Id="AppIcon.ico" SourceFile="assets\logo\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <Media Id="1" Cabinet="ssg.cab" EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="SSG Tether Capture">
+
+          <!-- Main executable -->
+          <Component Id="MainExecutable" Guid="AAE3D0CC-5F9E-4E64-BBB1-F434C5047399" Win64="yes">
+            <File
+              Id="MainExe"
+              Name="ssg_tether_capture.exe"
+              Source="$(var.SourceDir)\ssg_tether_capture.exe"
+              KeyPath="yes" />
+          </Component>
+
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="MainFeature" Title="SSG Tether Capture" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <!-- AssetsComponentGroup is generated at build time by heat.exe harvesting the assets/ dir -->
+      <ComponentGroupRef Id="AssetsComponentGroup" />
+    </Feature>
+
+  </Product>
+
+</Wix>

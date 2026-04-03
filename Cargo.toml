@@ -23,3 +23,16 @@ name = "ssg_tether_capture"
 path = "src/main.rs"
 test = false
 bench = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[package.metadata.bundle]
+name = "SSG Tether Capture"
+identifier = "com.conjunction-crew.ssg-tether-capture"
+resources = ["assets"]
+short_description = "Orbital tether capture simulation and mission planning."
+icon = ["assets/logo/icon.icns"]
