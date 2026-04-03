@@ -7,6 +7,7 @@ use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::ui::screens::home::load_capture_plans;
 use crate::ui::state::UiScreen;
+use avian3d::collider_tree::ColliderTreeDiagnostics;
 use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
 use avian3d::prelude::*;
@@ -32,7 +33,8 @@ fn test_app() -> App {
     .init_asset::<GizmoAsset>()
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>();
+    .init_resource::<SolverDiagnostics>()
+    .init_resource::<ColliderTreeDiagnostics>();
     app
 }
 
@@ -234,7 +236,11 @@ fn floating_origin_resets() {
     // Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
-        .insert(Transform::from_xyz(MAX_ORIGIN_OFFSET as f32 + 10.0, 0.0, 0.0));
+        .insert(Transform::from_xyz(
+            MAX_ORIGIN_OFFSET as f32 + 10.0,
+            0.0,
+            0.0,
+        ));
 
     app.update();
     app.update();
