@@ -1,5 +1,8 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
+use bevy::ecs::observer::On;
+use bevy::input::mouse::MouseScrollUnit;
+use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
@@ -228,6 +231,7 @@ pub fn spawn_project_detail_screen(
                             .spawn((
                                 SidebarPanel,
                                 Interaction::default(),
+                                ScrollPosition::default(),
                                 Node {
                                     width: percent(100.0),
                                     flex_grow: 1.0,
@@ -242,6 +246,20 @@ pub fn spawn_project_detail_screen(
                                 },
                                 BackgroundColor(theme.panel_background_soft),
                             ))
+                            .observe(
+                                |mut ev: On<Pointer<Scroll>>,
+                                 mut query: Query<&mut ScrollPosition>| {
+                                    ev.propagate(false);
+                                    let scroll_amount = match ev.event.unit {
+                                        MouseScrollUnit::Line => ev.event.y * 24.0,
+                                        MouseScrollUnit::Pixel => ev.event.y,
+                                    };
+                                    if let Ok(mut scroll_pos) = query.get_mut(ev.entity) {
+                                        scroll_pos.0.y -= scroll_amount;
+                                        scroll_pos.0.y = scroll_pos.0.y.max(0.0);
+                                    }
+                                },
+                            )
                             .with_children(|sidebar| {
                         // === Project Information (collapsible) ===
                         spawn_collapsible_section(
