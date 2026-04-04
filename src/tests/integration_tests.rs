@@ -193,11 +193,10 @@ fn orbit_propagation() {
     let params_before = {
         let orbital_o = app.world().get::<Orbital>(sphere_body);
         assert!(orbital_o.is_some());
-        let entities = app.world().get_resource::<OrbitalCache>().unwrap();
         let world_time = app.world().get_resource::<WorldTime>().unwrap();
-        entities.propagators[orbital_o.unwrap().propagator_id]
-            .state_eci(world_time.epoch)
-            .unwrap()
+        let propagator_o = orbital_o.unwrap().clone().propagator;
+        assert!(propagator_o.is_some());
+        propagator_o.unwrap().state_eci(world_time.epoch).unwrap()
     };
 
     fixed_physics_step(app.world_mut());
@@ -205,11 +204,10 @@ fn orbit_propagation() {
     let params_after = {
         let orbital_o = app.world().get::<Orbital>(sphere_body);
         assert!(orbital_o.is_some());
-        let entities = app.world().get_resource::<OrbitalCache>().unwrap();
         let world_time = app.world().get_resource::<WorldTime>().unwrap();
-        entities.propagators[orbital_o.unwrap().propagator_id]
-            .state_eci(world_time.epoch)
-            .unwrap()
+        let propagator_o = orbital_o.unwrap().clone().propagator;
+        assert!(propagator_o.is_some());
+        propagator_o.unwrap().state_eci(world_time.epoch).unwrap()
     };
 
     // Expect true orbital positions to have updated
@@ -254,11 +252,7 @@ fn floating_origin_resets() {
     // Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
-        .insert(Position::from_xyz(
-            MAX_ORIGIN_OFFSET + 10.0,
-            0.0,
-            0.0,
-        ));
+        .insert(Position::from_xyz(MAX_ORIGIN_OFFSET + 10.0, 0.0, 0.0));
 
     fixed_physics_step(app.world_mut());
 

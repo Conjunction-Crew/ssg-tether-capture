@@ -147,7 +147,7 @@ pub fn floating_origin_update_visuals(
 
 pub fn target_entity_reset_origin(
     mut true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
-    rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
+    mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
     nodes: Query<(Entity, &TetherNode)>,
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
     world_time: Res<WorldTime>,
@@ -172,10 +172,10 @@ pub fn target_entity_reset_origin(
 
     // Accumulate current linvel and position into rigidbodies
     println!("Num to reset: {}", true_params_query.iter().len());
-    for mut orbital in true_params_query {
+    true_params_query.par_iter_mut().for_each(|mut orbital| {
         if let Some(prop) = orbital.propagator.as_mut() {
             let Ok(rv) = prop.state_eci(world_time.epoch) else {
-                continue;
+                return;
             };
 
             let new_rv = rv
@@ -188,13 +188,13 @@ pub fn target_entity_reset_origin(
 
             println!("New propagator, New rv: {}", new_rv);
         }
-    }
+    });
 
     // Reset rigidbodies
-    for mut rb in rigidbodies {
+    rigidbodies.par_iter_mut().for_each(|mut rb| {
         rb.position.0 -= com_r;
         rb.linear_velocity.0 -= com_v;
-    }
+    });
 }
 
 pub fn physics_bubble_add_remove(
