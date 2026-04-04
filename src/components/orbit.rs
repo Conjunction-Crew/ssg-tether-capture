@@ -3,7 +3,6 @@ use bevy::{
     math::DVec3,
     prelude::{Component, Quat, Vec3},
 };
-use bevy::{ecs::entity::Entity, prelude::Component};
 use brahe::KeplerianPropagator;
 use nalgebra::Vector6;
 use serde::Deserialize;
@@ -24,11 +23,7 @@ pub struct TetherNode {
 pub struct Orbital {
     pub object_id: String,
     pub parent_entity: Option<Entity>,
-    pub tle: Option<TleData>,
     pub propagator: Option<KeplerianPropagator>,
-    pub attitude: AttitudeState,
-    pub approach: ApproachMetrics,
-    pub propagator_id: usize,
 }
 
 // Init methods for orbital objects
@@ -44,11 +39,7 @@ impl Default for Orbital {
         Self {
             object_id: String::new(),
             parent_entity: None,
-            tle: None,
             propagator: None,
-            attitude: AttitudeState::default(),
-            approach: ApproachMetrics::default(),
-            propagator_id: 0,
         }
     }
 }

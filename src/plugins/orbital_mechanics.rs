@@ -7,16 +7,15 @@ use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
 use crate::{
     resources::{
         capture_plans::CaptureSphereRadius, celestials::Celestials, orbital_cache::OrbitalCache,
-        settings::Settings, world_time::WorldTime,
+        world_time::WorldTime,
     },
     systems::{
         capture_algorithms::capture_state_machine_update,
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            cache_eci_states, floating_origin_update_visuals, floating_origin_update_visuals,
-            init_orbitals, init_orbitals, load_dataset_entities, physics_bubble_add_remove,
-            target_entity_reset_origin,
+            cache_eci_states, floating_origin_update_visuals, init_orbitals, load_dataset_entities,
+            physics_bubble_add_remove, target_entity_reset_origin,
         },
     },
     ui::state::UiScreen,
