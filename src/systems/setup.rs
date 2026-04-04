@@ -18,7 +18,6 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use nalgebra::Vector6;
 
 pub fn setup_lighting(mut commands: Commands) {
     let sun_rotation = Quat::from_rotation_x(0.0);

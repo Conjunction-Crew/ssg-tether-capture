@@ -52,20 +52,6 @@ fn calculate_com_rv(
     Some((weighted_pos / total_mass, weighted_linvel / total_mass))
 }
 
-pub fn ssg_propagate_keplerian(
-    orbitals: Query<(Entity, &Orbital), With<RigidBody>>,
-    world_time: Res<WorldTime>,
-    mut orbital_entities: ResMut<OrbitalEntities>,
-) {
-    // for (_entity, orbital) in orbitals {
-    //     let Some(prop) = orbital_entities.propagators.get_mut(orbital.propagator_id) else {
-    //         return;
-    //     };
-
-    //     prop.propagate_to(world_time.epoch);
-    // }
-}
-
 pub fn init_orbitals(
     mut commands: Commands,
     mut orbital_entities: ResMut<OrbitalEntities>,
@@ -102,15 +88,7 @@ pub fn init_orbitals(
     }
 }
 
-pub fn floating_origin(
-    rb_disabled: Query<
-        (&Orbital, RigidBodyQuery),
-        (
-            With<RigidBodyDisabled>,
-            Without<CameraTarget>,
-            Without<Earth>,
-        ),
-    >,
+pub fn floating_origin_update_visuals(
     target_params_s: Single<
         (&Orbital, &Transform),
         (
@@ -152,28 +130,6 @@ pub fn floating_origin(
     );
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;
-
-    // Loop through disabled bodies to set their relative positions
-    for (orbital, mut rb) in rb_disabled {
-        let Some(prop) = orbitals.propagators.get(orbital.propagator_id) else {
-            continue;
-        };
-        let Ok(entity_rv) = prop.state_eci(world_time.epoch) else {
-            continue;
-        };
-
-        // Set disabled bodies rigidbody values to their global relative state (for capture algorithm)
-        rb.position.0 = DVec3::new(
-            entity_rv[0] - target_rv[0],
-            entity_rv[1] - target_rv[1],
-            entity_rv[2] - target_rv[2],
-        );
-        rb.linear_velocity.0 = DVec3::new(
-            entity_rv[3] - target_rv[3],
-            entity_rv[4] - target_rv[4],
-            entity_rv[5] - target_rv[5],
-        );
-    }
 }
 
 pub fn target_entity_reset_origin(
@@ -212,12 +168,7 @@ pub fn target_entity_reset_origin(
 
             let new_rv = rv
                 + DVector::<f64>::from_vec(vec![
-                    com_r.x as f64,
-                    com_r.y as f64,
-                    com_r.z as f64,
-                    com_v.x as f64,
-                    com_v.y as f64,
-                    com_v.z as f64,
+                    com_r.x, com_r.y, com_r.z, com_v.x, com_v.y, com_v.z,
                 ]);
 
             // Rebuild propagator
@@ -263,13 +214,15 @@ pub fn physics_bubble_add_remove(
             continue;
         };
 
+        let mut enabled = false;
+
         if !disabled_entities.contains(entity) && rb.position.0.length() > PHYSICS_DISABLE_RADIUS {
-            target_rv[0] += rb.position.x as f64;
-            target_rv[1] += rb.position.y as f64;
-            target_rv[2] += rb.position.z as f64;
-            target_rv[3] += rb.linear_velocity.x as f64;
-            target_rv[4] += rb.linear_velocity.y as f64;
-            target_rv[5] += rb.linear_velocity.z as f64;
+            target_rv[0] += rb.position.x;
+            target_rv[1] += rb.position.y;
+            target_rv[2] += rb.position.z;
+            target_rv[3] += rb.linear_velocity.x;
+            target_rv[4] += rb.linear_velocity.y;
+            target_rv[5] += rb.linear_velocity.z;
 
             *prop = KeplerianPropagator::from_eci(world_time.epoch, target_rv, 1.0);
 
@@ -279,17 +232,34 @@ pub fn physics_bubble_add_remove(
             && rb.position.0.length() < PHYSICS_ENABLE_RADIUS
         {
             // println!("rel: {}", relative_pos);
-            entity_rv[0] -= rb.position.x as f64;
-            entity_rv[1] -= rb.position.y as f64;
-            entity_rv[2] -= rb.position.z as f64;
-            entity_rv[3] -= rb.linear_velocity.x as f64;
-            entity_rv[4] -= rb.linear_velocity.y as f64;
-            entity_rv[5] -= rb.linear_velocity.z as f64;
+            entity_rv[0] -= rb.position.x;
+            entity_rv[1] -= rb.position.y;
+            entity_rv[2] -= rb.position.z;
+            entity_rv[3] -= rb.linear_velocity.x;
+            entity_rv[4] -= rb.linear_velocity.y;
+            entity_rv[5] -= rb.linear_velocity.z;
 
             // *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
 
             commands.entity(entity).remove::<RigidBodyDisabled>();
+
+            enabled = true;
+
             println!("ENABLED SOMETHING");
+        }
+
+        // Set disabled bodies rigidbody values to their global relative state (for capture algorithm)
+        if !enabled && disabled_entities.contains(entity) {
+            rb.position.0 = DVec3::new(
+                entity_rv[0] - target_rv[0],
+                entity_rv[1] - target_rv[1],
+                entity_rv[2] - target_rv[2],
+            );
+            rb.linear_velocity.0 = DVec3::new(
+                entity_rv[3] - target_rv[3],
+                entity_rv[4] - target_rv[4],
+                entity_rv[5] - target_rv[5],
+            );
         }
     }
 }

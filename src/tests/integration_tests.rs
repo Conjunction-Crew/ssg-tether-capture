@@ -37,7 +37,7 @@ fn test_app() -> App {
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
-    .init_resource::<ColliderTreeDiagnostics>();
+    .init_resource::<ColliderTreeDiagnostics>()
     .init_resource::<WorldTime>();
     app
 }
@@ -58,8 +58,6 @@ fn minimal_rigidbody_setup() {
         .id();
 
     assert!(!sphere_body.is_empty());
-
-    fixed_physics_step(app.world_mut());
 }
 
 #[test]
@@ -79,8 +77,6 @@ fn orbit_camera() {
         .id();
 
     assert!(!orbit_camera.is_empty());
-
-    fixed_physics_step(app.world_mut());
 }
 
 #[test]
@@ -158,6 +154,7 @@ fn apply_force_to_target() {
 
     // Need two updates to actually alter the velocity
     fixed_physics_step(app.world_mut());
+    fixed_physics_step(app.world_mut());
 
     // Expect sphere velocity to have changed
     assert_ne!(
@@ -176,6 +173,8 @@ fn orbit_propagation() {
     let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
     next_screen.set(UiScreen::Sim);
 
+    app.update();
+
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
     let sphere_body = app
@@ -188,6 +187,8 @@ fn orbit_propagation() {
             Orbit::FromElements(ISS_ORBIT),
         ))
         .id();
+
+    app.update();
 
     let params_before = {
         let orbital_o = app.world().get::<Orbital>(sphere_body);
@@ -222,6 +223,8 @@ fn floating_origin_resets() {
     let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
     next_screen.set(UiScreen::Sim);
 
+    app.update();
+
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
     let sphere_body = app
@@ -230,18 +233,18 @@ fn floating_origin_resets() {
             CameraTarget,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(MAX_ORIGIN_OFFSET as f32 - 10.0, 0.0, 0.0),
+            Position::from_xyz(0.0, 0.0, 0.0),
             Orbit::FromElements(ISS_ORBIT),
         ))
         .id();
 
-    let current_transform_o = app.world().get::<Transform>(sphere_body);
+    let current_transform_o = app.world().get::<Position>(sphere_body);
     assert!(current_transform_o.is_some());
     let current_transform = current_transform_o.unwrap().clone();
 
     fixed_physics_step(app.world_mut());
 
-    let new_transform_o = app.world().get::<Transform>(sphere_body);
+    let new_transform_o = app.world().get::<Position>(sphere_body);
     assert!(new_transform_o.is_some());
     let new_transform = new_transform_o.unwrap().clone();
 
@@ -251,18 +254,18 @@ fn floating_origin_resets() {
     // Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
-        .insert(Transform::from_xyz(
-            MAX_ORIGIN_OFFSET as f32 + 10.0,
+        .insert(Position::from_xyz(
+            MAX_ORIGIN_OFFSET + 10.0,
             0.0,
             0.0,
         ));
 
     fixed_physics_step(app.world_mut());
 
-    let reset_transform_o = app.world().get::<Transform>(sphere_body);
+    let reset_transform_o = app.world().get::<Position>(sphere_body);
     assert!(reset_transform_o.is_some());
     let reset_transform = reset_transform_o.unwrap().clone();
 
     // Expect position to have been reset
-    assert!((reset_transform.translation - Vec3::ZERO).length() < 1.0);
+    assert!(reset_transform.length() < 1.0);
 }

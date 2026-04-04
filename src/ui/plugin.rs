@@ -10,6 +10,7 @@ use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::settings::Settings;
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
@@ -83,8 +84,8 @@ fn handle_ui_events(
         (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
         Without<UiCamera>,
     >,
-    origin_query: Query<(Entity, &Visibility), With<Origin>>,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    mut settings: ResMut<Settings>,
 ) {
     for event in ui_events.read() {
         match event {
@@ -145,17 +146,7 @@ fn handle_ui_events(
                 }
             }
             UiEvent::ToggleOrigin => {
-                if let Ok((origin_entity, origin_vis)) = origin_query.single() {
-                    match origin_vis {
-                        Visibility::Visible => {
-                            commands.entity(origin_entity).insert(Visibility::Hidden);
-                        }
-                        Visibility::Hidden => {
-                            commands.entity(origin_entity).insert(Visibility::Visible);
-                        }
-                        Visibility::Inherited => {}
-                    }
-                }
+                settings.dev_gizmos = !settings.dev_gizmos;
             }
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
