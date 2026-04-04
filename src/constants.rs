@@ -34,6 +34,6 @@ pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
     3.54993,
     // Argument of periapsis (radians)
     1.51296,
-    // True anomaly (radians)
+    // Mean anomaly (radians)
     4.77190,
 );

@@ -14,8 +14,9 @@ use crate::{
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            cache_eci_states, floating_origin_update_visuals, init_orbitals,
-            physics_bubble_add_remove, target_entity_reset_origin,
+            cache_eci_states, floating_origin_update_visuals, floating_origin_update_visuals,
+            init_orbitals, init_orbitals, load_dataset_entities, physics_bubble_add_remove,
+            target_entity_reset_origin,
         },
     },
     ui::state::UiScreen,
@@ -31,7 +32,12 @@ impl Plugin for OrbitalMechanicsPlugin {
         app.add_plugins(PhysicsPlugins::new(ManualPhysics))
             .add_systems(OnEnter(UiScreen::Sim), init_sim_resources)
             .add_systems(OnExit(UiScreen::Sim), remove_sim_resources)
-            .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
+            .add_systems(
+                First,
+                (load_dataset_entities, init_orbitals)
+                    .chain()
+                    .run_if(in_state(UiScreen::Sim)),
+            )
             .add_systems(
                 FixedUpdate,
                 fixed_physics_step.run_if(in_state(UiScreen::Sim)),
