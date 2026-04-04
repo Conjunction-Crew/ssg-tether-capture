@@ -1,4 +1,8 @@
-use crate::components::orbit::{Earth, Orbit, Orbital, TetherNode};
+use std::f64::consts::PI;
+use std::fs;
+use std::path::PathBuf;
+
+use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
@@ -6,13 +10,13 @@ use crate::constants::{
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::WorldTime;
 
-use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{Collider, RigidBody, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
-use brahe::{Epoch, KeplerianPropagator};
+use brahe::{Epoch, GM_EARTH, KeplerianPropagator};
 use nalgebra::{DVector, Vector6};
 
 fn calculate_com_rv(
@@ -52,6 +56,116 @@ fn calculate_com_rv(
     Some((weighted_pos / total_mass, weighted_linvel / total_mass))
 }
 
+pub fn load_dataset_entities(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
+
+    for dataset_file_result in fs::read_dir(&plans_dir).expect("failed to read dataset dir") {
+        if let Ok(dataset_file) = dataset_file_result {
+            let path = dataset_file.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                if let Ok(raw_json) = fs::read_to_string(&path) {
+                    if let Ok(dataset) = serde_json::from_str(&raw_json) {
+                        let data: JsonOrbitalData = dataset;
+                        let sphere_mesh = meshes.add(Mesh::from(Sphere::new(1.0)));
+                        let sphere_collider = Collider::sphere(1.0);
+                        let sphere_material = materials.add(StandardMaterial {
+                            base_color: Color::Srgba(Srgba {
+                                red: 1.0,
+                                green: 1.0,
+                                blue: 1.0,
+                                alpha: 1.0,
+                            }),
+                            perceptual_roughness: 0.2,
+                            ..default()
+                        });
+                        for object in data.data {
+                            let Some(mean_motion_val) = object.mean_motion else {
+                                println!("Failed to parse mean motion");
+                                continue;
+                            };
+                            let Some(mean_motion) = mean_motion_val.as_f64() else {
+                                continue;
+                            };
+                            let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
+                            let semi_major_axis = (GM_EARTH
+                                / (mean_motion_rad_s * mean_motion_rad_s))
+                                .powf(1.0 / 3.0);
+                            let Some(eccentricity_val) = object.eccentricity else {
+                                println!("Failed to parse eccentricity");
+                                continue;
+                            };
+                            let Some(eccentricity) = eccentricity_val.as_f64() else {
+                                continue;
+                            };
+                            let Some(inclination_val) = object.inclination else {
+                                println!("Failed to parse inclination");
+                                continue;
+                            };
+                            let Some(inclination) = inclination_val.as_f64() else {
+                                continue;
+                            };
+                            let inclination = inclination.to_radians();
+                            let Some(raan_val) = object.ra_of_asc_node else {
+                                println!("Failed to parse ra of asc node");
+                                continue;
+                            };
+                            let Some(raan) = raan_val.as_f64() else {
+                                continue;
+                            };
+                            let raan = raan.to_radians();
+                            let Some(argp_val) = object.arg_of_pericenter else {
+                                println!("Failed to parse arg of paricenter");
+                                continue;
+                            };
+                            let Some(argp) = argp_val.as_f64() else {
+                                continue;
+                            };
+                            let argp = argp.to_radians();
+                            let Some(mean_anomaly_val) = object.mean_anomaly else {
+                                println!("Failed to parse mean anomaly");
+                                continue;
+                            };
+                            let Some(mean_anomaly) = mean_anomaly_val.as_f64() else {
+                                continue;
+                            };
+                            let mean_anomaly = mean_anomaly.to_radians();
+
+                            let elements = Vector6::new(
+                                semi_major_axis,
+                                eccentricity,
+                                inclination,
+                                raan,
+                                argp,
+                                mean_anomaly,
+                            );
+
+                            // Spawn the entity into the simulation with the parsed elements
+                            commands.spawn((
+                                // Mesh3d(sphere_mesh.clone()),
+                                // MeshMaterial3d(sphere_material.clone()),
+                                // sphere_collider.clone(),
+                                // RigidBody::Dynamic,
+                                RigidBodyDisabled,
+                                Transform::from_xyz(5000.0, 5000.0, 5000.0),
+                                Orbit::FromElements(elements),
+                            ));
+                        }
+                    } else {
+                        println!("Failed to parse dataset json");
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn init_orbitals(
     mut commands: Commands,
     mut orbital_entities: ResMut<OrbitalCache>,
@@ -69,7 +183,7 @@ pub fn init_orbitals(
                 );
                 if let Ok(eci) = propagator.state_eci(epoch) {
                     orbital.propagator = Some(KeplerianPropagator::from_eci(epoch, eci, 1.0));
-                    println!("ECI Initialized to: {}", eci);
+                    // println!("ECI Initialized to: {}", eci);
                     eci
                 } else {
                     Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)

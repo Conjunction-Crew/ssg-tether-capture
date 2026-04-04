@@ -19,6 +19,8 @@ pub struct HomeProjectButton {
     pub project_id: String,
 }
 
+
+
 pub fn load_capture_plans(capture_plan_lib: &mut CapturePlanLibrary) {
     let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
 
