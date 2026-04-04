@@ -7,13 +7,14 @@ use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
 use crate::{
     resources::{
         capture_plans::CaptureSphereRadius, celestials::Celestials,
-        orbital_entities::OrbitalEntities, world_time::WorldTime,
+        orbital_entities::OrbitalEntities, settings::Settings, world_time::WorldTime,
     },
     systems::{
         capture_algorithms::capture_state_machine_update,
+        gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            floating_origin, init_orbitals, physics_bubble_add_remove, ssg_propagate_keplerian,
+            floating_origin_update_visuals, init_orbitals, physics_bubble_add_remove,
             target_entity_reset_origin,
         },
     },
@@ -30,25 +31,22 @@ impl Plugin for OrbitalMechanicsPlugin {
         app.add_plugins(PhysicsPlugins::new(ManualPhysics))
             .add_systems(OnEnter(UiScreen::Sim), init_sim_resources)
             .add_systems(OnExit(UiScreen::Sim), remove_sim_resources)
+            .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
+            .add_systems(
+                FixedUpdate,
+                fixed_physics_step.run_if(in_state(UiScreen::Sim)),
+            )
             .add_systems(
                 Update,
-                (init_orbitals, fixed_physics_step)
-                    .chain()
+                (dev_gizmos, capture_gizmos, floating_origin_update_visuals)
                     .run_if(in_state(UiScreen::Sim)),
             )
             .add_systems(
                 ManualPhysics,
                 (
                     (physics_bubble_add_remove, target_entity_reset_origin)
-                        .chain()
                         .in_set(PhysicsSystems::First),
-                    (
-                        ssg_propagate_keplerian,
-                        floating_origin,
-                        capture_state_machine_update,
-                    )
-                        .chain()
-                        .in_set(PhysicsSystems::Last),
+                    (capture_state_machine_update,).in_set(PhysicsSystems::Last),
                 )
                     .run_if(in_state(UiScreen::Sim)),
             );

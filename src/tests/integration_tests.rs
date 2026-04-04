@@ -1,10 +1,12 @@
 use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit::{Orbit, TrueParams};
+use crate::components::orbit::{Orbit, Orbital};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
 use crate::create_app;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::world_time::{self, WorldTime};
+use crate::systems::physics::fixed_physics_step;
 use crate::ui::screens::home::load_capture_plans;
 use crate::ui::state::UiScreen;
 use avian3d::collider_tree::ColliderTreeDiagnostics;
@@ -16,6 +18,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
+use brahe::utils::DOrbitStateProvider;
 
 // Minimal test app harness for unit testing
 fn test_app() -> App {
@@ -34,7 +37,8 @@ fn test_app() -> App {
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
-    .init_resource::<ColliderTreeDiagnostics>();
+    .init_resource::<ColliderTreeDiagnostics>()
+    .init_resource::<WorldTime>();
     app
 }
 
@@ -54,8 +58,6 @@ fn minimal_rigidbody_setup() {
         .id();
 
     assert!(!sphere_body.is_empty());
-
-    app.update();
 }
 
 #[test]
@@ -75,8 +77,6 @@ fn orbit_camera() {
         .id();
 
     assert!(!orbit_camera.is_empty());
-
-    app.update();
 }
 
 #[test]
@@ -116,6 +116,7 @@ fn apply_force_to_target() {
         .insert("Tether1".to_string(), vec![sphere_body]);
 
     app.update();
+    fixed_physics_step(app.world_mut());
 
     // Expect initial velocity of sphere to be zero
     assert_eq!(
@@ -152,8 +153,8 @@ fn apply_force_to_target() {
         });
 
     // Need two updates to actually alter the velocity
-    app.update();
-    app.update();
+    fixed_physics_step(app.world_mut());
+    fixed_physics_step(app.world_mut());
 
     // Expect sphere velocity to have changed
     assert_ne!(
@@ -172,6 +173,8 @@ fn orbit_propagation() {
     let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
     next_screen.set(UiScreen::Sim);
 
+    app.update();
+
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
     let sphere_body = app
@@ -185,18 +188,32 @@ fn orbit_propagation() {
         ))
         .id();
 
-    let current_params_o = app.world().get::<TrueParams>(sphere_body);
-    assert!(current_params_o.is_some());
-    let current_params = current_params_o.unwrap().clone();
-
     app.update();
 
-    let new_params_o = app.world().get::<TrueParams>(sphere_body);
-    assert!(new_params_o.is_some());
-    let new_params = new_params_o.unwrap().clone();
+    let params_before = {
+        let orbital_o = app.world().get::<Orbital>(sphere_body);
+        assert!(orbital_o.is_some());
+        let entities = app.world().get_resource::<OrbitalEntities>().unwrap();
+        let world_time = app.world().get_resource::<WorldTime>().unwrap();
+        entities.propagators[orbital_o.unwrap().propagator_id]
+            .state_eci(world_time.epoch)
+            .unwrap()
+    };
+
+    fixed_physics_step(app.world_mut());
+
+    let params_after = {
+        let orbital_o = app.world().get::<Orbital>(sphere_body);
+        assert!(orbital_o.is_some());
+        let entities = app.world().get_resource::<OrbitalEntities>().unwrap();
+        let world_time = app.world().get_resource::<WorldTime>().unwrap();
+        entities.propagators[orbital_o.unwrap().propagator_id]
+            .state_eci(world_time.epoch)
+            .unwrap()
+    };
 
     // Expect true orbital positions to have updated
-    assert_ne!(current_params.rv, new_params.rv);
+    assert_ne!(params_before, params_after);
 }
 
 #[test]
@@ -206,6 +223,8 @@ fn floating_origin_resets() {
     let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
     next_screen.set(UiScreen::Sim);
 
+    app.update();
+
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
     let sphere_body = app
@@ -214,19 +233,18 @@ fn floating_origin_resets() {
             CameraTarget,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
-            Transform::from_xyz(MAX_ORIGIN_OFFSET as f32 - 10.0, 0.0, 0.0),
+            Position::from_xyz(0.0, 0.0, 0.0),
             Orbit::FromElements(ISS_ORBIT),
         ))
         .id();
 
-    let current_transform_o = app.world().get::<Transform>(sphere_body);
+    let current_transform_o = app.world().get::<Position>(sphere_body);
     assert!(current_transform_o.is_some());
     let current_transform = current_transform_o.unwrap().clone();
 
-    app.update();
-    app.update();
+    fixed_physics_step(app.world_mut());
 
-    let new_transform_o = app.world().get::<Transform>(sphere_body);
+    let new_transform_o = app.world().get::<Position>(sphere_body);
     assert!(new_transform_o.is_some());
     let new_transform = new_transform_o.unwrap().clone();
 
@@ -236,19 +254,18 @@ fn floating_origin_resets() {
     // Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
-        .insert(Transform::from_xyz(
-            MAX_ORIGIN_OFFSET as f32 + 10.0,
+        .insert(Position::from_xyz(
+            MAX_ORIGIN_OFFSET + 10.0,
             0.0,
             0.0,
         ));
 
-    app.update();
-    app.update();
+    fixed_physics_step(app.world_mut());
 
-    let reset_transform_o = app.world().get::<Transform>(sphere_body);
+    let reset_transform_o = app.world().get::<Position>(sphere_body);
     assert!(reset_transform_o.is_some());
     let reset_transform = reset_transform_o.unwrap().clone();
 
     // Expect position to have been reset
-    assert!((reset_transform.translation - Vec3::ZERO).length() < 1.0);
+    assert!(reset_transform.length() < 1.0);
 }

@@ -2,16 +2,15 @@ use avian3d::prelude::{Physics, RigidBody};
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
-use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 
 use crate::components::capture_components::CaptureComponent;
-use crate::components::dev_components::Origin;
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::settings::Settings;
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
@@ -81,9 +80,12 @@ fn handle_ui_events(
     project_catalog: Res<ProjectCatalog>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut scene_camera: Query<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), Without<UiCamera>>,
-    origin_query: Query<(Entity, &Visibility), With<Origin>>,
+    mut scene_camera: Query<
+        (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
+        Without<UiCamera>,
+    >,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    mut settings: ResMut<Settings>,
 ) {
     for event in ui_events.read() {
         match event {
@@ -136,7 +138,7 @@ fn handle_ui_events(
                     if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
                         *render_layers = RenderLayers::layer(MAP_LAYER);
                         atmosphere.world_position = Vec3::ZERO;
-                        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M;
+                        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
                     } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
                         *render_layers = RenderLayers::layer(SCENE_LAYER);
                         atmosphere_settings.scene_units_to_m = 1.0;
@@ -144,17 +146,7 @@ fn handle_ui_events(
                 }
             }
             UiEvent::ToggleOrigin => {
-                if let Ok((origin_entity, origin_vis)) = origin_query.single() {
-                    match origin_vis {
-                        Visibility::Visible => {
-                            commands.entity(origin_entity).insert(Visibility::Hidden);
-                        }
-                        Visibility::Hidden => {
-                            commands.entity(origin_entity).insert(Visibility::Visible);
-                        }
-                        Visibility::Inherited => {}
-                    }
-                }
+                settings.dev_gizmos = !settings.dev_gizmos;
             }
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {

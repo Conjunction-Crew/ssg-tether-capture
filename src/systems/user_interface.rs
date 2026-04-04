@@ -3,7 +3,7 @@ use std::fmt::Write;
 use crate::{
     components::{
         capture_components::{CaptureComponent, State},
-        orbit::TrueParams,
+        orbit::Orbital,
         user_interface::{
             CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
         },
@@ -11,13 +11,15 @@ use crate::{
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
-        orbital_entities::OrbitalEntities,
+        orbital_entities::{self, OrbitalEntities},
         world_time::WorldTime,
     },
 };
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
+use brahe::utils::DOrbitStateProvider;
+use nalgebra::Vector6;
 use serde_json::Value;
 
 struct CaptureMetrics {
@@ -38,15 +40,21 @@ pub fn update_time_warp_readout(
 }
 
 pub fn update_capture_telemetry(
-    bodies: Query<(RigidBodyQueryReadOnly, &TrueParams, Has<RigidBodyDisabled>)>,
+    bodies: Query<(RigidBodyQueryReadOnly, &Orbital, Has<RigidBodyDisabled>)>,
     capture_targets: Query<&CaptureComponent>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureTelemetryReadout)>,
+    orbitals: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     for (mut text, readout) in &mut readouts {
-        let Some(metrics) =
-            capture_metrics(&bodies, readout.target_entity, readout.reference_entity)
-        else {
+        let Some(metrics) = capture_metrics(
+            &bodies,
+            readout.target_entity,
+            readout.reference_entity,
+            &orbitals,
+            &world_time,
+        ) else {
             text.0 = format!(
                 "{}\nWaiting for live capture telemetry...",
                 readout.target_label
@@ -94,15 +102,22 @@ pub fn update_capture_telemetry(
 }
 
 pub fn update_capture_guidance(
-    bodies: Query<(RigidBodyQueryReadOnly, &TrueParams, Has<RigidBodyDisabled>)>,
+    bodies: Query<(RigidBodyQueryReadOnly, &Orbital, Has<RigidBodyDisabled>)>,
     capture_targets: Query<&CaptureComponent>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureGuidanceReadout)>,
+    orbitals: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     for (mut text, readout) in &mut readouts {
-        let current_metrics =
-            capture_metrics(&bodies, readout.target_entity, readout.reference_entity);
+        let current_metrics = capture_metrics(
+            &bodies,
+            readout.target_entity,
+            readout.reference_entity,
+            &orbitals,
+            &world_time,
+        );
         let current_range = current_metrics.as_ref().map(|metrics| metrics.range_m);
         let current_rel_speed = current_metrics
             .as_ref()
@@ -196,9 +211,9 @@ pub fn update_capture_guidance(
 pub fn map_orbitals(
     camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
     mut labels: Query<(&mut Node, &OrbitLabel)>,
-    true_params_query: Query<&TrueParams>,
-    rigidbodies: Query<RigidBodyQueryReadOnly>,
-    disabled_bodies: Query<(), With<RigidBodyDisabled>>,
+    rigidbodies: Query<(RigidBodyQueryReadOnly, &Orbital)>,
+    orbital_entities: Res<OrbitalEntities>,
+    world_time: Res<WorldTime>,
 ) {
     let (cam, cam_transform, render_layers) = camera.into_inner();
 
@@ -208,55 +223,79 @@ pub fn map_orbitals(
         } else {
             node.display = Display::Block;
         }
-        if let Some(entity) = label.entity {
-            if let Ok(true_params) = true_params_query.get(entity) {
-                let mut world_position = DVec3::new(
-                    true_params.rv[0] / MAP_UNITS_TO_M,
-                    true_params.rv[1] / MAP_UNITS_TO_M,
-                    true_params.rv[2] / MAP_UNITS_TO_M,
-                );
+        let Some(entity) = label.entity else {
+            return;
+        };
+        let Ok((rb, orbital)) = rigidbodies.get(entity) else {
+            return;
+        };
 
-                if let Ok(rb) = rigidbodies.get(entity)
-                    && !disabled_bodies.contains(entity)
-                {
-                    world_position += rb.position.0 / MAP_UNITS_TO_M;
-                }
+        let Some(prop) = orbital_entities.propagators.get(orbital.propagator_id) else {
+            return;
+        };
 
-                if let Ok(viewport_position) =
-                    cam.world_to_viewport(cam_transform, world_position.as_vec3())
-                {
-                    node.top = Val::Px(viewport_position.y);
-                    node.left = Val::Px(viewport_position.x);
-                }
-            }
+        let Ok(params) = prop.state_eci(world_time.epoch) else {
+            return;
+        };
+
+        let mut world_position = DVec3::new(
+            params[0] / MAP_UNITS_TO_M,
+            params[1] / MAP_UNITS_TO_M,
+            params[2] / MAP_UNITS_TO_M,
+        );
+
+        world_position += rb.position.0 / MAP_UNITS_TO_M;
+
+        if let Ok(viewport_position) =
+            cam.world_to_viewport(cam_transform, world_position.as_vec3())
+        {
+            node.top = Val::Px(viewport_position.y);
+            node.left = Val::Px(viewport_position.x);
         }
     }
 }
 
 fn capture_metrics(
-    bodies: &Query<(RigidBodyQueryReadOnly, &TrueParams, Has<RigidBodyDisabled>)>,
+    bodies: &Query<(RigidBodyQueryReadOnly, &Orbital, Has<RigidBodyDisabled>)>,
     target_entity: Option<Entity>,
     reference_entity: Option<Entity>,
+    orbitals: &Res<OrbitalEntities>,
+    world_time: &Res<WorldTime>,
 ) -> Option<CaptureMetrics> {
     let target_entity = target_entity?;
     let reference_entity = reference_entity?;
 
-    let Ok((target_rb, target_true, target_disabled)) = bodies.get(target_entity) else {
+    let Ok((target_rb, target_orbital, target_disabled)) = bodies.get(target_entity) else {
         return None;
     };
-    let Ok((reference_rb, reference_true, reference_disabled)) = bodies.get(reference_entity)
+    let Ok((reference_rb, reference_orbital, reference_disabled)) = bodies.get(reference_entity)
     else {
         return None;
     };
 
-    let target_position = world_position(target_true, target_rb.position.0, target_disabled);
+    let Some(target_prop) = orbitals.propagators.get(target_orbital.propagator_id) else {
+        return None;
+    };
+    let Some(reference_prop) = orbitals.propagators.get(reference_orbital.propagator_id) else {
+        return None;
+    };
+
+    let Ok(target_true) = target_prop.state_eci(world_time.epoch) else {
+        return None;
+    };
+    let Ok(reference_true) = reference_prop.state_eci(world_time.epoch) else {
+        return None;
+    };
+
+    let target_position = world_position(&target_true, target_rb.position.0, target_disabled);
     let reference_position =
-        world_position(reference_true, reference_rb.position.0, reference_disabled);
+        world_position(&reference_true, reference_rb.position.0, reference_disabled);
     let relative_position = target_position - reference_position;
 
-    let target_velocity = world_velocity(target_true, target_rb.linear_velocity.0, target_disabled);
+    let target_velocity =
+        world_velocity(&target_true, target_rb.linear_velocity.0, target_disabled);
     let reference_velocity = world_velocity(
-        reference_true,
+        &reference_true,
         reference_rb.linear_velocity.0,
         reference_disabled,
     );
@@ -278,13 +317,13 @@ fn capture_metrics(
     })
 }
 
-fn world_position(true_params: &TrueParams, position: DVec3, disabled: bool) -> DVec3 {
-    let base = DVec3::new(true_params.rv[0], true_params.rv[1], true_params.rv[2]);
+fn world_position(true_params: &Vector6<f64>, position: DVec3, disabled: bool) -> DVec3 {
+    let base = DVec3::new(true_params[0], true_params[1], true_params[2]);
     if disabled { base } else { base + position }
 }
 
-fn world_velocity(true_params: &TrueParams, linear_velocity: DVec3, disabled: bool) -> DVec3 {
-    let base = DVec3::new(true_params.rv[3], true_params.rv[4], true_params.rv[5]);
+fn world_velocity(true_params: &Vector6<f64>, linear_velocity: DVec3, disabled: bool) -> DVec3 {
+    let base = DVec3::new(true_params[3], true_params[4], true_params[5]);
     if disabled {
         base
     } else {

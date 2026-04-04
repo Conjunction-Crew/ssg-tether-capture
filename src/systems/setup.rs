@@ -1,8 +1,7 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use crate::components::dev_components::Origin;
-use crate::components::orbit::{Earth, Orbit, TetherNode, TrueParams};
+use crate::components::orbit::{Earth, Orbit, TetherNode};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::celestials::Celestials;
@@ -19,7 +18,6 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use nalgebra::Vector6;
 
 pub fn setup_lighting(mut commands: Commands) {
     let sun_rotation = Quat::from_rotation_x(0.0);
@@ -86,10 +84,11 @@ pub fn setup_celestial(
             .spawn((
                 DespawnOnExit(UiScreen::Sim),
                 Earth,
+                RigidBodyDisabled,
                 RenderLayers::layer(SCENE_LAYER),
-                Orbit::FromParams(TrueParams {
-                    rv: Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-                }),
+                // Orbit::FromParams(TrueParams {
+                //     rv: Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+                // }),
                 Mesh3d(meshes.add(earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
                 Transform::from_xyz(0.0, 0.0, 0.0)
@@ -128,21 +127,6 @@ pub fn setup_entities(
     asset_server: Res<AssetServer>,
 ) {
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
-
-    // Origin Sphere
-    commands.spawn((
-        DespawnOnExit(UiScreen::Sim),
-        Origin,
-        Visibility::Hidden,
-        RenderLayers::layer(SCENE_LAYER),
-        Mesh3d(meshes.add(test_sphere_mesh.clone())),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.2, 1.0, 0.2),
-            perceptual_roughness: 1.0,
-            ..default()
-        })),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-    ));
 
     // Skybox
     let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
@@ -223,10 +207,10 @@ pub fn setup_entities(
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
-                AngularVelocity {
-                    0: DVec3::new(0.01, 0.01, 0.01),
-                    ..default()
-                },
+                // AngularVelocity {
+                //     0: Vec3::new(0.01, 0.01, 0.01),
+                //     ..default()
+                // },
                 Transform::from_xyz(150.0, 0.0, 300.0),
             ))
             .id(),
@@ -257,7 +241,10 @@ pub fn setup_tether(
         ..default()
     });
 
-    let tether_node_mesh = Mesh::from(Cylinder::new((rope_radius / 8.0) as f32, tether_node_length as f32));
+    let tether_node_mesh = Mesh::from(Cylinder::new(
+        (rope_radius / 8.0) as f32,
+        tether_node_length as f32,
+    ));
     let tether_node_collider = Collider::convex_hull_from_mesh(&tether_node_mesh).unwrap();
     let tether_node_mesh = meshes.add(tether_node_mesh);
 

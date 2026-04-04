@@ -1,7 +1,8 @@
 use avian3d::{
     math::PI,
     prelude::{
-        Forces, LinearVelocity, Physics, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
+        Forces, LinearVelocity, Position, RigidBodyForces, RigidBodyQuery, Rotation,
+        WriteRigidBodyForces,
     },
 };
 use bevy::{math::DVec3, prelude::*};
@@ -15,15 +16,11 @@ use crate::{
     systems::physics::PHYS_DT,
 };
 
-#[derive(Default, Reflect, GizmoConfigGroup)]
-pub struct CaptureGizmoConfigGroup;
-
 pub fn capture_state_machine_update(
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
-    capture_plan_lib: ResMut<CapturePlanLibrary>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
     orbital_entities: Res<OrbitalEntities>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
-    mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
 ) {
     for (capture_entity, mut capture_component) in capture_entities {
@@ -51,7 +48,6 @@ pub fn capture_state_machine_update(
                     let rel_v: DVec3;
                     if let Ok(rb) = rb_forces.p0().get(node) {
                         // Calculate relative position / velocity to the target
-                        world_r = rb.position.0.clone();
                         rel_r = capture_entity_position.0 - rb.position.0;
                         rel_v = rb.linear_velocity.0 - capture_entity_linvel.0;
                     } else {
@@ -214,8 +210,8 @@ pub fn capture_state_machine_update(
 
                     // If this node is not root, reduce max velocity, and sphere radius
                     if idx != 0 {
-                        max_velocity *= 0.9;
-                        max_force /= 2.0;
+                        // max_velocity *= 0.7;
+                        // max_force /= 2.0;
                         capture_radius += 1.0;
                     }
 
@@ -250,40 +246,6 @@ pub fn capture_state_machine_update(
                             force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
                         }
                     }
-
-                    // Draw force
-                    gizmos.ray(
-                        world_r.as_vec3(),
-                        force_vec.as_vec3(),
-                        Srgba::new(1.0, 0.0, 0.0, 0.2),
-                    );
-
-                    // Draw rel_v
-                    gizmos.ray(
-                        world_r.as_vec3(),
-                        rel_v.as_vec3(),
-                        Srgba::new(0.0, 1.0, 0.0, 0.2),
-                    );
-
-                    // Draw inner sphere
-                    gizmos.sphere(
-                        Isometry3d::new(
-                            capture_entity_position.0.as_vec3().clone(),
-                            capture_entity_rotation.0.as_quat().clone(),
-                        ),
-                        capture_sphere_radius.radius as f32,
-                        Srgba::new(1.0, 0.5, 0.0, 0.2),
-                    );
-
-                    // Draw outer sphere
-                    gizmos.sphere(
-                        Isometry3d::new(
-                            capture_entity_position.0.as_vec3().clone(),
-                            capture_entity_rotation.0.as_quat().clone(),
-                        ),
-                        capture_sphere_radius.radius as f32 + 1.0,
-                        Srgba::new(0.0, 0.8, 0.4, 0.2),
-                    );
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {

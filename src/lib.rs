@@ -19,11 +19,11 @@ use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::systems::capture_algorithms::CaptureGizmoConfigGroup;
-use crate::systems::gizmos::orbital_gizmos;
-use crate::systems::physics::fixed_physics_step;
-use crate::systems::propagation::floating_origin;
-use crate::systems::user_input::{change_time_warp, toggle_map_view, toggle_origin};
+use crate::resources::settings::Settings;
+use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
+use crate::systems::user_input::{
+    change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
+};
 use crate::systems::user_interface::{
     map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
 };
@@ -39,13 +39,12 @@ use crate::ui::state::UiScreen;
 /// CLI `open`, etc.).
 fn resolve_asset_path() -> String {
     #[cfg(target_os = "macos")]
-    if let Some(path) = std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            let assets = exe.parent()?.parent()?.join("Resources").join("assets");
-            assets.is_dir().then(|| assets.to_string_lossy().into_owned())
-        })
-    {
+    if let Some(path) = std::env::current_exe().ok().and_then(|exe| {
+        let assets = exe.parent()?.parent()?.join("Resources").join("assets");
+        assets
+            .is_dir()
+            .then(|| assets.to_string_lossy().into_owned())
+    }) {
         return path;
     }
     "assets".to_string()
@@ -58,22 +57,22 @@ pub fn run() {
         file_path: resolve_asset_path(),
         ..default()
     }))
-        .add_plugins(InputDispatchPlugin)
-        .add_plugins(TabNavigationPlugin)
-        .add_plugins(UiWidgetsPlugins)
-        .add_plugins(UiPlugin)
-        .add_plugins(AutoExposurePlugin)
-        .add_systems(
-            OnEnter(UiScreen::Sim),
-            ((
-                setup_lighting,
-                setup_celestial,
-                setup_tether,
-                setup_entities,
-            )
-                .chain(),),
+    .add_plugins(InputDispatchPlugin)
+    .add_plugins(TabNavigationPlugin)
+    .add_plugins(UiWidgetsPlugins)
+    .add_plugins(UiPlugin)
+    .add_plugins(AutoExposurePlugin)
+    .add_systems(
+        OnEnter(UiScreen::Sim),
+        ((
+            setup_lighting,
+            setup_celestial,
+            setup_tether,
+            setup_entities,
         )
-        .run();
+            .chain(),),
+    )
+    .run();
 }
 
 // Create the bevy application.
@@ -87,6 +86,7 @@ pub fn create_app() -> App {
             (
                 toggle_map_view,
                 toggle_origin,
+                toggle_capture_gizmos,
                 change_time_warp,
                 update_time_warp_readout,
                 update_capture_telemetry,
@@ -112,8 +112,9 @@ pub fn create_app() -> App {
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(Gravity(DVec3::ZERO))
-        .insert_resource(SubstepCount(12))
-        .init_resource::<CapturePlanLibrary>();
+        .insert_resource(SubstepCount(4))
+        .init_resource::<CapturePlanLibrary>()
+        .init_resource::<Settings>();
 
     app
 }
