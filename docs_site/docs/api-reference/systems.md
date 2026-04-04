@@ -24,7 +24,7 @@ Registers both with keys `"Earth"` and `"Map_Earth"` in the `Celestials` resourc
 
 ### `setup_tether`
 
-Spawns the tether joint chain. Creates `NUM_TETHER_JOINTS` rigid body entities each separated by `DIST_BETWEEN_JOINTS` metres, links them with `TetherNode`, and registers the root in `OrbitalEntities::tethers`.
+Spawns the tether joint chain. Creates `NUM_TETHER_JOINTS` rigid body entities each separated by `DIST_BETWEEN_JOINTS` metres, links them with `TetherNode`, and registers the root in `OrbitalCache::tethers`.
 
 ### `setup_entities`
 

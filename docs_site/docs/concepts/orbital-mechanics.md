@@ -37,7 +37,7 @@ All other positional representations (Bevy `Transform`, map view position, appro
 
 Each simulation step, `ssg_propagate_keplerian` advances every active `Orbital` entity forward in time:
 
-1. Iterates over all active orbitals, each of which owns a `brahe::KeplerianPropagator` instance stored in the `OrbitalEntities` resource.
+1. Iterates over all active orbitals, each of which owns a `brahe::KeplerianPropagator` instance stored in the `OrbitalCache` resource.
 2. Calls `propagator.state_eci(epoch)` — where `epoch` is derived from `WorldTime` scaled by `TimeWarp::multiplier` — to obtain a `nalgebra::Vector6<f64>` containing the current ECI position and velocity.
 3. Writes the updated position/velocity back into each entity's `TrueParams`.
 

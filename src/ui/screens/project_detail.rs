@@ -10,7 +10,7 @@ use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
 use crate::constants::UI_LAYER;
-use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::orbital_cache::OrbitalCache;
 use crate::ui::events::UiEvent;
 use crate::ui::state::{ProjectCatalog, SelectedProject};
 use crate::ui::theme::UiTheme;
@@ -74,7 +74,7 @@ pub fn spawn_project_detail_screen(
     theme: Res<UiTheme>,
     selected_project: Res<SelectedProject>,
     catalog: Res<ProjectCatalog>,
-    orbital_entities: Res<OrbitalEntities>,
+    orbital_entities: Res<OrbitalCache>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
