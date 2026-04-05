@@ -245,7 +245,7 @@ pub fn setup_tether(
         (rope_radius / 8.0) as f32,
         tether_node_length as f32,
     ));
-    let tether_node_collider = Collider::convex_hull_from_mesh(&tether_node_mesh).unwrap();
+    let tether_node_collider = Collider::cylinder(rope_radius / 8.0, tether_node_length);
     let tether_node_mesh = meshes.add(tether_node_mesh);
 
     // The root tether node
