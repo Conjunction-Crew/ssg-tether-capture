@@ -7,6 +7,7 @@ use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
+use crate::plugins::gpu_compute::{GpuElements, GpuOrbitalElements};
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::WorldTime;
 
@@ -60,6 +61,7 @@ pub fn load_dataset_entities(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut gpu_elements: ResMut<GpuElements>,
 ) {
     let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
 
@@ -146,16 +148,26 @@ pub fn load_dataset_entities(
                                 mean_anomaly,
                             );
 
+                            gpu_elements.0.push(GpuOrbitalElements {
+                                a: elements[0] as f32,
+                                e: elements[1] as f32,
+                                i: elements[2] as f32,
+                                raan: elements[3] as f32,
+                                argp: elements[4] as f32,
+                                mean_anomaly: elements[5] as f32,
+                            });
+
                             // Spawn the entity into the simulation with the parsed elements
-                            commands.spawn((
-                                // Mesh3d(sphere_mesh.clone()),
-                                // MeshMaterial3d(sphere_material.clone()),
-                                // sphere_collider.clone(),
-                                // RigidBody::Dynamic,
-                                RigidBodyDisabled,
-                                Transform::from_xyz(5000.0, 5000.0, 5000.0),
-                                Orbit::FromElements(elements),
-                            ));
+                            // commands.spawn((
+                            // Mesh3d(sphere_mesh.clone()),
+                            // MeshMaterial3d(sphere_material.clone()),
+                            // sphere_collider.clone(),
+                            // RigidBody::Dynamic,
+                            // RigidBodyDisabled,
+                            // Transform::from_xyz(5000.0, 5000.0, 5000.0),
+                            // Orbit::FromElements(elements),
+                            // GpuOrbital,
+                            // ));
                         }
                     } else {
                         println!("Failed to parse dataset json");

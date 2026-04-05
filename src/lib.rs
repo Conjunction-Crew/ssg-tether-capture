@@ -16,6 +16,7 @@ use bevy::ui_widgets::UiWidgetsPlugins;
 use systems::setup::*;
 
 use crate::constants::{MAP_LAYER, SCENE_LAYER};
+use crate::plugins::gpu_compute::GpuComputePlugin;
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::CapturePlanLibrary;
@@ -62,6 +63,7 @@ pub fn run() {
     .add_plugins(UiWidgetsPlugins)
     .add_plugins(UiPlugin)
     .add_plugins(AutoExposurePlugin)
+    .add_plugins(GpuComputePlugin)
     .add_systems(
         OnEnter(UiScreen::Sim),
         ((
