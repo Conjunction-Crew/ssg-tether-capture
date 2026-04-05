@@ -13,6 +13,11 @@ cd ssg-tether-capture
 cargo run
 ```
 
+## Run with Tracy performance monitor tool enabled
+```bash
+cargo run --release --features bevy/trace_tracy
+```
+
 See [Prerequisites](https://conjunction-crew.github.io/ssg-tether-capture/docs/getting-started/prerequisites) for system dependencies and required assets before building.
 
 ## Contributing

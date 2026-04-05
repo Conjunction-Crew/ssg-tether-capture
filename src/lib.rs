@@ -22,6 +22,7 @@ use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::settings::Settings;
 use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
+use crate::systems::physics::FIXED_HZ;
 use crate::systems::user_input::{
     change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
 };
@@ -114,7 +115,8 @@ pub fn create_app() -> App {
         )
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(Gravity(DVec3::ZERO))
-        .insert_resource(SubstepCount(4))
+        .insert_resource(SubstepCount(4)) // Avian3d Substep Count
+        .insert_resource(Time::<Fixed>::from_hz(FIXED_HZ)) // FixedUpdate rate (physics.rs)
         .init_resource::<CapturePlanLibrary>()
         .init_resource::<Settings>();
 
