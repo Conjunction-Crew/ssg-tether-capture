@@ -68,37 +68,6 @@ pub struct CycleCameraButton;
 pub struct SidebarPanel;
 
 #[derive(Component)]
-pub struct MapViewButton;
-
-#[derive(Component)]
-pub struct TimeWarpIncreaseButton;
-
-#[derive(Component)]
-pub struct TimeWarpDecreaseButton;
-
-#[derive(Component)]
-pub struct ToggleOriginButton;
-
-#[derive(Component)]
-pub struct TimeWarpLabel;
-
-#[derive(Component, Clone, PartialEq, Eq)]
-pub enum CollapsibleSection {
-    SimulationHud,
-    NearbyDebris,
-}
-
-#[derive(Component)]
-pub struct CollapsibleToggle {
-    pub section: CollapsibleSection,
-}
-
-#[derive(Component)]
-pub struct CollapsibleContent {
-    pub section: CollapsibleSection,
-}
-
-#[derive(Component)]
 pub struct TelemetryValue {
     pub entity: Option<Entity>,
     pub field_index: usize,

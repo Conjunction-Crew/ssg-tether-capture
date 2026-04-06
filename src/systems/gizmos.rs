@@ -28,6 +28,7 @@ pub fn orbital_gizmos(
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     mut gizmos: Gizmos,
     world_time: Res<WorldTime>,
+    orbital_entities: Res<OrbitalEntities>,
 ) {
     let render_layers = camera_s.into_inner();
 

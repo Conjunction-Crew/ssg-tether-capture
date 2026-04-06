@@ -87,11 +87,7 @@ pub fn spawn_home_screen_inner(
         capture_plan_lib.plans.len(),
         if capture_plan_lib.plans.len() == 1 { "" } else { "s" }
     );
-    let working_directory = projects
-        .projects
-        .first()
-        .map(|project| project.working_directory.clone())
-        .unwrap_or_else(|| "/home/user/satellite-projects".to_string());
+    let working_directory = working_directory_path.to_string();
 
     commands
         .spawn((

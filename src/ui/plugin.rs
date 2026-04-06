@@ -1,11 +1,14 @@
-use avian3d::prelude::{Physics, RigidBody};
+use std::path::PathBuf;
+
+use avian3d::prelude::{Physics, PhysicsTime, RigidBody};
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
-
-use avian3d::prelude::{Physics, PhysicsTime};
+use bevy::tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task};
+use bevy::ui::InteractionDisabled;
+use bevy::ui_widgets::{CoreSliderDragState, SliderRange, SliderValue};
 
 use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::Orbital;
@@ -13,6 +16,7 @@ use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
 use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
@@ -199,6 +203,7 @@ fn handle_ui_events(
     mut scene_camera: Query<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), Without<UiCamera>>,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
     mut settings: ResMut<Settings>,
+    mut user_plans_dirty: ResMut<UserPlansDirty>,
 ) {
     for event in ui_events.read() {
         match event {
