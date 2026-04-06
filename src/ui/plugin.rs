@@ -196,10 +196,7 @@ fn handle_ui_events(
     mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut scene_camera: Query<
-        (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
-        Without<UiCamera>,
-    >,
+    mut scene_camera: Query<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), Without<UiCamera>>,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
     mut settings: ResMut<Settings>,
 ) {
