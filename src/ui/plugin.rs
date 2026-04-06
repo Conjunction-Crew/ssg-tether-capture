@@ -40,7 +40,7 @@ use crate::ui::screens::working_directory_setup::{
 };
 use crate::ui::state::{SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
-use crate::ui::widgets::{input_field_display, input_field_interaction, input_field_keyboard};
+use crate::ui::widgets::{input_field_display, input_field_interaction, input_field_keyboard, ClipboardRes};
 
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);
@@ -85,6 +85,7 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(Update, project_detail_interactions)
             .add_systems(Update, collapsible_toggle_interaction)
+            .init_non_send_resource::<ClipboardRes>()
             .add_systems(Update, input_field_interaction)
             .add_systems(Update, input_field_keyboard)
             .add_systems(Update, input_field_display)

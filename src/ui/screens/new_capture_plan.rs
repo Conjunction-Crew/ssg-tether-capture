@@ -3,6 +3,7 @@ use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::ecs::observer::On;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Pointer, Scroll};
+use bevy::picking::Pickable;
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
@@ -152,10 +153,12 @@ fn field_row<'a>(
                 Button,
                 InputField {
                     value: value.to_string(),
+                    cursor_pos: value.len(),
                     focused: false,
                     placeholder: placeholder.to_string(),
                     is_numeric,
                     error: has_error,
+                    selection_anchor: None,
                 },
                 field_id,
                 Node {
@@ -223,21 +226,35 @@ fn transition_rows<'a>(
                             Button,
                             RemoveApproachTransitionButton(i),
                             Node {
-                                padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                                padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
                                 ..default()
                             },
-                            BackgroundColor(theme.panel_background),
-                        ));
+                            BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("×"),
+                                TextFont { font: font.clone(), font_size: 16.0, ..default() },
+                                TextColor(Color::srgb(1.0, 0.65, 0.65)),
+                            ));
+                        });
                     } else {
                         hdr.spawn((
                             Button,
                             RemoveTerminalTransitionButton(i),
                             Node {
-                                padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                                padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
                                 ..default()
                             },
-                            BackgroundColor(theme.panel_background),
-                        ));
+                            BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("×"),
+                                TextFont { font: font.clone(), font_size: 16.0, ..default() },
+                                TextColor(Color::srgb(1.0, 0.65, 0.65)),
+                            ));
+                        });
                     }
                 });
 
@@ -295,7 +312,8 @@ pub fn spawn_new_capture_plan_modal(
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.3)),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            Pickable::default(),
             ZIndex(10),
         ))
         .with_children(|overlay| {
@@ -423,8 +441,7 @@ pub fn spawn_new_capture_plan_modal(
                                             MouseScrollUnit::Pixel => ev.event.y,
                                         };
                                         if let Ok(mut scroll_pos) = query.get_mut(ev.entity) {
-                                            scroll_pos.0.y -= scroll_amount;
-                                            scroll_pos.0.y = scroll_pos.0.y.max(0.0);
+                                            scroll_pos.0.y = (scroll_pos.0.y - scroll_amount).max(0.0);
                                         }
                                     },
                                 )
@@ -921,14 +938,14 @@ pub fn new_capture_plan_interactions(
         } else if let Some(btn) = remove_approach {
             match *interaction {
                 Interaction::Pressed => { events.write(UiEvent::RemoveApproachTransition(btn.0)); }
-                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background_soft),
-                Interaction::None => *bg = BackgroundColor(theme.panel_background),
+                Interaction::Hovered => *bg = BackgroundColor(Color::srgba(0.75, 0.2, 0.2, 0.65)),
+                Interaction::None => *bg = BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
             }
         } else if let Some(btn) = remove_terminal {
             match *interaction {
                 Interaction::Pressed => { events.write(UiEvent::RemoveTerminalTransition(btn.0)); }
-                Interaction::Hovered => *bg = BackgroundColor(theme.panel_background_soft),
-                Interaction::None => *bg = BackgroundColor(theme.panel_background),
+                Interaction::Hovered => *bg = BackgroundColor(Color::srgba(0.75, 0.2, 0.2, 0.65)),
+                Interaction::None => *bg = BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
             }
         } else if confirm_overwrite.is_some() {
             match *interaction {

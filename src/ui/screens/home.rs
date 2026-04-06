@@ -3,6 +3,7 @@ use bevy::prelude::*;
 
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
+use crate::resources::new_capture_plan_form::NewCapturePlanForm;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
 use crate::ui::state::UiScreen;
@@ -490,8 +491,12 @@ pub fn home_interactions(
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<UiScreen>>,
     theme: Res<UiTheme>,
+    form: Res<NewCapturePlanForm>,
 ) {
     if *screen.get() != UiScreen::Home {
+        return;
+    }
+    if form.open {
         return;
     }
 
