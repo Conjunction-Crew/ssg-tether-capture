@@ -111,31 +111,59 @@ pub fn spawn_home_screen_inner(
                         min_height: px(84.0),
                         padding: UiRect::axes(px(24.0), px(16.0)),
                         justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BackgroundColor(theme.header_background),
+            ))
+            .with_children(|header| {
+                header
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: px(14.0),
                         ..default()
-                    },
-                    BackgroundColor(theme.header_background),
-                ))
-                .with_children(|header| {
-                    header.spawn((
-                        Text::new("Tether Capture"),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 30.0,
-                            ..default()
-                        },
-                        TextColor(theme.text_primary),
-                    ));
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            ImageNode::new(
+                                asset_server.load("logo/tether-capture.iconset/icon_128x128.png"),
+                            ),
+                            Node {
+                                height: px(50.0),
+                                width: Val::Auto,
+                                ..default()
+                            },
+                        ));
 
-                    header.spawn((
-                        Text::new("Conjunction Crew"),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 14.0,
+                        row.spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(2.0),
                             ..default()
-                        },
-                        TextColor(theme.text_muted),
-                    ));
-                });
+                        })
+                        .with_children(|text_col| {
+                            text_col.spawn((
+                                Text::new("Tether Capture"),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 30.0,
+                                    ..default()
+                                },
+                                TextColor(theme.text_primary),
+                            ));
+
+                            text_col.spawn((
+                                Text::new("Conjunction Crew"),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 14.0,
+                                    ..default()
+                                },
+                                TextColor(theme.text_muted),
+                            ));
+                        });
+                    });
+            });
 
             parent
                 .spawn(Node {
@@ -299,7 +327,7 @@ pub fn spawn_home_screen_inner(
                                 ..default()
                             })
                             .with_children(|list| {
-                                for (plan_name, _plan) in &capture_plan_lib.user_plans {
+                                for (plan_name, plan) in &capture_plan_lib.user_plans {
                                     list.spawn((
                                         Button,
                                         HomeProjectButton {
@@ -329,7 +357,7 @@ pub fn spawn_home_screen_inner(
                                             })
                                             .with_children(|row| {
                                                 row.spawn((
-                                                    Text::new(plan_name.clone()),
+                                                    Text::new(plan.name.clone()),
                                                     TextFont {
                                                         font: font.clone(),
                                                         font_size: 18.0,
@@ -419,7 +447,7 @@ pub fn spawn_home_screen_inner(
                                 ..default()
                             })
                             .with_children(|list| {
-                                for (plan_name, _plan) in &capture_plan_lib.example_plans {
+                                for (plan_name, plan) in &capture_plan_lib.example_plans {
                                     list.spawn((
                                         Button,
                                         HomeProjectButton {
@@ -439,7 +467,7 @@ pub fn spawn_home_screen_inner(
                                     ))
                                     .with_children(|button| {
                                         button.spawn((
-                                            Text::new(plan_name.clone()),
+                                            Text::new(plan.name.clone()),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 18.0,

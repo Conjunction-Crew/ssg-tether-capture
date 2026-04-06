@@ -68,6 +68,15 @@ pub struct CycleCameraButton;
 pub struct SidebarPanel;
 
 #[derive(Component)]
+pub struct ExitSimConfirmModal;
+
+#[derive(Component)]
+pub struct ExitSimCancelButton;
+
+#[derive(Component)]
+pub struct ExitSimConfirmButton;
+
+#[derive(Component)]
 pub struct TelemetryValue {
     pub entity: Option<Entity>,
     pub field_index: usize,
@@ -725,10 +734,101 @@ fn spawn_collapsible_section(
 pub fn cleanup_project_detail_screen(
     mut commands: Commands,
     roots: Query<Entity, With<SimScreen>>,
+    modals: Query<Entity, With<ExitSimConfirmModal>>,
 ) {
     for entity in &roots {
         commands.entity(entity).despawn();
     }
+    for entity in &modals {
+        commands.entity(entity).despawn();
+    }
+}
+
+pub fn spawn_exit_confirm_modal(commands: &mut Commands, font: &Handle<Font>, theme: &UiTheme) {
+    commands
+        .spawn((
+            ExitSimConfirmModal,
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            ZIndex(100),
+            RenderLayers::layer(crate::constants::UI_LAYER),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(14.0),
+                        padding: UiRect::all(Val::Px(28.0)),
+                        width: Val::Px(420.0),
+                        max_width: Val::Percent(90.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ))
+                .with_children(|dlg| {
+                    dlg.spawn((
+                        Text::new("Exit Simulation?"),
+                        TextFont { font: font.clone(), font_size: 20.0, ..default() },
+                        TextColor(theme.text_primary),
+                    ));
+
+                    dlg.spawn((
+                        Text::new("Your orbital simulation will be reset. Are you sure you want to exit?"),
+                        TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                        TextColor(theme.text_muted),
+                    ));
+
+                    dlg.spawn(Node {
+                        width: Val::Percent(100.0),
+                        justify_content: JustifyContent::End,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|btns| {
+                        btns.spawn((
+                            Button,
+                            ExitSimCancelButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background_soft),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Cancel"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.text_primary),
+                            ));
+                        });
+
+                        btns.spawn((
+                            Button,
+                            ExitSimConfirmButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_background),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Exit Sim"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.button_text),
+                            ));
+                        });
+                    });
+                });
+        });
 }
 
 pub fn project_detail_interactions(
@@ -742,10 +842,14 @@ pub fn project_detail_interactions(
             Option<&TimeWarpDecreaseButton>,
             Option<&TimeWarpIncreaseButton>,
             Option<&CycleCameraButton>,
+            Option<&ExitSimCancelButton>,
+            Option<&ExitSimConfirmButton>,
             &mut BackgroundColor,
         ),
         (Changed<Interaction>, With<Button>),
     >,
+    mut commands: Commands,
+    exit_modal_query: Query<Entity, With<ExitSimConfirmModal>>,
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<crate::ui::state::UiScreen>>,
     theme: Res<UiTheme>,
@@ -763,6 +867,8 @@ pub fn project_detail_interactions(
         time_warp_decrease,
         time_warp_increase,
         cycle_camera_button,
+        exit_cancel_button,
+        exit_confirm_button,
         mut background_color,
     ) in &mut interactions
     {
@@ -770,6 +876,12 @@ pub fn project_detail_interactions(
             Interaction::Pressed => {
                 *background_color = BackgroundColor(theme.button_background_hover);
                 if back_button.is_some() {
+                    events.write(UiEvent::ShowExitConfirm);
+                } else if exit_cancel_button.is_some() {
+                    for entity in &exit_modal_query {
+                        commands.entity(entity).despawn();
+                    }
+                } else if exit_confirm_button.is_some() {
                     events.write(UiEvent::BackToHome);
                 } else if let Some(capture_entity) = capture_button {
                     events.write(UiEvent::CaptureDebris {

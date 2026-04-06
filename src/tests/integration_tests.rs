@@ -7,7 +7,6 @@ use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
 use crate::resources::orbital_entities::OrbitalEntities;
 use crate::resources::world_time::{self, WorldTime};
 use crate::systems::physics::fixed_physics_step;
-use crate::ui::screens::home::load_capture_plans;
 use crate::ui::state::UiScreen;
 use avian3d::collider_tree::ColliderTreeDiagnostics;
 use avian3d::collision::CollisionDiagnostics;

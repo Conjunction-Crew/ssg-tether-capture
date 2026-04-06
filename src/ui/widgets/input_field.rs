@@ -2,6 +2,7 @@ use bevy::ecs::prelude::MessageReader;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
+use bevy::ui::UiGlobalTransform;
 
 /// Non-send resource wrapping the system clipboard.
 pub struct ClipboardRes(pub arboard::Clipboard);
@@ -100,21 +101,48 @@ impl InputField {
 
 /// System: focus the pressed InputField, blur all others.
 pub fn input_field_interaction(
-    mut field_query: Query<(Entity, &Interaction, &mut InputField), With<Button>>,
+    mut field_query: Query<
+        (Entity, &Interaction, &mut InputField, &UiGlobalTransform, &ComputedNode),
+        With<Button>,
+    >,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
 ) {
     let pressed_entity = field_query
         .iter()
-        .find(|(_, i, _)| **i == Interaction::Pressed)
-        .map(|(e, _, _)| e);
+        .find(|(_, i, _, _, _)| **i == Interaction::Pressed)
+        .map(|(e, _, _, _, _)| e);
+
+    // Get physical cursor position for character placement estimation.
+    // UiGlobalTransform and ComputedNode.size() both use physical pixels.
+    let maybe_cursor = windows.single().ok().and_then(|w| {
+        w.physical_cursor_position()
+    });
 
     if let Some(pressed) = pressed_entity {
-        for (entity, _, mut field) in &mut field_query {
+        for (entity, _, mut field, transform, computed) in &mut field_query {
             if entity == pressed {
-                if !field.focused {
-                    // Place cursor at end when first focusing
+                // Estimate click position within the text.
+                // UiGlobalTransform.affine().translation is the node center in physical pixels.
+                if let Some(cursor) = maybe_cursor {
+                    let node_center_x = transform.affine().translation.x;
+                    let node_half_w = computed.size().x / 2.0;
+                    let node_left = node_center_x - node_half_w;
+                    let x_in_node = cursor.x - node_left;
+                    // Subtract left padding (min_inset.x); FiraMono 13px ≈ 7.8 logical px/char
+                    let x_in_text = (x_in_node - computed.padding.min_inset.x).max(0.0);
+                    let char_width_physical = 7.8 / computed.inverse_scale_factor;
+                    let char_idx = (x_in_text / char_width_physical) as usize;
+                    field.cursor_pos = field
+                        .value
+                        .char_indices()
+                        .nth(char_idx)
+                        .map(|(b, _)| b)
+                        .unwrap_or(field.value.len());
+                } else if !field.focused {
+                    // Fallback: place cursor at end when we have no cursor position
                     field.cursor_pos = field.value.len();
-                    field.selection_anchor = None;
                 }
+                field.selection_anchor = None;
                 field.focused = true;
                 field.error = false;
             } else {
@@ -284,7 +312,7 @@ pub fn input_field_keyboard(
 pub fn input_field_display(
     mut field_query: Query<(Entity, &InputField, &mut BorderColor), Changed<InputField>>,
     children_query: Query<&Children>,
-    mut text_query: Query<&mut Text, With<InputFieldText>>,
+    mut text_query: Query<(&mut Text, &mut TextColor), With<InputFieldText>>,
 ) {
     for (entity, field, mut border) in &mut field_query {
         // Update border to reflect focus / error state
@@ -296,11 +324,19 @@ pub fn input_field_display(
             BorderColor::all(Color::srgba(0.059, 0.078, 0.133, 0.88))
         };
 
-        // Update text to reflect value / placeholder / cursor / selection
+        // Update text content and color to reflect value / placeholder / cursor / selection
         if let Ok(children) = children_query.get(entity) {
             for child in children.iter() {
-                if let Ok(mut text) = text_query.get_mut(child) {
+                if let Ok((mut text, mut color)) = text_query.get_mut(child) {
+                    let showing_placeholder = !field.focused && field.value.is_empty();
                     text.0 = build_display_text(field);
+                    color.0 = if showing_placeholder {
+                        // gray for placeholder
+                        Color::srgb(0.60, 0.66, 0.78)
+                    } else {
+                        // white for user-entered text
+                        Color::srgb(0.94, 0.95, 0.98)
+                    };
                     break;
                 }
             }

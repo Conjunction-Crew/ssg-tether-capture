@@ -6,6 +6,8 @@ use crate::resources::new_capture_plan_form::UnitSystem;
 pub enum UiEvent {
     OpenProject(String),
     BackToHome,
+    ShowExitConfirm,
+    CancelExitConfirm,
     WorkingDirectorySelected(String),
     BrowseForWorkingDirectory,
     ChangeWorkingDirectory,

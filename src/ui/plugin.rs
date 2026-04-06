@@ -32,7 +32,7 @@ use crate::ui::screens::new_capture_plan::{
 };
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
-    spawn_project_detail_screen,
+    spawn_exit_confirm_modal, spawn_project_detail_screen,
 };
 use crate::ui::screens::working_directory_setup::{
     cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
@@ -48,6 +48,9 @@ struct FileDialogTask(Option<Task<Option<PathBuf>>>);
 #[derive(Resource, Default)]
 struct UserPlansDirty(bool);
 
+#[derive(Resource, Default)]
+struct ExitConfirmPending(bool);
+
 pub struct UiPlugin;
 
 #[derive(Component)]
@@ -62,6 +65,7 @@ impl Plugin for UiPlugin {
             .init_resource::<NewCapturePlanForm>()
             .init_resource::<FileDialogTask>()
             .init_resource::<UserPlansDirty>()
+            .init_resource::<ExitConfirmPending>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
@@ -93,6 +97,7 @@ impl Plugin for UiPlugin {
             .add_systems(Update, new_capture_plan_interactions)
             .add_systems(Update, poll_new_plan_modal)
             .add_systems(Update, poll_home_plan_refresh)
+            .add_systems(Update, poll_exit_confirm_modal)
             .add_systems(Update, handle_ui_events);
     }
 }
@@ -189,6 +194,19 @@ fn poll_new_plan_modal(
     }
 }
 
+fn poll_exit_confirm_modal(
+    mut commands: Commands,
+    mut pending: ResMut<ExitConfirmPending>,
+    asset_server: Res<AssetServer>,
+    theme: Res<UiTheme>,
+) {
+    if pending.0 {
+        let font = asset_server.load("fonts/FiraMono-Medium.ttf");
+        spawn_exit_confirm_modal(&mut commands, &font, &theme);
+        pending.0 = false;
+    }
+}
+
 fn handle_ui_events(
     mut commands: Commands,
     mut ui_events: MessageReader<UiEvent>,
@@ -205,6 +223,7 @@ fn handle_ui_events(
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
     mut settings: ResMut<Settings>,
     mut user_plans_dirty: ResMut<UserPlansDirty>,
+    mut exit_confirm_pending: ResMut<ExitConfirmPending>,
 ) {
     for event in ui_events.read() {
         match event {
@@ -216,6 +235,12 @@ fn handle_ui_events(
             }
             UiEvent::BackToHome => {
                 next_screen.set(UiScreen::Home);
+            }
+            UiEvent::ShowExitConfirm => {
+                exit_confirm_pending.0 = true;
+            }
+            UiEvent::CancelExitConfirm => {
+                // handled directly in project_detail_interactions via commands
             }
             UiEvent::WorkingDirectorySelected(path) => {
                 working_directory.path = path.clone();
