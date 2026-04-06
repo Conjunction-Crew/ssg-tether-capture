@@ -7,17 +7,17 @@ use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
-use crate::plugins::gpu_compute::{GpuElements, GpuOrbitalElements};
+use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::WorldTime;
 
-use avian3d::prelude::{Collider, RigidBody, RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{Collider, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
-use brahe::{Epoch, GM_EARTH, KeplerianPropagator};
+use brahe::{Epoch, GM_EARTH, KeplerianPropagator, TimeSystem};
 use nalgebra::{DVector, Vector6};
 
 fn calculate_com_rv(
@@ -58,12 +58,15 @@ fn calculate_com_rv(
 }
 
 pub fn load_dataset_entities(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut gpu_elements: ResMut<GpuElements>,
+    world_time: Res<WorldTime>,
+    mut gpu_epoch_origin: ResMut<GpuComputeEpochOrigin>,
 ) {
     let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
+    let reference_epoch = gpu_epoch_origin.0.get_or_insert(world_time.epoch);
+    let reference_epoch = *reference_epoch;
+
+    gpu_elements.0.clear();
 
     for dataset_file_result in fs::read_dir(&plans_dir).expect("failed to read dataset dir") {
         if let Ok(dataset_file) = dataset_file_result {
@@ -75,19 +78,14 @@ pub fn load_dataset_entities(
                 if let Ok(raw_json) = fs::read_to_string(&path) {
                     if let Ok(dataset) = serde_json::from_str(&raw_json) {
                         let data: JsonOrbitalData = dataset;
-                        let sphere_mesh = meshes.add(Mesh::from(Sphere::new(1.0)));
-                        let sphere_collider = Collider::sphere(1.0);
-                        let sphere_material = materials.add(StandardMaterial {
-                            base_color: Color::Srgba(Srgba {
-                                red: 1.0,
-                                green: 1.0,
-                                blue: 1.0,
-                                alpha: 1.0,
-                            }),
-                            perceptual_roughness: 0.2,
-                            ..default()
-                        });
                         for object in data.data {
+                            let Some(id_val) = object.norad_cat_id else {
+                                println!("Failed to parse norad cat id");
+                                continue;
+                            };
+                            let Some(id) = id_val.as_u64() else {
+                                continue;
+                            };
                             let Some(mean_motion_val) = object.mean_motion else {
                                 println!("Failed to parse mean motion");
                                 continue;
@@ -138,6 +136,11 @@ pub fn load_dataset_entities(
                                 continue;
                             };
                             let mean_anomaly = mean_anomaly.to_radians();
+                            let object_epoch = object
+                                .epoch
+                                .as_deref()
+                                .and_then(parse_dataset_epoch_fast)
+                                .unwrap_or(reference_epoch);
 
                             let elements = Vector6::new(
                                 semi_major_axis,
@@ -149,25 +152,15 @@ pub fn load_dataset_entities(
                             );
 
                             gpu_elements.0.push(GpuOrbitalElements {
+                                id: id as u32,
                                 a: elements[0] as f32,
                                 e: elements[1] as f32,
                                 i: elements[2] as f32,
                                 raan: elements[3] as f32,
                                 argp: elements[4] as f32,
                                 mean_anomaly: elements[5] as f32,
+                                epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
                             });
-
-                            // Spawn the entity into the simulation with the parsed elements
-                            // commands.spawn((
-                            // Mesh3d(sphere_mesh.clone()),
-                            // MeshMaterial3d(sphere_material.clone()),
-                            // sphere_collider.clone(),
-                            // RigidBody::Dynamic,
-                            // RigidBodyDisabled,
-                            // Transform::from_xyz(5000.0, 5000.0, 5000.0),
-                            // Orbit::FromElements(elements),
-                            // GpuOrbital,
-                            // ));
                         }
                     } else {
                         println!("Failed to parse dataset json");
@@ -176,6 +169,52 @@ pub fn load_dataset_entities(
             }
         }
     }
+}
+
+fn parse_dataset_epoch_fast(raw: &str) -> Option<Epoch> {
+    let bytes = raw.as_bytes();
+    let is_fixed_format = bytes.len() >= 19
+        && bytes.get(4) == Some(&b'-')
+        && bytes.get(7) == Some(&b'-')
+        && bytes.get(10) == Some(&b'T')
+        && bytes.get(13) == Some(&b':')
+        && bytes.get(16) == Some(&b':');
+
+    if !is_fixed_format {
+        return Epoch::from_string(raw).or_else(|| Epoch::from_string(&format!("{raw}Z")));
+    }
+
+    let year = raw.get(0..4)?.parse().ok()?;
+    let month = raw.get(5..7)?.parse().ok()?;
+    let day = raw.get(8..10)?.parse().ok()?;
+    let hour = raw.get(11..13)?.parse().ok()?;
+    let minute = raw.get(14..16)?.parse().ok()?;
+    let whole_seconds: f64 = raw.get(17..19)?.parse().ok()?;
+
+    let fractional_seconds = raw
+        .get(19..)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+        .and_then(|digits| {
+            if digits.is_empty() {
+                return None;
+            }
+
+            let value = digits.parse::<u32>().ok()? as f64;
+            let scale = 10_f64.powi(digits.len() as i32);
+            Some(value / scale)
+        })
+        .unwrap_or(0.0);
+
+    Some(Epoch::from_datetime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        whole_seconds + fractional_seconds,
+        0.0,
+        TimeSystem::UTC,
+    ))
 }
 
 pub fn init_orbitals(
