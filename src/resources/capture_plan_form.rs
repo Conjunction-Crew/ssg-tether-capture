@@ -54,6 +54,8 @@ pub struct NewCapturePlanForm {
     /// Set to true after saving an edited plan in the sim screen.
     /// A poll system reads this, spawns the restart prompt, and clears it.
     pub show_restart_prompt: bool,
+    /// When true, the form is in view-only mode (e.g. viewing an example plan).
+    pub read_only: bool,
 }
 
 impl NewCapturePlanForm {

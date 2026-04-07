@@ -316,7 +316,7 @@ pub fn spawn_capture_plan_modal(
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
             Pickable::default(),
-            ZIndex(10),
+            ZIndex(100),
         ))
         .with_children(|overlay| {
             overlay
@@ -344,7 +344,9 @@ pub fn spawn_capture_plan_modal(
                             BackgroundColor(theme.header_background),
                         ))
                         .with_children(|bar| {
-                            let form_title = if form.editing_plan_id.is_some() {
+                            let form_title = if form.read_only {
+                                "View Capture Plan"
+                            } else if form.editing_plan_id.is_some() {
                                 "Edit Capture Plan"
                             } else {
                                 "New Capture Plan"
@@ -365,26 +367,28 @@ pub fn spawn_capture_plan_modal(
                                 ..default()
                             })
                             .with_children(|right| {
-                                right.spawn((
-                                    Button,
-                                    NewPlanSaveButton,
-                                    Node {
-                                        padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme.button_background),
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new("Save"),
-                                        TextFont {
-                                            font: font.clone(),
-                                            font_size: 13.0,
+                                if !form.read_only {
+                                    right.spawn((
+                                        Button,
+                                        NewPlanSaveButton,
+                                        Node {
+                                            padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
                                             ..default()
                                         },
-                                        TextColor(theme.button_text),
-                                    ));
-                                });
+                                        BackgroundColor(theme.button_background),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Save"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 13.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.button_text),
+                                        ));
+                                    });
+                                }
                                 right.spawn((
                                     Button,
                                     NewPlanCancelButton,

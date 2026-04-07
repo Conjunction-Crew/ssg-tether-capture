@@ -477,8 +477,10 @@ fn handle_ui_events(
                 form.overwrite_conflict_path = None;
             }
             UiEvent::EditCapturePlan(plan_id) => {
-                if let Some(plan) = capture_plan_lib.user_plans.get(plan_id.as_str()).cloned() {
+                if let Some(plan) = capture_plan_lib.plans.get(plan_id.as_str()).cloned() {
+                    let is_example = !capture_plan_lib.user_plans.contains_key(plan_id.as_str());
                     form.reset();
+                    form.read_only = is_example;
                     form.plan_name = plan.name.clone();
                     form.tether_name = plan.tether.clone();
                     if let Some(device) = &plan.device {

@@ -358,6 +358,10 @@ pub fn spawn_project_detail_screen(
                                 ));
 
                                 // View / Edit Plan button
+                                let is_example_plan = selected_project.project_id.as_ref()
+                                    .map(|id| !capture_plan_lib.user_plans.contains_key(id.as_str()))
+                                    .unwrap_or(false);
+                                let view_edit_label = if is_example_plan { "View Plan" } else { "View / Edit Plan" };
                                 content.spawn((
                                     Button,
                                     ViewEditPlanButton,
@@ -371,7 +375,7 @@ pub fn spawn_project_detail_screen(
                                 ))
                                 .with_children(|btn| {
                                     btn.spawn((
-                                        Text::new("View / Edit Plan"),
+                                        Text::new(view_edit_label),
                                         TextFont {
                                             font: font.clone(),
                                             font_size: 12.0,
