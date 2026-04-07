@@ -13,7 +13,7 @@ use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
-use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
@@ -31,7 +31,8 @@ use crate::ui::screens::capture_plan::{
 };
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
-    spawn_exit_confirm_modal, spawn_project_detail_screen, ExitSimConfirmModal,
+    spawn_exit_confirm_modal, spawn_project_detail_screen, view_edit_plan_interactions,
+    ExitSimConfirmModal,
 };
 use crate::ui::screens::working_directory_setup::{
     cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
@@ -65,6 +66,7 @@ impl Plugin for UiPlugin {
             .init_resource::<FileDialogTask>()
             .init_resource::<UserPlansDirty>()
             .init_resource::<ExitConfirmPending>()
+            .init_resource::<SimPlanSyncState>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
@@ -87,6 +89,7 @@ impl Plugin for UiPlugin {
             .add_systems(Update, update_home_working_directory_label)
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(Update, project_detail_interactions)
+            .add_systems(Update, view_edit_plan_interactions)
             .add_systems(Update, collapsible_toggle_interaction)
             .init_non_send_resource::<ClipboardRes>()
             .add_systems(Update, input_field_interaction)

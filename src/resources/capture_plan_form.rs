@@ -61,3 +61,14 @@ impl NewCapturePlanForm {
         };
     }
 }
+
+#[derive(Resource, Debug, Clone)]
+pub struct SimPlanSyncState {
+    pub in_sync: bool,
+}
+
+impl Default for SimPlanSyncState {
+    fn default() -> Self {
+        Self { in_sync: true }
+    }
+}

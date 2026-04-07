@@ -77,6 +77,9 @@ pub struct ExitSimCancelButton;
 #[derive(Component)]
 pub struct ExitSimConfirmButton;
 
+#[derive(Component)]
+pub struct ViewEditPlanButton;
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -307,6 +310,30 @@ pub fn spawn_project_detail_screen(
                                     },
                                     TextColor(theme.text_primary),
                                 ));
+
+                                // View / Edit Plan button
+                                content.spawn((
+                                    Button,
+                                    ViewEditPlanButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
+                                        margin: UiRect::top(Val::Px(6.0)),
+                                        align_self: AlignSelf::Start,
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.button_background),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new("View / Edit Plan"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.button_text),
+                                    ));
+                                });
                             },
                         );
 
@@ -901,6 +928,28 @@ pub fn project_detail_interactions(
             Interaction::None => {
                 *background_color = BackgroundColor(theme.panel_background_soft);
             }
+        }
+    }
+}
+
+pub fn view_edit_plan_interactions(
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>, With<ViewEditPlanButton>),
+    >,
+    mut events: MessageWriter<UiEvent>,
+    selected_project: Res<SelectedProject>,
+    theme: Res<UiTheme>,
+) {
+    for (interaction, mut bg) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                if let Some(plan_id) = &selected_project.project_id {
+                    events.write(UiEvent::EditCapturePlan(plan_id.clone()));
+                }
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+            Interaction::None => *bg = BackgroundColor(theme.button_background),
         }
     }
 }
