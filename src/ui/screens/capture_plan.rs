@@ -7,7 +7,7 @@ use bevy::picking::Pickable;
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
-use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
 use crate::ui::events::UiEvent;
 use crate::ui::state::UiScreen;
 use crate::ui::theme::UiTheme;
@@ -16,7 +16,7 @@ use crate::ui::widgets::{InputField, InputFieldText};
 // ── Marker components ──────────────────────────────────────────────────────
 
 #[derive(Component)]
-pub struct NewCapturePlanModal;
+pub struct CapturePlanModal;
 
 #[derive(Component)]
 pub struct NewPlanCancelButton;
@@ -43,7 +43,7 @@ pub struct ConfirmOverwriteButton;
 pub struct CancelOverwriteButton;
 
 #[derive(Component)]
-pub struct NewCapturePlanScrollBody;
+pub struct CapturePlanScrollBody;
 
 #[derive(Component)]
 pub struct UnitMetricButton;
@@ -57,25 +57,25 @@ pub struct UnitImperialButton;
 pub enum FormFieldId {
     PlanName,
     TetherName,
-    TetherType,
     NumJoints,
     ApproachMaxVelocity,
     ApproachMaxForce,
     ApproachTransitionTo(usize),
     ApproachTransitionDistanceKind(usize),
     ApproachTransitionDistanceValue(usize),
-    ApproachTransitionUnits(usize),
     TerminalMaxVelocity,
     TerminalMaxForce,
     TerminalShrinkRate,
     TerminalTransitionTo(usize),
     TerminalTransitionDistanceKind(usize),
     TerminalTransitionDistanceValue(usize),
-    TerminalTransitionUnits(usize),
     CaptureMaxVelocity,
     CaptureMaxForce,
     CaptureShrinkRate,
 }
+
+#[derive(Component, Debug, Clone)]
+pub struct TetherTypeRadioButton(pub String);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -263,34 +263,31 @@ fn transition_rows<'a>(
                     }
                 });
 
-                // Fields: To, Kind, Value, Units
-                let (to_id, kind_id, val_id, units_id) = if is_approach {
+                // Fields: To, Kind, Value
+                let (to_id, kind_id, val_id) = if is_approach {
                     (
                         FormFieldId::ApproachTransitionTo(i),
                         FormFieldId::ApproachTransitionDistanceKind(i),
                         FormFieldId::ApproachTransitionDistanceValue(i),
-                        FormFieldId::ApproachTransitionUnits(i),
                     )
                 } else {
                     (
                         FormFieldId::TerminalTransitionTo(i),
                         FormFieldId::TerminalTransitionDistanceKind(i),
                         FormFieldId::TerminalTransitionDistanceValue(i),
-                        FormFieldId::TerminalTransitionUnits(i),
                     )
                 };
 
                 field_row(row, "To State", to_id, "e.g. terminal", &t.to, false, false, font, theme);
                 field_row(row, "Condition (less_than / greater_than)", kind_id, "less_than", &t.distance_kind, false, false, font, theme);
                 field_row(row, &format!("Distance ({dist_unit})"), val_id, "50.0", &t.distance_value, true, false, font, theme);
-                field_row(row, "Units (optional, e.g. m)", units_id, "", &t.units, false, false, font, theme);
             });
     }
 }
 
 // ── spawn / cleanup / interactions ────────────────────────────────────────
 
-pub fn spawn_new_capture_plan_modal(
+pub fn spawn_capture_plan_modal(
     commands: &mut Commands,
     asset_server: &AssetServer,
     theme: &UiTheme,
@@ -307,7 +304,7 @@ pub fn spawn_new_capture_plan_modal(
 
     commands
         .spawn((
-            NewCapturePlanModal,
+            CapturePlanModal,
             RenderLayers::layer(render_layer),
             Node {
                 position_type: PositionType::Absolute,
@@ -423,7 +420,7 @@ pub fn spawn_new_capture_plan_modal(
                         .with_children(|scroll_row| {
                             let scroll_id = scroll_row
                                 .spawn((
-                                    NewCapturePlanScrollBody,
+                                    CapturePlanScrollBody,
                                     Interaction::default(),
                                     ScrollPosition(Vec2::new(0.0, initial_scroll_y)),
                                     Node {
@@ -583,7 +580,74 @@ pub fn spawn_new_capture_plan_modal(
                             .with_children(|sec| {
                                 section_header(sec, "Tether", &font, theme);
                                 field_row(sec, "Tether Name *", FormFieldId::TetherName, "Tether1", &form.tether_name, false, false, &font, theme);
-                                field_row(sec, "Tether Type *", FormFieldId::TetherType, "tether", &form.tether_type, false, false, &font, theme);
+
+                                // Tether Type radio select
+                                sec.spawn(Node {
+                                    width: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(4.0),
+                                    ..default()
+                                })
+                                .with_children(|col| {
+                                    col.spawn((
+                                        Text::new("Tether Type *"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 11.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.text_muted),
+                                    ));
+                                    col.spawn(Node {
+                                        flex_direction: FlexDirection::Row,
+                                        column_gap: Val::Px(6.0),
+                                        ..default()
+                                    })
+                                    .with_children(|row| {
+                                        let tether_bg = if form.tether_type == "tether" {
+                                            theme.button_background
+                                        } else {
+                                            theme.panel_background_soft
+                                        };
+                                        let tether_text = if form.tether_type == "tether" {
+                                            theme.button_text
+                                        } else {
+                                            theme.text_muted
+                                        };
+                                        row.spawn((
+                                            Button,
+                                            TetherTypeRadioButton("tether".to_string()),
+                                            Node {
+                                                padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(tether_bg),
+                                        ))
+                                        .with_children(|btn| {
+                                            btn.spawn((
+                                                Text::new("Tether"),
+                                                TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                                TextColor(tether_text),
+                                            ));
+                                        });
+                                        // Net option — disabled, coming soon
+                                        row.spawn((
+                                            Node {
+                                                padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgba(0.071, 0.102, 0.173, 0.3)),
+                                        ))
+                                        .with_children(|btn| {
+                                            btn.spawn((
+                                                Text::new("Net (coming soon)"),
+                                                TextFont { font: font.clone(), font_size: 12.0, ..default() },
+                                                TextColor(Color::srgba(0.60, 0.66, 0.78, 0.4)),
+                                            ));
+                                        });
+                                    });
+                                });
+
                                 field_row(sec, "Number of Joints *", FormFieldId::NumJoints, "20", &form.num_joints, true, false, &font, theme);
                             });
 
@@ -809,7 +873,6 @@ pub fn sync_form_fields(
         match id {
             FormFieldId::PlanName => form.plan_name = field.value.clone(),
             FormFieldId::TetherName => form.tether_name = field.value.clone(),
-            FormFieldId::TetherType => form.tether_type = field.value.clone(),
             FormFieldId::NumJoints => form.num_joints = field.value.clone(),
             FormFieldId::ApproachMaxVelocity => form.approach_max_velocity = field.value.clone(),
             FormFieldId::ApproachMaxForce => form.approach_max_force = field.value.clone(),
@@ -834,11 +897,6 @@ pub fn sync_form_fields(
                     t.distance_value = field.value.clone();
                 }
             }
-            FormFieldId::ApproachTransitionUnits(i) => {
-                if let Some(t) = form.approach_transitions.get_mut(*i) {
-                    t.units = field.value.clone();
-                }
-            }
             FormFieldId::TerminalTransitionTo(i) => {
                 if let Some(t) = form.terminal_transitions.get_mut(*i) {
                     t.to = field.value.clone();
@@ -854,18 +912,13 @@ pub fn sync_form_fields(
                     t.distance_value = field.value.clone();
                 }
             }
-            FormFieldId::TerminalTransitionUnits(i) => {
-                if let Some(t) = form.terminal_transitions.get_mut(*i) {
-                    t.units = field.value.clone();
-                }
-            }
         }
     }
 }
 
 // ── Button interaction system ─────────────────────────────────────────────
 
-pub fn new_capture_plan_interactions(
+pub fn capture_plan_interactions(
     mut buttons: Query<
         (
             &Interaction,
@@ -888,7 +941,10 @@ pub fn new_capture_plan_interactions(
     form: Res<NewCapturePlanForm>,
     theme: Res<UiTheme>,
 ) {
-    if *screen.get() != UiScreen::Home || !form.open {
+    if *screen.get() != UiScreen::Home && *screen.get() != UiScreen::Sim {
+        return;
+    }
+    if !form.open {
         return;
     }
 
@@ -971,6 +1027,34 @@ pub fn new_capture_plan_interactions(
     }
 }
 
+pub fn tether_type_radio_interactions(
+    mut buttons: Query<
+        (&Interaction, &TetherTypeRadioButton, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut form: ResMut<NewCapturePlanForm>,
+    theme: Res<UiTheme>,
+) {
+    if !form.open {
+        return;
+    }
+    for (interaction, radio, mut bg) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                form.tether_type = radio.0.clone();
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+            Interaction::None => {
+                if form.tether_type == radio.0 {
+                    *bg = BackgroundColor(theme.button_background);
+                } else {
+                    *bg = BackgroundColor(theme.panel_background_soft);
+                }
+            }
+        }
+    }
+}
+
 // ── Validation and serialization helpers ─────────────────────────────────
 
 pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
@@ -991,7 +1075,6 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
 
     require_text(&form.plan_name, "Plan Name", &mut errors);
     require_text(&form.tether_name, "Tether Name", &mut errors);
-    require_text(&form.tether_type, "Tether Type", &mut errors);
 
     if form.num_joints.trim().is_empty() {
         errors.push("Number of Joints is required".to_string());
@@ -1077,10 +1160,7 @@ pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
             .iter()
             .map(|t| {
                 let distance_val = unit_conv_linear(&t.distance_value, unit);
-                let mut dist = json!({ t.distance_kind.clone(): distance_val });
-                if !t.units.trim().is_empty() {
-                    dist["units"] = json!(t.units.trim());
-                }
+                let dist = json!({ t.distance_kind.clone(): distance_val });
                 json!({ "to": t.to.trim(), "distance": dist })
             })
             .collect();

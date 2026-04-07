@@ -13,7 +13,7 @@ use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
-use crate::resources::new_capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
@@ -23,10 +23,11 @@ use crate::ui::screens::home::{
     cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
     update_home_working_directory_label, HomeScreen,
 };
-use crate::ui::screens::new_capture_plan::{
+use crate::ui::screens::capture_plan::{
     build_capture_plan_json, generate_filename,
-    new_capture_plan_interactions, spawn_new_capture_plan_modal, sync_form_fields, validate_form,
-    NewCapturePlanModal, NewCapturePlanScrollBody,
+    capture_plan_interactions, spawn_capture_plan_modal, sync_form_fields,
+    tether_type_radio_interactions, validate_form,
+    CapturePlanModal, CapturePlanScrollBody,
 };
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
@@ -92,7 +93,8 @@ impl Plugin for UiPlugin {
             .add_systems(Update, input_field_keyboard)
             .add_systems(Update, input_field_display)
             .add_systems(Update, sync_form_fields)
-            .add_systems(Update, new_capture_plan_interactions)
+            .add_systems(Update, capture_plan_interactions)
+            .add_systems(Update, tether_type_radio_interactions)
             .add_systems(Update, poll_new_plan_modal)
             .add_systems(Update, poll_home_plan_refresh)
             .add_systems(Update, poll_exit_confirm_modal)
@@ -145,8 +147,8 @@ fn poll_new_plan_modal(
     form: Res<NewCapturePlanForm>,
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
-    modals: Query<Entity, With<NewCapturePlanModal>>,
-    scroll_body: Query<&ScrollPosition, With<NewCapturePlanScrollBody>>,
+    modals: Query<Entity, With<CapturePlanModal>>,
+    scroll_body: Query<&ScrollPosition, With<CapturePlanScrollBody>>,
     // (approach_count, terminal_count, has_overwrite, error_count, scroll_y, unit_system)
     mut last: Local<(usize, usize, bool, usize, f32, UnitSystem)>,
 ) {
@@ -155,7 +157,7 @@ fn poll_new_plan_modal(
     }
     let modal_exists = !modals.is_empty();
     if form.open && !modal_exists {
-        spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, 0.0);
+        spawn_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, 0.0);
         *last = (
             form.approach_transitions.len(),
             form.terminal_transitions.len(),
@@ -179,7 +181,7 @@ fn poll_new_plan_modal(
             for e in &modals {
                 commands.entity(e).despawn();
             }
-            spawn_new_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, scroll_y);
+            spawn_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, scroll_y);
             *last = (
                 form.approach_transitions.len(),
                 form.terminal_transitions.len(),
@@ -456,16 +458,10 @@ fn handle_ui_events(
                                         } else {
                                             return None;
                                         };
-                                        let units = dist
-                                            .get("units")
-                                            .and_then(|u| u.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
                                         Some(TransitionForm {
                                             to,
                                             distance_kind: kind,
                                             distance_value: val,
-                                            units,
                                         })
                                     })
                                     .collect()

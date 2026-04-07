@@ -13,8 +13,6 @@ pub struct TransitionForm {
     /// "less_than" or "greater_than"
     pub distance_kind: String,
     pub distance_value: String,
-    /// Optional units string, e.g. "m"
-    pub units: String,
 }
 
 #[derive(Resource, Debug, Default, Clone)]
@@ -57,6 +55,9 @@ pub struct NewCapturePlanForm {
 
 impl NewCapturePlanForm {
     pub fn reset(&mut self) {
-        *self = NewCapturePlanForm::default();
+        *self = NewCapturePlanForm {
+            tether_type: "tether".to_string(),
+            ..Default::default()
+        };
     }
 }
