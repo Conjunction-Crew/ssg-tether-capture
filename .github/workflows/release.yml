@@ -77,6 +77,16 @@ jobs:
         with:
           lfs: true
 
+      - name: WiX preflight
+        shell: pwsh
+        run: |
+          Write-Host "WIX='$env:WIX'"
+          if (!(Test-Path "$env:WIX\\bin\\heat.exe")) {
+            Write-Error "WiX not found at $env:WIX\\bin\\heat.exe"
+            exit 1
+          }
+          Get-ChildItem "$env:WIX\\bin" -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
+
       - uses: actions/cache@v4
         with:
           path: |
@@ -120,7 +130,19 @@ jobs:
             "wix\assets_fragment.wixobj" `
             -out "$msi"
 
-          echo "MSI=$msi" >> $env:GITHUB_ENV
+          # Write MSI path to GitHub env in PowerShell-safe way
+          Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+
+      - name: Windows MSI Debug info
+        shell: pwsh
+        run: |
+          Write-Host "Contents of wix directory:"
+          if (Test-Path wix) { Get-ChildItem wix -Recurse -Force | ForEach-Object { Write-Host $_.FullName } } else { Write-Host "wix directory not found" }
+          Write-Host "Artifacts in target\\release:"
+          if (Test-Path target\\release) { Get-ChildItem target\\release -Recurse | ForEach-Object { Write-Host $_.FullName } } else { Write-Host "target\\release not found" }
+          Write-Host "GITHUB_ENV preview:"
+          if (Test-Path $env:GITHUB_ENV) { Get-Content $env:GITHUB_ENV } else { Write-Host "GITHUB_ENV not found" }
+          if (!(Test-Path $env:MSI)) { Write-Error "MSI not found: $env:MSI"; exit 1 } else { Write-Host "MSI exists: $env:MSI" }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -165,17 +187,46 @@ jobs:
       - name: Build and bundle .app
         run: cargo bundle --release
 
+      - name: macOS bundle debug
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          echo "Listing bundle directory:"
+          ls -la "target/release/bundle" || true
+          echo "Contents of app Contents/MacOS:"
+          ls -la "$APP_PATH/Contents/MacOS" || true
+          if [ -f "$APP_PATH/Contents/MacOS/ssg_tether_capture" ]; then
+            file "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+            otool -L "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+          else
+            echo "Binary not found inside app bundle!"
+            exit 1
+          fi
+          uname -m
+
       - name: Package DMG
         run: |
           TAG="${{ github.ref_name }}"
           APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
-          DMG="ssg-tether-capture-${TAG}-macos-arm64.dmg"
+          # Determine runner architecture for DMG naming
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH_LABEL="x86_64" ;;
+            arm64) ARCH_LABEL="arm64" ;;
+            *) ARCH_LABEL="$ARCH" ;;
+          esac
+          DMG="ssg-tether-capture-${TAG}-macos-${ARCH_LABEL}.dmg"
 
           hdiutil create \
             -volname "SSG Tether Capture" \
             -srcfolder "$APP_PATH" \
             -ov -format UDZO \
             "$DMG"
+
+          if [ ! -f "$DMG" ]; then
+            echo "DMG not created!"
+            ls -la
+            exit 1
+          fi
 
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
@@ -196,6 +247,12 @@ jobs:
         with:
           merge-multiple: true
           path: artifacts
+
+      - name: Show downloaded artifacts
+        run: |
+          echo "Artifacts content:"
+          ls -R artifacts || true
+          find artifacts -type f -maxdepth 4 -print || true
 
       - name: Detect pre-release
         id: flags

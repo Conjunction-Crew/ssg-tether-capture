@@ -1,0 +1,194 @@
+name: Packaging Test
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    name: Build (Linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-packaging-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: linux-packaging-test-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package tar.gz
+        run: |
+          TAG="${{ github.run_id }}"
+          ARCHIVE="ssg-tether-capture-${TAG}-linux-x86_64.tar.gz"
+          mkdir -p dist
+          cp target/release/ssg_tether_capture dist/ || true
+          cp -r assets dist/ || true
+          tar -C dist -czf "$ARCHIVE" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ env.ARCHIVE }}
+
+  build-windows:
+    name: Build (Windows x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: WiX preflight
+        shell: pwsh
+        run: |
+          Write-Host "WIX='$env:WIX'"
+          if (!(Test-Path "$env:WIX\\bin\\heat.exe")) {
+            Write-Error "WiX not found at $env:WIX\\bin\\heat.exe"
+            exit 1
+          }
+          Get-ChildItem "$env:WIX\\bin" -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-packaging-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: windows-packaging-test-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Harvest assets (WiX heat)
+        shell: pwsh
+        run: |
+          & "$env:WIX\bin\heat.exe" dir "assets" `
+            -out "wix\assets_fragment.wxs" `
+            -cg AssetsComponentGroup `
+            -dr INSTALLDIR `
+            -scom -sfrag -srd -sreg `
+            -var "var.AssetsDir"
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          $tag     = "${{ github.run_id }}"
+          $version = $tag -replace '^v', '' -replace '-.*$', ''
+          $msi     = "ssg-tether-capture-${tag}-windows-x86_64.msi"
+
+          & "$env:WIX\bin\candle.exe" `
+            -dVersion="$version" `
+            -dSourceDir="target\release" `
+            -dAssetsDir="assets" `
+            -arch x64 `
+            "wix\main.wxs" `
+            "wix\assets_fragment.wxs" `
+            -out "wix\"
+
+          & "$env:WIX\bin\light.exe" `
+            -ext WixUIExtension `
+            "wix\main.wixobj" `
+            "wix\assets_fragment.wixobj" `
+            -out "$msi"
+
+          Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+
+      - name: Windows MSI Debug info
+        shell: pwsh
+        run: |
+          Write-Host "GITHUB_ENV preview:"
+          if (Test-Path $env:GITHUB_ENV) { Get-Content $env:GITHUB_ENV } else { Write-Host "GITHUB_ENV not found" }
+          if (!(Test-Path $env:MSI)) { Write-Error "MSI not found: $env:MSI"; exit 1 } else { Write-Host "MSI exists: $env:MSI" }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ env.MSI }}
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: macos-packaging-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-packaging-test-
+
+      - name: Install cargo-bundle
+        run: |
+          if ! command -v cargo-bundle &> /dev/null; then
+            cargo install cargo-bundle
+          fi
+
+      - name: Build and bundle .app
+        run: cargo bundle --release
+
+      - name: macOS bundle debug
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          echo "Listing bundle dir:"
+          ls -la "target/release/bundle" || true
+          ls -la "$APP_PATH/Contents/MacOS" || true
+          if [ -f "$APP_PATH/Contents/MacOS/ssg_tether_capture" ]; then
+            file "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+            otool -L "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+          else
+            echo "Binary not found inside app bundle!"
+            exit 1
+          fi
+
+      - name: Package DMG
+        run: |
+          TAG="${{ github.run_id }}"
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH_LABEL="x86_64" ;;
+            arm64) ARCH_LABEL="arm64" ;;
+            *) ARCH_LABEL="$ARCH" ;;
+          esac
+          DMG="ssg-tether-capture-${TAG}-macos-${ARCH_LABEL}.dmg"
+
+          hdiutil create \
+            -volname "SSG Tether Capture" \
+            -srcfolder "$APP_PATH" \
+            -ov -format UDZO \
+            "$DMG"
+
+          if [ ! -f "$DMG" ]; then
+            echo "DMG not created!"
+            ls -la
+            exit 1
+          fi
+
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ env.DMG }}
