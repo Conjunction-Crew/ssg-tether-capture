@@ -195,13 +195,18 @@ fn transition_rows<'a>(
 ) {
     for (i, t) in transitions.iter().enumerate() {
         parent
-            .spawn(Node {
-                width: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(6.0),
-                padding: UiRect::all(Val::Px(10.0)),
-                ..default()
-            })
+            .spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.0),
+                    padding: UiRect::all(Val::Px(10.0)),
+                    border: UiRect::left(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.071, 0.102, 0.173, 0.4)),
+                BorderColor::all(Color::srgba(0.38, 0.66, 0.99, 0.3)),
+            ))
             .with_children(|row| {
                 // Header row with "Transition N" + remove button
                 row.spawn(Node {
@@ -226,7 +231,7 @@ fn transition_rows<'a>(
                             Button,
                             RemoveApproachTransitionButton(i),
                             Node {
-                                padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                                 ..default()
                             },
                             BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
@@ -234,7 +239,7 @@ fn transition_rows<'a>(
                         .with_children(|btn| {
                             btn.spawn((
                                 Text::new("×"),
-                                TextFont { font: font.clone(), font_size: 16.0, ..default() },
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
                                 TextColor(Color::srgb(1.0, 0.65, 0.65)),
                             ));
                         });
@@ -243,7 +248,7 @@ fn transition_rows<'a>(
                             Button,
                             RemoveTerminalTransitionButton(i),
                             Node {
-                                padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                                 ..default()
                             },
                             BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
@@ -251,7 +256,7 @@ fn transition_rows<'a>(
                         .with_children(|btn| {
                             btn.spawn((
                                 Text::new("×"),
-                                TextFont { font: font.clone(), font_size: 16.0, ..default() },
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
                                 TextColor(Color::srgb(1.0, 0.65, 0.65)),
                             ));
                         });

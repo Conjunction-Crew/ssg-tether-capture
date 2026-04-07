@@ -3,6 +3,7 @@ use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::ecs::observer::On;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Pointer, Scroll};
+use bevy::picking::Pickable;
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
@@ -749,6 +750,7 @@ pub fn spawn_exit_confirm_modal(commands: &mut Commands, font: &Handle<Font>, th
                 ..default()
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            Pickable::default(),
             ZIndex(100),
             RenderLayers::layer(crate::constants::UI_LAYER),
         ))
