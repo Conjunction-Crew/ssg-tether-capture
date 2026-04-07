@@ -11,7 +11,7 @@ use crate::{
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
-        orbital_entities::{self, OrbitalEntities},
+        orbital_cache::{self, OrbitalCache},
         world_time::WorldTime,
     },
 };
@@ -40,12 +40,11 @@ pub fn update_time_warp_readout(
 }
 
 pub fn update_capture_telemetry(
-    bodies: Query<(RigidBodyQueryReadOnly, &Orbital, Has<RigidBodyDisabled>)>,
+    bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
     capture_targets: Query<&CaptureComponent>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureTelemetryReadout)>,
-    orbitals: Res<OrbitalEntities>,
-    world_time: Res<WorldTime>,
+    orbitals: Res<OrbitalCache>,
 ) {
     for (mut text, readout) in &mut readouts {
         let Some(metrics) = capture_metrics(
@@ -53,7 +52,6 @@ pub fn update_capture_telemetry(
             readout.target_entity,
             readout.reference_entity,
             &orbitals,
-            &world_time,
         ) else {
             text.0 = format!(
                 "{}\nWaiting for live capture telemetry...",
@@ -102,12 +100,12 @@ pub fn update_capture_telemetry(
 }
 
 pub fn update_capture_guidance(
-    bodies: Query<(RigidBodyQueryReadOnly, &Orbital, Has<RigidBodyDisabled>)>,
+    bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
     capture_targets: Query<&CaptureComponent>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureGuidanceReadout)>,
-    orbitals: Res<OrbitalEntities>,
+    orbitals: Res<OrbitalCache>,
     world_time: Res<WorldTime>,
 ) {
     for (mut text, readout) in &mut readouts {
@@ -116,7 +114,6 @@ pub fn update_capture_guidance(
             readout.target_entity,
             readout.reference_entity,
             &orbitals,
-            &world_time,
         );
         let current_range = current_metrics.as_ref().map(|metrics| metrics.range_m);
         let current_rel_speed = current_metrics
@@ -211,8 +208,8 @@ pub fn update_capture_guidance(
 pub fn map_orbitals(
     camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
     mut labels: Query<(&mut Node, &OrbitLabel)>,
-    rigidbodies: Query<(RigidBodyQueryReadOnly, &Orbital)>,
-    orbital_entities: Res<OrbitalEntities>,
+    rigidbodies: Query<(RigidBodyQueryReadOnly, Entity)>,
+    orbital_cache: Res<OrbitalCache>,
     world_time: Res<WorldTime>,
 ) {
     let (cam, cam_transform, render_layers) = camera.into_inner();
@@ -226,15 +223,11 @@ pub fn map_orbitals(
         let Some(entity) = label.entity else {
             return;
         };
-        let Ok((rb, orbital)) = rigidbodies.get(entity) else {
+        let Ok((rb, entity)) = rigidbodies.get(entity) else {
             return;
         };
 
-        let Some(prop) = orbital_entities.propagators.get(orbital.propagator_id) else {
-            return;
-        };
-
-        let Ok(params) = prop.state_eci(world_time.epoch) else {
+        let Some(params) = orbital_cache.eci_states.get(&entity) else {
             return;
         };
 
@@ -256,34 +249,25 @@ pub fn map_orbitals(
 }
 
 fn capture_metrics(
-    bodies: &Query<(RigidBodyQueryReadOnly, &Orbital, Has<RigidBodyDisabled>)>,
+    bodies: &Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
     target_entity: Option<Entity>,
     reference_entity: Option<Entity>,
-    orbitals: &Res<OrbitalEntities>,
-    world_time: &Res<WorldTime>,
+    orbital_cache: &Res<OrbitalCache>,
 ) -> Option<CaptureMetrics> {
     let target_entity = target_entity?;
     let reference_entity = reference_entity?;
 
-    let Ok((target_rb, target_orbital, target_disabled)) = bodies.get(target_entity) else {
+    let Ok((target_rb, target_disabled)) = bodies.get(target_entity) else {
         return None;
     };
-    let Ok((reference_rb, reference_orbital, reference_disabled)) = bodies.get(reference_entity)
-    else {
-        return None;
-    };
-
-    let Some(target_prop) = orbitals.propagators.get(target_orbital.propagator_id) else {
-        return None;
-    };
-    let Some(reference_prop) = orbitals.propagators.get(reference_orbital.propagator_id) else {
+    let Ok((reference_rb, reference_disabled)) = bodies.get(reference_entity) else {
         return None;
     };
 
-    let Ok(target_true) = target_prop.state_eci(world_time.epoch) else {
+    let Some(target_true) = orbital_cache.eci_states.get(&target_entity) else {
         return None;
     };
-    let Ok(reference_true) = reference_prop.state_eci(world_time.epoch) else {
+    let Some(reference_true) = orbital_cache.eci_states.get(&reference_entity) else {
         return None;
     };
 

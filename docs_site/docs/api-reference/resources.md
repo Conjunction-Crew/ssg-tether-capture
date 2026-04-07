@@ -31,14 +31,14 @@ Systems that need to find Earth by name query this resource rather than running 
 
 ---
 
-## `OrbitalEntities`
+## `OrbitalCache`
 
 **Source:** `src/resources/orbital_entities.rs`
 
 Tracks tether and debris entities by their `object_id` string.
 
 ```rust
-pub struct OrbitalEntities {
+pub struct OrbitalCache {
     pub tethers: HashMap<String, Entity>,
     pub debris: HashMap<String, Entity>,
 }

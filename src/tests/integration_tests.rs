@@ -4,7 +4,7 @@ use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraPara
 use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
 use crate::create_app;
 use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::{self, WorldTime};
 use crate::systems::physics::fixed_physics_step;
 use crate::ui::screens::home::load_capture_plans;
@@ -111,7 +111,7 @@ fn apply_force_to_target() {
         .id();
 
     app.world_mut()
-        .resource_mut::<OrbitalEntities>()
+        .resource_mut::<OrbitalCache>()
         .tethers
         .insert("Tether1".to_string(), vec![sphere_body]);
 
@@ -193,11 +193,10 @@ fn orbit_propagation() {
     let params_before = {
         let orbital_o = app.world().get::<Orbital>(sphere_body);
         assert!(orbital_o.is_some());
-        let entities = app.world().get_resource::<OrbitalEntities>().unwrap();
         let world_time = app.world().get_resource::<WorldTime>().unwrap();
-        entities.propagators[orbital_o.unwrap().propagator_id]
-            .state_eci(world_time.epoch)
-            .unwrap()
+        let propagator_o = orbital_o.unwrap().clone().propagator;
+        assert!(propagator_o.is_some());
+        propagator_o.unwrap().state_eci(world_time.epoch).unwrap()
     };
 
     fixed_physics_step(app.world_mut());
@@ -205,11 +204,10 @@ fn orbit_propagation() {
     let params_after = {
         let orbital_o = app.world().get::<Orbital>(sphere_body);
         assert!(orbital_o.is_some());
-        let entities = app.world().get_resource::<OrbitalEntities>().unwrap();
         let world_time = app.world().get_resource::<WorldTime>().unwrap();
-        entities.propagators[orbital_o.unwrap().propagator_id]
-            .state_eci(world_time.epoch)
-            .unwrap()
+        let propagator_o = orbital_o.unwrap().clone().propagator;
+        assert!(propagator_o.is_some());
+        propagator_o.unwrap().state_eci(world_time.epoch).unwrap()
     };
 
     // Expect true orbital positions to have updated
@@ -254,11 +252,7 @@ fn floating_origin_resets() {
     // Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
-        .insert(Position::from_xyz(
-            MAX_ORIGIN_OFFSET + 10.0,
-            0.0,
-            0.0,
-        ));
+        .insert(Position::from_xyz(MAX_ORIGIN_OFFSET + 10.0, 0.0, 0.0));
 
     fixed_physics_step(app.world_mut());
 

@@ -63,7 +63,7 @@ Key components:
 
 ### Project detail screen (`screens/project_detail.rs`)
 
-Shown on `UiScreen::Sim`. Displays details of the `SelectedProject` and lists its associated orbital entities from `OrbitalEntities`.
+Shown on `UiScreen::Sim`. Displays details of the `SelectedProject` and lists its associated orbital entities from `OrbitalCache`.
 
 Includes a back button that sends `UiEvent::BackToHome`.
 

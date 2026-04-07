@@ -48,7 +48,7 @@ commands.spawn((
 ```
 
 2. `OrbitalMechanicsPlugin::init_orbitals` will automatically initialise the `Orbital` and `TrueParams` components on the next `PreUpdate`.
-3. Register the entity in `OrbitalEntities` if it needs to be reachable from the UI.
+3. Register the entity in `OrbitalCache` if it needs to be reachable from the UI.
 
 ## Project structure conventions
 

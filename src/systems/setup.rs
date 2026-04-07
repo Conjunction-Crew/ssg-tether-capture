@@ -5,7 +5,7 @@ use crate::components::orbit::{Earth, Orbit, TetherNode};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::celestials::Celestials;
-use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::orbital_cache::OrbitalCache;
 use crate::ui::state::UiScreen;
 
 use avian3d::prelude::*;
@@ -123,7 +123,7 @@ pub fn setup_entities(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
-    mut orbital_entities: ResMut<OrbitalEntities>,
+    mut orbital_entities: ResMut<OrbitalCache>,
     asset_server: Res<AssetServer>,
 ) {
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
@@ -221,7 +221,7 @@ pub fn setup_tether(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut orbital_entities: ResMut<OrbitalEntities>,
+    mut orbital_entities: ResMut<OrbitalCache>,
 ) {
     let root_tail_radius: f64 = 0.50;
     let rope_radius: f64 = 0.25;

@@ -11,7 +11,7 @@ use crate::{
     components::capture_components::CaptureComponent,
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
-        orbital_entities::OrbitalEntities,
+        orbital_cache::OrbitalCache,
     },
     systems::physics::PHYS_DT,
 };
@@ -19,7 +19,7 @@ use crate::{
 pub fn capture_state_machine_update(
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    orbital_entities: Res<OrbitalEntities>,
+    orbital_entities: Res<OrbitalCache>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
 ) {

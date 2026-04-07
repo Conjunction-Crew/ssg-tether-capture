@@ -3,7 +3,7 @@ use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
-use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::WorldTime;
 
 use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
@@ -54,7 +54,7 @@ fn calculate_com_rv(
 
 pub fn init_orbitals(
     mut commands: Commands,
-    mut orbital_entities: ResMut<OrbitalEntities>,
+    mut orbital_entities: ResMut<OrbitalCache>,
     mut q: Query<(Entity, &Orbit, &mut Orbital), Added<Orbit>>,
 ) {
     for (entity, init, mut orbital) in &mut q {
@@ -68,10 +68,7 @@ pub fn init_orbitals(
                     1.0,
                 );
                 if let Ok(eci) = propagator.state_eci(epoch) {
-                    orbital_entities
-                        .propagators
-                        .push(KeplerianPropagator::from_eci(epoch, eci, 1.0));
-                    orbital.propagator_id = orbital_entities.propagators.len() - 1;
+                    orbital.propagator = Some(KeplerianPropagator::from_eci(epoch, eci, 1.0));
                     println!("ECI Initialized to: {}", eci);
                     eci
                 } else {
@@ -88,9 +85,30 @@ pub fn init_orbitals(
     }
 }
 
+pub fn cache_eci_states(
+    orbitals: Query<(Entity, &Orbital)>,
+    mut orbital_cache: ResMut<OrbitalCache>,
+    world_time: Res<WorldTime>,
+) {
+    let epoch = world_time.epoch;
+    let states = std::sync::Mutex::new(bevy::platform::collections::HashMap::default());
+
+    orbitals.par_iter().for_each(|(entity, orbital)| {
+        if let Some(state) = orbital
+            .propagator
+            .as_ref()
+            .and_then(|prop| prop.state_eci(epoch).ok())
+        {
+            states.lock().unwrap().insert(entity, state);
+        }
+    });
+
+    orbital_cache.eci_states = states.into_inner().unwrap();
+}
+
 pub fn floating_origin_update_visuals(
     target_params_s: Single<
-        (&Orbital, &Transform),
+        (Entity, &Transform),
         (
             Without<RigidBodyDisabled>,
             With<CameraTarget>,
@@ -99,8 +117,7 @@ pub fn floating_origin_update_visuals(
     >,
     camera_s: Single<(&mut Atmosphere, &RenderLayers), (With<Camera3d>, Without<Orbital>)>,
     earth: Single<&mut Transform, (With<Earth>, Without<CameraTarget>)>,
-    orbitals: ResMut<OrbitalEntities>,
-    world_time: Res<WorldTime>,
+    orbital_cache: ResMut<OrbitalCache>,
 ) {
     let (mut atmosphere, render_layers) = camera_s.into_inner();
 
@@ -110,14 +127,10 @@ pub fn floating_origin_update_visuals(
     }
 
     // We want to position orbital objects relative to the camera's current target
-    let (target_orbital, target_transform) = target_params_s.into_inner();
+    let (target_entity, target_transform) = target_params_s.into_inner();
 
     // Get current cartesian state of our target
-    let Some(prop) = orbitals.propagators.get(target_orbital.propagator_id) else {
-        return;
-    };
-
-    let Ok(target_rv) = prop.state_eci(world_time.epoch) else {
+    let Some(target_rv) = orbital_cache.eci_states.get(&target_entity) else {
         return;
     };
 
@@ -133,11 +146,10 @@ pub fn floating_origin_update_visuals(
 }
 
 pub fn target_entity_reset_origin(
-    true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
-    rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
+    mut true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
+    mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
     nodes: Query<(Entity, &TetherNode)>,
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
-    mut orbitals: ResMut<OrbitalEntities>,
     world_time: Res<WorldTime>,
 ) {
     let Ok(target_entity) = target_entity_q.single() else {
@@ -160,10 +172,10 @@ pub fn target_entity_reset_origin(
 
     // Accumulate current linvel and position into rigidbodies
     println!("Num to reset: {}", true_params_query.iter().len());
-    for orbital in true_params_query {
-        if let Some(prop) = orbitals.propagators.get_mut(orbital.propagator_id) {
+    true_params_query.par_iter_mut().for_each(|mut orbital| {
+        if let Some(prop) = orbital.propagator.as_mut() {
             let Ok(rv) = prop.state_eci(world_time.epoch) else {
-                continue;
+                return;
             };
 
             let new_rv = rv
@@ -176,42 +188,34 @@ pub fn target_entity_reset_origin(
 
             println!("New propagator, New rv: {}", new_rv);
         }
-    }
+    });
 
     // Reset rigidbodies
-    for mut rb in rigidbodies {
+    rigidbodies.par_iter_mut().for_each(|mut rb| {
         rb.position.0 -= com_r;
         rb.linear_velocity.0 -= com_v;
-    }
+    });
 }
 
 pub fn physics_bubble_add_remove(
     mut commands: Commands,
     disabled_entities: Query<(Entity, &RigidBodyDisabled)>,
     orbital_entities: Query<(Entity, &mut Orbital, RigidBodyQuery), Without<CameraTarget>>,
-    target_entity: Single<&Orbital, With<CameraTarget>>,
-    mut orbitals: ResMut<OrbitalEntities>,
+    target_entity: Single<Entity, With<CameraTarget>>,
+    mut orbital_cache: ResMut<OrbitalCache>,
     world_time: Res<WorldTime>,
 ) {
-    let target_orbital = target_entity.into_inner();
+    let entity = target_entity.into_inner();
 
     // Get current cartesian state of our target
-    let Some(origin_prop) = orbitals.propagators.get_mut(target_orbital.propagator_id) else {
-        return;
-    };
-
-    let Ok(mut target_rv) = origin_prop.state_eci(world_time.epoch) else {
+    let Some(mut target_rv) = orbital_cache.eci_states.get_mut(&entity).cloned() else {
         return;
     };
 
     // Loop through entities to see if any should be disabled/enabled
-    for (entity, entity_orbital, mut rb) in orbital_entities {
-        let Some(prop) = orbitals.propagators.get_mut(entity_orbital.propagator_id) else {
-            continue;
-        };
-
-        let Ok(mut entity_rv) = prop.state_eci(world_time.epoch) else {
-            continue;
+    for (entity, mut orbital, mut rb) in orbital_entities {
+        let Some(entity_rv) = orbital_cache.eci_states.get_mut(&entity) else {
+            return;
         };
 
         let mut enabled = false;
@@ -224,7 +228,11 @@ pub fn physics_bubble_add_remove(
             target_rv[4] += rb.linear_velocity.y;
             target_rv[5] += rb.linear_velocity.z;
 
-            *prop = KeplerianPropagator::from_eci(world_time.epoch, target_rv, 1.0);
+            orbital.propagator = Some(KeplerianPropagator::from_eci(
+                world_time.epoch,
+                target_rv.clone(),
+                1.0,
+            ));
 
             commands.entity(entity).insert(RigidBodyDisabled);
             println!("DISABLED SOMETHING");

@@ -1,21 +1,20 @@
 use avian3d::{
     math::PI,
-    prelude::{LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery},
+    prelude::{RigidBodyDisabled, RigidBodyQuery},
 };
 use bevy::{
     camera::visibility::RenderLayers,
     math::{DQuat, DVec3},
     prelude::*,
 };
-use brahe::{AngleFormat, KeplerianPropagator, utils::DOrbitStateProvider};
-use nalgebra::Vector6;
+use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::{
     components::{capture_components::CaptureComponent, orbit::Orbital},
     constants::{MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER},
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
-        orbital_entities::OrbitalEntities,
+        orbital_cache::OrbitalCache,
         settings::Settings,
         world_time::WorldTime,
     },
@@ -25,15 +24,9 @@ use crate::{
 pub struct CaptureGizmoConfigGroup;
 
 pub fn orbital_gizmos(
-    orbitals: Query<(
-        &Orbital,
-        &Position,
-        &LinearVelocity,
-        Option<&RigidBodyDisabled>,
-    )>,
+    orbitals: Query<(&Orbital, Option<&RigidBodyDisabled>)>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     mut gizmos: Gizmos,
-    orbital_entities: Res<OrbitalEntities>,
     world_time: Res<WorldTime>,
 ) {
     let render_layers = camera_s.into_inner();
@@ -43,29 +36,10 @@ pub fn orbital_gizmos(
         return;
     }
 
-    for (orbital, r, v, disabled) in orbitals {
-        let Some(prop) = orbital_entities.propagators.get(orbital.propagator_id) else {
+    for (orbital, disabled) in orbitals {
+        let Some(propagator) = orbital.propagator.clone() else {
             return;
         };
-
-        let Ok(params) = prop.state_eci(world_time.epoch) else {
-            return;
-        };
-
-        let rv_world = if disabled.is_some() {
-            params
-        } else {
-            Vector6::new(
-                params[0] + r.x,
-                params[1] + r.y,
-                params[2] + r.z,
-                params[3] + v.x,
-                params[4] + v.y,
-                params[5] + v.z,
-            )
-        };
-
-        let propagator = KeplerianPropagator::from_eci(world_time.epoch, rv_world, 1.0);
 
         if let Ok(elements) = propagator.state_koe_osc(world_time.epoch, AngleFormat::Radians) {
             if elements.y >= 1.0 {
@@ -133,7 +107,7 @@ fn capture_force_direction(
 pub fn capture_gizmos(
     capture_entities: Query<(Entity, &CaptureComponent)>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    orbital_entities: Res<OrbitalEntities>,
+    orbital_entities: Res<OrbitalCache>,
     rigidbodies: Query<RigidBodyQuery>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     settings: Res<Settings>,
@@ -265,7 +239,7 @@ pub fn dev_gizmos(
         Srgba::new(1.0, 0.0, 1.0, 0.2),
     );
 
-    for (orbital, transform) in true_params_query {
+    for (_orbital, transform) in true_params_query {
         gizmos.arrow(
             transform.translation + Vec3::new(10.0, 10.0, 10.0),
             transform.translation,
