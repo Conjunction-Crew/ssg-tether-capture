@@ -1,14 +1,12 @@
 use std::path::PathBuf;
 
-use avian3d::prelude::{Physics, PhysicsTime, RigidBody};
+use avian3d::prelude::{Physics, RigidBody};
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task};
-use bevy::ui::InteractionDisabled;
-use bevy::ui_widgets::{CoreSliderDragState, SliderRange, SliderValue};
 
 use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::Orbital;
@@ -32,7 +30,7 @@ use crate::ui::screens::new_capture_plan::{
 };
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
-    spawn_exit_confirm_modal, spawn_project_detail_screen,
+    spawn_exit_confirm_modal, spawn_project_detail_screen, ExitSimConfirmModal,
 };
 use crate::ui::screens::working_directory_setup::{
     cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
@@ -240,7 +238,7 @@ fn handle_ui_events(
                 exit_confirm_pending.0 = true;
             }
             UiEvent::CancelExitConfirm => {
-                // handled directly in project_detail_interactions via commands
+                exit_confirm_pending.0 = false;
             }
             UiEvent::WorkingDirectorySelected(path) => {
                 working_directory.path = path.clone();

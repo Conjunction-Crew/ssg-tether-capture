@@ -794,15 +794,6 @@ pub fn spawn_new_capture_plan_modal(
         });
 }
 
-pub fn cleanup_new_capture_plan_modal(
-    mut commands: Commands,
-    modals: Query<Entity, With<NewCapturePlanModal>>,
-) {
-    for e in &modals {
-        commands.entity(e).despawn();
-    }
-}
-
 // ── Sync form fields from InputField components back into the resource ────
 
 pub fn sync_form_fields(

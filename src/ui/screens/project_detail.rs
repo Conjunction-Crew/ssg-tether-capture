@@ -76,22 +76,14 @@ pub struct ExitSimCancelButton;
 #[derive(Component)]
 pub struct ExitSimConfirmButton;
 
-#[derive(Component)]
-pub struct TelemetryValue {
-    pub entity: Option<Entity>,
-    pub field_index: usize,
-}
-
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
     selected_project: Res<SelectedProject>,
-    catalog: Res<ProjectCatalog>,
-    orbital_entities: Res<OrbitalCache>,
+    orbital_cache: Res<OrbitalCache>,
     capture_plan_lib: Res<CapturePlanLibrary>,
     working_directory: Res<WorkingDirectory>,
-    orbital_entities: Res<OrbitalEntities>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
@@ -117,11 +109,11 @@ pub fn spawn_project_detail_screen(
     };
 
     let tether_name = plan.map(|p| p.tether.as_str()).unwrap_or("");
-    let tether_root_entity: Option<Entity> = orbital_entities
+    let tether_root_entity: Option<Entity> = orbital_cache
         .tethers
         .get(tether_name)
         .and_then(|v| v.first().copied());
-    let capture_target_entity = orbital_entities.debris.get("Satellite1").copied();
+    let capture_target_entity = orbital_cache.debris.get("Satellite1").copied();
     let capture_target_label = String::from("Satellite1");
     let capture_plan_id = plan_id.to_string();
 
@@ -881,6 +873,7 @@ pub fn project_detail_interactions(
                     for entity in &exit_modal_query {
                         commands.entity(entity).despawn();
                     }
+                    events.write(UiEvent::CancelExitConfirm);
                 } else if exit_confirm_button.is_some() {
                     events.write(UiEvent::BackToHome);
                 } else if let Some(capture_entity) = capture_button {

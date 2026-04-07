@@ -4,7 +4,7 @@ use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraPara
 use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
 use crate::create_app;
 use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
-use crate::resources::orbital_entities::OrbitalEntities;
+use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::{self, WorldTime};
 use crate::systems::physics::fixed_physics_step;
 use crate::ui::state::UiScreen;
