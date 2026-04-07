@@ -30,6 +30,4 @@ pub enum UiEvent {
     ChangeTimeWarp { increase: bool },
     CycleCameraTarget,
     SetUnitSystem(UnitSystem),
-    RestartSimulation,
-    DismissRestartPrompt,
 }

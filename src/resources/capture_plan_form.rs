@@ -68,18 +68,14 @@ impl NewCapturePlanForm {
 #[derive(Resource, Debug, Clone)]
 pub struct SimPlanSyncState {
     pub in_sync: bool,
-    pub restart_prompt_pending: bool,
     pub restart_requested: bool,
-    pub dismiss_requested: bool,
 }
 
 impl Default for SimPlanSyncState {
     fn default() -> Self {
         Self {
             in_sync: true,
-            restart_prompt_pending: false,
             restart_requested: false,
-            dismiss_requested: false,
         }
     }
 }

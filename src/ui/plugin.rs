@@ -32,8 +32,8 @@ use crate::ui::screens::capture_plan::{
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
-    spawn_restart_prompt_modal, view_edit_plan_interactions, ExitSimConfirmModal,
-    RestartPromptModal,
+    spawn_restart_prompt_modal, update_sync_indicator, view_edit_plan_interactions,
+    ExitSimConfirmModal, RestartPromptModal,
 };
 use crate::ui::screens::working_directory_setup::{
     cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
@@ -84,7 +84,7 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Home), cleanup_home_screen)
             .add_systems(
                 OnEnter(UiScreen::Sim),
-                spawn_project_detail_screen.after(setup_entities),
+                (spawn_project_detail_screen.after(setup_entities), reset_sync_state),
             )
             .add_systems(Update, home_interactions)
             .add_systems(Update, update_home_working_directory_label)
@@ -92,6 +92,7 @@ impl Plugin for UiPlugin {
             .add_systems(Update, project_detail_interactions)
             .add_systems(Update, view_edit_plan_interactions)
             .add_systems(Update, restart_prompt_interactions)
+            .add_systems(Update, update_sync_indicator)
             .add_systems(Update, collapsible_toggle_interaction)
             .init_non_send_resource::<ClipboardRes>()
             .add_systems(Update, input_field_interaction)
@@ -237,6 +238,10 @@ fn poll_sim_restart(
         sync_state.restart_requested = false;
         next_screen.set(UiScreen::Sim);
     }
+}
+
+fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
+    *sync_state = SimPlanSyncState::default();
 }
 
 fn handle_ui_events(
@@ -564,9 +569,7 @@ fn handle_ui_events(
             UiEvent::SetUnitSystem(unit) => {
                 form.unit_system = *unit;
             }
-            UiEvent::RestartSimulation | UiEvent::DismissRestartPrompt => {
-                // Handled directly in restart_prompt_interactions
-            }
+
         }
     }
 }

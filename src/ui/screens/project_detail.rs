@@ -90,6 +90,9 @@ pub struct RestartSimButton;
 #[derive(Component)]
 pub struct DismissRestartButton;
 
+#[derive(Component)]
+pub struct SyncIndicator;
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -291,6 +294,39 @@ pub fn spawn_project_detail_screen(
                             "Project Information",
                             CollapsibleSection::ProjectInformation,
                             |content| {
+                                // Out-of-sync indicator (hidden by default)
+                                content
+                                    .spawn((
+                                        SyncIndicator,
+                                        Node {
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(6.0),
+                                            display: Display::None,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|row| {
+                                        // Yellow dot
+                                        row.spawn((
+                                            Node {
+                                                width: Val::Px(8.0),
+                                                height: Val::Px(8.0),
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgb(1.0, 0.85, 0.0)),
+                                        ));
+                                        row.spawn((
+                                            Text::new("Plan changed — sim out of sync"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 11.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                                        ));
+                                    });
+
                                 content.spawn((
                                     Text::new(project_description),
                                     TextFont {
@@ -1133,5 +1169,18 @@ pub fn collapsible_toggle_interaction(
                 }
             }
         }
+    }
+}
+
+pub fn update_sync_indicator(
+    mut indicators: Query<&mut Node, With<SyncIndicator>>,
+    sync_state: Res<SimPlanSyncState>,
+) {
+    for mut node in &mut indicators {
+        node.display = if sync_state.in_sync {
+            Display::None
+        } else {
+            Display::Flex
+        };
     }
 }
