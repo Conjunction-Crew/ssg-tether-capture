@@ -12,7 +12,7 @@ use crate::components::user_interface::{
 };
 use crate::constants::UI_LAYER;
 use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::capture_plan_form::SimPlanSyncState;
+use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
@@ -1012,10 +1012,16 @@ pub fn project_detail_interactions(
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<crate::ui::state::UiScreen>>,
     theme: Res<UiTheme>,
+    form: Res<NewCapturePlanForm>,
+    restart_modal_query: Query<Entity, With<RestartPromptModal>>,
 ) {
     if *screen.get() != crate::ui::state::UiScreen::Sim {
         return;
     }
+
+    let any_modal_open = form.open
+        || !exit_modal_query.is_empty()
+        || !restart_modal_query.is_empty();
 
     for (
         interaction,
@@ -1034,15 +1040,18 @@ pub fn project_detail_interactions(
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(theme.button_background_hover);
-                if back_button.is_some() {
-                    events.write(UiEvent::ShowExitConfirm);
-                } else if exit_cancel_button.is_some() {
+                // Exit modal buttons are always allowed
+                if exit_cancel_button.is_some() {
                     for entity in &exit_modal_query {
                         commands.entity(entity).despawn();
                     }
                     events.write(UiEvent::CancelExitConfirm);
                 } else if exit_confirm_button.is_some() {
                     events.write(UiEvent::BackToHome);
+                } else if any_modal_open {
+                    // Block all other buttons when a modal is open
+                } else if back_button.is_some() {
+                    events.write(UiEvent::ShowExitConfirm);
                 } else if let Some(capture_entity) = capture_button {
                     events.write(UiEvent::CaptureDebris {
                         entity: capture_entity.entity,
@@ -1078,12 +1087,21 @@ pub fn view_edit_plan_interactions(
     mut events: MessageWriter<UiEvent>,
     selected_project: Res<SelectedProject>,
     theme: Res<UiTheme>,
+    form: Res<NewCapturePlanForm>,
+    exit_modal: Query<Entity, With<ExitSimConfirmModal>>,
+    restart_modal: Query<Entity, With<RestartPromptModal>>,
 ) {
+    let any_modal_open = form.open
+        || !exit_modal.is_empty()
+        || !restart_modal.is_empty();
+
     for (interaction, mut bg) in &mut buttons {
         match *interaction {
             Interaction::Pressed => {
-                if let Some(plan_id) = &selected_project.project_id {
-                    events.write(UiEvent::EditCapturePlan(plan_id.clone()));
+                if !any_modal_open {
+                    if let Some(plan_id) = &selected_project.project_id {
+                        events.write(UiEvent::EditCapturePlan(plan_id.clone()));
+                    }
                 }
             }
             Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
@@ -1147,7 +1165,16 @@ pub fn collapsible_toggle_interaction(
     mut contents: Query<(&mut Node, &CollapsibleContent)>,
     children_query: Query<&Children>,
     mut texts: Query<&mut Text>,
+    form: Res<NewCapturePlanForm>,
+    exit_modal: Query<Entity, With<ExitSimConfirmModal>>,
+    restart_modal: Query<Entity, With<RestartPromptModal>>,
 ) {
+    let any_modal_open = form.open
+        || !exit_modal.is_empty()
+        || !restart_modal.is_empty();
+    if any_modal_open {
+        return;
+    }
     for (entity, interaction, toggle) in &toggles {
         if *interaction == Interaction::Pressed {
             let mut collapsed = false;
