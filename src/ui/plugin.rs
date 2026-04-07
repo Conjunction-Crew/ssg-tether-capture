@@ -31,8 +31,9 @@ use crate::ui::screens::capture_plan::{
 };
 use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
-    spawn_exit_confirm_modal, spawn_project_detail_screen, view_edit_plan_interactions,
-    ExitSimConfirmModal,
+    restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
+    spawn_restart_prompt_modal, view_edit_plan_interactions, ExitSimConfirmModal,
+    RestartPromptModal,
 };
 use crate::ui::screens::working_directory_setup::{
     cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
@@ -90,6 +91,7 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(Update, project_detail_interactions)
             .add_systems(Update, view_edit_plan_interactions)
+            .add_systems(Update, restart_prompt_interactions)
             .add_systems(Update, collapsible_toggle_interaction)
             .init_non_send_resource::<ClipboardRes>()
             .add_systems(Update, input_field_interaction)
@@ -101,6 +103,8 @@ impl Plugin for UiPlugin {
             .add_systems(Update, poll_new_plan_modal)
             .add_systems(Update, poll_home_plan_refresh)
             .add_systems(Update, poll_exit_confirm_modal)
+            .add_systems(Update, poll_restart_prompt_modal)
+            .add_systems(Update, poll_sim_restart)
             .add_systems(Update, handle_ui_events);
     }
 }
@@ -207,6 +211,31 @@ fn poll_exit_confirm_modal(
         let font = asset_server.load("fonts/FiraMono-Medium.ttf");
         spawn_exit_confirm_modal(&mut commands, &font, &theme);
         pending.0 = false;
+    }
+}
+
+fn poll_restart_prompt_modal(
+    mut commands: Commands,
+    mut form: ResMut<NewCapturePlanForm>,
+    existing: Query<Entity, With<RestartPromptModal>>,
+    asset_server: Res<AssetServer>,
+    theme: Res<UiTheme>,
+) {
+    if form.show_restart_prompt && existing.is_empty() {
+        let font = asset_server.load("fonts/FiraMono-Medium.ttf");
+        spawn_restart_prompt_modal(&mut commands, &font, &theme);
+        form.show_restart_prompt = false;
+    }
+}
+
+fn poll_sim_restart(
+    mut sync_state: ResMut<SimPlanSyncState>,
+    screen: Res<State<UiScreen>>,
+    mut next_screen: ResMut<NextState<UiScreen>>,
+) {
+    if sync_state.restart_requested && *screen.get() == UiScreen::Home {
+        sync_state.restart_requested = false;
+        next_screen.set(UiScreen::Sim);
     }
 }
 
@@ -374,6 +403,7 @@ fn handle_ui_events(
                     let dest = std::path::Path::new(&working_directory.path).join(&filename);
                     // In edit mode, skip overwrite dialog and always overwrite
                     let skip_overwrite_check = form.editing_plan_id.is_some();
+                    let was_editing = form.editing_plan_id.is_some();
                     if dest.exists() && form.overwrite_conflict_path.is_none() && !skip_overwrite_check {
                         form.overwrite_conflict_path =
                             Some(dest.to_string_lossy().to_string());
@@ -396,8 +426,14 @@ fn handle_ui_events(
                                         .map(|(k, v)| (k.clone(), v.clone()))
                                         .collect();
                                     user_plans_dirty.0 = true;
+                                    // If editing from the sim screen, prompt for restart
+                                    let should_prompt = was_editing
+                                        && selected_project.project_id.is_some();
                                     form.open = false;
                                     form.reset();
+                                    if should_prompt {
+                                        form.show_restart_prompt = true;
+                                    }
                                 }
                             }
                             Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
@@ -527,6 +563,9 @@ fn handle_ui_events(
             }
             UiEvent::SetUnitSystem(unit) => {
                 form.unit_system = *unit;
+            }
+            UiEvent::RestartSimulation | UiEvent::DismissRestartPrompt => {
+                // Handled directly in restart_prompt_interactions
             }
         }
     }

@@ -51,6 +51,9 @@ pub struct NewCapturePlanForm {
     pub unit_system: UnitSystem,
     /// Some(plan_id) when editing an existing plan; None when creating new.
     pub editing_plan_id: Option<String>,
+    /// Set to true after saving an edited plan in the sim screen.
+    /// A poll system reads this, spawns the restart prompt, and clears it.
+    pub show_restart_prompt: bool,
 }
 
 impl NewCapturePlanForm {
@@ -65,10 +68,18 @@ impl NewCapturePlanForm {
 #[derive(Resource, Debug, Clone)]
 pub struct SimPlanSyncState {
     pub in_sync: bool,
+    pub restart_prompt_pending: bool,
+    pub restart_requested: bool,
+    pub dismiss_requested: bool,
 }
 
 impl Default for SimPlanSyncState {
     fn default() -> Self {
-        Self { in_sync: true }
+        Self {
+            in_sync: true,
+            restart_prompt_pending: false,
+            restart_requested: false,
+            dismiss_requested: false,
+        }
     }
 }

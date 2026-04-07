@@ -12,6 +12,7 @@ use crate::components::user_interface::{
 };
 use crate::constants::UI_LAYER;
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::capture_plan_form::SimPlanSyncState;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
@@ -79,6 +80,15 @@ pub struct ExitSimConfirmButton;
 
 #[derive(Component)]
 pub struct ViewEditPlanButton;
+
+#[derive(Component)]
+pub struct RestartPromptModal;
+
+#[derive(Component)]
+pub struct RestartSimButton;
+
+#[derive(Component)]
+pub struct DismissRestartButton;
 
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
@@ -764,6 +774,94 @@ pub fn cleanup_project_detail_screen(
     }
 }
 
+pub fn spawn_restart_prompt_modal(commands: &mut Commands, font: &Handle<Font>, theme: &UiTheme) {
+    commands
+        .spawn((
+            RestartPromptModal,
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            Pickable::default(),
+            ZIndex(100),
+            RenderLayers::layer(crate::constants::UI_LAYER),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(14.0),
+                        padding: UiRect::all(Val::Px(28.0)),
+                        width: Val::Px(420.0),
+                        max_width: Val::Percent(90.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ))
+                .with_children(|dlg| {
+                    dlg.spawn((
+                        Text::new("Plan Changed"),
+                        TextFont { font: font.clone(), font_size: 20.0, ..default() },
+                        TextColor(theme.text_primary),
+                    ));
+
+                    dlg.spawn((
+                        Text::new("The capture plan has been updated. Restart the simulation to apply changes?"),
+                        TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                        TextColor(theme.text_muted),
+                    ));
+
+                    dlg.spawn(Node {
+                        width: Val::Percent(100.0),
+                        justify_content: JustifyContent::End,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|btns| {
+                        btns.spawn((
+                            Button,
+                            DismissRestartButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background_soft),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Continue"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.text_primary),
+                            ));
+                        });
+
+                        btns.spawn((
+                            Button,
+                            RestartSimButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_background),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Restart Sim"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.button_text),
+                            ));
+                        });
+                    });
+                });
+        });
+}
+
 pub fn spawn_exit_confirm_modal(commands: &mut Commands, font: &Handle<Font>, theme: &UiTheme) {
     commands
         .spawn((
@@ -950,6 +1048,53 @@ pub fn view_edit_plan_interactions(
             }
             Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
             Interaction::None => *bg = BackgroundColor(theme.button_background),
+        }
+    }
+}
+
+pub fn restart_prompt_interactions(
+    mut buttons: Query<
+        (
+            &Interaction,
+            Option<&RestartSimButton>,
+            Option<&DismissRestartButton>,
+            &mut BackgroundColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut commands: Commands,
+    modal_query: Query<Entity, With<RestartPromptModal>>,
+    mut sync_state: ResMut<SimPlanSyncState>,
+    mut next_screen: ResMut<NextState<crate::ui::state::UiScreen>>,
+    theme: Res<UiTheme>,
+) {
+    for (interaction, restart_btn, dismiss_btn, mut bg) in &mut buttons {
+        if restart_btn.is_none() && dismiss_btn.is_none() {
+            continue;
+        }
+        match *interaction {
+            Interaction::Pressed => {
+                // Despawn modal
+                for entity in &modal_query {
+                    commands.entity(entity).despawn();
+                }
+                if restart_btn.is_some() {
+                    sync_state.in_sync = true;
+                    sync_state.restart_requested = true;
+                    // Transition Home → Sim to trigger full cleanup and re-setup
+                    next_screen.set(crate::ui::state::UiScreen::Home);
+                } else if dismiss_btn.is_some() {
+                    sync_state.in_sync = false;
+                }
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background),
+            Interaction::None => {
+                if restart_btn.is_some() {
+                    *bg = BackgroundColor(theme.button_background);
+                } else {
+                    *bg = BackgroundColor(theme.panel_background_soft);
+                }
+            }
         }
     }
 }
