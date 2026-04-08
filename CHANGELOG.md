@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [0.2.0-beta.1] - 2026
+## [0.2.0-beta.1] - 2026-04-08
 
 ### Changed
 - Adopts `cargo-release` for automated versioning and changelog management.
