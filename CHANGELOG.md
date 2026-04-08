@@ -25,6 +25,7 @@ When preparing a release:
 - Update the `contributing` docs section to explain release process.
 - Updates `docusaurus` version from 3.9.2 → 3.10.0
   - Updates other NPM packages as required to update docusaurus.
+- Updates `release.yml` workflow resolve issues with the macOS and Windows packaging steps.
 
 ### Added
 - `.release.toml` configuration file for `cargo-release`.
