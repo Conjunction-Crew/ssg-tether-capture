@@ -106,7 +106,23 @@ jobs:
             -cg AssetsComponentGroup `
             -dr INSTALLDIR `
             -scom -sfrag -srd -sreg `
+            -gg `
             -var "var.AssetsDir"
+
+      - name: Inspect harvested assets
+        shell: pwsh
+        run: |
+          if (!(Test-Path "wix\\assets_fragment.wxs")) { Write-Error "assets_fragment.wxs not found"; exit 1 }
+          Write-Host "----- wix\\assets_fragment.wxs (preview) -----"
+          Get-Content wix\\assets_fragment.wxs -TotalCount 200 | ForEach-Object { Write-Host $_ }
+
+          $raw = Get-Content wix\\assets_fragment.wxs -Raw
+          if ($raw -match 'PUT-GUID-HERE') { Write-Error "Found placeholder GUID 'PUT-GUID-HERE' in assets_fragment.wxs"; exit 1 }
+
+          $matches = Select-String -Path wix\\assets_fragment.wxs -Pattern 'Guid="([^"]*)"' -AllMatches
+          $invalid = @()
+          foreach ($m in $matches) { foreach ($g in $m.Matches) { $val = $g.Groups[1].Value; if (-not ($val -match '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')) { $invalid += $val } } }
+          if ($invalid.Count -gt 0) { Write-Error "Invalid GUIDs found: $($invalid -join ', ')"; exit 1 } else { Write-Host "All harvested GUIDs look valid." }
 
       - name: Build MSI
         run: |
@@ -123,6 +139,20 @@ jobs:
             "wix\main.wxs" `
             "wix\assets_fragment.wxs" `
             -out "wix\"
+
+          # Verify that candle produced the expected .wixobj files before linking
+          Write-Host "Verifying wix object files..."
+          if (!(Test-Path "wix\\main.wixobj")) {
+            Write-Error "Missing wix\\main.wixobj after candle.exe"
+            Write-Host "wix directory listing:"; Get-ChildItem wix -Recurse -Force | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+          if (!(Test-Path "wix\\assets_fragment.wixobj")) {
+            Write-Error "Missing wix\\assets_fragment.wixobj after candle.exe"
+            Write-Host "wix directory listing:"; Get-ChildItem wix -Recurse -Force | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+          Write-Host "wixobj files present; proceeding to link with light.exe"
 
           & "$env:WIX\bin\light.exe" `
             -ext WixUIExtension `
@@ -203,6 +233,25 @@ jobs:
           fi
           uname -m
 
+          # Ensure executable bits and sane permissions in the app bundle
+          echo "Fixing permissions on app bundle (ensure exec bits)"
+          chmod -R u+rwX,go+rX,go-w "$APP_PATH" || true
+
+          # Run codesign / spctl diagnostics (will often fail for ad-hoc unsigned bundles)
+          if command -v codesign >/dev/null 2>&1; then
+            echo "Running codesign --verify (diagnostic only)"
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH" || echo "codesign verification failed (expected for unsigned builds)"
+          else
+            echo "codesign not available"
+          fi
+
+          if command -v spctl >/dev/null 2>&1; then
+            echo "Running spctl --assess (diagnostic only)"
+            spctl --assess --type execute --verbose "$APP_PATH" || echo "spctl assessment failed (expected for unsigned builds)"
+          else
+            echo "spctl not available"
+          fi
+
       - name: Package DMG
         run: |
           TAG="${{ github.ref_name }}"
@@ -230,10 +279,26 @@ jobs:
 
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
+      - name: Zip .app for debug upload
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          TAG="${{ github.ref_name }}"
+          ARCH="$(uname -m)"
+          APP_ZIP="ssg-tether-capture-${TAG}-macos-${ARCH}-app.zip"
+          if [ -d "$APP_PATH" ]; then
+            # Use ditto to preserve resource forks
+            ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
+            echo "APP_ZIP=$APP_ZIP" >> "$GITHUB_ENV"
+          else
+            echo "App not found; skipping zip"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: ${{ env.DMG }}
+          path: |
+            ${{ env.DMG }}
+            ${{ env.APP_ZIP }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Publish GitHub Release
