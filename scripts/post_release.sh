@@ -54,6 +54,9 @@ cd "$DOCS_DIR"
 
 # Install dependencies (uses the locked package-lock.json for reproducibility).
 npm ci
+# Sync docs_site `package.json` version to match crate version (no git changes).
+# Try `npm pkg set` (safer), fall back to `npm version --no-git-tag-version` if needed.
+npm pkg set version "$VER" || npm version --no-git-tag-version "$VER" || true
 
 # Create the versioned snapshot.  This generates:
 #   versioned_docs/version-<VER>/
@@ -69,6 +72,8 @@ cd ..
 git add \
   "$DOCS_DIR/versioned_docs" \
   "$DOCS_DIR/versioned_sidebars" \
+  "$DOCS_DIR/package.json" \
+  "$DOCS_DIR/package-lock.json" \
   "$DOCS_DIR/versions.json" || true
 
 # Only commit if there are staged changes (first-time versioning will always
