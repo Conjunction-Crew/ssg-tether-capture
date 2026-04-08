@@ -5,9 +5,113 @@ on:
     branches: [ "main", "dev" ]
   pull_request:
     branches: [ "main", "dev" ]
+    # Also run for release branches so the verify-release-pr job fires on PRs
+    # opened from release/* branches targeting main or dev.
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # verify-release-pr: runs only for release/* source branches.
+  # Checks that Cargo.toml version > latest tag AND CHANGELOG.md is updated.
+  # ---------------------------------------------------------------------------
+  verify-release-pr:
+    name: Verify release PR (version + changelog)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Run when the source branch (head ref) starts with "release/"
+    if: startsWith(github.head_ref, 'release/')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run release-PR verification script
+        run: |
+          chmod +x ./scripts/verify_release_pr.sh
+          ./scripts/verify_release_pr.sh
+
+  # ---------------------------------------------------------------------------
+  # precheck: version-bump enforcement for ordinary PRs to main/dev.
+  # Skipped for release/* branches because verify-release-pr handles those.
+  # ---------------------------------------------------------------------------
+  precheck:
+    name: Check Cargo.toml version bump
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Skip this check when the source branch is a release branch — those are
+    # validated by verify-release-pr above, which applies different rules.
+    if: ${{ !startsWith(github.head_ref, 'release/') }}
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Cargo.toml version bump
+        run: |
+          set -euo pipefail
+
+          echo "Target branch: $TARGET_BRANCH"
+          git fetch origin "$TARGET_BRANCH" --depth=1 || git fetch origin "$TARGET_BRANCH" || true
+          git show "origin/$TARGET_BRANCH:Cargo.toml" > base-Cargo.toml || true
+          if [ ! -s base-Cargo.toml ]; then
+            echo "Failed to fetch base Cargo.toml; trying a full fetch..."
+            git fetch --no-tags --prune origin || true
+            git show "origin/$TARGET_BRANCH:Cargo.toml" > base-Cargo.toml || true
+          fi
+
+          extract_version() {
+            sed -n '/^\[package\]/,/^\[/{/version/ { s/.*"\([^"]*\)".*/\1/; p; q } }' "$1" || return 1
+          }
+
+          if [ ! -f base-Cargo.toml ]; then
+            echo "base-Cargo.toml missing" >&2
+            exit 1
+          fi
+
+          base=$(extract_version base-Cargo.toml) || { echo "failed to extract base version" >&2; exit 1; }
+          head=$(extract_version Cargo.toml) || { echo "failed to extract head version" >&2; exit 1; }
+          echo "base=$base head=$head"
+
+          IFS='.' read -r base_major base_minor base_patch <<< "${base}"
+          IFS='.' read -r head_major head_minor head_patch <<< "${head}"
+          base_major=${base_major:-0}; base_minor=${base_minor:-0}; base_patch=${base_patch:-0}
+          head_major=${head_major:-0}; head_minor=${head_minor:-0}; head_patch=${head_patch:-0}
+
+          if [ "$TARGET_BRANCH" = "dev" ]; then
+            if [ "$head_major" -gt "$base_major" ] || [ "$head_minor" -gt "$base_minor" ] || [ "$head_patch" -gt "$base_patch" ]; then
+              echo "Version bump OK for dev"
+            else
+              echo "For PR to dev, Cargo.toml version must be greater than base (patch at minimum). base=$base head=$head" >&2
+              exit 1
+            fi
+
+          elif [ "$TARGET_BRANCH" = "main" ]; then
+            if [ "$head_major" -gt "$base_major" ]; then
+              echo "Major bump OK for main"
+            elif [ "$head_minor" -gt "$base_minor" ]; then
+              echo "Minor bump OK for main"
+            else
+              echo "For PR to main, major or minor version must be increased. base=$base head=$head" >&2
+              exit 1
+            fi
+
+          else
+            echo "Target branch $TARGET_BRANCH not enforced; skipping"
+          fi
+
   build:
+    # Wait for whichever check ran (only one fires per PR type).
+    # Require at least one of the two pre-checks to have succeeded so the
+    # build never runs when all checks were skipped or failed.
+    needs: [precheck, verify-release-pr]
+    if: |
+      always() &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') &&
+      (needs.precheck.result == 'success' || needs.verify-release-pr.result == 'success')
+    permissions:
+      contents: read
     strategy:
         matrix:
           os: [ubuntu-latest, windows-latest, macos-latest]
