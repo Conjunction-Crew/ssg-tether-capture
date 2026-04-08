@@ -26,6 +26,7 @@ pub struct CaptureGizmoConfigGroup;
 pub fn orbital_gizmos(
     orbitals: Query<(&Orbital, Option<&RigidBodyDisabled>)>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
+    world_time: Res<WorldTime>,
     mut gizmos: Gizmos,
     orbital_cache: Res<OrbitalCache>,
 ) {
