@@ -6,39 +6,15 @@ on:
   pull_request:
     branches: [ "main", "dev" ]
 
-  workflow_dispatch:
-
 jobs:
-  build:
-    strategy:
-        matrix:
-          os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-
+  precheck:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux Dependencies
-        if: ${{ runner.os == 'Linux' }}
-        run: |
-          sudo apt update
-          sudo apt install libwayland-dev
-          sudo apt install libasound2-dev
-          sudo apt install libudev-dev
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        
       - name: Check Cargo.toml version bump
-        if: ${{ github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' }}
-        env:
-          TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
 
@@ -52,7 +28,7 @@ jobs:
           fi
 
           extract_version() {
-            sed -n '/^\[package\]/,/^\[/{/version/ { s/.*"\([^\"]*\)".*/\1/; p; q } }' "$1" || return 1
+            sed -n '/^\[package\]/,/^\[/{/version/ { s/.*"\([^"]*\)".*/\1/; p; q } }' "$1" || return 1
           }
 
           if [ ! -f base-Cargo.toml ]; then
@@ -90,6 +66,34 @@ jobs:
           else
             echo "Target branch $TARGET_BRANCH not enforced; skipping"
           fi
+
+  build:
+    needs: precheck
+    strategy:
+        matrix:
+          os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt update
+          sudo apt install libwayland-dev
+          sudo apt install libasound2-dev
+          sudo apt install libudev-dev
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        
       - name: Build
         run: cargo build
 
