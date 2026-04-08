@@ -3,6 +3,14 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [ "main", "dev" ]
+    # Also build and deploy when a version tag is pushed.
+    # Both stable (v1.2.3) and beta (v1.2.3-beta.1) tags trigger a deploy so
+    # the live docs site always reflects the latest release including
+    # pre-releases.  Publishing to crates.io (not applicable here — binary
+    # crate) would be gated separately in release.yml.
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta*"
   pull_request:
     branches: [ "main", "dev" ]
 
@@ -37,8 +45,9 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build
 
-    # Only deploy from main
-    if: github.ref == 'refs/heads/main'
+    # Deploy on pushes to main OR on any version tag push (stable and beta).
+    # Pull-request builds run the build job above but never deploy.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
 
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
     permissions:

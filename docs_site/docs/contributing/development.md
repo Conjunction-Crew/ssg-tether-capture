@@ -59,7 +59,10 @@ commands.spawn((
 
 ## Releasing
 
-Releases are tag-driven. The release workflow in `.github/workflows/release.yml` triggers automatically when a version tag is pushed and publishes a GitHub Release with signed archives for all three platforms.
+Releases use [cargo-release](https://github.com/crate-ci/cargo-release) to
+automate version bumping and docs snapshotting. **Tags are pushed manually** by
+maintainers — this is the only step that triggers the release and docs-deploy
+workflows, giving the team full control over when a release goes live.
 
 ### Version numbering
 
@@ -80,25 +83,88 @@ Pre-1.0, `v0.x.y` is expected. Increment MINOR for features and PATCH for fixes.
 | `v0.2.0-beta.1` | GitHub **pre-release** — use on `dev` to test a release candidate |
 | `v0.2.0` | GitHub **production release** — use on `main` after beta sign-off |
 
-### How to cut a release
+### How to cut a release (maintainer steps)
 
-1. Bump the version in `Cargo.toml`:
-   ```toml
-   [package]
-   version = "0.2.0"
-   ```
-2. Commit the version bump and merge to the appropriate branch (`dev` for beta, `main` for production).
-3. Tag the commit and push the tag:
-   ```bash
-   # Beta release from dev
-   git tag v0.2.0-beta.1
-   git push origin v0.2.0-beta.1
+#### Prerequisites
 
-   # Production release from main
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-4. The release workflow builds and packages the app for Linux, Windows, and macOS, then publishes a GitHub Release with release notes auto-generated from merged PRs.
+```bash
+cargo install cargo-release   # install once
+```
+
+#### 1 — Create a release branch
+
+```bash
+git checkout main              # or dev for a beta
+git pull
+git checkout -b release/v0.2.0
+```
+
+#### 2 — Update CHANGELOG.md
+
+Add a new `## [0.2.0]` section above `## [Unreleased]` with the release notes
+for this version. CI will fail if the CHANGELOG does not contain an entry
+matching the Cargo.toml version.
+
+#### 3 — Run cargo-release (bump + docs snapshot)
+
+```bash
+# Replace "minor" with "major", "patch", or an explicit version like "0.2.0".
+# --no-confirm skips the interactive prompt; remove it if you prefer to review.
+cargo release minor --execute --no-confirm
+```
+
+`cargo-release` will:
+1. Bump the version in `Cargo.toml`.
+2. Run `scripts/verify_release_pr.sh` (pre-release hook) — fails fast if the
+   CHANGELOG entry is missing or the version is not greater than the latest tag.
+3. Commit the version bump.
+4. Run `scripts/post_release.sh` (post-release hook) — snapshots the current
+   docs with `npm run docusaurus docs:version <version>` and commits the
+   generated files into the release branch.
+
+Because `.release.toml` sets `tag = false` and `push = false`, **no tag is
+created and nothing is pushed automatically**.
+
+#### 4 — Open a release PR
+
+```bash
+git push origin release/v0.2.0
+# Open a PR: release/v0.2.0 → main (or dev for beta)
+```
+
+The CI `verify-release-pr` job re-runs `verify_release_pr.sh` so reviewers
+can see the checks pass before approving. The regular `build` job also runs the
+full matrix build to confirm nothing is broken.
+
+#### 5 — Merge the PR
+
+After review and CI is green, merge the release PR into `main` (or `dev`).
+
+#### 6 — Push the tag (triggers release + docs deploy)
+
+After the merge commit is on `main`, pull and tag it:
+
+```bash
+git checkout main
+git pull
+git tag v0.2.0            # stable release
+git push origin v0.2.0
+```
+
+For a beta:
+
+```bash
+git checkout dev
+git pull
+git tag v0.2.0-beta.1
+git push origin v0.2.0-beta.1
+```
+
+Pushing the tag triggers two workflows:
+- **`release.yml`** — builds Linux/Windows/macOS artifacts and publishes a
+  GitHub Release (pre-release flag set automatically for `-beta.*` tags).
+- **`deploy-docs.yml`** — builds and deploys the Docusaurus site to GitHub
+  Pages (runs for both stable and beta tags).
 
 ### Artifacts produced
 
