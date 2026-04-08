@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [Unreleased]
+## [0.2.0-beta.1] - 2026
 
 ### Changed
 - Adopts `cargo-release` for automated versioning and changelog management.
@@ -31,7 +31,7 @@ When preparing a release:
 
 ---
 
-## [0.1.1-beta.1] — 2025-04-04
+## [0.1.1-beta.1] — 2026-04-08
 
 ### Changed
 - Updated release workflow to build and package artifacts for Linux, Windows
@@ -41,7 +41,7 @@ When preparing a release:
 
 ---
 
-## [0.1.0]
+## [0.1.0] - 2026-04-03
 
 ### Added
 - Initial project scaffold: Bevy + Avian3d physics, orbital-mechanics plugin.
@@ -50,6 +50,7 @@ When preparing a release:
   architecture, concepts, API reference, and contributing guides.
 - WiX-based Windows MSI installer and macOS DMG packaging.
 
-[Unreleased]: https://github.com/Conjunction-Crew/ssg-tether-capture/compare/v0.1.1-beta.1...HEAD
+[Unreleased]: https://github.com/Conjunction-Crew/ssg-tether-capture/compare/v0.2.0-beta.1...HEAD
+[0.2.0-beta.1]: https://github.com/Conjunction-Crew/ssg-tether-capture/compare/v0.1.1-beta.1...v0.2.0-beta.1
 [0.1.1-beta.1]: https://github.com/Conjunction-Crew/ssg-tether-capture/compare/v0.1.0...v0.1.1-beta.1
 [0.1.0]: https://github.com/Conjunction-Crew/ssg-tether-capture/releases/tag/v0.1.0
