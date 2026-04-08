@@ -24,6 +24,10 @@ use crate::{
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ManualPhysics;
 
+#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SimSchedule;
+
+
 pub struct OrbitalMechanicsPlugin;
 
 impl Plugin for OrbitalMechanicsPlugin {
@@ -45,7 +49,7 @@ impl Plugin for OrbitalMechanicsPlugin {
                     .run_if(in_state(UiScreen::Sim)),
             )
             .add_systems(
-                ManualPhysics,
+                SimSchedule,
                 (
                     (cache_eci_states).in_set(PhysicsSystems::First),
                     (physics_bubble_add_remove, target_entity_reset_origin)

@@ -4,6 +4,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
+use bevy::transform::TransformSystems;
 
 use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::Orbital;
@@ -19,7 +20,7 @@ use crate::ui::screens::project_detail::{
     catalog_interactions, catalog_keyboard_input, cleanup_project_detail_screen,
     collapsible_toggle_interaction, project_detail_interactions,
     refresh_space_catalog_results, reset_space_catalog_ui_state, spawn_project_detail_screen,
-    sync_space_catalog_ui, update_selected_catalog_overlay,
+    sync_space_catalog_ui, update_satellite_indicator_overlay, update_selected_catalog_overlay,
 };
 use crate::ui::state::{ProjectCatalog, SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
@@ -47,7 +48,7 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(OnExit(UiScreen::Sim), reset_space_catalog_ui_state)
             .add_systems(
-                Update,
+                PostUpdate,
                 (
                     project_detail_interactions,
                     collapsible_toggle_interaction,
@@ -55,9 +56,16 @@ impl Plugin for UiPlugin {
                     catalog_keyboard_input,
                     refresh_space_catalog_results,
                     sync_space_catalog_ui,
-                    update_selected_catalog_overlay,
                 )
                     .chain()
+                    .run_if(in_state(UiScreen::Sim)),
+            )
+            .add_systems(
+                PostUpdate,
+                (update_selected_catalog_overlay, update_satellite_indicator_overlay)
+                    .chain()
+                    .after(sync_space_catalog_ui)
+                    .after(TransformSystems::Propagate)
                     .run_if(in_state(UiScreen::Sim)),
             )
             .add_systems(Update, handle_ui_events);

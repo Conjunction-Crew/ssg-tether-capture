@@ -30,6 +30,17 @@ struct CaptureMetrics {
     target_altitude_m: f64,
 }
 
+const MAP_LABEL_BOX_SIZE_PX: f32 = 30.0;
+
+fn position_label_at_viewport_center(node: &mut Node, center: Vec2, size_px: f32) {
+    let half_size = size_px * 0.5;
+
+    node.left = Val::Px(center.x - half_size);
+    node.top = Val::Px(center.y - half_size);
+    node.width = Val::Px(size_px);
+    node.height = Val::Px(size_px);
+}
+
 pub fn update_time_warp_readout(
     mut readouts: Query<&mut Text, With<TimeWarpReadout>>,
     world_time: Res<WorldTime>,
@@ -208,42 +219,45 @@ pub fn update_capture_guidance(
 pub fn map_orbitals(
     camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
     mut labels: Query<(&mut Node, &OrbitLabel)>,
-    rigidbodies: Query<(RigidBodyQueryReadOnly, Entity)>,
+    rigidbodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>, Entity)>,
     orbital_cache: Res<OrbitalCache>,
-    world_time: Res<WorldTime>,
 ) {
     let (cam, cam_transform, render_layers) = camera.into_inner();
 
     for (mut node, label) in &mut labels {
-        if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        if !render_layers.intersects(&RenderLayers::layer(crate::constants::MAP_LAYER)) {
             node.display = Display::None;
-        } else {
-            node.display = Display::Block;
+            continue;
         }
+
+        node.display = Display::Block;
+
         let Some(entity) = label.entity else {
-            return;
+            continue;
         };
-        let Ok((rb, entity)) = rigidbodies.get(entity) else {
-            return;
+        let Ok((rb, disabled, entity)) = rigidbodies.get(entity) else {
+            continue;
         };
 
         let Some(params) = orbital_cache.eci_states.get(&entity) else {
-            return;
+            continue;
         };
 
-        let mut world_position = DVec3::new(
+        let base = DVec3::new(
             params[0] / MAP_UNITS_TO_M,
             params[1] / MAP_UNITS_TO_M,
             params[2] / MAP_UNITS_TO_M,
         );
+        let world_position = if disabled {
+            base
+        } else {
+            base + rb.position.0 / MAP_UNITS_TO_M
+        };
 
-        world_position += rb.position.0 / MAP_UNITS_TO_M;
-
-        if let Ok(viewport_position) =
-            cam.world_to_viewport(cam_transform, world_position.as_vec3())
-        {
-            node.top = Val::Px(viewport_position.y);
-            node.left = Val::Px(viewport_position.x);
+        if let Ok(viewport_position) = cam.world_to_viewport(cam_transform, world_position.as_vec3()) {
+            position_label_at_viewport_center(&mut node, viewport_position, MAP_LABEL_BOX_SIZE_PX);
+        } else {
+            node.display = Display::None;
         }
     }
 }

@@ -4,16 +4,18 @@ use bevy::ecs::observer::On;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::input::ButtonState;
+use bevy::math::DVec3;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
+use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
-use crate::constants::{MAP_LAYER, UI_LAYER};
+use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::plugins::gpu_compute::{
-    GpuComputeEpochOrigin, GpuElements, MAP_POINT_SCALE, eci_position_to_map,
+    GpuComputeEpochOrigin, GpuElements, eci_position_to_map,
     propagate_catalog_eci_state,
 };
 use crate::resources::orbital_cache::OrbitalCache;
@@ -108,6 +110,9 @@ pub struct CatalogNextPageButton;
 pub struct CatalogPointsToggleButton;
 
 #[derive(Component)]
+pub struct SatelliteIndicatorToggleButton;
+
+#[derive(Component)]
 pub struct CatalogResultButton {
     pub slot: usize,
     pub entry_index: Option<usize>,
@@ -124,7 +129,28 @@ pub struct SelectedCatalogOverlay;
 #[derive(Component)]
 pub struct SelectedCatalogOverlayLabel;
 
+#[derive(Component)]
+pub struct SatelliteIndicatorOverlay {
+    pub entity: Option<Entity>,
+    pub label: String,
+}
+
+#[derive(Component)]
+pub struct SatelliteIndicatorOverlayLabel;
+
 const CATALOG_PAGE_SIZE: usize = 48;
+const SATELLITE_SCENE_INDICATOR_HALF_EXTENT: f32 = 12.0;
+const MAP_OVERLAY_BOX_SIZE_PX: f32 = 30.0;
+
+fn position_overlay_at_viewport_center(node: &mut Node, center: Vec2, size_px: f32) {
+    let half_size = size_px * 0.5;
+
+    node.display = Display::Flex;
+    node.left = px(center.x - half_size);
+    node.top = px(center.y - half_size);
+    node.width = px(size_px);
+    node.height = px(size_px);
+}
 
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
@@ -393,6 +419,7 @@ pub fn spawn_project_detail_screen(
                                                         TextColor(theme.text_primary),
                                                     ));
                                                 });
+
                                         });
 
                                     panel.spawn((
@@ -754,6 +781,31 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
 
+                                content
+                                    .spawn((
+                                        Button,
+                                        SatelliteIndicatorToggleButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Hide Satellite Indicator"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
                                 // Toggle Origin button
                                 content
                                     .spawn((
@@ -955,18 +1007,34 @@ pub fn spawn_project_detail_screen(
                 OrbitLabel {
                     entity: tether_entity.get(0).cloned(),
                 },
-                Text::new("─ Tether1"),
-                TextFont {
-                    font: font.clone(),
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(theme.text_primary),
                 Node {
                     position_type: PositionType::Absolute,
+                    display: Display::None,
+                    border: UiRect::all(px(2.0)),
                     ..default()
                 },
-            ));
+                BackgroundColor(Color::NONE),
+                BorderColor::all(theme.text_primary),
+            ))
+            .with_children(|overlay| {
+                overlay.spawn((
+                    Text::new("Tether1"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_primary),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: px(-28.0),
+                        left: px(0.0),
+                        padding: UiRect::axes(px(8.0), px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ));
+            });
 
             root.spawn((
                 SelectedCatalogOverlay,
@@ -982,6 +1050,41 @@ pub fn spawn_project_detail_screen(
             .with_children(|overlay| {
                 overlay.spawn((
                     SelectedCatalogOverlayLabel,
+                    Text::new(""),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_primary),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: px(-28.0),
+                        left: px(0.0),
+                        padding: UiRect::axes(px(8.0), px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ));
+            });
+
+            root.spawn((
+                SatelliteIndicatorOverlay {
+                    entity: capture_target_entity,
+                    label: capture_target_label,
+                },
+                Node {
+                    position_type: PositionType::Absolute,
+                    display: Display::None,
+                    border: UiRect::all(px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+                BorderColor::all(theme.text_primary),
+            ))
+            .with_children(|overlay| {
+                overlay.spawn((
+                    SatelliteIndicatorOverlayLabel,
                     Text::new(""),
                     TextFont {
                         font: font.clone(),
@@ -1183,6 +1286,7 @@ pub fn catalog_interactions(
             Option<&CatalogToggleButton>,
             Option<&CatalogSearchField>,
             Option<&CatalogPointsToggleButton>,
+            Option<&SatelliteIndicatorToggleButton>,
             Option<&CatalogPrevPageButton>,
             Option<&CatalogNextPageButton>,
             Option<&CatalogResultButton>,
@@ -1195,6 +1299,7 @@ pub fn catalog_interactions(
                 With<CatalogToggleButton>,
                 With<CatalogSearchField>,
                 With<CatalogPointsToggleButton>,
+                With<SatelliteIndicatorToggleButton>,
                 With<CatalogPrevPageButton>,
                 With<CatalogNextPageButton>,
                 With<CatalogResultButton>,
@@ -1210,6 +1315,7 @@ pub fn catalog_interactions(
         toggle_button,
         search_field,
         points_toggle,
+        satellite_indicator_toggle,
         prev_page,
         next_page,
         result_button,
@@ -1231,6 +1337,8 @@ pub fn catalog_interactions(
                     catalog_ui.show_catalog = !catalog_ui.show_catalog;
                 } else if points_toggle.is_some() {
                     catalog_ui.show_points = !catalog_ui.show_points;
+                } else if satellite_indicator_toggle.is_some() {
+                    catalog_ui.show_satellite_indicator = !catalog_ui.show_satellite_indicator;
                 } else if prev_page.is_some() {
                     catalog_ui.page = catalog_ui.page.saturating_sub(1);
                 } else if next_page.is_some() {
@@ -1291,6 +1399,7 @@ pub fn sync_space_catalog_ui(
     )>,
     search_texts: Query<Entity, With<CatalogSearchText>>,
     point_toggle_buttons: Query<&Children, With<CatalogPointsToggleButton>>,
+    satellite_indicator_toggle_buttons: Query<&Children, With<SatelliteIndicatorToggleButton>>,
 ) {
     let map_visible = camera.intersects(&RenderLayers::layer(MAP_LAYER));
 
@@ -1396,6 +1505,19 @@ pub fn sync_space_catalog_ui(
         }
     }
 
+    for children in &satellite_indicator_toggle_buttons {
+        let mut texts = text_queries.p0();
+        for child in children.iter() {
+            if let Ok(mut text) = texts.get_mut(child) {
+                text.0 = if catalog_ui.show_satellite_indicator {
+                    "Hide Satellite Indicator".to_string()
+                } else {
+                    "Show Satellite Indicator".to_string()
+                };
+            }
+        }
+    }
+
     for (mut node, mut row, interaction, mut background_color) in &mut node_queries.p2() {
         let slot_index = catalog_ui.page * CATALOG_PAGE_SIZE + row.slot;
 
@@ -1474,48 +1596,132 @@ pub fn update_selected_catalog_overlay(
     };
 
     let map_position = eci_position_to_map(position_eci);
-    let half_extent = MAP_POINT_SCALE * 0.5;
-
-    let corners = [
-        map_position + Vec3::new(-half_extent, -half_extent, -half_extent),
-        map_position + Vec3::new(-half_extent, -half_extent, half_extent),
-        map_position + Vec3::new(-half_extent, half_extent, -half_extent),
-        map_position + Vec3::new(-half_extent, half_extent, half_extent),
-        map_position + Vec3::new(half_extent, -half_extent, -half_extent),
-        map_position + Vec3::new(half_extent, -half_extent, half_extent),
-        map_position + Vec3::new(half_extent, half_extent, -half_extent),
-        map_position + Vec3::new(half_extent, half_extent, half_extent),
-    ];
-
-    let mut min = Vec2::splat(f32::INFINITY);
-    let mut max = Vec2::splat(f32::NEG_INFINITY);
-    let mut any_projected = false;
-
-    for corner in corners {
-        if let Ok(viewport_position) = camera.world_to_viewport(camera_transform, corner) {
-            min = min.min(viewport_position);
-            max = max.max(viewport_position);
-            any_projected = true;
-        }
-    }
-
-    if !any_projected {
+    let Ok(viewport_position) = camera.world_to_viewport(camera_transform, map_position) else {
         overlay_node.display = Display::None;
         return;
-    }
+    };
 
-    let padding = 6.0;
-    let size = (max - min).max(Vec2::splat(18.0)) + Vec2::splat(padding * 2.0);
-
-    overlay_node.display = Display::Flex;
-    overlay_node.left = px(min.x - padding);
-    overlay_node.top = px(min.y - padding);
-    overlay_node.width = px(size.x);
-    overlay_node.height = px(size.y);
+    position_overlay_at_viewport_center(
+        &mut overlay_node,
+        viewport_position,
+        MAP_OVERLAY_BOX_SIZE_PX,
+    );
 
     for child in overlay_children.iter() {
         if let Ok(mut text) = label_texts.get_mut(child) {
             text.0 = entry.display_label();
+        }
+    }
+}
+
+pub fn update_satellite_indicator_overlay(
+    camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
+    orbital_cache: Res<OrbitalCache>,
+    overlay: Single<(&SatelliteIndicatorOverlay, &mut Node, &Children)>,
+    transforms: Query<&GlobalTransform>,
+    rigidbodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
+    mut label_texts: Query<&mut Text, With<SatelliteIndicatorOverlayLabel>>,
+) {
+    let (camera, camera_transform, render_layers) = camera.into_inner();
+    let (overlay_state, mut overlay_node, overlay_children) = overlay.into_inner();
+
+    if !catalog_ui.show_satellite_indicator {
+        overlay_node.display = Display::None;
+        return;
+    }
+
+    let Some(entity) = overlay_state.entity else {
+        overlay_node.display = Display::None;
+        return;
+    };
+
+    if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        let Ok((rb, disabled)) = rigidbodies.get(entity) else {
+            overlay_node.display = Display::None;
+            return;
+        };
+        let Some(params) = orbital_cache.eci_states.get(&entity) else {
+            overlay_node.display = Display::None;
+            return;
+        };
+
+        let scale = MAP_UNITS_TO_M;
+        let base = DVec3::new(
+            params[0] / scale,
+            params[1] / scale,
+            params[2] / scale,
+        );
+        let world_position = if disabled {
+            base
+        } else {
+            base + rb.position.0 / scale
+        };
+
+        let Ok(viewport_position) =
+            camera.world_to_viewport(camera_transform, world_position.as_vec3())
+        else {
+            overlay_node.display = Display::None;
+            return;
+        };
+
+        position_overlay_at_viewport_center(
+            &mut overlay_node,
+            viewport_position,
+            MAP_OVERLAY_BOX_SIZE_PX,
+        );
+    } else if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        let Ok(transform) = transforms.get(entity) else {
+            overlay_node.display = Display::None;
+            return;
+        };
+
+        let center = transform.translation();
+        let half_extent = Vec3::splat(SATELLITE_SCENE_INDICATOR_HALF_EXTENT);
+        let corners = [
+            center + Vec3::new(-half_extent.x, -half_extent.y, -half_extent.z),
+            center + Vec3::new(-half_extent.x, -half_extent.y, half_extent.z),
+            center + Vec3::new(-half_extent.x, half_extent.y, -half_extent.z),
+            center + Vec3::new(-half_extent.x, half_extent.y, half_extent.z),
+            center + Vec3::new(half_extent.x, -half_extent.y, -half_extent.z),
+            center + Vec3::new(half_extent.x, -half_extent.y, half_extent.z),
+            center + Vec3::new(half_extent.x, half_extent.y, -half_extent.z),
+            center + Vec3::new(half_extent.x, half_extent.y, half_extent.z),
+        ];
+
+        let mut min = Vec2::splat(f32::INFINITY);
+        let mut max = Vec2::splat(f32::NEG_INFINITY);
+        let mut any_projected = false;
+
+        for corner in corners {
+            if let Ok(viewport_position) = camera.world_to_viewport(camera_transform, corner) {
+                min = min.min(viewport_position);
+                max = max.max(viewport_position);
+                any_projected = true;
+            }
+        }
+
+        if !any_projected {
+            overlay_node.display = Display::None;
+            return;
+        }
+
+        let padding = 6.0;
+        let size = (max - min).max(Vec2::splat(18.0)) + Vec2::splat(padding * 2.0);
+
+        overlay_node.display = Display::Flex;
+        overlay_node.left = px(min.x - padding);
+        overlay_node.top = px(min.y - padding);
+        overlay_node.width = px(size.x);
+        overlay_node.height = px(size.y);
+    } else {
+        overlay_node.display = Display::None;
+        return;
+    }
+
+    for child in overlay_children.iter() {
+        if let Ok(mut text) = label_texts.get_mut(child) {
+            text.0 = overlay_state.label.clone();
         }
     }
 }

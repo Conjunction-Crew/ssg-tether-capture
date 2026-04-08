@@ -3,8 +3,11 @@ use crate::{
         orbit::{Earth, Orbital},
         orbit_camera::{CameraTarget, OrbitCamera},
     },
-    constants::SCENE_LAYER,
-    resources::space_catalog::SpaceCatalogUiState,
+    constants::{MAP_UNITS_TO_M, SCENE_LAYER},
+    resources::{
+        orbital_cache::{self, OrbitalCache},
+        space_catalog::SpaceCatalogUiState,
+    },
 };
 use avian3d::prelude::*;
 use bevy::{
@@ -56,14 +59,15 @@ pub fn orbit_camera_input(
 }
 
 pub fn orbit_camera_track(
-    targets: Query<&Transform, (With<CameraTarget>, Without<Camera3d>, Without<Earth>)>,
+    targets: Query<(&Transform, Entity), (With<CameraTarget>, Without<Camera3d>, Without<Earth>)>,
     cam_q: Single<
         (&mut OrbitCamera, &mut Transform, &RenderLayers),
         (With<Camera3d>, Without<Earth>),
     >,
     earth: Single<&Transform, With<Earth>>,
+    orbital_cache: Res<OrbitalCache>,
 ) {
-    let (mut orbit_camera, mut transform, render_layers) = cam_q.into_inner();
+    let (mut orbit_camera, mut cam_transform, render_layers) = cam_q.into_inner();
     let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
         &mut orbit_camera.scene_params
     } else {
@@ -71,12 +75,23 @@ pub fn orbit_camera_track(
     };
     let earth_transform = earth.into_inner();
 
+    let Ok((target_transform, entity)) = targets.single() else {
+        return;
+    };
+
     if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-        if let Ok(target) = targets.single() {
-            camera.focus = target.translation;
-            camera.up =
-                -(earth_transform.translation - target.translation).normalize_or(Vec3::NEG_Y);
-        }
+        camera.focus = target_transform.translation;
+        camera.up =
+            -(earth_transform.translation - target_transform.translation).normalize_or(Vec3::NEG_Y);
+    } else {
+        let Some(target_rv) = orbital_cache.eci_states.get(&entity) else {
+            return;
+        };
+        camera.focus = Vec3::new(
+            (target_rv[0] / MAP_UNITS_TO_M) as f32,
+            (target_rv[1] / MAP_UNITS_TO_M) as f32,
+            (target_rv[2] / MAP_UNITS_TO_M) as f32,
+        );
     }
 
     let up = camera.up.normalize_or(Vec3::Y);
@@ -89,13 +104,13 @@ pub fn orbit_camera_track(
 
     // Adjust the actual transform of the camera
     let new_rot = Quat::from_euler(EulerRot::YXZ, camera.yaw, camera.pitch, 0.0);
-    transform.rotation = (up_frame * new_rot).normalize();
+    cam_transform.rotation = (up_frame * new_rot).normalize();
 
-    let new_pos = camera.focus - transform.forward() * camera.distance;
+    let new_pos = camera.focus - cam_transform.forward() * camera.distance;
 
     // let delta_pos = new_pos - transform.translation;
 
-    transform.translation = new_pos;
+    cam_transform.translation = new_pos;
 }
 
 pub fn orbit_camera_switch_target(

@@ -45,6 +45,7 @@ pub struct SpaceObjectCatalog {
 pub struct SpaceCatalogUiState {
     pub show_catalog: bool,
     pub show_points: bool,
+    pub show_satellite_indicator: bool,
     pub search_text: String,
     pub search_focused: bool,
     pub selected_index: Option<usize>,
@@ -56,6 +57,7 @@ impl Default for SpaceCatalogUiState {
         Self {
             show_catalog: false,
             show_points: false,
+            show_satellite_indicator: true,
             search_text: String::new(),
             search_focused: false,
             selected_index: None,
