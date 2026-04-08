@@ -11,6 +11,8 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149" }
 brahe = { version = "1.1.4" }
 nalgebra = { version = "0.34.1" }
+rfd = { version = "0.15" }
+arboard = { version = "3" }
 
 [patch.crates-io]
 bevy = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }

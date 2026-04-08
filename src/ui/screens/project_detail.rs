@@ -3,6 +3,7 @@ use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::ecs::observer::On;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::events::{Pointer, Scroll};
+use bevy::picking::Pickable;
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
@@ -11,8 +12,11 @@ use crate::components::user_interface::{
 };
 use crate::constants::UI_LAYER;
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
+use crate::resources::capture_plans::CapturePlanLibrary;
+use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
-use crate::ui::state::{ProjectCatalog, SelectedProject};
+use crate::ui::state::SelectedProject;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
 
@@ -54,9 +58,6 @@ pub struct MapViewButton;
 pub struct TimeWarpDecreaseButton;
 
 #[derive(Component)]
-pub struct TimeWarpLabel;
-
-#[derive(Component)]
 pub struct TimeWarpIncreaseButton;
 
 #[derive(Component)]
@@ -68,46 +69,70 @@ pub struct CycleCameraButton;
 #[derive(Component)]
 pub struct SidebarPanel;
 
+#[derive(Component)]
+pub struct ExitSimConfirmModal;
+
+#[derive(Component)]
+pub struct ExitSimCancelButton;
+
+#[derive(Component)]
+pub struct ExitSimConfirmButton;
+
+#[derive(Component)]
+pub struct ViewEditPlanButton;
+
+#[derive(Component)]
+pub struct RestartPromptModal;
+
+#[derive(Component)]
+pub struct RestartSimButton;
+
+#[derive(Component)]
+pub struct DismissRestartButton;
+
+#[derive(Component)]
+pub struct SyncIndicator;
+
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
     selected_project: Res<SelectedProject>,
-    catalog: Res<ProjectCatalog>,
-    orbital_entities: Res<OrbitalCache>,
+    orbital_cache: Res<OrbitalCache>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    working_directory: Res<WorkingDirectory>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
-    let selected = selected_project.project_id.as_ref().and_then(|project_id| {
-        catalog
-            .projects
-            .iter()
-            .find(|project| &project.id == project_id)
-    });
+    let plan_id = selected_project
+        .project_id
+        .as_deref()
+        .unwrap_or("");
 
-    let project_title = selected
-        .map(|project| project.title.clone())
-        .unwrap_or_else(|| "No project selected".to_string());
+    let plan = capture_plan_lib.plans.get(plan_id);
 
-    let project_description = selected
-        .map(|project| project.description.clone())
-        .unwrap_or_else(|| "Return to Home and choose a project.".to_string());
+    let project_title = plan
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "No plan selected".to_string());
 
-    let project_directory = selected
-        .map(|project| project.working_directory.clone())
-        .unwrap_or_else(|| "Unknown directory".to_string());
+    let project_description = String::new();
 
-    let project_file = selected
-        .map(|project| project.file_name.clone())
-        .unwrap_or_else(|| "Unknown file".to_string());
+    let project_directory = working_directory.path.clone();
 
-    let tether_entity = selected
-        .and_then(|project| orbital_entities.tethers.get(&project.tether_id))
-        .expect("Failed to get tether entity");
-    let tether_root_entity = tether_entity.get(0).copied();
-    let capture_target_entity = orbital_entities.debris.get("Satellite1").copied();
+    let project_file = if plan_id.is_empty() {
+        "Unknown file".to_string()
+    } else {
+        format!("{plan_id}.json")
+    };
+
+    let tether_name = plan.map(|p| p.tether.as_str()).unwrap_or("");
+    let tether_root_entity: Option<Entity> = orbital_cache
+        .tethers
+        .get(tether_name)
+        .and_then(|v| v.first().copied());
+    let capture_target_entity = orbital_cache.debris.get("Satellite1").copied();
     let capture_target_label = String::from("Satellite1");
-    let capture_plan_id = String::from("example_plan");
+    let capture_plan_id = plan_id.to_string();
 
     commands
         .spawn((
@@ -269,6 +294,39 @@ pub fn spawn_project_detail_screen(
                             "Project Information",
                             CollapsibleSection::ProjectInformation,
                             |content| {
+                                // Out-of-sync indicator (hidden by default)
+                                content
+                                    .spawn((
+                                        SyncIndicator,
+                                        Node {
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::Center,
+                                            column_gap: Val::Px(6.0),
+                                            display: Display::None,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|row| {
+                                        // Yellow dot
+                                        row.spawn((
+                                            Node {
+                                                width: Val::Px(8.0),
+                                                height: Val::Px(8.0),
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgb(1.0, 0.85, 0.0)),
+                                        ));
+                                        row.spawn((
+                                            Text::new("Plan changed — sim out of sync"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 11.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                                        ));
+                                    });
+
                                 content.spawn((
                                     Text::new(project_description),
                                     TextFont {
@@ -298,6 +356,34 @@ pub fn spawn_project_detail_screen(
                                     },
                                     TextColor(theme.text_primary),
                                 ));
+
+                                // View / Edit Plan button
+                                let is_example_plan = selected_project.project_id.as_ref()
+                                    .map(|id| !capture_plan_lib.user_plans.contains_key(id.as_str()))
+                                    .unwrap_or(false);
+                                let view_edit_label = if is_example_plan { "View Plan" } else { "View / Edit Plan" };
+                                content.spawn((
+                                    Button,
+                                    ViewEditPlanButton,
+                                    Node {
+                                        padding: UiRect::axes(Val::Px(14.0), Val::Px(7.0)),
+                                        margin: UiRect::top(Val::Px(6.0)),
+                                        align_self: AlignSelf::Start,
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme.button_background),
+                                ))
+                                .with_children(|btn| {
+                                    btn.spawn((
+                                        Text::new(view_edit_label),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.button_text),
+                                    ));
+                                });
                             },
                         );
 
@@ -618,7 +704,7 @@ pub fn spawn_project_detail_screen(
 
             root.spawn((
                 OrbitLabel {
-                    entity: tether_entity.get(0).cloned(),
+                    entity: tether_root_entity,
                 },
                 Text::new("─ Tether1"),
                 TextFont {
@@ -718,10 +804,190 @@ fn spawn_collapsible_section(
 pub fn cleanup_project_detail_screen(
     mut commands: Commands,
     roots: Query<Entity, With<SimScreen>>,
+    modals: Query<Entity, With<ExitSimConfirmModal>>,
 ) {
     for entity in &roots {
         commands.entity(entity).despawn();
     }
+    for entity in &modals {
+        commands.entity(entity).despawn();
+    }
+}
+
+pub fn spawn_restart_prompt_modal(commands: &mut Commands, font: &Handle<Font>, theme: &UiTheme) {
+    commands
+        .spawn((
+            RestartPromptModal,
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            Pickable::default(),
+            ZIndex(100),
+            RenderLayers::layer(crate::constants::UI_LAYER),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(14.0),
+                        padding: UiRect::all(Val::Px(28.0)),
+                        width: Val::Px(420.0),
+                        max_width: Val::Percent(90.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ))
+                .with_children(|dlg| {
+                    dlg.spawn((
+                        Text::new("Plan Changed"),
+                        TextFont { font: font.clone(), font_size: 20.0, ..default() },
+                        TextColor(theme.text_primary),
+                    ));
+
+                    dlg.spawn((
+                        Text::new("The capture plan has been updated. Restart the simulation to apply changes?"),
+                        TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                        TextColor(theme.text_muted),
+                    ));
+
+                    dlg.spawn(Node {
+                        width: Val::Percent(100.0),
+                        justify_content: JustifyContent::End,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|btns| {
+                        btns.spawn((
+                            Button,
+                            DismissRestartButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background_soft),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Continue"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.text_primary),
+                            ));
+                        });
+
+                        btns.spawn((
+                            Button,
+                            RestartSimButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_background),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Restart Sim"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.button_text),
+                            ));
+                        });
+                    });
+                });
+        });
+}
+
+pub fn spawn_exit_confirm_modal(commands: &mut Commands, font: &Handle<Font>, theme: &UiTheme) {
+    commands
+        .spawn((
+            ExitSimConfirmModal,
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            Pickable::default(),
+            ZIndex(100),
+            RenderLayers::layer(crate::constants::UI_LAYER),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(14.0),
+                        padding: UiRect::all(Val::Px(28.0)),
+                        width: Val::Px(420.0),
+                        max_width: Val::Percent(90.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                ))
+                .with_children(|dlg| {
+                    dlg.spawn((
+                        Text::new("Exit Simulation?"),
+                        TextFont { font: font.clone(), font_size: 20.0, ..default() },
+                        TextColor(theme.text_primary),
+                    ));
+
+                    dlg.spawn((
+                        Text::new("Your orbital simulation will be reset. Are you sure you want to exit?"),
+                        TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                        TextColor(theme.text_muted),
+                    ));
+
+                    dlg.spawn(Node {
+                        width: Val::Percent(100.0),
+                        justify_content: JustifyContent::End,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|btns| {
+                        btns.spawn((
+                            Button,
+                            ExitSimCancelButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background_soft),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Cancel"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.text_primary),
+                            ));
+                        });
+
+                        btns.spawn((
+                            Button,
+                            ExitSimConfirmButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_background),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Exit Sim"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.button_text),
+                            ));
+                        });
+                    });
+                });
+        });
 }
 
 pub fn project_detail_interactions(
@@ -735,17 +1001,27 @@ pub fn project_detail_interactions(
             Option<&TimeWarpDecreaseButton>,
             Option<&TimeWarpIncreaseButton>,
             Option<&CycleCameraButton>,
+            Option<&ExitSimCancelButton>,
+            Option<&ExitSimConfirmButton>,
             &mut BackgroundColor,
         ),
         (Changed<Interaction>, With<Button>),
     >,
+    mut commands: Commands,
+    exit_modal_query: Query<Entity, With<ExitSimConfirmModal>>,
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<crate::ui::state::UiScreen>>,
     theme: Res<UiTheme>,
+    form: Res<NewCapturePlanForm>,
+    restart_modal_query: Query<Entity, With<RestartPromptModal>>,
 ) {
     if *screen.get() != crate::ui::state::UiScreen::Sim {
         return;
     }
+
+    let any_modal_open = form.open
+        || !exit_modal_query.is_empty()
+        || !restart_modal_query.is_empty();
 
     for (
         interaction,
@@ -756,14 +1032,26 @@ pub fn project_detail_interactions(
         time_warp_decrease,
         time_warp_increase,
         cycle_camera_button,
+        exit_cancel_button,
+        exit_confirm_button,
         mut background_color,
     ) in &mut interactions
     {
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(theme.button_background_hover);
-                if back_button.is_some() {
+                // Exit modal buttons are always allowed
+                if exit_cancel_button.is_some() {
+                    for entity in &exit_modal_query {
+                        commands.entity(entity).despawn();
+                    }
+                    events.write(UiEvent::CancelExitConfirm);
+                } else if exit_confirm_button.is_some() {
                     events.write(UiEvent::BackToHome);
+                } else if any_modal_open {
+                    // Block all other buttons when a modal is open
+                } else if back_button.is_some() {
+                    events.write(UiEvent::ShowExitConfirm);
                 } else if let Some(capture_entity) = capture_button {
                     events.write(UiEvent::CaptureDebris {
                         entity: capture_entity.entity,
@@ -791,6 +1079,84 @@ pub fn project_detail_interactions(
     }
 }
 
+pub fn view_edit_plan_interactions(
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>, With<ViewEditPlanButton>),
+    >,
+    mut events: MessageWriter<UiEvent>,
+    selected_project: Res<SelectedProject>,
+    theme: Res<UiTheme>,
+    form: Res<NewCapturePlanForm>,
+    exit_modal: Query<Entity, With<ExitSimConfirmModal>>,
+    restart_modal: Query<Entity, With<RestartPromptModal>>,
+) {
+    let any_modal_open = form.open
+        || !exit_modal.is_empty()
+        || !restart_modal.is_empty();
+
+    for (interaction, mut bg) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                if !any_modal_open {
+                    if let Some(plan_id) = &selected_project.project_id {
+                        events.write(UiEvent::EditCapturePlan(plan_id.clone()));
+                    }
+                }
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+            Interaction::None => *bg = BackgroundColor(theme.button_background),
+        }
+    }
+}
+
+pub fn restart_prompt_interactions(
+    mut buttons: Query<
+        (
+            &Interaction,
+            Option<&RestartSimButton>,
+            Option<&DismissRestartButton>,
+            &mut BackgroundColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut commands: Commands,
+    modal_query: Query<Entity, With<RestartPromptModal>>,
+    mut sync_state: ResMut<SimPlanSyncState>,
+    mut next_screen: ResMut<NextState<crate::ui::state::UiScreen>>,
+    theme: Res<UiTheme>,
+) {
+    for (interaction, restart_btn, dismiss_btn, mut bg) in &mut buttons {
+        if restart_btn.is_none() && dismiss_btn.is_none() {
+            continue;
+        }
+        match *interaction {
+            Interaction::Pressed => {
+                // Despawn modal
+                for entity in &modal_query {
+                    commands.entity(entity).despawn();
+                }
+                if restart_btn.is_some() {
+                    sync_state.in_sync = true;
+                    sync_state.restart_requested = true;
+                    // Transition Home → Sim to trigger full cleanup and re-setup
+                    next_screen.set(crate::ui::state::UiScreen::Home);
+                } else if dismiss_btn.is_some() {
+                    sync_state.in_sync = false;
+                }
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background),
+            Interaction::None => {
+                if restart_btn.is_some() {
+                    *bg = BackgroundColor(theme.button_background);
+                } else {
+                    *bg = BackgroundColor(theme.panel_background_soft);
+                }
+            }
+        }
+    }
+}
+
 pub fn collapsible_toggle_interaction(
     toggles: Query<
         (Entity, &Interaction, &CollapsibleToggle),
@@ -799,7 +1165,16 @@ pub fn collapsible_toggle_interaction(
     mut contents: Query<(&mut Node, &CollapsibleContent)>,
     children_query: Query<&Children>,
     mut texts: Query<&mut Text>,
+    form: Res<NewCapturePlanForm>,
+    exit_modal: Query<Entity, With<ExitSimConfirmModal>>,
+    restart_modal: Query<Entity, With<RestartPromptModal>>,
 ) {
+    let any_modal_open = form.open
+        || !exit_modal.is_empty()
+        || !restart_modal.is_empty();
+    if any_modal_open {
+        return;
+    }
     for (entity, interaction, toggle) in &toggles {
         if *interaction == Interaction::Pressed {
             let mut collapsed = false;
@@ -825,5 +1200,18 @@ pub fn collapsible_toggle_interaction(
                 }
             }
         }
+    }
+}
+
+pub fn update_sync_indicator(
+    mut indicators: Query<&mut Node, With<SyncIndicator>>,
+    sync_state: Res<SimPlanSyncState>,
+) {
+    for mut node in &mut indicators {
+        node.display = if sync_state.in_sync {
+            Display::None
+        } else {
+            Display::Flex
+        };
     }
 }
