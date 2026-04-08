@@ -20,7 +20,6 @@ pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
 // Tether testing constants
 pub const TETHER_LENGTH: f64 = 20.0;
 pub const DIST_BETWEEN_JOINTS: f64 = 0.1;
-pub const NUM_TETHER_JOINTS: u32 = 30;
 
 // Other constants
 pub const ISS_ORBIT: Vector6<f64> = Vector6::new(

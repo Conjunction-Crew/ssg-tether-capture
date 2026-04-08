@@ -159,7 +159,9 @@ fn apply_force_to_target() {
             state_elapsed_time_s: 0.0,
         });
 
-    // Need two updates to actually alter the velocity
+    // Need a few updates to actually alter the velocity
+    fixed_physics_step(app.world_mut());
+    fixed_physics_step(app.world_mut());
     fixed_physics_step(app.world_mut());
     fixed_physics_step(app.world_mut());
 
