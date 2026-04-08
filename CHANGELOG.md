@@ -24,10 +24,13 @@ When preparing a release:
   - Remove version checking from this workflow
 - Update the `contributing` docs section to explain release process.
 - Updates `docusaurus` version from 3.9.2 → 3.10.0
+  - Updates other NPM packages as required to update docusaurus.
 
 ### Added
 - `.release.toml` configuration file for `cargo-release`.
 - Adds scripts to manage pre and post release tasks.
+  - `scripts/pre_release.sh` and `scripts/post_release.sh` for managing pre and post release tasks.
+  - `scripts/post_release.sh` also keeps the docs site version in sync with the crate version.
 - Adds `CHANGELOG.md` document to track changes between releases.
 - Adds versioned docs for `v0.2.0-beta.1`
 
