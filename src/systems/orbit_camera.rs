@@ -4,6 +4,7 @@ use crate::{
         orbit_camera::{CameraTarget, OrbitCamera},
     },
     constants::SCENE_LAYER,
+    resources::space_catalog::SpaceCatalogUiState,
 };
 use avian3d::prelude::*;
 use bevy::{
@@ -99,9 +100,14 @@ pub fn orbit_camera_track(
 
 pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
     mut commands: Commands,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
 ) {
+    if catalog_ui.search_focused {
+        return;
+    }
+
     if !keyboard_input.just_pressed(KeyCode::Tab) {
         return;
     }

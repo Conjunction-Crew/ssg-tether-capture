@@ -9,6 +9,7 @@ use crate::constants::{
 };
 use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
 
 use avian3d::prelude::{Collider, RigidBodyDisabled, RigidBodyQuery};
@@ -58,20 +59,26 @@ fn calculate_com_rv(
 }
 
 pub fn load_dataset_entities(
+    mut space_catalog: ResMut<SpaceObjectCatalog>,
     gpu_elements: Option<ResMut<GpuElements>>,
     world_time: Res<WorldTime>,
     gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
 ) {
-    let (Some(mut gpu_elements), Some(mut gpu_epoch_origin)) = (gpu_elements, gpu_epoch_origin)
-    else {
-        return;
+    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
+    let mut gpu_elements = gpu_elements;
+    let mut gpu_epoch_origin = gpu_epoch_origin;
+    let reference_epoch = if let Some(origin) = gpu_epoch_origin.as_deref_mut() {
+        let epoch = origin.0.get_or_insert(world_time.epoch);
+        *epoch
+    } else {
+        world_time.epoch
     };
 
-    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
-    let reference_epoch = gpu_epoch_origin.0.get_or_insert(world_time.epoch);
-    let reference_epoch = *reference_epoch;
+    space_catalog.entries.clear();
 
-    gpu_elements.0.clear();
+    if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
+        gpu_elements.0.clear();
+    }
 
     for dataset_file_result in fs::read_dir(&plans_dir).expect("failed to read dataset dir") {
         if let Ok(dataset_file) = dataset_file_result {
@@ -146,6 +153,18 @@ pub fn load_dataset_entities(
                                 .as_deref()
                                 .and_then(parse_dataset_epoch_fast)
                                 .unwrap_or(reference_epoch);
+                            let object_name = object
+                                .object_name
+                                .clone()
+                                .filter(|name| !name.is_empty())
+                                .or_else(|| object.object_id.clone().filter(|id| !id.is_empty()))
+                                .unwrap_or_else(|| format!("NORAD {}", id));
+                            let object_id = object
+                                .object_id
+                                .clone()
+                                .filter(|id| !id.is_empty())
+                                .unwrap_or_default();
+                            let gpu_index = space_catalog.entries.len();
 
                             let elements = Vector6::new(
                                 semi_major_axis,
@@ -156,16 +175,31 @@ pub fn load_dataset_entities(
                                 mean_anomaly,
                             );
 
-                            gpu_elements.0.push(GpuOrbitalElements {
-                                id: id as u32,
-                                a: elements[0] as f32,
-                                e: elements[1] as f32,
-                                i: elements[2] as f32,
-                                raan: elements[3] as f32,
-                                argp: elements[4] as f32,
-                                mean_anomaly: elements[5] as f32,
-                                epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
+                            space_catalog.entries.push(SpaceCatalogEntry {
+                                gpu_index,
+                                norad_id: id as u32,
+                                search_blob: format!(
+                                    "{} {} {}",
+                                    object_name.to_lowercase(),
+                                    object_id.to_lowercase(),
+                                    id
+                                ),
+                                object_name,
+                                object_id,
                             });
+
+                            if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
+                                gpu_elements.0.push(GpuOrbitalElements {
+                                    id: id as u32,
+                                    a: elements[0] as f32,
+                                    e: elements[1] as f32,
+                                    i: elements[2] as f32,
+                                    raan: elements[3] as f32,
+                                    argp: elements[4] as f32,
+                                    mean_anomaly: elements[5] as f32,
+                                    epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
+                                });
+                            }
                         }
                     } else {
                         println!("Failed to parse dataset json");
@@ -174,6 +208,10 @@ pub fn load_dataset_entities(
             }
         }
     }
+
+    space_catalog
+        .entries
+        .sort_by(|left, right| left.display_name().cmp(right.display_name()));
 }
 
 fn parse_dataset_epoch_fast(raw: &str) -> Option<Epoch> {

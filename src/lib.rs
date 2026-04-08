@@ -21,6 +21,9 @@ use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::settings::Settings;
+use crate::resources::space_catalog::{
+    FilteredSpaceCatalogResults, SpaceCatalogUiState, SpaceObjectCatalog,
+};
 use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
 use crate::systems::physics::FIXED_HZ;
 use crate::systems::user_input::{
@@ -118,6 +121,9 @@ pub fn create_app() -> App {
         .insert_resource(SubstepCount(4)) // Avian3d Substep Count
         .insert_resource(Time::<Fixed>::from_hz(FIXED_HZ)) // FixedUpdate rate (physics.rs)
         .init_resource::<CapturePlanLibrary>()
+        .init_resource::<SpaceObjectCatalog>()
+        .init_resource::<SpaceCatalogUiState>()
+        .init_resource::<FilteredSpaceCatalogResults>()
         .init_resource::<Settings>();
 
     app

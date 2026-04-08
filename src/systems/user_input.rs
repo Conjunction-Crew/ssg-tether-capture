@@ -1,6 +1,10 @@
 use crate::{
     constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::{settings::Settings, world_time::WorldTime},
+    resources::{
+        settings::Settings,
+        space_catalog::SpaceCatalogUiState,
+        world_time::WorldTime,
+    },
 };
 
 use avian3d::prelude::{Physics, PhysicsTime};
@@ -12,8 +16,13 @@ use bevy::{
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
     scene_camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings)>,
 ) {
+    if catalog_ui.search_focused {
+        return;
+    }
+
     if keyboard_input.just_pressed(KeyCode::KeyM) {
         let (mut render_layers, mut atmosphere, mut atmosphere_settings) =
             scene_camera.into_inner();
@@ -40,8 +49,13 @@ const MIN_TIME_WARP: u32 = 1;
 
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
     mut world_time: ResMut<WorldTime>,
 ) {
+    if catalog_ui.search_focused {
+        return;
+    }
+
     if keyboard_input.just_pressed(KeyCode::Period) && world_time.multiplier * 2 <= MAX_TIME_WARP {
         world_time.multiplier *= 2;
     } else if keyboard_input.just_pressed(KeyCode::Comma)
@@ -51,7 +65,15 @@ pub fn change_time_warp(
     }
 }
 
-pub fn toggle_origin(keyboard_input: Res<ButtonInput<KeyCode>>, mut settings: ResMut<Settings>) {
+pub fn toggle_origin(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
+    mut settings: ResMut<Settings>,
+) {
+    if catalog_ui.search_focused {
+        return;
+    }
+
     if keyboard_input.just_pressed(KeyCode::KeyO) {
         settings.dev_gizmos = !settings.dev_gizmos;
     }
@@ -59,8 +81,13 @@ pub fn toggle_origin(keyboard_input: Res<ButtonInput<KeyCode>>, mut settings: Re
 
 pub fn toggle_capture_gizmos(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
     mut settings: ResMut<Settings>,
 ) {
+    if catalog_ui.search_focused {
+        return;
+    }
+
     if keyboard_input.just_pressed(KeyCode::KeyC) {
         settings.capture_gizmos = !settings.capture_gizmos;
     }
