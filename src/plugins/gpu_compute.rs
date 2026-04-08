@@ -6,11 +6,13 @@ use std::borrow::Cow;
 
 use crate::{
     constants::{MAP_LAYER, MAP_UNITS_TO_M},
+    resources::space_catalog::SpaceCatalogUiState,
     resources::world_time::WorldTime,
     ui::state::UiScreen,
 };
 use bevy::{
     camera::visibility::RenderLayers,
+    math::DVec3,
     mesh::MeshTag,
     prelude::*,
     render::{
@@ -34,6 +36,7 @@ use brahe::Epoch;
 
 const ECI_SHADER_ASSET_PATH: &str = "shaders/orbital_eci.wgsl";
 const MAP_SHADER_ASSET_PATH: &str = "shaders/map_eci_points.wgsl";
+pub const MAP_POINT_SCALE: f32 = 0.2;
 
 #[derive(Clone, Copy, ShaderType, Debug)]
 struct MapOrbitPointConfig {
@@ -85,6 +88,10 @@ impl Plugin for GpuComputePlugin {
             )
                 .chain()
                 .run_if(in_state(UiScreen::Sim)),
+        )
+        .add_systems(
+            PostUpdate,
+            sync_map_orbit_point_visibility.run_if(in_state(UiScreen::Sim)),
         )
         .add_systems(OnExit(UiScreen::Sim), reset_gpu_compute_resources);
 
@@ -141,9 +148,25 @@ fn reset_gpu_compute_resources(
     commands.remove_resource::<GpuEciStateBuffer>();
 }
 
+fn sync_map_orbit_point_visibility(
+    catalog_ui: Res<SpaceCatalogUiState>,
+    mut points: Query<&mut Visibility, With<MapOrbitPointMarker>>,
+) {
+    let visibility = if catalog_ui.show_points {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+
+    for mut point_visibility in &mut points {
+        *point_visibility = visibility;
+    }
+}
+
 fn setup_map_orbit_points(
     mut commands: Commands,
     gpu_elements: Res<GpuElements>,
+    catalog_ui: Res<SpaceCatalogUiState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MapOrbitPointMaterial>>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
@@ -163,7 +186,7 @@ fn setup_map_orbit_points(
         eci_states: eci_states.clone(),
         config: MapOrbitPointConfig {
             map_units_to_m: MAP_UNITS_TO_M as f32,
-            point_scale: 0.2,
+            point_scale: MAP_POINT_SCALE,
             _pad: Vec2::ZERO,
         },
     });
@@ -173,6 +196,12 @@ fn setup_map_orbit_points(
     for index in 0..count {
         commands.spawn((
             DespawnOnExit(UiScreen::Sim),
+            MapOrbitPointMarker,
+            if catalog_ui.show_points {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            },
             RenderLayers::layer(MAP_LAYER),
             Mesh3d(marker_mesh.clone()),
             MeshMaterial3d(marker_material.clone()),
@@ -181,6 +210,9 @@ fn setup_map_orbit_points(
         ));
     }
 }
+
+#[derive(Component)]
+pub struct MapOrbitPointMarker;
 
 #[derive(Clone, Copy, ShaderType)]
 pub struct GpuOrbitalElements {
@@ -192,6 +224,121 @@ pub struct GpuOrbitalElements {
     pub argp: f32,
     pub mean_anomaly: f32,
     pub epoch_offset_seconds: f32,
+}
+
+pub fn propagate_catalog_eci_state(
+    element: &GpuOrbitalElements,
+    current_epoch_offset_seconds: f32,
+) -> Option<(Vec3, Vec3)> {
+    let semi_major_axis = element.a as f64;
+    let eccentricity = element.e as f64;
+
+    if semi_major_axis <= 0.0 || !(0.0..1.0).contains(&eccentricity) {
+        return None;
+    }
+
+    let dt_seconds = current_epoch_offset_seconds as f64 - element.epoch_offset_seconds as f64;
+    let mean_motion = (3.986_004_4e14_f64 / (semi_major_axis * semi_major_axis * semi_major_axis))
+        .sqrt();
+    let mean_anomaly =
+        wrap_angle(element.mean_anomaly as f64 + mean_motion * dt_seconds);
+    let eccentric_anomaly = solve_eccentric_anomaly(mean_anomaly, eccentricity);
+
+    let sin_e = eccentric_anomaly.sin();
+    let cos_e = eccentric_anomaly.cos();
+    let one_minus_e2 = (1.0 - eccentricity * eccentricity).max(0.0);
+    let sqrt_one_minus_e2 = one_minus_e2.sqrt();
+    let radius = semi_major_axis * (1.0 - eccentricity * cos_e);
+
+    if radius <= 0.0 {
+        return None;
+    }
+
+    let position_pf = DVec3::new(
+        semi_major_axis * (cos_e - eccentricity),
+        semi_major_axis * sqrt_one_minus_e2 * sin_e,
+        0.0,
+    );
+
+    let velocity_scale = (3.986_004_4e14_f64 * semi_major_axis).sqrt() / radius;
+    let velocity_pf = DVec3::new(
+        -velocity_scale * sin_e,
+        velocity_scale * sqrt_one_minus_e2 * cos_e,
+        0.0,
+    );
+
+    let position_eci = perifocal_to_eci(
+        position_pf,
+        element.i as f64,
+        element.raan as f64,
+        element.argp as f64,
+    );
+    let velocity_eci = perifocal_to_eci(
+        velocity_pf,
+        element.i as f64,
+        element.raan as f64,
+        element.argp as f64,
+    );
+
+    Some((position_eci.as_vec3(), velocity_eci.as_vec3()))
+}
+
+pub fn eci_position_to_map(position_eci: Vec3) -> Vec3 {
+    let scale = MAP_UNITS_TO_M as f32;
+    Vec3::new(
+        position_eci.x / scale,
+        position_eci.z / scale,
+        -position_eci.y / scale,
+    )
+}
+
+fn wrap_angle(angle: f64) -> f64 {
+    angle - std::f64::consts::TAU
+        * ((angle + std::f64::consts::PI) / std::f64::consts::TAU).floor()
+}
+
+fn solve_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
+    let mut eccentric_anomaly = if eccentricity > 0.8 {
+        if mean_anomaly < 0.0 {
+            -std::f64::consts::PI
+        } else {
+            std::f64::consts::PI
+        }
+    } else {
+        mean_anomaly
+    };
+
+    for _ in 0..6 {
+        let sin_e = eccentric_anomaly.sin();
+        let cos_e = eccentric_anomaly.cos();
+        let residual = eccentric_anomaly - eccentricity * sin_e - mean_anomaly;
+        let derivative = 1.0 - eccentricity * cos_e;
+        eccentric_anomaly -= residual / derivative;
+    }
+
+    eccentric_anomaly
+}
+
+fn perifocal_to_eci(value: DVec3, inclination: f64, raan: f64, argp: f64) -> DVec3 {
+    let cos_raan = raan.cos();
+    let sin_raan = raan.sin();
+    let cos_argp = argp.cos();
+    let sin_argp = argp.sin();
+    let cos_i = inclination.cos();
+    let sin_i = inclination.sin();
+
+    let r11 = cos_raan * cos_argp - sin_raan * sin_argp * cos_i;
+    let r12 = -cos_raan * sin_argp - sin_raan * cos_argp * cos_i;
+    let r21 = sin_raan * cos_argp + cos_raan * sin_argp * cos_i;
+    let r22 = -sin_raan * sin_argp + cos_raan * cos_argp * cos_i;
+    let r31 = sin_argp * sin_i;
+    let r32 = cos_argp * sin_i;
+
+    DVec3::new(
+        r11 * value.x + r12 * value.y,
+        r21 * value.x + r22 * value.y,
+        r31 * value.x + r32 * value.y,
+    )
 }
 
 #[derive(Resource, Clone, Default, ExtractResource)]
