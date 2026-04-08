@@ -42,3 +42,6 @@ identifier = "com.conjunction-crew.ssg-tether-capture"
 resources = ["assets"]
 short_description = "Orbital tether capture simulation and mission planning."
 icon = ["assets/logo/icon.icns"]
+
+[package.metadata.release]
+publish = false
