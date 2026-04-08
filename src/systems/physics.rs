@@ -5,9 +5,10 @@ use bevy::prelude::*;
 
 use crate::{plugins::orbital_mechanics::ManualPhysics, resources::world_time::WorldTime};
 
-// 64 Hz. DO NOT CHANGE
-// This aligns with Bevy's FixedUpdate schedule of 64 Hz.
-pub const PHYS_DT: f64 = 1.0 / 64.0;
+// FixedUpdate frequency.
+// Higher values will provide higher fidelity simulation, at the cost of performance.
+pub const FIXED_HZ: f64 = 64.0;
+pub const PHYS_DT: f64 = 1.0 / FIXED_HZ;
 
 pub fn fixed_physics_step(world: &mut World) {
     for _ in 0..world.resource::<WorldTime>().multiplier {

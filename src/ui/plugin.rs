@@ -6,42 +6,47 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
-use bevy::tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task};
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 
 use crate::components::capture_components::CaptureComponent;
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
-use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
-use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
+use crate::resources::capture_plan_form::{
+    NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
+};
+use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
-use crate::ui::screens::home::{
-    cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
-    update_home_working_directory_label, HomeScreen,
-};
 use crate::ui::screens::capture_plan::{
-    build_capture_plan_json, generate_filename,
-    capture_plan_interactions, spawn_capture_plan_modal, sync_form_fields,
-    tether_type_radio_interactions, validate_form,
-    CapturePlanModal, CapturePlanScrollBody,
+    CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
+    generate_filename, spawn_capture_plan_modal, sync_form_fields, tether_type_radio_interactions,
+    validate_form,
+};
+use crate::ui::screens::home::{
+    HomeScreen, cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
+    update_home_working_directory_label,
 };
 use crate::ui::screens::project_detail::{
+    ExitSimConfirmModal, RestartPromptModal, catalog_interactions, catalog_keyboard_input,
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
-    restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
-    spawn_restart_prompt_modal, update_sync_indicator, view_edit_plan_interactions,
-    ExitSimConfirmModal, RestartPromptModal,
+    refresh_space_catalog_results, reset_space_catalog_ui_state, restart_prompt_interactions,
+    spawn_exit_confirm_modal, spawn_project_detail_screen, spawn_restart_prompt_modal,
+    sync_space_catalog_ui, update_selected_catalog_overlay, update_sync_indicator,
+    view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
-    cleanup_working_directory_setup_screen, spawn_working_directory_setup_screen,
-    working_directory_setup_interactions, DirectoryPathText,
+    DirectoryPathText, cleanup_working_directory_setup_screen,
+    spawn_working_directory_setup_screen, working_directory_setup_interactions,
 };
 use crate::ui::state::{SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
-use crate::ui::widgets::{input_field_display, input_field_interaction, input_field_keyboard, ClipboardRes};
+use crate::ui::widgets::{
+    ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
+};
 
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);
@@ -84,7 +89,10 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Home), cleanup_home_screen)
             .add_systems(
                 OnEnter(UiScreen::Sim),
-                (spawn_project_detail_screen.after(setup_entities), reset_sync_state),
+                (
+                    spawn_project_detail_screen.after(setup_entities),
+                    reset_sync_state,
+                ),
             )
             .add_systems(Update, home_interactions)
             .add_systems(Update, update_home_working_directory_label)
@@ -106,6 +114,21 @@ impl Plugin for UiPlugin {
             .add_systems(Update, poll_exit_confirm_modal)
             .add_systems(Update, poll_restart_prompt_modal)
             .add_systems(Update, poll_sim_restart)
+            .add_systems(OnExit(UiScreen::Sim), reset_space_catalog_ui_state)
+            .add_systems(
+                Update,
+                (
+                    project_detail_interactions,
+                    collapsible_toggle_interaction,
+                    catalog_interactions,
+                    catalog_keyboard_input,
+                    refresh_space_catalog_results,
+                    sync_space_catalog_ui,
+                    update_selected_catalog_overlay,
+                )
+                    .chain()
+                    .run_if(in_state(UiScreen::Sim)),
+            )
             .add_systems(Update, handle_ui_events);
     }
 }
@@ -189,7 +212,14 @@ fn poll_new_plan_modal(
             for e in &modals {
                 commands.entity(e).despawn();
             }
-            spawn_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, scroll_y);
+            spawn_capture_plan_modal(
+                &mut commands,
+                &asset_server,
+                &theme,
+                &form,
+                UI_LAYER,
+                scroll_y,
+            );
             *last = (
                 form.approach_transitions.len(),
                 form.terminal_transitions.len(),
@@ -256,7 +286,10 @@ fn handle_ui_events(
     mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut scene_camera: Query<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), Without<UiCamera>>,
+    mut scene_camera: Query<
+        (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
+        Without<UiCamera>,
+    >,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
     mut settings: ResMut<Settings>,
     mut user_plans_dirty: ResMut<UserPlansDirty>,
@@ -409,9 +442,11 @@ fn handle_ui_events(
                     // In edit mode, skip overwrite dialog and always overwrite
                     let skip_overwrite_check = form.editing_plan_id.is_some();
                     let was_editing = form.editing_plan_id.is_some();
-                    if dest.exists() && form.overwrite_conflict_path.is_none() && !skip_overwrite_check {
-                        form.overwrite_conflict_path =
-                            Some(dest.to_string_lossy().to_string());
+                    if dest.exists()
+                        && form.overwrite_conflict_path.is_none()
+                        && !skip_overwrite_check
+                    {
+                        form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
                     } else {
                         let json = build_capture_plan_json(&form);
                         match serde_json::to_string_pretty(&json) {
@@ -420,9 +455,9 @@ fn handle_ui_events(
                                     eprintln!("Failed to save capture plan: {e}");
                                 } else {
                                     // Reload user plans
-                                    let new_user_plans = load_plans_from_dir(
-                                        std::path::Path::new(&working_directory.path),
-                                    );
+                                    let new_user_plans = load_plans_from_dir(std::path::Path::new(
+                                        &working_directory.path,
+                                    ));
                                     capture_plan_lib.user_plans = new_user_plans;
                                     capture_plan_lib.plans = capture_plan_lib
                                         .example_plans
@@ -432,8 +467,8 @@ fn handle_ui_events(
                                         .collect();
                                     user_plans_dirty.0 = true;
                                     // If editing from the sim screen, prompt for restart
-                                    let should_prompt = was_editing
-                                        && selected_project.project_id.is_some();
+                                    let should_prompt =
+                                        was_editing && selected_project.project_id.is_some();
                                     form.open = false;
                                     form.reset();
                                     if should_prompt {
@@ -455,9 +490,8 @@ fn handle_ui_events(
                         if let Err(e) = std::fs::write(&dest, content) {
                             eprintln!("Failed to save capture plan: {e}");
                         } else {
-                            let new_user_plans = load_plans_from_dir(
-                                std::path::Path::new(&working_directory.path),
-                            );
+                            let new_user_plans =
+                                load_plans_from_dir(std::path::Path::new(&working_directory.path));
                             capture_plan_lib.user_plans = new_user_plans;
                             capture_plan_lib.plans = capture_plan_lib
                                 .example_plans
@@ -571,7 +605,6 @@ fn handle_ui_events(
             UiEvent::SetUnitSystem(unit) => {
                 form.unit_system = *unit;
             }
-
         }
     }
 }

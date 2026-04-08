@@ -7,14 +7,14 @@ use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
 use crate::{
     resources::{
         capture_plans::CaptureSphereRadius, celestials::Celestials, orbital_cache::OrbitalCache,
-        settings::Settings, world_time::WorldTime,
+        world_time::WorldTime,
     },
     systems::{
         capture_algorithms::capture_state_machine_update,
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            cache_eci_states, floating_origin_update_visuals, init_orbitals,
+            cache_eci_states, floating_origin_update_visuals, init_orbitals, load_dataset_entities,
             physics_bubble_add_remove, target_entity_reset_origin,
         },
     },
@@ -29,7 +29,10 @@ pub struct OrbitalMechanicsPlugin;
 impl Plugin for OrbitalMechanicsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(PhysicsPlugins::new(ManualPhysics))
-            .add_systems(OnEnter(UiScreen::Sim), init_sim_resources)
+            .add_systems(
+                OnEnter(UiScreen::Sim),
+                (init_sim_resources, load_dataset_entities).chain(),
+            )
             .add_systems(OnExit(UiScreen::Sim), remove_sim_resources)
             .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
             .add_systems(

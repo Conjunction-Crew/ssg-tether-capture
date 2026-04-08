@@ -54,6 +54,11 @@ pub fn spawn_home_screen(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
+    // Compile capture plans
+    for (name, plan) in capture_plan_lib.plans.clone() {
+        capture_plan_lib.insert_plan(name.clone(), plan.clone());
+    }
+
     spawn_home_screen_inner(&mut commands, &asset_server, &theme, &capture_plan_lib, &working_directory.path);
 }
 

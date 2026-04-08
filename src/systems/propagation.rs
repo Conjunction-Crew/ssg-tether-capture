@@ -1,18 +1,24 @@
-use crate::components::orbit::{Earth, Orbit, Orbital, TetherNode};
+use std::f64::consts::PI;
+use std::fs;
+use std::path::PathBuf;
+
+use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
+use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
 
-use avian3d::prelude::{RigidBody, RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{Collider, RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
-use brahe::{Epoch, KeplerianPropagator};
+use brahe::{Epoch, GM_EARTH, KeplerianPropagator, TimeSystem};
 use nalgebra::{DVector, Vector6};
 
 fn calculate_com_rv(
@@ -52,6 +58,208 @@ fn calculate_com_rv(
     Some((weighted_pos / total_mass, weighted_linvel / total_mass))
 }
 
+pub fn load_dataset_entities(
+    mut space_catalog: ResMut<SpaceObjectCatalog>,
+    gpu_elements: Option<ResMut<GpuElements>>,
+    world_time: Res<WorldTime>,
+    gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
+) {
+    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
+    let mut gpu_elements = gpu_elements;
+    let mut gpu_epoch_origin = gpu_epoch_origin;
+    let reference_epoch = if let Some(origin) = gpu_epoch_origin.as_deref_mut() {
+        let epoch = origin.0.get_or_insert(world_time.epoch);
+        *epoch
+    } else {
+        world_time.epoch
+    };
+
+    space_catalog.entries.clear();
+
+    if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
+        gpu_elements.0.clear();
+    }
+
+    for dataset_file_result in fs::read_dir(&plans_dir).expect("failed to read dataset dir") {
+        if let Ok(dataset_file) = dataset_file_result {
+            let path = dataset_file.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                if let Ok(raw_json) = fs::read_to_string(&path) {
+                    if let Ok(dataset) = serde_json::from_str(&raw_json) {
+                        let data: JsonOrbitalData = dataset;
+                        for object in data.data {
+                            let Some(id_val) = object.norad_cat_id else {
+                                println!("Failed to parse norad cat id");
+                                continue;
+                            };
+                            let Some(id) = id_val.as_u64() else {
+                                continue;
+                            };
+                            let Some(mean_motion_val) = object.mean_motion else {
+                                println!("Failed to parse mean motion");
+                                continue;
+                            };
+                            let Some(mean_motion) = mean_motion_val.as_f64() else {
+                                continue;
+                            };
+                            let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
+                            let semi_major_axis = (GM_EARTH
+                                / (mean_motion_rad_s * mean_motion_rad_s))
+                                .powf(1.0 / 3.0);
+                            let Some(eccentricity_val) = object.eccentricity else {
+                                println!("Failed to parse eccentricity");
+                                continue;
+                            };
+                            let Some(eccentricity) = eccentricity_val.as_f64() else {
+                                continue;
+                            };
+                            let Some(inclination_val) = object.inclination else {
+                                println!("Failed to parse inclination");
+                                continue;
+                            };
+                            let Some(inclination) = inclination_val.as_f64() else {
+                                continue;
+                            };
+                            let inclination = inclination.to_radians();
+                            let Some(raan_val) = object.ra_of_asc_node else {
+                                println!("Failed to parse ra of asc node");
+                                continue;
+                            };
+                            let Some(raan) = raan_val.as_f64() else {
+                                continue;
+                            };
+                            let raan = raan.to_radians();
+                            let Some(argp_val) = object.arg_of_pericenter else {
+                                println!("Failed to parse arg of paricenter");
+                                continue;
+                            };
+                            let Some(argp) = argp_val.as_f64() else {
+                                continue;
+                            };
+                            let argp = argp.to_radians();
+                            let Some(mean_anomaly_val) = object.mean_anomaly else {
+                                println!("Failed to parse mean anomaly");
+                                continue;
+                            };
+                            let Some(mean_anomaly) = mean_anomaly_val.as_f64() else {
+                                continue;
+                            };
+                            let mean_anomaly = mean_anomaly.to_radians();
+                            let object_epoch = object
+                                .epoch
+                                .as_deref()
+                                .and_then(parse_dataset_epoch_fast)
+                                .unwrap_or(reference_epoch);
+                            let object_name = object
+                                .object_name
+                                .clone()
+                                .filter(|name| !name.is_empty())
+                                .or_else(|| object.object_id.clone().filter(|id| !id.is_empty()))
+                                .unwrap_or_else(|| format!("NORAD {}", id));
+                            let object_id = object
+                                .object_id
+                                .clone()
+                                .filter(|id| !id.is_empty())
+                                .unwrap_or_default();
+                            let gpu_index = space_catalog.entries.len();
+
+                            let elements = Vector6::new(
+                                semi_major_axis,
+                                eccentricity,
+                                inclination,
+                                raan,
+                                argp,
+                                mean_anomaly,
+                            );
+
+                            space_catalog.entries.push(SpaceCatalogEntry {
+                                gpu_index,
+                                norad_id: id as u32,
+                                search_blob: format!(
+                                    "{} {} {}",
+                                    object_name.to_lowercase(),
+                                    object_id.to_lowercase(),
+                                    id
+                                ),
+                                object_name,
+                                object_id,
+                            });
+
+                            if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
+                                gpu_elements.0.push(GpuOrbitalElements {
+                                    id: id as u32,
+                                    a: elements[0] as f32,
+                                    e: elements[1] as f32,
+                                    i: elements[2] as f32,
+                                    raan: elements[3] as f32,
+                                    argp: elements[4] as f32,
+                                    mean_anomaly: elements[5] as f32,
+                                    epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
+                                });
+                            }
+                        }
+                    } else {
+                        println!("Failed to parse dataset json");
+                    }
+                }
+            }
+        }
+    }
+
+    space_catalog
+        .entries
+        .sort_by(|left, right| left.display_name().cmp(right.display_name()));
+}
+
+fn parse_dataset_epoch_fast(raw: &str) -> Option<Epoch> {
+    let bytes = raw.as_bytes();
+    let is_fixed_format = bytes.len() >= 19
+        && bytes.get(4) == Some(&b'-')
+        && bytes.get(7) == Some(&b'-')
+        && bytes.get(10) == Some(&b'T')
+        && bytes.get(13) == Some(&b':')
+        && bytes.get(16) == Some(&b':');
+
+    if !is_fixed_format {
+        return Epoch::from_string(raw).or_else(|| Epoch::from_string(&format!("{raw}Z")));
+    }
+
+    let year = raw.get(0..4)?.parse().ok()?;
+    let month = raw.get(5..7)?.parse().ok()?;
+    let day = raw.get(8..10)?.parse().ok()?;
+    let hour = raw.get(11..13)?.parse().ok()?;
+    let minute = raw.get(14..16)?.parse().ok()?;
+    let whole_seconds: f64 = raw.get(17..19)?.parse().ok()?;
+
+    let fractional_seconds = raw
+        .get(19..)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+        .and_then(|digits| {
+            if digits.is_empty() {
+                return None;
+            }
+
+            let value = digits.parse::<u32>().ok()? as f64;
+            let scale = 10_f64.powi(digits.len() as i32);
+            Some(value / scale)
+        })
+        .unwrap_or(0.0);
+
+    Some(Epoch::from_datetime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        whole_seconds + fractional_seconds,
+        0.0,
+        TimeSystem::UTC,
+    ))
+}
+
 pub fn init_orbitals(
     mut commands: Commands,
     mut orbital_entities: ResMut<OrbitalCache>,
@@ -69,7 +277,7 @@ pub fn init_orbitals(
                 );
                 if let Ok(eci) = propagator.state_eci(epoch) {
                     orbital.propagator = Some(KeplerianPropagator::from_eci(epoch, eci, 1.0));
-                    println!("ECI Initialized to: {}", eci);
+                    // println!("ECI Initialized to: {}", eci);
                     eci
                 } else {
                     Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
