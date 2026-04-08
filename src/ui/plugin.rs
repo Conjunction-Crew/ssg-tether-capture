@@ -48,7 +48,7 @@ impl Plugin for UiPlugin {
             .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
             .add_systems(OnExit(UiScreen::Sim), reset_space_catalog_ui_state)
             .add_systems(
-                PostUpdate,
+                Update,
                 (
                     project_detail_interactions,
                     collapsible_toggle_interaction,

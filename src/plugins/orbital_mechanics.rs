@@ -27,7 +27,6 @@ pub struct ManualPhysics;
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SimSchedule;
 
-
 pub struct OrbitalMechanicsPlugin;
 
 impl Plugin for OrbitalMechanicsPlugin {
@@ -49,14 +48,16 @@ impl Plugin for OrbitalMechanicsPlugin {
                     .run_if(in_state(UiScreen::Sim)),
             )
             .add_systems(
-                SimSchedule,
+                ManualPhysics,
                 (
-                    (cache_eci_states).in_set(PhysicsSystems::First),
                     (physics_bubble_add_remove, target_entity_reset_origin)
                         .in_set(PhysicsSystems::Prepare),
                     (capture_state_machine_update).in_set(PhysicsSystems::Last),
-                )
-                    .run_if(in_state(UiScreen::Sim)),
+                ),
+            )
+            .add_systems(
+                SimSchedule,
+                (cache_eci_states).run_if(in_state(UiScreen::Sim)),
             );
     }
 }

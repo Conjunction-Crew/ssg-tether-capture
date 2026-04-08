@@ -1,30 +1,35 @@
 use avian3d::{
     math::PI,
-    prelude::{
-        Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
-    },
+    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
 };
-use bevy::{math::DVec3, prelude::*};
+use bevy::{
+    math::{DMat3, DVec3},
+    prelude::*,
+};
+use brahe::GM_EARTH;
+use nalgebra::{DMatrix, Matrix3, Matrix6, Vector3, Vector6};
 
 use crate::{
-    components::capture_components::CaptureComponent,
+    components::{capture_components::CaptureComponent, orbit_camera::CameraTarget},
     resources::{
         capture_plans::{
             CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePlan,
             CompiledCaptureStateParameters, CompiledCaptureTransition,
         },
-        orbital_cache::OrbitalCache,
+        orbital_cache::{self, OrbitalCache},
     },
     systems::physics::PHYS_DT,
 };
 
 pub fn capture_state_machine_update(
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
+    chaser_entity: Single<Entity, With<CameraTarget>>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    orbital_entities: Res<OrbitalCache>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
+    orbital_cache: Res<OrbitalCache>,
 ) {
+    let chaser_e = chaser_entity.into_inner();
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
 
@@ -41,8 +46,11 @@ pub fn capture_state_machine_update(
         }
 
         // Execute plan state machine
-        if let Some(plan) = capture_plan_lib.compiled_plans.get(&capture_component.plan_id) {
-            if let Some(nodes) = orbital_entities.tethers.get(&plan.tether) {
+        if let Some(plan) = capture_plan_lib
+            .compiled_plans
+            .get(&capture_component.plan_id)
+        {
+            if let Some(nodes) = orbital_cache.tethers.get(&plan.tether) {
                 let root_capture_radius = capture_sphere_radius.radius;
 
                 let shared_state_parameters = nodes
@@ -60,7 +68,9 @@ pub fn capture_state_machine_update(
                             )
                         })
                     })
-                    .unwrap_or_else(|| current_state_parameters(plan, &capture_component.current_state));
+                    .unwrap_or_else(|| {
+                        current_state_parameters(plan, &capture_component.current_state)
+                    });
 
                 let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
 
@@ -90,7 +100,7 @@ pub fn capture_state_machine_update(
 
                     // If vel is high, kill vel
                     if rel_v_len > max_velocity {
-                        force_vec += -rel_v.normalize_or_zero();
+                        force_vec += -rel_v.normalize_or_zero() * 2.0;
                     }
                     // If too close, force in opposite dir
                     if rel_r_len < capture_radius * 0.8 {
@@ -98,6 +108,18 @@ pub fn capture_state_machine_update(
                     }
                     // If we are outside the sphere radius, force in target dir (or slow down)
                     else if rel_r_len > capture_radius {
+                        // if capture_component.current_state == "rendezvous" {
+                        //     if let (Some(target_rv), Some(chaser_rv)) = (
+                        //         orbital_cache.eci_states.get(&capture_entity),
+                        //         orbital_cache.eci_states.get(&chaser_e),
+                        //     ) {
+                        //         if let Some(cw_result) = clohessy_wiltshire_solver(
+                        //             *chaser_rv, *target_rv, PHYS_DT,
+                        //         ) {
+                        //             force_vec += cw_result.0.normalize_or_zero();
+                        //         }
+                        //     }
+                        // }
                         if rel_v.angle_between(rel_r) > PI / 2.0 {
                             force_vec += -rel_v.normalize_or_zero();
                         }
@@ -166,12 +188,7 @@ fn resolve_root_state(
         }
 
         for transition in &state.transitions {
-            apply_transition(
-                capture_component,
-                transition,
-                rel_r_length,
-                rel_v_length,
-            );
+            apply_transition(capture_component, transition, rel_r_length, rel_v_length);
         }
     }
 
@@ -230,4 +247,94 @@ fn transition_to(capture_component: &mut CaptureComponent, new_state: &str, reas
     capture_component.current_state = String::from(new_state);
     capture_component.state_enter_time_s = 0.0;
     capture_component.state_elapsed_time_s = 0.0;
+}
+
+// Derived from: 
+// https://webthesis.biblio.polito.it/27813/1/tesi.pdf
+// https://vtechworks.lib.vt.edu/server/api/core/bitstreams/cb2265b0-34c3-44e1-8c99-d21aeae1e95c/content
+fn clohessy_wiltshire_solver(
+    chaser_rv: Vector6<f64>,
+    target_rv: Vector6<f64>,
+    ts: f64,
+) -> Option<(DVec3, DVec3)> {
+    // Step 1: Build target LVLH frame needed for HCW targeting
+    let target_r = Vector3::new(target_rv[0], target_rv[1], target_rv[2]);
+    let target_v = Vector3::new(target_rv[3], target_rv[4], target_rv[5]);
+    if target_r.norm() == 0.0 {
+        return None;
+    }
+
+    let target_radial = target_r / target_r.norm();
+    let target_cross = target_r.cross(&target_v);
+    if target_cross.norm() == 0.0 {
+        return None;
+    }
+
+    let target_normal = target_cross / target_cross.norm();
+    let target_along_track = target_normal.cross(&target_radial);
+
+    // Step 2: Assemble rotation matrix
+    let eci_to_ric = Matrix3::new(
+        target_radial.x,
+        target_radial.y,
+        target_radial.z,
+        target_along_track.x,
+        target_along_track.y,
+        target_along_track.z,
+        target_normal.x,
+        target_normal.y,
+        target_normal.z,
+    );
+
+    // Step 3: Calculate initial relative position/velocity in LVLH frame
+    let chaser_r = Vector3::new(chaser_rv[0], chaser_rv[1], chaser_rv[2]);
+    let chaser_v = Vector3::new(chaser_rv[3], chaser_rv[4], chaser_rv[5]);
+
+    let relative_r_eci = chaser_r - target_r;
+    let relative_r_ric = eci_to_ric * relative_r_eci;
+
+    let relative_v_eci = chaser_v - target_v;
+
+    // Step 4: Calculate initial relative velocity in LVLH
+    let n = (GM_EARTH / target_r.norm().powi(3)).sqrt();
+    let omega = Vector3::new(0.0, 0.0, n);
+    let relative_v_ric = eci_to_ric * relative_v_eci + relative_r_ric.cross(&omega);
+
+    // HCW initial state pieces
+    let r0 = relative_r_ric;
+    let v0 = relative_v_ric;
+
+    // Step 5: HCW state transition matrix blocks
+    let nt = n * ts;
+    let s = nt.sin();
+    let c = nt.cos();
+
+    let phi_rr = Matrix3::new(
+        4.0 - 3.0 * c, 0.0, 0.0,
+        6.0 * (s - nt), 1.0, 0.0,
+        0.0, 0.0, c,
+    );
+
+    let phi_rv = Matrix3::new(
+        s / n,                   2.0 * (1.0 - c) / n, 0.0,
+        2.0 * (c - 1.0) / n,    (4.0 * s - 3.0 * nt) / n, 0.0,
+        0.0,                     0.0,                 s / n,
+    );
+
+    // Rendezvous target: arrive at origin of LVLH frame
+    let desired_final_r_ric = Vector3::zeros();
+
+    // Solve one-impulse HCW intercept:
+    // r_f = Phi_rr * r0 + Phi_rv * v_plus
+    let rhs = desired_final_r_ric - phi_rr * r0;
+    let phi_rv_inv = phi_rv.try_inverse()?;
+    let v_plus = phi_rv_inv * rhs;
+
+    let delta_v_rel = v_plus - v0;
+    let delta_v_eci = eci_to_ric.transpose() * delta_v_rel;
+
+    Some((
+        DVec3::new(delta_v_rel.x, delta_v_rel.y, delta_v_rel.z),
+        DVec3::new(delta_v_eci.x, delta_v_eci.y, delta_v_eci.z),
+    ))
 }

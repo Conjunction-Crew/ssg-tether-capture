@@ -103,7 +103,6 @@ fn apply_force_to_target() {
     let capture_body = app
         .world_mut()
         .spawn((
-            CameraTarget,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(40.0, 40.0, 40.0),
@@ -137,20 +136,17 @@ fn apply_force_to_target() {
     let plan = plan_res.unwrap().clone();
 
     // Now, mark the entity for capture
-    app.world_mut()
-        .commands()
-        .entity(capture_body)
-        .insert(CaptureComponent {
-            plan_id: plan.name.clone(),
-            current_state: plan
-                .states
-                .get(0)
-                .expect("No states in the desired plan!")
-                .id
-                .clone(),
-            state_enter_time_s: 0.0,
-            state_elapsed_time_s: 0.0,
-        });
+    app.world_mut().entity_mut(capture_body).insert(CaptureComponent {
+        plan_id: plan.name.clone(),
+        current_state: plan
+            .states
+            .get(0)
+            .expect("No states in the desired plan!")
+            .id
+            .clone(),
+        state_enter_time_s: 0.0,
+        state_elapsed_time_s: 0.0,
+    });
 
     // Need two updates to actually alter the velocity
     fixed_physics_step(app.world_mut());

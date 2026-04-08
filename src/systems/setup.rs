@@ -207,7 +207,7 @@ pub fn setup_entities(
                 RigidBodyDisabled,
                 Orbit::FromElements(Vector6::new(
                     // Semi-major axis (meters)
-                    6_801_000.0,
+                    6_799_830.0,
                     // Eccentricity (dimensionless)
                     0.00112,
                     // Inclination (radians)
@@ -217,7 +217,7 @@ pub fn setup_entities(
                     // Argument of periapsis (radians)
                     1.51296,
                     // Mean anomaly (radians)
-                    4.78190,
+                    4.77190,
                 )),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
