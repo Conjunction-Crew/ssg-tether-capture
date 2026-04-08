@@ -23,11 +23,13 @@ When preparing a release:
   - Support checks for `release/v*.*.*` and `release/v*.*.*-beta.*` branches
   - Remove version checking from this workflow
 - Update the `contributing` docs section to explain release process.
+- Updates `docusaurus` version from 3.9.2 → 3.10.0
 
 ### Added
 - `.release.toml` configuration file for `cargo-release`.
 - Adds scripts to manage pre and post release tasks.
 - Adds `CHANGELOG.md` document to track changes between releases.
+- Adds versioned docs for `v0.2.0-beta.1`
 
 ---
 
