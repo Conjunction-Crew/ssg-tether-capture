@@ -34,7 +34,7 @@ pub fn load_capture_plans(capture_plan_lib: &mut CapturePlanLibrary) {
                 if let Ok(raw_json) = fs::read_to_string(&path) {
                     if let Ok(plan) = serde_json::from_str(&raw_json) {
                         if let Some(plan_id) = path.file_stem() {
-                            capture_plan_lib.plans.insert(
+                            capture_plan_lib.insert_plan(
                                 String::from(plan_id.to_str().expect("failed to get plan name!")),
                                 plan,
                             );

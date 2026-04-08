@@ -58,10 +58,15 @@ fn calculate_com_rv(
 }
 
 pub fn load_dataset_entities(
-    mut gpu_elements: ResMut<GpuElements>,
+    gpu_elements: Option<ResMut<GpuElements>>,
     world_time: Res<WorldTime>,
-    mut gpu_epoch_origin: ResMut<GpuComputeEpochOrigin>,
+    gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
 ) {
+    let (Some(mut gpu_elements), Some(mut gpu_epoch_origin)) = (gpu_elements, gpu_epoch_origin)
+    else {
+        return;
+    };
+
     let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
     let reference_epoch = gpu_epoch_origin.0.get_or_insert(world_time.epoch);
     let reference_epoch = *reference_epoch;
