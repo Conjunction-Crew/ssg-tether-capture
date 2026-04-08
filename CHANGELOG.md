@@ -15,7 +15,19 @@ When preparing a release:
 
 ## [Unreleased]
 
-_Changes staged for the next release go here._
+### Changed
+- Adopts `cargo-release` for automated versioning and changelog management.
+- Updates `deploy-docs.yml` to build and deploy the docs on pushes to main 
+  or on version tag push
+- Updates `pr.yaml` to
+  - Support checks for `release/v*.*.*` and `release/v*.*.*-beta.*` branches
+  - Remove version checking from this workflow
+- Update the `contributing` docs section to explain release process.
+
+### Added
+- `.release.toml` configuration file for `cargo-release`.
+- Adds scripts to manage pre and post release tasks.
+- Adds `CHANGELOG.md` document to track changes between releases.
 
 ---
 
