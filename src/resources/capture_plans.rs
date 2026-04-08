@@ -52,6 +52,7 @@ pub struct CapturePlanLibrary {
     pub user_plans: HashMap<String, CapturePlan>,
     /// Plans loaded from assets/capture_plans.
     pub example_plans: HashMap<String, CapturePlan>,
+    /// Plans compiled into a structure more optimized for algorithms
     pub compiled_plans: HashMap<String, CompiledCapturePlan>,
 }
 

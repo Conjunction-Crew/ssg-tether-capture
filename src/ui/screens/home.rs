@@ -23,32 +23,32 @@ pub struct EditCapturePlanButton {
     pub plan_id: String,
 }
 
-pub fn load_capture_plans(capture_plan_lib: &mut CapturePlanLibrary) {
-    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
+// pub fn load_capture_plans(capture_plan_lib: &mut CapturePlanLibrary) {
+//     let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
 
-    for plan_file_result in fs::read_dir(&plans_dir).expect("failed to read capture_plans dir") {
-        if let Ok(plan_file) = plan_file_result {
-            let path = plan_file.path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "json")
-            {
-                if let Ok(raw_json) = fs::read_to_string(&path) {
-                    if let Ok(plan) = serde_json::from_str(&raw_json) {
-                        if let Some(plan_id) = path.file_stem() {
-                            capture_plan_lib.insert_plan(
-                                String::from(plan_id.to_str().expect("failed to get plan name!")),
-                                plan,
-                            );
-                        }
-                    } else {
-                        println!("Failed to parse plan json");
-                    }
-                }
-            }
-        }
-    }
-}
+//     for plan_file_result in fs::read_dir(&plans_dir).expect("failed to read capture_plans dir") {
+//         if let Ok(plan_file) = plan_file_result {
+//             let path = plan_file.path();
+//             if path
+//                 .extension()
+//                 .is_some_and(|extension| extension == "json")
+//             {
+//                 if let Ok(raw_json) = fs::read_to_string(&path) {
+//                     if let Ok(plan) = serde_json::from_str(&raw_json) {
+//                         if let Some(plan_id) = path.file_stem() {
+//                             capture_plan_lib.insert_plan(
+//                                 String::from(plan_id.to_str().expect("failed to get plan name!")),
+//                                 plan,
+//                             );
+//                         }
+//                     } else {
+//                         println!("Failed to parse plan json");
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
 #[derive(Component)]
 pub struct HomeWorkingDirectoryLabel;
@@ -80,6 +80,11 @@ pub fn spawn_home_screen(
         .chain(capture_plan_lib.user_plans.iter())
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
+
+    // Compile capture plans
+    for (name, plan) in capture_plan_lib.plans.clone() {
+        capture_plan_lib.insert_plan(name.clone(), plan.clone());
+    }
 
     spawn_home_screen_inner(&mut commands, &asset_server, &theme, &capture_plan_lib, &working_directory.path);
 }

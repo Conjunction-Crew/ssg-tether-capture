@@ -133,6 +133,11 @@ fn apply_force_to_target() {
     let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
     capture_plan_lib.plans = example_plans;
 
+    // Compile capture plans
+    for (name, plan) in capture_plan_lib.plans.clone() {
+        capture_plan_lib.insert_plan(name.clone(), plan.clone());
+    }
+
     // Get plan information
     let plan_res = capture_plan_lib.plans.get("example_plan");
     assert!(plan_res.is_some());
