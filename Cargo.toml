@@ -2,6 +2,10 @@
 name = "ssg_tether_capture"
 version = "0.1.1"
 edition = "2024"
+description = "Orbital tether capture simulation and mission planning."
+license = "MIT"
+repository = "https://github.com/Conjunction-Crew/ssg-tether-capture"
+homepage = "https://conjunction-crew.github.io/ssg-tether-capture/"
 
 [dependencies]
 bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
