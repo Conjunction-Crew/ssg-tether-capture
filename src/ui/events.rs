@@ -27,7 +27,9 @@ pub enum UiEvent {
     },
     ToggleMapView,
     ToggleOrigin,
-    ChangeTimeWarp { increase: bool },
+    ChangeTimeWarp {
+        increase: bool,
+    },
     CycleCameraTarget,
     SetUnitSystem(UnitSystem),
 }

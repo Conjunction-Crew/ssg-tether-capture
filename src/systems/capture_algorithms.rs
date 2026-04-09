@@ -1,8 +1,6 @@
 use avian3d::{
     math::PI,
-    prelude::{
-        Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
-    },
+    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
 };
 use bevy::{math::DVec3, prelude::*};
 
@@ -41,7 +39,10 @@ pub fn capture_state_machine_update(
         }
 
         // Execute plan state machine
-        if let Some(plan) = capture_plan_lib.compiled_plans.get(&capture_component.plan_id) {
+        if let Some(plan) = capture_plan_lib
+            .compiled_plans
+            .get(&capture_component.plan_id)
+        {
             if let Some(nodes) = orbital_entities.tethers.get(&plan.tether) {
                 let root_capture_radius = capture_sphere_radius.radius;
 
@@ -60,7 +61,9 @@ pub fn capture_state_machine_update(
                             )
                         })
                     })
-                    .unwrap_or_else(|| current_state_parameters(plan, &capture_component.current_state));
+                    .unwrap_or_else(|| {
+                        current_state_parameters(plan, &capture_component.current_state)
+                    });
 
                 let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
 
@@ -166,12 +169,7 @@ fn resolve_root_state(
         }
 
         for transition in &state.transitions {
-            apply_transition(
-                capture_component,
-                transition,
-                rel_r_length,
-                rel_v_length,
-            );
+            apply_transition(capture_component, transition, rel_r_length, rel_v_length);
         }
     }
 

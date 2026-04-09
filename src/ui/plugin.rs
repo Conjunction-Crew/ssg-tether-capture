@@ -31,7 +31,7 @@ use crate::ui::screens::home::{
     update_home_working_directory_label,
 };
 use crate::ui::screens::project_detail::{
-    ExitSimConfirmModal, RestartPromptModal, catalog_interactions, catalog_keyboard_input,
+    RestartPromptModal, catalog_interactions, catalog_keyboard_input,
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     refresh_space_catalog_results, reset_space_catalog_ui_state, restart_prompt_interactions,
     spawn_exit_confirm_modal, spawn_project_detail_screen, spawn_restart_prompt_modal,
@@ -73,6 +73,7 @@ impl Plugin for UiPlugin {
             .init_resource::<UserPlansDirty>()
             .init_resource::<ExitConfirmPending>()
             .init_resource::<SimPlanSyncState>()
+            .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
@@ -83,8 +84,6 @@ impl Plugin for UiPlugin {
                 OnExit(UiScreen::WorkingDirectorySetup),
                 cleanup_working_directory_setup_screen,
             )
-            .add_systems(Update, working_directory_setup_interactions)
-            .add_systems(Update, poll_file_dialog_task)
             .add_systems(OnEnter(UiScreen::Home), spawn_home_screen)
             .add_systems(OnExit(UiScreen::Home), cleanup_home_screen)
             .add_systems(
@@ -94,42 +93,45 @@ impl Plugin for UiPlugin {
                     reset_sync_state,
                 ),
             )
-            .add_systems(Update, home_interactions)
-            .add_systems(Update, update_home_working_directory_label)
-            .add_systems(OnExit(UiScreen::Sim), cleanup_project_detail_screen)
-            .add_systems(Update, project_detail_interactions)
-            .add_systems(Update, view_edit_plan_interactions)
-            .add_systems(Update, restart_prompt_interactions)
-            .add_systems(Update, update_sync_indicator)
-            .add_systems(Update, collapsible_toggle_interaction)
-            .init_non_send_resource::<ClipboardRes>()
-            .add_systems(Update, input_field_interaction)
-            .add_systems(Update, input_field_keyboard)
-            .add_systems(Update, input_field_display)
-            .add_systems(Update, sync_form_fields)
-            .add_systems(Update, capture_plan_interactions)
-            .add_systems(Update, tether_type_radio_interactions)
-            .add_systems(Update, poll_new_plan_modal)
-            .add_systems(Update, poll_home_plan_refresh)
-            .add_systems(Update, poll_exit_confirm_modal)
-            .add_systems(Update, poll_restart_prompt_modal)
-            .add_systems(Update, poll_sim_restart)
-            .add_systems(OnExit(UiScreen::Sim), reset_space_catalog_ui_state)
+            .add_systems(
+                OnExit(UiScreen::Sim),
+                (cleanup_project_detail_screen, reset_space_catalog_ui_state),
+            )
             .add_systems(
                 Update,
                 (
-                    project_detail_interactions,
-                    collapsible_toggle_interaction,
-                    catalog_interactions,
-                    catalog_keyboard_input,
-                    refresh_space_catalog_results,
-                    sync_space_catalog_ui,
-                    update_selected_catalog_overlay,
-                )
-                    .chain()
-                    .run_if(in_state(UiScreen::Sim)),
-            )
-            .add_systems(Update, handle_ui_events);
+                    working_directory_setup_interactions,
+                    poll_file_dialog_task,
+                    home_interactions,
+                    update_home_working_directory_label,
+                    view_edit_plan_interactions,
+                    restart_prompt_interactions,
+                    update_sync_indicator,
+                    input_field_interaction,
+                    input_field_keyboard,
+                    input_field_display,
+                    sync_form_fields,
+                    capture_plan_interactions,
+                    tether_type_radio_interactions,
+                    poll_new_plan_modal,
+                    poll_home_plan_refresh,
+                    poll_exit_confirm_modal,
+                    poll_restart_prompt_modal,
+                    poll_sim_restart,
+                    (
+                        project_detail_interactions,
+                        collapsible_toggle_interaction,
+                        catalog_interactions,
+                        catalog_keyboard_input,
+                        refresh_space_catalog_results,
+                        sync_space_catalog_ui,
+                        update_selected_catalog_overlay,
+                    )
+                        .chain()
+                        .run_if(in_state(UiScreen::Sim)),
+                    handle_ui_events,
+                ),
+            );
     }
 }
 

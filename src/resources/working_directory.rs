@@ -9,12 +9,10 @@ pub struct WorkingDirectory {
 
 fn default_path() -> String {
     #[cfg(target_os = "windows")]
-    let base = std::env::var("USERPROFILE")
-        .unwrap_or_else(|_| "C:\\Users\\user".to_string());
+    let base = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\user".to_string());
 
     #[cfg(not(target_os = "windows"))]
-    let base = std::env::var("HOME")
-        .unwrap_or_else(|_| "/home/user".to_string());
+    let base = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
 
     PathBuf::from(base)
         .join("ssg-tether-capture")
