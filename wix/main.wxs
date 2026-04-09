@@ -50,12 +50,27 @@
               KeyPath="yes" />
           </Component>
 
+          <!-- Assets subdirectories: assets\fonts where the app expects runtime assets -->
+          <Directory Id="ASSETSDIR" Name="assets">
+            <Directory Id="FONTSDIR" Name="fonts">
+              <!-- UI font: installed and registered via explicit Component to avoid ICE60 from heat harvesting -->
+              <Component Id="Font_FiraMono_Medium" Guid="*">
+                <File
+                  Id="File_Font_FiraMono_Medium"
+                  Name="FiraMono-Medium.ttf"
+                  Source="$(var.AssetsDir)\fonts\FiraMono-Medium.ttf"
+                  KeyPath="yes" />
+              </Component>
+            </Directory>
+          </Directory>
+
         </Directory>
       </Directory>
     </Directory>
 
     <Feature Id="MainFeature" Title="SSG Tether Capture" Level="1">
       <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="Font_FiraMono_Medium" />
       <!-- AssetsComponentGroup is generated at build time by heat.exe harvesting the assets/ dir -->
       <ComponentGroupRef Id="AssetsComponentGroup" />
     </Feature>

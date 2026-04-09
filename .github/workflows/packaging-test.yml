@@ -79,8 +79,11 @@ jobs:
           & "$env:WIX\bin\heat.exe" dir "assets" `
             -out "wix\assets_fragment.wxs" `
             -cg AssetsComponentGroup `
-            -dr INSTALLDIR `
+            -dr ASSETSDIR `
             -scom -sfrag -srd -sreg `
+            -gg `
+            -x "*.ttf" `
+            -x "*.otf" `
             -var "var.AssetsDir"
 
       - name: Build MSI
