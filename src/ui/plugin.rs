@@ -15,7 +15,10 @@ use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
 };
-use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
+use crate::resources::capture_plans::{
+    CapturePlanLibrary, CapturePlanLoadErrors, build_capture_component,
+    load_plans_from_dir, load_plans_from_dir_with_errors,
+};
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
@@ -73,6 +76,7 @@ impl Plugin for UiPlugin {
             .init_resource::<UserPlansDirty>()
             .init_resource::<ExitConfirmPending>()
             .init_resource::<SimPlanSyncState>()
+            .init_resource::<CapturePlanLoadErrors>()
             .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
@@ -347,17 +351,13 @@ fn handle_ui_events(
                         // Get plan information
                         if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
                             // Now, mark the entity for capture
-                            commands.entity(*capture_entity).insert(CaptureComponent {
-                                plan_id: plan.name.clone(),
-                                current_state: plan
-                                    .states
-                                    .get(0)
-                                    .expect("No states in the desired plan!")
-                                    .id
-                                    .clone(),
-                                state_enter_time_s: physics_time.elapsed_secs_f64(),
-                                state_elapsed_time_s: 0.0,
-                            });
+                            if let Some(capture_component) = build_capture_component(
+                                plan_id,
+                                plan,
+                                physics_time.elapsed_secs_f64(),
+                            ) {
+                                commands.entity(*capture_entity).insert(capture_component);
+                            }
                         }
                     } else {
                         println!("entity already marked for capture!");
@@ -457,9 +457,10 @@ fn handle_ui_events(
                                     eprintln!("Failed to save capture plan: {e}");
                                 } else {
                                     // Reload user plans
-                                    let new_user_plans = load_plans_from_dir(std::path::Path::new(
-                                        &working_directory.path,
-                                    ));
+                                    let new_user_plans =
+                                        load_plans_from_dir(std::path::Path::new(
+                                            &working_directory.path,
+                                        ));
                                     capture_plan_lib.user_plans = new_user_plans;
                                     capture_plan_lib.plans = capture_plan_lib
                                         .example_plans
@@ -493,7 +494,9 @@ fn handle_ui_events(
                             eprintln!("Failed to save capture plan: {e}");
                         } else {
                             let new_user_plans =
-                                load_plans_from_dir(std::path::Path::new(&working_directory.path));
+                                load_plans_from_dir(std::path::Path::new(
+                                    &working_directory.path,
+                                ));
                             capture_plan_lib.user_plans = new_user_plans;
                             capture_plan_lib.plans = capture_plan_lib
                                 .example_plans
@@ -615,6 +618,7 @@ fn poll_home_plan_refresh(
     mut commands: Commands,
     mut user_plans_dirty: ResMut<UserPlansDirty>,
     capture_plan_lib: Res<CapturePlanLibrary>,
+    mut capture_plan_load_errors: ResMut<CapturePlanLoadErrors>,
     home_screens: Query<Entity, With<HomeScreen>>,
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
@@ -623,6 +627,10 @@ fn poll_home_plan_refresh(
     if !user_plans_dirty.0 || home_screens.is_empty() {
         return;
     }
+    // Re-scan the user plans directory for any newly broken or fixed files.
+    let (_, user_load_errors) =
+        load_plans_from_dir_with_errors(std::path::Path::new(&working_directory.path));
+    capture_plan_load_errors.errors = user_load_errors;
     for entity in &home_screens {
         commands.entity(entity).despawn();
     }
@@ -632,6 +640,7 @@ fn poll_home_plan_refresh(
         &theme,
         &capture_plan_lib,
         &working_directory.path,
+        &capture_plan_load_errors,
     );
     user_plans_dirty.0 = false;
 }

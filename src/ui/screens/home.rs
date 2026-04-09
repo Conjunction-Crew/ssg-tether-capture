@@ -3,7 +3,9 @@ use bevy::prelude::*;
 
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plan_form::NewCapturePlanForm;
-use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
+use crate::resources::capture_plans::{
+    CapturePlanLibrary, CapturePlanLoadErrors, load_plans_from_dir_with_errors,
+};
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
 use crate::ui::state::UiScreen;
@@ -37,12 +39,16 @@ pub fn spawn_home_screen(
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
+    mut capture_plan_load_errors: ResMut<CapturePlanLoadErrors>,
     working_directory: Res<WorkingDirectory>,
 ) {
-    let example_plans = load_plans_from_dir(
+    let (example_plans, mut load_errors) = load_plans_from_dir_with_errors(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans"),
     );
-    let user_plans = load_plans_from_dir(&std::path::PathBuf::from(&working_directory.path));
+    let (user_plans, user_load_errors) =
+        load_plans_from_dir_with_errors(&std::path::PathBuf::from(&working_directory.path));
+    load_errors.extend(user_load_errors);
+    capture_plan_load_errors.errors = load_errors;
 
     capture_plan_lib.example_plans = example_plans;
     capture_plan_lib.user_plans = user_plans;
@@ -64,6 +70,7 @@ pub fn spawn_home_screen(
         &theme,
         &capture_plan_lib,
         &working_directory.path,
+        &capture_plan_load_errors,
     );
 }
 
@@ -73,6 +80,7 @@ pub fn spawn_home_screen_inner(
     theme: &UiTheme,
     capture_plan_lib: &CapturePlanLibrary,
     working_directory_path: &str,
+    capture_plan_load_errors: &CapturePlanLoadErrors,
 ) {
     let font: Handle<Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
     let user_plan_count_label = format!(
@@ -273,6 +281,45 @@ pub fn spawn_home_screen_inner(
                                         );
                                     });
                             });
+
+                        // Show a warning banner for any capture plan files that failed to load.
+                        if !capture_plan_load_errors.errors.is_empty() {
+                            content
+                                .spawn((
+                                    Node {
+                                        width: percent(100),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: px(4.0),
+                                        padding: UiRect::all(px(12.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgba(0.55, 0.15, 0.15, 0.85)),
+                                ))
+                                .with_children(|banner| {
+                                    banner.spawn((
+                                        Text::new("Warning: Some capture plan files could not be loaded"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 13.0,
+                                            ..default()
+                                        },
+                                        TextColor(Color::srgb(1.0, 0.85, 0.85)),
+                                    ));
+                                    for (file_stem, file_errors) in &capture_plan_load_errors.errors {
+                                        for error in file_errors {
+                                            banner.spawn((
+                                                Text::new(format!("  \u{2022} {file_stem}: {error}")),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 11.0,
+                                                    ..default()
+                                                },
+                                                TextColor(Color::srgb(1.0, 0.75, 0.75)),
+                                            ));
+                                        }
+                                    }
+                                });
+                        }
 
                         content
                             .spawn(Node {
