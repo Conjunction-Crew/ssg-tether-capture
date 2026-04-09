@@ -25,6 +25,9 @@ When preparing a release:
 - Update the `contributing` docs section to explain release process.
 - Updates `docusaurus` version from 3.9.2 → 3.10.0
   - Updates other NPM packages as required to update docusaurus.
+- Updates docs to explain changes to resources, UI structure, plugins, and instructions on how to run the app
+- Updates the library to decouple the physics calculations from frame updates, moving to a fixed update frequency
+- Updates the capture algorithms
 
 ### Added
 - `.release.toml` configuration file for `cargo-release`.
@@ -33,6 +36,11 @@ When preparing a release:
   - `scripts/post_release.sh` also keeps the docs site version in sync with the crate version.
 - Adds `CHANGELOG.md` document to track changes between releases.
 - Adds versioned docs for `v0.2.0-beta.1`
+- Adds `assets/datasets` and `assets/shaders` directories
+- Adds support for orbital data from JSON
+- Adds GPU compute support for large datasets
+- Adds UI for capture plan view/edit
+- Adds support for specifying a working directory for the app to read/write files
 
 ---
 
