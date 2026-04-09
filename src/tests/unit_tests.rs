@@ -305,7 +305,8 @@ mod tests {
 
     #[test]
     fn load_plans_loads_example_plan_successfully() {
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans");
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/example_capture_plans");
         let (plans, errors) = load_plans_from_dir_with_errors(&dir);
         assert!(
             !plans.is_empty(),
