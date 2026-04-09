@@ -1,10 +1,6 @@
 use crate::{
     constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::{
-        settings::Settings,
-        space_catalog::SpaceCatalogUiState,
-        world_time::WorldTime,
-    },
+    resources::{settings::Settings, space_catalog::SpaceCatalogUiState, world_time::WorldTime},
 };
 
 use avian3d::prelude::{Physics, PhysicsTime};

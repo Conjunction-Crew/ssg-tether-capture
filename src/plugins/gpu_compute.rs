@@ -238,10 +238,9 @@ pub fn propagate_catalog_eci_state(
     }
 
     let dt_seconds = current_epoch_offset_seconds as f64 - element.epoch_offset_seconds as f64;
-    let mean_motion = (3.986_004_4e14_f64 / (semi_major_axis * semi_major_axis * semi_major_axis))
-        .sqrt();
-    let mean_anomaly =
-        wrap_angle(element.mean_anomaly as f64 + mean_motion * dt_seconds);
+    let mean_motion =
+        (3.986_004_4e14_f64 / (semi_major_axis * semi_major_axis * semi_major_axis)).sqrt();
+    let mean_anomaly = wrap_angle(element.mean_anomaly as f64 + mean_motion * dt_seconds);
     let eccentric_anomaly = solve_eccentric_anomaly(mean_anomaly, eccentricity);
 
     let sin_e = eccentric_anomaly.sin();
@@ -293,8 +292,7 @@ pub fn eci_position_to_map(position_eci: Vec3) -> Vec3 {
 }
 
 fn wrap_angle(angle: f64) -> f64 {
-    angle - std::f64::consts::TAU
-        * ((angle + std::f64::consts::PI) / std::f64::consts::TAU).floor()
+    angle - std::f64::consts::TAU * ((angle + std::f64::consts::PI) / std::f64::consts::TAU).floor()
 }
 
 fn solve_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {

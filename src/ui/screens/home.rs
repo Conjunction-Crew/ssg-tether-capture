@@ -2,8 +2,8 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
 use crate::constants::UI_LAYER;
-use crate::resources::capture_plans::{load_plans_from_dir, CapturePlanLibrary};
 use crate::resources::capture_plan_form::NewCapturePlanForm;
+use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
 use crate::ui::state::UiScreen;
@@ -42,8 +42,7 @@ pub fn spawn_home_screen(
     let example_plans = load_plans_from_dir(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans"),
     );
-    let user_plans =
-        load_plans_from_dir(&std::path::PathBuf::from(&working_directory.path));
+    let user_plans = load_plans_from_dir(&std::path::PathBuf::from(&working_directory.path));
 
     capture_plan_lib.example_plans = example_plans;
     capture_plan_lib.user_plans = user_plans;
@@ -59,7 +58,13 @@ pub fn spawn_home_screen(
         capture_plan_lib.insert_plan(name.clone(), plan.clone());
     }
 
-    spawn_home_screen_inner(&mut commands, &asset_server, &theme, &capture_plan_lib, &working_directory.path);
+    spawn_home_screen_inner(
+        &mut commands,
+        &asset_server,
+        &theme,
+        &capture_plan_lib,
+        &working_directory.path,
+    );
 }
 
 pub fn spawn_home_screen_inner(
@@ -91,7 +96,11 @@ pub fn spawn_home_screen_inner(
     let capture_plan_count_label = format!(
         "{} capture plan{} in workspace",
         capture_plan_lib.plans.len(),
-        if capture_plan_lib.plans.len() == 1 { "" } else { "s" }
+        if capture_plan_lib.plans.len() == 1 {
+            ""
+        } else {
+            "s"
+        }
     );
     let working_directory = working_directory_path.to_string();
 
@@ -116,59 +125,60 @@ pub fn spawn_home_screen_inner(
                         min_height: px(84.0),
                         padding: UiRect::axes(px(24.0), px(16.0)),
                         justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor(theme.header_background),
-            ))
-            .with_children(|header| {
-                header
-                    .spawn(Node {
-                        flex_direction: FlexDirection::Row,
                         align_items: AlignItems::Center,
-                        column_gap: px(14.0),
                         ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            ImageNode::new(
-                                asset_server.load("logo/tether-capture.iconset/icon_128x128.png"),
-                            ),
-                            Node {
-                                height: px(50.0),
-                                width: Val::Auto,
-                                ..default()
-                            },
-                        ));
-
-                        row.spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: px(2.0),
+                    },
+                    BackgroundColor(theme.header_background),
+                ))
+                .with_children(|header| {
+                    header
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: px(14.0),
                             ..default()
                         })
-                        .with_children(|text_col| {
-                            text_col.spawn((
-                                Text::new("Tether Capture"),
-                                TextFont {
-                                    font: font.clone(),
-                                    font_size: 30.0,
+                        .with_children(|row| {
+                            row.spawn((
+                                ImageNode::new(
+                                    asset_server
+                                        .load("logo/tether-capture.iconset/icon_128x128.png"),
+                                ),
+                                Node {
+                                    height: px(50.0),
+                                    width: Val::Auto,
                                     ..default()
                                 },
-                                TextColor(theme.text_primary),
                             ));
 
-                            text_col.spawn((
-                                Text::new("Conjunction Crew"),
-                                TextFont {
-                                    font: font.clone(),
-                                    font_size: 14.0,
-                                    ..default()
-                                },
-                                TextColor(theme.text_muted),
-                            ));
+                            row.spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(2.0),
+                                ..default()
+                            })
+                            .with_children(|text_col| {
+                                text_col.spawn((
+                                    Text::new("Tether Capture"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 30.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_primary),
+                                ));
+
+                                text_col.spawn((
+                                    Text::new("Conjunction Crew"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 14.0,
+                                        ..default()
+                                    },
+                                    TextColor(theme.text_muted),
+                                ));
+                            });
                         });
-                    });
-            });
+                });
 
             parent
                 .spawn(Node {
@@ -248,17 +258,19 @@ pub fn spawn_home_screen_inner(
                                             },
                                             BackgroundColor(theme.panel_background),
                                         ))
-                                        .with_children(|btn| {
-                                            btn.spawn((
-                                                Text::new("Change Directory"),
-                                                TextFont {
-                                                    font: font.clone(),
-                                                    font_size: 12.0,
-                                                    ..default()
-                                                },
-                                                TextColor(theme.text_muted),
-                                            ));
-                                        });
+                                        .with_children(
+                                            |btn| {
+                                                btn.spawn((
+                                                    Text::new("Change Directory"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 12.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_muted),
+                                                ));
+                                            },
+                                        );
                                     });
                             });
 
@@ -507,15 +519,32 @@ pub fn cleanup_home_screen(mut commands: Commands, roots: Query<Entity, With<Hom
 pub fn home_interactions(
     mut project_interactions: Query<
         (&Interaction, &HomeProjectButton, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, Without<ChangeDirectoryButton>, Without<NewPlanButton>, Without<EditCapturePlanButton>),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            Without<ChangeDirectoryButton>,
+            Without<NewPlanButton>,
+            Without<EditCapturePlanButton>,
+        ),
     >,
     mut change_dir_interactions: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, With<ChangeDirectoryButton>, Without<NewPlanButton>, Without<EditCapturePlanButton>),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            With<ChangeDirectoryButton>,
+            Without<NewPlanButton>,
+            Without<EditCapturePlanButton>,
+        ),
     >,
     mut new_plan_interactions: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, With<NewPlanButton>, Without<EditCapturePlanButton>),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            With<NewPlanButton>,
+            Without<EditCapturePlanButton>,
+        ),
     >,
     mut edit_interactions: Query<
         (&Interaction, &EditCapturePlanButton, &mut BackgroundColor),

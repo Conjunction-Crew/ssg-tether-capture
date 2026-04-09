@@ -102,7 +102,13 @@ impl InputField {
 /// System: focus the pressed InputField, blur all others.
 pub fn input_field_interaction(
     mut field_query: Query<
-        (Entity, &Interaction, &mut InputField, &UiGlobalTransform, &ComputedNode),
+        (
+            Entity,
+            &Interaction,
+            &mut InputField,
+            &UiGlobalTransform,
+            &ComputedNode,
+        ),
         With<Button>,
     >,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
@@ -118,9 +124,10 @@ pub fn input_field_interaction(
 
     // Get physical cursor position for character placement estimation.
     // UiGlobalTransform and ComputedNode.size() both use physical pixels.
-    let maybe_cursor = windows.single().ok().and_then(|w| {
-        w.physical_cursor_position()
-    });
+    let maybe_cursor = windows
+        .single()
+        .ok()
+        .and_then(|w| w.physical_cursor_position());
 
     if let Some(pressed) = pressed_entity {
         for (entity, _, mut field, transform, computed) in &mut field_query {

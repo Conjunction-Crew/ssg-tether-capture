@@ -2,8 +2,8 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::ecs::observer::On;
 use bevy::input::mouse::MouseScrollUnit;
-use bevy::picking::events::{Pointer, Scroll};
 use bevy::picking::Pickable;
+use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
@@ -79,28 +79,34 @@ pub struct TetherTypeRadioButton(pub String);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn section_header<'a>(parent: &mut ChildSpawnerCommands<'a>, label: &str, font: &Handle<Font>, theme: &UiTheme) {
-    parent.spawn((
-        Node {
-            width: Val::Percent(100.0),
-            padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
-            border: UiRect::bottom(Val::Px(1.0)),
-            ..default()
-        },
-        BorderColor::all(theme.panel_background),
-        BackgroundColor(Color::NONE),
-    ))
-    .with_children(|row| {
-        row.spawn((
-            Text::new(label),
-            TextFont {
-                font: font.clone(),
-                font_size: 15.0,
+fn section_header<'a>(
+    parent: &mut ChildSpawnerCommands<'a>,
+    label: &str,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
+                border: UiRect::bottom(Val::Px(1.0)),
                 ..default()
             },
-            TextColor(theme.text_accent),
-        ));
-    });
+            BorderColor::all(theme.panel_background),
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(theme.text_accent),
+            ));
+        });
 }
 
 fn field_row<'a>(
@@ -239,7 +245,11 @@ fn transition_rows<'a>(
                         .with_children(|btn| {
                             btn.spawn((
                                 Text::new("×"),
-                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 13.0,
+                                    ..default()
+                                },
                                 TextColor(Color::srgb(1.0, 0.65, 0.65)),
                             ));
                         });
@@ -256,7 +266,11 @@ fn transition_rows<'a>(
                         .with_children(|btn| {
                             btn.spawn((
                                 Text::new("×"),
-                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 13.0,
+                                    ..default()
+                                },
                                 TextColor(Color::srgb(1.0, 0.65, 0.65)),
                             ));
                         });
@@ -278,9 +292,39 @@ fn transition_rows<'a>(
                     )
                 };
 
-                field_row(row, "To State", to_id, "e.g. terminal", &t.to, false, false, font, theme);
-                field_row(row, "Condition (less_than / greater_than)", kind_id, "less_than", &t.distance_kind, false, false, font, theme);
-                field_row(row, &format!("Distance ({dist_unit})"), val_id, "50.0", &t.distance_value, true, false, font, theme);
+                field_row(
+                    row,
+                    "To State",
+                    to_id,
+                    "e.g. terminal",
+                    &t.to,
+                    false,
+                    false,
+                    font,
+                    theme,
+                );
+                field_row(
+                    row,
+                    "Condition (less_than / greater_than)",
+                    kind_id,
+                    "less_than",
+                    &t.distance_kind,
+                    false,
+                    false,
+                    font,
+                    theme,
+                );
+                field_row(
+                    row,
+                    &format!("Distance ({dist_unit})"),
+                    val_id,
+                    "50.0",
+                    &t.distance_value,
+                    true,
+                    false,
+                    font,
+                    theme,
+                );
             });
     }
 }
@@ -969,61 +1013,81 @@ pub fn capture_plan_interactions(
     {
         if cancel.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::CloseNewCapturePlanForm); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::CloseNewCapturePlanForm);
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.panel_background_soft),
                 Interaction::None => *bg = BackgroundColor(theme.panel_background),
             }
         } else if save.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::SaveCapturePlan); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::SaveCapturePlan);
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
                 Interaction::None => *bg = BackgroundColor(theme.button_background),
             }
         } else if add_approach.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::AddApproachTransition); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::AddApproachTransition);
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
                 Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
             }
         } else if add_terminal.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::AddTerminalTransition); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::AddTerminalTransition);
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
                 Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
             }
         } else if let Some(btn) = remove_approach {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::RemoveApproachTransition(btn.0)); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::RemoveApproachTransition(btn.0));
+                }
                 Interaction::Hovered => *bg = BackgroundColor(Color::srgba(0.75, 0.2, 0.2, 0.65)),
                 Interaction::None => *bg = BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
             }
         } else if let Some(btn) = remove_terminal {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::RemoveTerminalTransition(btn.0)); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::RemoveTerminalTransition(btn.0));
+                }
                 Interaction::Hovered => *bg = BackgroundColor(Color::srgba(0.75, 0.2, 0.2, 0.65)),
                 Interaction::None => *bg = BackgroundColor(Color::srgba(0.6, 0.15, 0.15, 0.5)),
             }
         } else if confirm_overwrite.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::ConfirmOverwriteCapturePlan); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::ConfirmOverwriteCapturePlan);
+                }
                 Interaction::Hovered => *bg = BackgroundColor(Color::srgb(0.8, 0.25, 0.25)),
                 Interaction::None => *bg = BackgroundColor(Color::srgb(0.7, 0.2, 0.2)),
             }
         } else if cancel_overwrite.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::CancelOverwriteCapturePlan); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::CancelOverwriteCapturePlan);
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.panel_background),
                 Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
             }
         } else if unit_metric.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::SetUnitSystem(UnitSystem::Metric)); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::SetUnitSystem(UnitSystem::Metric));
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
                 Interaction::None => {}
             }
         } else if unit_imperial.is_some() {
             match *interaction {
-                Interaction::Pressed => { events.write(UiEvent::SetUnitSystem(UnitSystem::Imperial)); }
+                Interaction::Pressed => {
+                    events.write(UiEvent::SetUnitSystem(UnitSystem::Imperial));
+                }
                 Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
                 Interaction::None => {}
             }
@@ -1086,40 +1150,84 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
         errors.push("Number of Joints must be a whole number".to_string());
     }
 
-    require_number(&form.approach_max_velocity, "Approach Max Velocity", &mut errors);
+    require_number(
+        &form.approach_max_velocity,
+        "Approach Max Velocity",
+        &mut errors,
+    );
     require_number(&form.approach_max_force, "Approach Max Force", &mut errors);
-    require_number(&form.terminal_max_velocity, "Terminal Max Velocity", &mut errors);
+    require_number(
+        &form.terminal_max_velocity,
+        "Terminal Max Velocity",
+        &mut errors,
+    );
     require_number(&form.terminal_max_force, "Terminal Max Force", &mut errors);
-    require_number(&form.terminal_shrink_rate, "Terminal Shrink Rate", &mut errors);
-    require_number(&form.capture_max_velocity, "Capture Max Velocity", &mut errors);
+    require_number(
+        &form.terminal_shrink_rate,
+        "Terminal Shrink Rate",
+        &mut errors,
+    );
+    require_number(
+        &form.capture_max_velocity,
+        "Capture Max Velocity",
+        &mut errors,
+    );
     require_number(&form.capture_max_force, "Capture Max Force", &mut errors);
-    require_number(&form.capture_shrink_rate, "Capture Shrink Rate", &mut errors);
+    require_number(
+        &form.capture_shrink_rate,
+        "Capture Shrink Rate",
+        &mut errors,
+    );
 
     for (i, t) in form.approach_transitions.iter().enumerate() {
         if t.to.trim().is_empty() {
-            errors.push(format!("Approach Transition {} 'To State' is required", i + 1));
+            errors.push(format!(
+                "Approach Transition {} 'To State' is required",
+                i + 1
+            ));
         }
         if t.distance_kind.trim().is_empty() {
-            errors.push(format!("Approach Transition {} condition is required", i + 1));
+            errors.push(format!(
+                "Approach Transition {} condition is required",
+                i + 1
+            ));
         }
         if t.distance_value.trim().is_empty() {
-            errors.push(format!("Approach Transition {} distance value is required", i + 1));
+            errors.push(format!(
+                "Approach Transition {} distance value is required",
+                i + 1
+            ));
         } else if t.distance_value.parse::<f64>().is_err() {
-            errors.push(format!("Approach Transition {} distance value must be a number", i + 1));
+            errors.push(format!(
+                "Approach Transition {} distance value must be a number",
+                i + 1
+            ));
         }
     }
 
     for (i, t) in form.terminal_transitions.iter().enumerate() {
         if t.to.trim().is_empty() {
-            errors.push(format!("Terminal Transition {} 'To State' is required", i + 1));
+            errors.push(format!(
+                "Terminal Transition {} 'To State' is required",
+                i + 1
+            ));
         }
         if t.distance_kind.trim().is_empty() {
-            errors.push(format!("Terminal Transition {} condition is required", i + 1));
+            errors.push(format!(
+                "Terminal Transition {} condition is required",
+                i + 1
+            ));
         }
         if t.distance_value.trim().is_empty() {
-            errors.push(format!("Terminal Transition {} distance value is required", i + 1));
+            errors.push(format!(
+                "Terminal Transition {} distance value is required",
+                i + 1
+            ));
         } else if t.distance_value.parse::<f64>().is_err() {
-            errors.push(format!("Terminal Transition {} distance value must be a number", i + 1));
+            errors.push(format!(
+                "Terminal Transition {} distance value must be a number",
+                i + 1
+            ));
         }
     }
 
@@ -1147,16 +1255,24 @@ pub fn generate_filename(plan_name: &str) -> String {
 
 fn unit_conv_linear(s: &str, unit: UnitSystem) -> f64 {
     let v = s.parse::<f64>().unwrap_or(0.0);
-    if unit == UnitSystem::Imperial { v * 0.3048 } else { v }
+    if unit == UnitSystem::Imperial {
+        v * 0.3048
+    } else {
+        v
+    }
 }
 
 fn unit_conv_force(s: &str, unit: UnitSystem) -> f64 {
     let v = s.parse::<f64>().unwrap_or(0.0);
-    if unit == UnitSystem::Imperial { v * 4.44822 } else { v }
+    if unit == UnitSystem::Imperial {
+        v * 4.44822
+    } else {
+        v
+    }
 }
 
 pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     let unit = form.unit_system;
     let make_transitions = |transitions: &[TransitionForm]| -> Value {
