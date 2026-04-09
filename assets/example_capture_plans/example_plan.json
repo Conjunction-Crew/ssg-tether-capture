@@ -3,7 +3,8 @@
   "tether": "Tether1",
   "device": {
     "type": "tether",
-    "num_joints": 5
+    "num_joints": 20,
+    "tether_length": 20.0
   },
   "states": [
     {

@@ -522,6 +522,9 @@ fn handle_ui_events(
                     if let Some(device) = &plan.device {
                         form.tether_type = device.device_type.clone();
                         form.num_joints = device.num_joints.to_string();
+                        if device.tether_length > 0.0 {
+                            form.tether_length = device.tether_length.to_string();
+                        }
                     }
                     for state in &plan.states {
                         let transitions: Vec<TransitionForm> = state

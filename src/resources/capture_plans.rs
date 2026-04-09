@@ -86,6 +86,18 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
     if plan.tether.trim().is_empty() {
         errors.push(format!("[{plan_id}] 'tether' field is empty."));
     }
+    if let Some(device) = &plan.device {
+        if device.num_joints == 0 {
+            errors.push(format!(
+                "[{plan_id}] 'device.num_joints' must be greater than zero."
+            ));
+        }
+        if device.tether_length <= 0.0 {
+            errors.push(format!(
+                "[{plan_id}] 'device.tether_length' must be greater than zero."
+            ));
+        }
+    }
     if plan.states.is_empty() {
         errors.push(format!(
             "[{plan_id}] 'states' array is empty — at least one state is required."

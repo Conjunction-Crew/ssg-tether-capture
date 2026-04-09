@@ -4,9 +4,10 @@ use std::ops::RangeInclusive;
 use crate::components::orbit::{Earth, Orbit, TetherNode};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
+use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_cache::OrbitalCache;
-use crate::ui::state::UiScreen;
+use crate::ui::state::{SelectedProject, UiScreen};
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
@@ -222,10 +223,41 @@ pub fn setup_tether(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut orbital_entities: ResMut<OrbitalCache>,
+    selected_project: Res<SelectedProject>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
 ) {
     let root_tail_radius: f64 = 0.50;
     let rope_radius: f64 = 0.25;
-    let tether_node_length = DIST_BETWEEN_JOINTS;
+
+    // Resolve tether parameters from the active capture plan's device block.
+    // Fall back to the legacy constant-derived values when unspecified.
+    const DEFAULT_TETHER_LENGTH: f64 = 20.0;
+    const DEFAULT_DIST_BETWEEN_JOINTS: f64 = 0.1;
+
+    let device = selected_project
+        .project_id
+        .as_deref()
+        .and_then(|id| capture_plan_lib.plans.get(id))
+        .and_then(|plan| plan.device.as_ref());
+
+    let tether_length = device
+        .filter(|d| d.tether_length > 0.0)
+        .map(|d| d.tether_length)
+        .unwrap_or(DEFAULT_TETHER_LENGTH);
+
+    let interior_node_count: u32 = device
+        .filter(|d| d.num_joints > 0)
+        .map(|d| d.num_joints as u32)
+        .unwrap_or_else(|| {
+            ((tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
+        });
+
+    // Segment length is derived: distribute the interior length evenly across joints.
+    let tether_node_length = if interior_node_count > 0 {
+        (tether_length - 2.0 * root_tail_radius) / interior_node_count as f64
+    } else {
+        DEFAULT_DIST_BETWEEN_JOINTS
+    };
     let tether_node_half_length = tether_node_length * 0.5;
 
     let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius as f32)));
@@ -271,11 +303,9 @@ pub fn setup_tether(
     let mut prev_sphere = tether_root;
     let mut prev_half_extent = root_tail_radius;
     let mut prev_y = 0.0;
-    let interior_node_count =
-        ((TETHER_LENGTH - 2.0 * root_tail_radius) / tether_node_length).max(0.0) as u32;
     let interval_count = interior_node_count + 1;
     let surface_gap = if interval_count > 0 {
-        (TETHER_LENGTH - 2.0 * root_tail_radius - interior_node_count as f64 * tether_node_length)
+        (tether_length - 2.0 * root_tail_radius - interior_node_count as f64 * tether_node_length)
             / interval_count as f64
     } else {
         0.0
