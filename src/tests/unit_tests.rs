@@ -186,7 +186,9 @@ mod tests {
                 State {
                     id: "capture".to_string(),
                     next: None,
-                    parameters: Some(json!({ "max_velocity": 0.5, "max_force": 2.0, "shrink_rate": 0.01 })),
+                    parameters: Some(
+                        json!({ "max_velocity": 0.5, "max_force": 2.0, "shrink_rate": 0.01 }),
+                    ),
                     transitions: None,
                     next_conditions: None,
                 },
@@ -207,7 +209,9 @@ mod tests {
             states: vec![State {
                 id: "terminal".to_string(),
                 next: None,
-                parameters: Some(json!({ "max_velocity": 0.3, "max_force": 1.5, "shrink_rate": 0.005 })),
+                parameters: Some(
+                    json!({ "max_velocity": 0.3, "max_force": 1.5, "shrink_rate": 0.005 }),
+                ),
                 transitions: None,
                 next_conditions: None,
             }],
@@ -230,7 +234,7 @@ mod tests {
                 next: None,
                 parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
                 transitions: Some(vec![
-                    json!({ "to": "approach", "distance": { "less_than": 50.0 } })
+                    json!({ "to": "approach", "distance": { "less_than": 50.0 } }),
                 ]),
                 next_conditions: None,
             }],
@@ -262,8 +266,20 @@ mod tests {
             name: "Plan".to_string(),
             tether: "Tether1".to_string(),
             states: vec![
-                State { id: "approach".to_string(), next: None, parameters: None, transitions: None, next_conditions: None },
-                State { id: "capture".to_string(), next: None, parameters: None, transitions: None, next_conditions: None },
+                State {
+                    id: "approach".to_string(),
+                    next: None,
+                    parameters: None,
+                    transitions: None,
+                    next_conditions: None,
+                },
+                State {
+                    id: "capture".to_string(),
+                    next: None,
+                    parameters: None,
+                    transitions: None,
+                    next_conditions: None,
+                },
             ],
             device: None,
         };
@@ -331,4 +347,3 @@ mod tests {
         assert_eq!(parameter_value(&None, "max_velocity"), None);
     }
 }
-

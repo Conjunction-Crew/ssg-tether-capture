@@ -16,8 +16,8 @@ use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
 };
 use crate::resources::capture_plans::{
-    CapturePlanLibrary, CapturePlanLoadErrors, build_capture_component,
-    load_plans_from_dir, load_plans_from_dir_with_errors,
+    CapturePlanLibrary, CapturePlanLoadErrors, build_capture_component, load_plans_from_dir,
+    load_plans_from_dir_with_errors,
 };
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
@@ -457,10 +457,9 @@ fn handle_ui_events(
                                     eprintln!("Failed to save capture plan: {e}");
                                 } else {
                                     // Reload user plans
-                                    let new_user_plans =
-                                        load_plans_from_dir(std::path::Path::new(
-                                            &working_directory.path,
-                                        ));
+                                    let new_user_plans = load_plans_from_dir(std::path::Path::new(
+                                        &working_directory.path,
+                                    ));
                                     capture_plan_lib.user_plans = new_user_plans;
                                     capture_plan_lib.plans = capture_plan_lib
                                         .example_plans
@@ -494,9 +493,7 @@ fn handle_ui_events(
                             eprintln!("Failed to save capture plan: {e}");
                         } else {
                             let new_user_plans =
-                                load_plans_from_dir(std::path::Path::new(
-                                    &working_directory.path,
-                                ));
+                                load_plans_from_dir(std::path::Path::new(&working_directory.path));
                             capture_plan_lib.user_plans = new_user_plans;
                             capture_plan_lib.plans = capture_plan_lib
                                 .example_plans

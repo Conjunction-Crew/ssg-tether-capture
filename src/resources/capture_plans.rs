@@ -4,7 +4,7 @@ use std::path::Path;
 use bevy::{platform::collections::HashMap, prelude::*};
 use serde_json::Value;
 
-use crate::components::capture_components::{CapturePlan, CaptureComponent};
+use crate::components::capture_components::{CaptureComponent, CapturePlan};
 
 #[derive(Debug, Clone, Default)]
 pub struct CompiledCaptureTransition {

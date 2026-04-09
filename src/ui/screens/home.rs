@@ -297,7 +297,9 @@ pub fn spawn_home_screen_inner(
                                 ))
                                 .with_children(|banner| {
                                     banner.spawn((
-                                        Text::new("Warning: Some capture plan files could not be loaded"),
+                                        Text::new(
+                                            "Warning: Some capture plan files could not be loaded",
+                                        ),
                                         TextFont {
                                             font: font.clone(),
                                             font_size: 13.0,
@@ -305,10 +307,13 @@ pub fn spawn_home_screen_inner(
                                         },
                                         TextColor(Color::srgb(1.0, 0.85, 0.85)),
                                     ));
-                                    for (file_stem, file_errors) in &capture_plan_load_errors.errors {
+                                    for (file_stem, file_errors) in &capture_plan_load_errors.errors
+                                    {
                                         for error in file_errors {
                                             banner.spawn((
-                                                Text::new(format!("  \u{2022} {file_stem}: {error}")),
+                                                Text::new(format!(
+                                                    "  \u{2022} {file_stem}: {error}"
+                                                )),
                                                 TextFont {
                                                     font: font.clone(),
                                                     font_size: 11.0,
