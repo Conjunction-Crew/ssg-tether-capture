@@ -447,7 +447,14 @@ fn handle_ui_events(
                         form.validation_errors = errors;
                     } else {
                         form.validation_errors.clear();
-                        let filename = generate_filename(&form.plan_name);
+                        // When editing, always write to the original file (keyed by
+                        // editing_plan_id) so renaming a plan only updates the `name`
+                        // field inside the JSON without creating a new file on disk.
+                        let filename = if let Some(ref edit_id) = form.editing_plan_id {
+                            generate_filename(edit_id)
+                        } else {
+                            generate_filename(&form.plan_name)
+                        };
                         let dest = std::path::Path::new(&working_directory.path).join(&filename);
                         // In edit mode, skip overwrite dialog and always overwrite
                         let skip_overwrite_check = form.editing_plan_id.is_some();
@@ -475,13 +482,25 @@ fn handle_ui_events(
                                             .chain(capture_plan_lib.user_plans.iter())
                                             .map(|(k, v)| (k.clone(), v.clone()))
                                             .collect();
-                                        // Only compile immediately when creating a new plan or
-                                        // editing outside the sim screen. When editing from the
-                                        // sim screen the restart cycle re-enters UiScreen::Home
-                                        // which calls spawn_home_screen and recompiles from disk.
                                         let editing_from_sim =
                                             was_editing && selected_project.project_id.is_some();
-                                        if !editing_from_sim {
+                                        // `name` is not a sim parameter. If only the name
+                                        // changed, apply immediately without a restart prompt.
+                                        let only_name_changed = editing_from_sim
+                                            && form.original_json.as_ref().is_some_and(|orig| {
+                                                let mut a = orig.clone();
+                                                let mut b = json.clone();
+                                                if let (Some(ao), Some(bo)) =
+                                                    (a.as_object_mut(), b.as_object_mut())
+                                                {
+                                                    ao.remove("name");
+                                                    bo.remove("name");
+                                                }
+                                                a == b
+                                            });
+                                        // Compile immediately when creating a new plan, editing
+                                        // outside the sim, or when only the name changed.
+                                        if !editing_from_sim || only_name_changed {
                                             let refreshed: Vec<(String, CapturePlan)> =
                                                 capture_plan_lib
                                                     .plans
@@ -493,8 +512,9 @@ fn handle_ui_events(
                                             }
                                         }
                                         user_plans_dirty.0 = true;
-                                        // If editing from the sim screen, prompt for restart
-                                        let should_prompt = editing_from_sim;
+                                        // Prompt for restart only when sim-affecting params changed
+                                        let should_prompt =
+                                            editing_from_sim && !only_name_changed;
                                         form.open = false;
                                         form.reset();
                                         if should_prompt {
