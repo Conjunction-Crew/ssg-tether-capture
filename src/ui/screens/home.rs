@@ -2,7 +2,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
 use crate::constants::UI_LAYER;
-use crate::resources::capture_plan_form::NewCapturePlanForm;
+use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_plans::{
     CapturePlanLibrary, CapturePlanLoadErrors, load_plans_from_dir_with_errors,
 };
@@ -41,6 +41,7 @@ pub fn spawn_home_screen(
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     mut capture_plan_load_errors: ResMut<CapturePlanLoadErrors>,
     working_directory: Res<WorkingDirectory>,
+    sync_state: Res<SimPlanSyncState>,
 ) {
     let (example_plans, mut load_errors) = load_plans_from_dir_with_errors(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/example_capture_plans"),
@@ -62,6 +63,12 @@ pub fn spawn_home_screen(
     // Compile capture plans
     for (name, plan) in capture_plan_lib.plans.clone() {
         capture_plan_lib.insert_plan(name.clone(), plan.clone());
+    }
+
+    // When restarting the sim we pass through Home only to trigger cleanup
+    // and reload. Skip spawning the UI so the home screen never flashes.
+    if sync_state.restart_requested {
+        return;
     }
 
     spawn_home_screen_inner(

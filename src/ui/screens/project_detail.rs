@@ -100,6 +100,9 @@ pub struct RestartSimButton;
 pub struct DismissRestartButton;
 
 #[derive(Component)]
+pub struct RecompileLiveButton;
+
+#[derive(Component)]
 pub struct SyncIndicator;
 
 #[derive(Component)]
@@ -656,6 +659,46 @@ pub fn spawn_project_detail_screen(
                                                 ..default()
                                             },
                                             TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                                        ));
+                                        // Apply Live inline button
+                                        row.spawn((
+                                            RecompileLiveButton,
+                                            Button,
+                                            Node {
+                                                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_child((
+                                            Text::new("Apply Live"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 10.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_accent),
+                                            Pickable::IGNORE,
+                                        ));
+                                        // Reset Sim inline button
+                                        row.spawn((
+                                            RestartSimButton,
+                                            Button,
+                                            Node {
+                                                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.button_background),
+                                        ))
+                                        .with_child((
+                                            Text::new("Reset Sim"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 10.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                            Pickable::IGNORE,
                                         ));
                                     });
 
@@ -1242,6 +1285,23 @@ pub fn spawn_restart_prompt_modal(commands: &mut Commands, font: &Handle<Font>, 
                                 Text::new("Continue"),
                                 TextFont { font: font.clone(), font_size: 13.0, ..default() },
                                 TextColor(theme.text_primary),
+                            ));
+                        });
+
+                        btns.spawn((
+                            Button,
+                            RecompileLiveButton,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background_soft),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Apply Live"),
+                                TextFont { font: font.clone(), font_size: 13.0, ..default() },
+                                TextColor(theme.text_accent),
                             ));
                         });
 
@@ -1929,6 +1989,7 @@ pub fn restart_prompt_interactions(
             &Interaction,
             Option<&RestartSimButton>,
             Option<&DismissRestartButton>,
+            Option<&RecompileLiveButton>,
             &mut BackgroundColor,
         ),
         (Changed<Interaction>, With<Button>),
@@ -1937,10 +1998,11 @@ pub fn restart_prompt_interactions(
     modal_query: Query<Entity, With<RestartPromptModal>>,
     mut sync_state: ResMut<SimPlanSyncState>,
     mut next_screen: ResMut<NextState<crate::ui::state::UiScreen>>,
+    mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     theme: Res<UiTheme>,
 ) {
-    for (interaction, restart_btn, dismiss_btn, mut bg) in &mut buttons {
-        if restart_btn.is_none() && dismiss_btn.is_none() {
+    for (interaction, restart_btn, dismiss_btn, recompile_btn, mut bg) in &mut buttons {
+        if restart_btn.is_none() && dismiss_btn.is_none() && recompile_btn.is_none() {
             continue;
         }
         match *interaction {
@@ -1954,6 +2016,17 @@ pub fn restart_prompt_interactions(
                     sync_state.restart_requested = true;
                     // Transition Home → Sim to trigger full cleanup and re-setup
                     next_screen.set(crate::ui::state::UiScreen::Home);
+                } else if recompile_btn.is_some() {
+                    // Apply changes live without restarting the sim.
+                    let refreshed: Vec<_> = capture_plan_lib
+                        .plans
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    for (id, plan) in refreshed {
+                        capture_plan_lib.insert_plan(id, plan);
+                    }
+                    sync_state.in_sync = true;
                 } else if dismiss_btn.is_some() {
                     sync_state.in_sync = false;
                 }
