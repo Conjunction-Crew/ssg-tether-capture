@@ -25,7 +25,6 @@ pub struct NewCapturePlanForm {
     // Tether
     pub tether_name: String,
     pub tether_type: String,
-    pub num_joints: String,
     /// Physical length of the tether in metres (stored as string for the input field).
     pub tether_length: String,
 
@@ -65,7 +64,6 @@ impl NewCapturePlanForm {
         *self = NewCapturePlanForm {
             tether_type: "tether".to_string(),
             tether_length: "20.0".to_string(),
-            num_joints: "20".to_string(),
             ..Default::default()
         };
     }

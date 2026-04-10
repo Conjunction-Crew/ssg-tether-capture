@@ -58,7 +58,6 @@ pub enum FormFieldId {
     PlanName,
     TetherName,
     TetherLength,
-    NumJoints,
     ApproachMaxVelocity,
     ApproachMaxForce,
     ApproachTransitionTo(usize),
@@ -697,7 +696,6 @@ pub fn spawn_capture_plan_modal(
                                     });
                                 });
 
-                                field_row(sec, "Number of Joints *", FormFieldId::NumJoints, "20", &form.num_joints, true, false, &font, theme);
                                 field_row(sec, "Tether Length * (m)", FormFieldId::TetherLength, "20.0", &form.tether_length, true, false, &font, theme);
                             });
 
@@ -924,7 +922,6 @@ pub fn sync_form_fields(
             FormFieldId::PlanName => form.plan_name = field.value.clone(),
             FormFieldId::TetherName => form.tether_name = field.value.clone(),
             FormFieldId::TetherLength => form.tether_length = field.value.clone(),
-            FormFieldId::NumJoints => form.num_joints = field.value.clone(),
             FormFieldId::ApproachMaxVelocity => form.approach_max_velocity = field.value.clone(),
             FormFieldId::ApproachMaxForce => form.approach_max_force = field.value.clone(),
             FormFieldId::TerminalMaxVelocity => form.terminal_max_velocity = field.value.clone(),
@@ -1147,12 +1144,6 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
     require_text(&form.plan_name, "Plan Name", &mut errors);
     require_text(&form.tether_name, "Tether Name", &mut errors);
 
-    if form.num_joints.trim().is_empty() {
-        errors.push("Number of Joints is required".to_string());
-    } else if form.num_joints.parse::<u32>().is_err() {
-        errors.push("Number of Joints must be a whole number".to_string());
-    }
-
     if form.tether_length.trim().is_empty() {
         errors.push("Tether Length is required".to_string());
     } else {
@@ -1308,7 +1299,6 @@ pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
         "tether": form.tether_name.trim(),
         "device": {
             "type": form.tether_type.trim(),
-            "num_joints": form.num_joints.parse::<u32>().unwrap_or(0),
             "tether_length": form.tether_length.parse::<f64>().unwrap_or(20.0)
         },
         "states": [

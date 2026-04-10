@@ -246,8 +246,11 @@ pub fn setup_tether(
         .unwrap_or(DEFAULT_TETHER_LENGTH);
 
     let interior_node_count: u32 = device
-        .filter(|d| d.num_joints > 0)
-        .map(|d| d.num_joints as u32)
+        .filter(|d| d.tether_length > 0.0)
+        .map(|d| {
+            ((d.tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0)
+                as u32
+        })
         .unwrap_or_else(|| {
             ((tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
         });

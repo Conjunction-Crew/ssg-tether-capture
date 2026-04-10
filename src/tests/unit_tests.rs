@@ -167,25 +167,11 @@ mod tests {
     }
 
     #[test]
-    fn validate_plan_errors_on_zero_num_joints_in_device() {
-        use crate::components::capture_components::CapturePlanDevice;
-        let mut plan = minimal_valid_plan();
-        plan.device = Some(CapturePlanDevice {
-            device_type: "tether".to_string(),
-            num_joints: 0,
-            tether_length: 20.0,
-        });
-        let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("num_joints")));
-    }
-
-    #[test]
     fn validate_plan_errors_on_zero_tether_length_in_device() {
         use crate::components::capture_components::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
             device_type: "tether".to_string(),
-            num_joints: 20,
             tether_length: 0.0,
         });
         let errors = validate_capture_plan("test_plan", &plan);
@@ -198,7 +184,6 @@ mod tests {
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
             device_type: "tether".to_string(),
-            num_joints: 20,
             tether_length: 20.0,
         });
         assert!(validate_capture_plan("test_plan", &plan).is_empty());
