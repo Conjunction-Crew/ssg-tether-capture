@@ -123,19 +123,20 @@ Key components:
 
 Shown on `UiScreen::Sim`. Loaded from `SelectedProject::project_id`, which holds the capture plan file stem set when the user clicked a plan card.
 
-The screen looks up the plan in `CapturePlanLibrary` and the tether entity in `OrbitalEntities` using the plan's `tether` field.
+The screen looks up the plan in `CapturePlanLibrary` and the tether entity in `OrbitalCache` using the plan's `tether` field.
 
 The right sidebar contains collapsible sections:
 
 | Section | Contents |
 |---|---|
-| Project Information | Plan name, working directory path, filename |
-| Time Warp | Decrease / increase time warp multiplier buttons |
-| Simulation Controls | Map View, Toggle Origin, Cycle Camera Target, Capture button |
-| Simulation HUD | Live telemetry and capture guidance readouts |
+| Project Information | Plan name, working directory path, filename, edit button |
+| Space Catalog | Search field, show/hide catalog toggle, show/hide GPU debris points toggle, paginated results list; clicking an entry targets it in the camera |
+| Time Warp | Decrease / increase `WorldTime::multiplier` buttons |
+| Simulation Controls | Map View, Toggle Origin, Cycle Camera Target, Apply/Reset plan buttons, Capture button |
+| Simulation HUD | Live telemetry (`CaptureTelemetryReadout`) and capture guidance (`CaptureGuidanceReadout`) readouts |
 | Reference | Usage hints |
 
-The Capture button is wired with the actual `plan_id` and the `Satellite1` debris entity.
+When a capture plan is edited and saved while the sim is running, a **restart prompt** banner is shown if `SimPlanSyncState::in_sync` is `false`. The user can apply the new plan by triggering a sim reset.
 
 Key components:
 - `SimScreen` — marker for the root node (used for cleanup).
@@ -145,20 +146,20 @@ Key components:
 
 ---
 
-### New / Edit capture plan modal (`screens/new_capture_plan.rs`)
+### New / Edit / View capture plan modal (`screens/capture_plan.rs`)
 
 An overlay modal driven by the `NewCapturePlanForm` resource. Shown when `NewCapturePlanForm::open == true`.
 
-The title reads **"New Capture Plan"** when creating and **"Edit Capture Plan"** when `editing_plan_id` is set.
+The title reads **“New Capture Plan”** when creating, **“Edit Capture Plan”** when `editing_plan_id` is set, and **“View Capture Plan”** when `read_only` is `true` (e.g. for example plans).
 
 The form contains:
-- General fields: Plan Name, Tether Name, Tether Type, Number of Joints.
-- Unit system radio buttons: **m** (metric, default) or **ft** (imperial). Velocity and force values are stored in metric; if imperial is selected, values are converted on save (1 ft = 0.3048 m, 1 lbf = 4.44822 N).
+- General fields: Plan Name, Tether Name, Tether Type, Tether Length.
+- Unit system radio buttons: **m** (metric, default) or **ft** (imperial). Velocity and force values are stored in metric; if imperial is selected, values are converted on save (1 ft = 0.3048 m, 1 lbf = 4.44822 N).
 - Per-phase sections (Approach, Terminal, Capture) with max velocity, max force, and shrink rate fields.
-- "+ Add Transition" buttons to add distance-based transition conditions to Approach and Terminal phases.
-- Save and Cancel buttons in the header bar.
+- “+ Add Transition” buttons to add distance-based transition conditions to Approach and Terminal phases.
+- Save and Cancel buttons in the header bar (hidden in read-only mode).
 
-On save, `validate_form` checks all required fields. If a filename conflict exists and the form is in **create** mode, a confirmation dialog appears; in **edit** mode the file is always overwritten without a dialog. After a successful save, `CapturePlanLibrary::user_plans` is reloaded and the home screen plan list refreshes.
+On save, `validate_form` checks all required fields. If a filename conflict exists and the form is in **create** mode, a confirmation dialog appears; in **edit** mode the file is always overwritten without a dialog. After a successful save, `CapturePlanLibrary::user_plans` is reloaded and the home screen plan list refreshes. If the save occurred while the sim screen was open, `SimPlanSyncState::in_sync` is set to `false` to trigger the restart prompt.
 
 Key components: `NewCapturePlanModal`, `NewPlanSaveButton`, `NewPlanCancelButton`, `AddApproachTransitionButton`, `AddTerminalTransitionButton`, `NewCapturePlanScrollBody`.
 

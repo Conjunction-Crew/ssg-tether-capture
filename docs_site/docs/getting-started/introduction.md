@@ -11,7 +11,7 @@ sidebar_position: 1
 - **Propagates orbits** — satellites, debris, and tether systems are positioned using Keplerian propagation driven by TLE data or classical orbital elements (COE).
 - **Simulates tether dynamics** — a configurable multi-joint tether is modelled as a chain of rigid bodies using [Avian3D](https://github.com/Jondolf/avian) physics.
 - **Renders in real time** — a 3D Earth scene with atmospheric scattering, a 2D orbital map view, and a separate UI layer all run simultaneously via Bevy's render layer system.
-- **Supports time warp** — simulation time can be scaled up or down through a `TimeWarp` resource, useful for fast-forwarding orbital periods.
+- **Supports time warp** — simulation time can be scaled up or down through a `WorldTime` resource, useful for fast-forwarding orbital periods.
 
 ## Key capabilities
 

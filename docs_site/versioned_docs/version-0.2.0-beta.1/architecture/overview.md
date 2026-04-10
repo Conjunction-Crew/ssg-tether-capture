@@ -41,9 +41,10 @@ src/
 The following plugins are added to the app:
 
 ```
-PhysicsPlugins          (Avian3D rigid-body physics)
-OrbitalMechanicsPlugin  (orbital initialisation — PreUpdate)
+PhysicsPlugins          (Avian3D rigid-body physics — on custom ManualPhysics schedule)
+OrbitalMechanicsPlugin  (orbital init, physics stepping, capture algorithms)
 OrbitCameraPlugin       (camera input + tracking — Update/PostUpdate)
+GpuComputePlugin        (GPU compute pipeline for large orbital datasets)
 UiPlugin                (UI camera, state machine, screen lifecycle)
 DefaultPlugins          (Bevy standard — only added in run(), not in tests)
 ```
@@ -54,11 +55,12 @@ See [Plugins](./plugins) for what each plugin registers.
 
 | Schedule | Systems registered |
 |---|---|
-| `Startup` | `setup_lighting`, `setup_celestial`, `setup_tether`, `setup_entities` (chained) |
-| `PreUpdate` | `init_orbitals` |
-| `Update` | `ssg_propagate_keplerian`, `toggle_map_view`, `toggle_origin`, `change_time_warp`, `track_objects`, `map_orbitals`, camera input systems |
-| `PostUpdate` | `floating_origin`, `orbit_camera_track` |
-| `FixedPostUpdate` | Avian3D physics systems |
+| `OnEnter(UiScreen::Sim)` | `setup_lighting`, `setup_celestial`, `setup_tether`, `setup_entities`, `load_dataset_entities` (chained) |
+| `First` | `init_orbitals` |
+| `FixedUpdate` | `fixed_physics_step` (drives the `ManualPhysics` schedule at `FIXED_HZ`) |
+| `Update` | `toggle_map_view`, `toggle_origin`, `toggle_capture_gizmos`, `change_time_warp`, `map_orbitals`, `floating_origin_update_visuals`, `dev_gizmos`, `capture_gizmos`, camera input systems, UI update systems |
+| `PostUpdate` | `orbit_camera_track`, GPU compute sync systems |
+| `ManualPhysics` | `cache_eci_states` (First) → `physics_bubble_add_remove`, `target_entity_reset_origin` (Prepare) → Avian3D physics → `capture_state_machine_update` (Last) |
 | `Last` | `orbital_gizmos` |
 
 ## External dependencies

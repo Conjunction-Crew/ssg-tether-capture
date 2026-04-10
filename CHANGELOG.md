@@ -21,26 +21,35 @@ When preparing a release:
   or on version tag push
 - Updates `pr.yaml` to
   - Support checks for `release/v*.*.*` and `release/v*.*.*-beta.*` branches
-  - Remove version checking from this workflow
+  - Delegate PR version verification to `scripts/verify_release_pr.sh`
 - Update the `contributing` docs section to explain release process.
 - Updates `docusaurus` version from 3.9.2 → 3.10.0
   - Updates other NPM packages as required to update docusaurus.
 - Updates docs to explain changes to resources, UI structure, plugins, and instructions on how to run the app
-- Updates the library to decouple the physics calculations from frame updates, moving to a fixed update frequency
-- Updates the capture algorithms
+- Updates the library to decouple the physics calculations from frame updates, moving to a fixed update frequency (`ManualPhysics` custom schedule driven by `fixed_physics_step` at `FIXED_HZ`)
+- Updates the capture algorithms; capture plan states and transitions are now pre-compiled into `CompiledCapturePlan` for efficient O(1) runtime lookups
+- Tether properties (length) are now defined by the capture plan (`CapturePlanDevice`) rather than a fixed constant; number of joints is no longer user-configurable
+- Example capture plans are now read-only in the UI (view-only mode in the capture plan form)
 
 ### Added
 - `.release.toml` configuration file for `cargo-release`.
 - Adds scripts to manage pre and post release tasks.
   - `scripts/pre_release.sh` and `scripts/post_release.sh` for managing pre and post release tasks.
   - `scripts/post_release.sh` also keeps the docs site version in sync with the crate version.
+  - `scripts/verify_release_pr.sh` for CI pull-request version verification.
 - Adds `CHANGELOG.md` document to track changes between releases.
 - Adds versioned docs for `v0.2.0-beta.1`
 - Adds `assets/datasets` and `assets/shaders` directories
-- Adds support for orbital data from JSON
-- Adds GPU compute support for large datasets
-- Adds UI for capture plan view/edit
+- Adds support for loading orbital data from JSON datasets (`assets/datasets/`) using `JsonOrbitalData` / `JsonOrbital`
+- Adds GPU compute support for large datasets (`GpuComputePlugin`): instanced debris points on the map view rendered via a GPU compute pipeline without spawning individual ECS entities
+- Adds `SpaceObjectCatalog` with search, filter, and pagination UI in the sim sidebar; includes show/hide toggles for the catalog panel and GPU debris points
+- Adds UI for capture plan create / edit / view; form supports metric and imperial unit input with automatic conversion on save
+- Adds overwrite confirmation dialog when saving a new capture plan with a conflicting filename
+- Adds sim restart prompt (`SimPlanSyncState`) when a capture plan is edited and saved while the simulation is running
+- Adds capture plan validation (`validate_capture_plan`, `CapturePlanLoadErrors`) with per-file error reporting
 - Adds support for specifying a working directory for the app to read/write files
+- Adds `resolve_asset_path()` for correct asset resolution when running from a macOS `.app` bundle
+- Fixes font asset path referencing for Windows bundle packaging
 
 ---
 

@@ -12,36 +12,32 @@ Each orbital body is spawned with an `Orbit` enum that declares how its initial 
 
 ```rust
 pub enum Orbit {
-    FromTle(String),          // Two-Line Element set string
-    FromElements(OrbitalElements), // Classical orbital elements
-    FromParams(TrueParams),   // Raw position/velocity vectors
+    FromTle(String),              // Two-Line Element set string
+    FromElements(Vector6<f64>),   // Classical orbital elements [a, e, i, Ω, ω, M]
 }
 ```
 
-The `init_orbitals` system (run in `PreUpdate` by `OrbitalMechanicsPlugin`) reads newly-spawned `Orbit` components and populates the corresponding `Orbital` and `TrueParams` components.
+The `init_orbitals` system (run in `First` by `OrbitalMechanicsPlugin`) reads newly-spawned `Orbit` components, constructs a `brahe::KeplerianPropagator`, stores it in the entity's `Orbital` component, and removes the `Orbit` component.
 
-## TrueParams
+## JSON orbital datasets
 
-`TrueParams` stores the canonical position and velocity of an entity in an Earth-Centered Inertial (ECI) reference frame, in metres and metres per second:
+Large collections of debris objects are loaded from JSON files in `assets/datasets/` using the `JsonOrbitalData` / `JsonOrbital` deserialization types. The JSON format matches the GP element-set schema used by Space-Track.org (fields like `OBJECT_NAME`, `NORAD_CAT_ID`, `MEAN_MOTION`, `ECCENTRICITY`, etc.).
 
-```rust
-pub struct TrueParams {
-    pub r: [f64; 3],   // position (m)
-    pub v: [f64; 3],   // velocity (m/s)
-}
-```
+The `load_dataset_entities` system runs on `OnEnter(UiScreen::Sim)`, parses all `.json` files in `assets/datasets/`, and registers each object in `SpaceObjectCatalog`. The orbital state for each object is uploaded to the GPU via `GpuComputePlugin` for efficient rendering as instanced map-view points — no individual ECS entity is spawned per debris object.
 
-All other positional representations (Bevy `Transform`, map view position, approach metrics) are derived from `TrueParams`.
+## ECI state caching
+
+Rather than each system querying the `KeplerianPropagator` directly, the `cache_eci_states` system runs once per `ManualPhysics` tick (in `PhysicsSystems::First`) and writes each entity's current ECI `Vector6<f64>` into `OrbitalCache::eci_states`. All other systems — physics bubble management, capture algorithms, map view positioning — read from this cache.
 
 ## Keplerian propagation
 
-Each simulation step, `ssg_propagate_keplerian` advances every active `Orbital` entity forward in time:
+Each `ManualPhysics` tick, `cache_eci_states` advances every active `Orbital` entity forward in time:
 
-1. Iterates over all active orbitals, each of which owns a `brahe::KeplerianPropagator` instance stored in the `OrbitalCache` resource.
-2. Calls `propagator.state_eci(epoch)` — where `epoch` is derived from `WorldTime` scaled by `TimeWarp::multiplier` — to obtain a `nalgebra::Vector6<f64>` containing the current ECI position and velocity.
-3. Writes the updated position/velocity back into each entity's `TrueParams`.
+1. Iterates over all entities with an `Orbital` component that has a propagator.
+2. Calls `propagator.state_eci(epoch)` — where `epoch` is the current `WorldTime::epoch` — to obtain a `nalgebra::Vector6<f64>` containing the current ECI position and velocity.
+3. Writes the updated state into `OrbitalCache::eci_states`.
 
-Keplerian propagation assumes two-body dynamics (no perturbations). This is accurate for short time spans and illustrative for longer ones.
+The `WorldTime::epoch` is advanced by `fixed_physics_step` each `FixedUpdate` tick, scaled by `WorldTime::multiplier`.
 
 ## COE ↔ RV conversion
 
@@ -54,16 +50,7 @@ These are used during initialisation when an entity is spawned `FromElements`.
 
 ## Approach metrics
 
-The `Orbital` component carries an `ApproachMetrics` struct that is updated each frame:
-
-| Field | Description |
-|---|---|
-| `relative_position_km` | Position of this object relative to the primary target |
-| `relative_velocity_km_s` | Velocity relative to the primary target |
-| `range_km` | Current separation distance |
-| `closing_speed_km_s` | Rate of change of range (negative = approaching) |
-| `time_to_closest_approach_s` | Predicted time until closest approach (if converging) |
-| `closest_approach_distance_km` | Predicted closest approach distance |
+Relative position, velocity, range, closing speed, and predicted closest-approach distance between the tether and a debris target are computed each physics tick by `capture_state_machine_update` directly from the cached ECI states in `OrbitalCache::eci_states`. These values drive the transition conditions in a `CompiledCapturePlan`.
 
 ## brahe
 

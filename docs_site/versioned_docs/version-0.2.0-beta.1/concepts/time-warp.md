@@ -4,17 +4,18 @@ sidebar_position: 4
 
 # Time Warp
 
-The `TimeWarp` resource controls how quickly simulation time advances relative to real time.
+The `WorldTime` resource controls both the current simulation epoch and how quickly simulation time advances relative to real time.
 
-## TimeWarp resource
+## WorldTime resource
 
 ```rust
-pub struct TimeWarp {
-    pub multiplier: f64,
+pub struct WorldTime {
+    pub multiplier: u32, // default: 1
+    pub epoch: Epoch,    // default: Epoch::now()
 }
 ```
 
-The default multiplier is `1.0` (real time). A multiplier of `60.0` makes one second of real time equal to one minute of simulation time.
+The default multiplier is `1` (real time). A multiplier of `60` makes one fixed tick advance the simulation epoch by 60× the normal timestep.
 
 ## Changing time warp
 
@@ -25,16 +26,12 @@ The `change_time_warp` system (registered in `lib.rs` `Update`) responds to key 
 | `,` (comma) | Decrease multiplier |
 | `.` (period) | Increase multiplier |
 
+The multiplier is a `u32` — it steps in whole-number increments.
+
 ## Effect on propagation
 
-The `ssg_propagate_keplerian` system reads `TimeWarp::multiplier` each frame and scales the propagation delta time accordingly:
-
-```
-propagation_dt = real_dt * time_warp.multiplier
-```
-
-All Keplerian positions are advanced by `propagation_dt` each frame, so increasing the multiplier makes orbits visibly faster.
+The `fixed_physics_step` system advances `WorldTime::epoch` each `FixedUpdate` tick. The time delta applied is `fixed_dt * multiplier`. The `cache_eci_states` system then calls `propagator.state_eci(epoch)` with the updated epoch, so all Keplerian positions advance at the scaled rate.
 
 ## Effect on physics
 
-Avian3D physics runs on `FixedPostUpdate` and uses the engine's fixed timestep. Time warp does **not** directly scale the Avian3D simulation — only the orbital propagation (Keplerian) step is affected. This is intentional: tether dynamics are a local physics simulation, while orbital propagation is an analytical calculation that can be freely time-scaled.
+Avian3D physics runs inside the `ManualPhysics` schedule, which is driven by `fixed_physics_step`. The physics timestep itself is fixed at `FIXED_HZ` regardless of `multiplier`; only the orbital epoch advances faster. This is intentional: tether dynamics are a local physics simulation that must remain stable, while orbital propagation is an analytical calculation that can be freely time-scaled.
