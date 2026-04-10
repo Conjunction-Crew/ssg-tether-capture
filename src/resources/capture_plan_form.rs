@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use serde_json::Value;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum UnitSystem {
@@ -25,7 +26,8 @@ pub struct NewCapturePlanForm {
     // Tether
     pub tether_name: String,
     pub tether_type: String,
-    pub num_joints: String,
+    /// Physical length of the tether in metres (stored as string for the input field).
+    pub tether_length: String,
 
     // Approach state
     pub approach_max_velocity: String,
@@ -56,12 +58,16 @@ pub struct NewCapturePlanForm {
     pub show_restart_prompt: bool,
     /// When true, the form is in view-only mode (e.g. viewing an example plan).
     pub read_only: bool,
+    /// Snapshot of the serialized plan taken when the form is opened for editing.
+    /// Used to detect whether any fields were actually changed before saving.
+    pub original_json: Option<Value>,
 }
 
 impl NewCapturePlanForm {
     pub fn reset(&mut self) {
         *self = NewCapturePlanForm {
             tether_type: "tether".to_string(),
+            tether_length: "20.0".to_string(),
             ..Default::default()
         };
     }

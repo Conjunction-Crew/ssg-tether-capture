@@ -128,7 +128,7 @@ fn apply_force_to_target() {
 
     // Load capture plans
     let example_plans = load_plans_from_dir(
-        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/capture_plans"),
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/example_capture_plans"),
     );
     let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
     capture_plan_lib.plans = example_plans;

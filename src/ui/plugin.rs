@@ -8,14 +8,17 @@ use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 
-use crate::components::capture_components::CaptureComponent;
+use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
 };
-use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
+use crate::resources::capture_plans::{
+    CapturePlanLibrary, CapturePlanLoadErrors, build_capture_component, load_plans_from_dir,
+    load_plans_from_dir_with_errors,
+};
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::WorkingDirectory;
 use crate::resources::world_time::WorldTime;
@@ -23,8 +26,8 @@ use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
-    generate_filename, spawn_capture_plan_modal, sync_form_fields, tether_type_radio_interactions,
-    validate_form,
+    dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
+    sync_form_fields, tether_type_radio_interactions, validate_form,
 };
 use crate::ui::screens::home::{
     HomeScreen, cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
@@ -73,6 +76,7 @@ impl Plugin for UiPlugin {
             .init_resource::<UserPlansDirty>()
             .init_resource::<ExitConfirmPending>()
             .init_resource::<SimPlanSyncState>()
+            .init_resource::<CapturePlanLoadErrors>()
             .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
@@ -110,9 +114,12 @@ impl Plugin for UiPlugin {
                     input_field_interaction,
                     input_field_keyboard,
                     input_field_display,
-                    sync_form_fields,
-                    capture_plan_interactions,
-                    tether_type_radio_interactions,
+                    (
+                        sync_form_fields,
+                        capture_plan_interactions,
+                        tether_type_radio_interactions,
+                        (dropdown_interactions, sync_dropdown_labels).chain(),
+                    ),
                     poll_new_plan_modal,
                     poll_home_plan_refresh,
                     poll_exit_confirm_modal,
@@ -347,17 +354,13 @@ fn handle_ui_events(
                         // Get plan information
                         if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
                             // Now, mark the entity for capture
-                            commands.entity(*capture_entity).insert(CaptureComponent {
-                                plan_id: plan.name.clone(),
-                                current_state: plan
-                                    .states
-                                    .get(0)
-                                    .expect("No states in the desired plan!")
-                                    .id
-                                    .clone(),
-                                state_enter_time_s: physics_time.elapsed_secs_f64(),
-                                state_elapsed_time_s: 0.0,
-                            });
+                            if let Some(capture_component) = build_capture_component(
+                                plan_id,
+                                plan,
+                                physics_time.elapsed_secs_f64(),
+                            ) {
+                                commands.entity(*capture_entity).insert(capture_component);
+                            }
                         }
                     } else {
                         println!("entity already marked for capture!");
@@ -377,9 +380,6 @@ fn handle_ui_events(
                         atmosphere_settings.scene_units_to_m = 1.0;
                     }
                 }
-            }
-            UiEvent::ToggleOrigin => {
-                settings.dev_gizmos = !settings.dev_gizmos;
             }
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
@@ -434,54 +434,98 @@ fn handle_ui_events(
                 }
             }
             UiEvent::SaveCapturePlan => {
-                let errors = validate_form(&form);
-                if !errors.is_empty() {
-                    form.validation_errors = errors;
+                // If editing and nothing has changed, close the form without
+                // writing to disk or prompting for a sim restart.
+                if form.editing_plan_id.is_some()
+                    && form.original_json.as_ref() == Some(&build_capture_plan_json(&form))
+                {
+                    form.open = false;
+                    form.reset();
                 } else {
-                    form.validation_errors.clear();
-                    let filename = generate_filename(&form.plan_name);
-                    let dest = std::path::Path::new(&working_directory.path).join(&filename);
-                    // In edit mode, skip overwrite dialog and always overwrite
-                    let skip_overwrite_check = form.editing_plan_id.is_some();
-                    let was_editing = form.editing_plan_id.is_some();
-                    if dest.exists()
-                        && form.overwrite_conflict_path.is_none()
-                        && !skip_overwrite_check
-                    {
-                        form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
+                    let errors = validate_form(&form);
+                    if !errors.is_empty() {
+                        form.validation_errors = errors;
                     } else {
-                        let json = build_capture_plan_json(&form);
-                        match serde_json::to_string_pretty(&json) {
-                            Ok(content) => {
-                                if let Err(e) = std::fs::write(&dest, content) {
-                                    eprintln!("Failed to save capture plan: {e}");
-                                } else {
-                                    // Reload user plans
-                                    let new_user_plans = load_plans_from_dir(std::path::Path::new(
-                                        &working_directory.path,
-                                    ));
-                                    capture_plan_lib.user_plans = new_user_plans;
-                                    capture_plan_lib.plans = capture_plan_lib
-                                        .example_plans
-                                        .iter()
-                                        .chain(capture_plan_lib.user_plans.iter())
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect();
-                                    user_plans_dirty.0 = true;
-                                    // If editing from the sim screen, prompt for restart
-                                    let should_prompt =
-                                        was_editing && selected_project.project_id.is_some();
-                                    form.open = false;
-                                    form.reset();
-                                    if should_prompt {
-                                        form.show_restart_prompt = true;
+                        form.validation_errors.clear();
+                        // When editing, always write to the original file (keyed by
+                        // editing_plan_id) so renaming a plan only updates the `name`
+                        // field inside the JSON without creating a new file on disk.
+                        let filename = if let Some(ref edit_id) = form.editing_plan_id {
+                            generate_filename(edit_id)
+                        } else {
+                            generate_filename(&form.plan_name)
+                        };
+                        let dest = std::path::Path::new(&working_directory.path).join(&filename);
+                        // In edit mode, skip overwrite dialog and always overwrite
+                        let skip_overwrite_check = form.editing_plan_id.is_some();
+                        let was_editing = form.editing_plan_id.is_some();
+                        if dest.exists()
+                            && form.overwrite_conflict_path.is_none()
+                            && !skip_overwrite_check
+                        {
+                            form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
+                        } else {
+                            let json = build_capture_plan_json(&form);
+                            match serde_json::to_string_pretty(&json) {
+                                Ok(content) => {
+                                    if let Err(e) = std::fs::write(&dest, content) {
+                                        eprintln!("Failed to save capture plan: {e}");
+                                    } else {
+                                        // Reload user plans
+                                        let new_user_plans = load_plans_from_dir(
+                                            std::path::Path::new(&working_directory.path),
+                                        );
+                                        capture_plan_lib.user_plans = new_user_plans;
+                                        capture_plan_lib.plans = capture_plan_lib
+                                            .example_plans
+                                            .iter()
+                                            .chain(capture_plan_lib.user_plans.iter())
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect();
+                                        let editing_from_sim =
+                                            was_editing && selected_project.project_id.is_some();
+                                        // `name` is not a sim parameter. If only the name
+                                        // changed, apply immediately without a restart prompt.
+                                        let only_name_changed = editing_from_sim
+                                            && form.original_json.as_ref().is_some_and(|orig| {
+                                                let mut a = orig.clone();
+                                                let mut b = json.clone();
+                                                if let (Some(ao), Some(bo)) =
+                                                    (a.as_object_mut(), b.as_object_mut())
+                                                {
+                                                    ao.remove("name");
+                                                    bo.remove("name");
+                                                }
+                                                a == b
+                                            });
+                                        // Compile immediately when creating a new plan, editing
+                                        // outside the sim, or when only the name changed.
+                                        if !editing_from_sim || only_name_changed {
+                                            let refreshed: Vec<(String, CapturePlan)> =
+                                                capture_plan_lib
+                                                    .plans
+                                                    .iter()
+                                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                                    .collect();
+                                            for (id, plan) in refreshed {
+                                                capture_plan_lib.insert_plan(id, plan);
+                                            }
+                                        }
+                                        user_plans_dirty.0 = true;
+                                        // Prompt for restart only when sim-affecting params changed
+                                        let should_prompt = editing_from_sim && !only_name_changed;
+                                        form.open = false;
+                                        form.reset();
+                                        if should_prompt {
+                                            form.show_restart_prompt = true;
+                                        }
                                     }
                                 }
+                                Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
                             }
-                            Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
                         }
                     }
-                }
+                } // end else (form was changed)
             }
             UiEvent::ConfirmOverwriteCapturePlan => {
                 let filename = generate_filename(&form.plan_name);
@@ -501,6 +545,14 @@ fn handle_ui_events(
                                 .chain(capture_plan_lib.user_plans.iter())
                                 .map(|(k, v)| (k.clone(), v.clone()))
                                 .collect();
+                            let refreshed: Vec<(String, CapturePlan)> = capture_plan_lib
+                                .plans
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+                            for (id, plan) in refreshed {
+                                capture_plan_lib.insert_plan(id, plan);
+                            }
                             user_plans_dirty.0 = true;
                             form.open = false;
                             form.reset();
@@ -521,7 +573,9 @@ fn handle_ui_events(
                     form.tether_name = plan.tether.clone();
                     if let Some(device) = &plan.device {
                         form.tether_type = device.device_type.clone();
-                        form.num_joints = device.num_joints.to_string();
+                        if device.tether_length > 0.0 {
+                            form.tether_length = device.tether_length.to_string();
+                        }
                     }
                     for state in &plan.states {
                         let transitions: Vec<TransitionForm> = state
@@ -601,11 +655,16 @@ fn handle_ui_events(
                         }
                     }
                     form.editing_plan_id = Some(plan_id.clone());
+                    // Snapshot the form state so we can detect unchanged edits on Save.
+                    form.original_json = Some(build_capture_plan_json(&form));
                     form.open = true;
                 }
             }
             UiEvent::SetUnitSystem(unit) => {
                 form.unit_system = *unit;
+            }
+            UiEvent::ToggleCaptureGizmos => {
+                settings.capture_gizmos = !settings.capture_gizmos;
             }
         }
     }
@@ -615,6 +674,7 @@ fn poll_home_plan_refresh(
     mut commands: Commands,
     mut user_plans_dirty: ResMut<UserPlansDirty>,
     capture_plan_lib: Res<CapturePlanLibrary>,
+    mut capture_plan_load_errors: ResMut<CapturePlanLoadErrors>,
     home_screens: Query<Entity, With<HomeScreen>>,
     asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
@@ -623,6 +683,10 @@ fn poll_home_plan_refresh(
     if !user_plans_dirty.0 || home_screens.is_empty() {
         return;
     }
+    // Re-scan the user plans directory for any newly broken or fixed files.
+    let (_, user_load_errors) =
+        load_plans_from_dir_with_errors(std::path::Path::new(&working_directory.path));
+    capture_plan_load_errors.errors = user_load_errors;
     for entity in &home_screens {
         commands.entity(entity).despawn();
     }
@@ -632,6 +696,7 @@ fn poll_home_plan_refresh(
         &theme,
         &capture_plan_lib,
         &working_directory.path,
+        &capture_plan_load_errors,
     );
     user_plans_dirty.0 = false;
 }

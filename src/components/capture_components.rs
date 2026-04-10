@@ -29,8 +29,9 @@ pub struct State {
 pub struct CapturePlanDevice {
     #[serde(rename = "type", default)]
     pub device_type: String,
+    /// Physical length of the tether in metres.
     #[serde(default)]
-    pub num_joints: u64,
+    pub tether_length: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

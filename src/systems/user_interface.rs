@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::{
     components::{
-        capture_components::{CaptureComponent, State},
+        capture_components::CaptureComponent,
         orbit::Orbital,
         user_interface::{
             CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
@@ -10,7 +10,7 @@ use crate::{
     },
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M, SCENE_LAYER},
     resources::{
-        capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
+        capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCaptureState},
         orbital_cache::{self, OrbitalCache},
         world_time::WorldTime,
     },
@@ -20,7 +20,6 @@ use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 use brahe::utils::DOrbitStateProvider;
 use nalgebra::Vector6;
-use serde_json::Value;
 
 struct CaptureMetrics {
     range_m: f64,
@@ -124,16 +123,12 @@ pub fn update_capture_guidance(
             .target_entity
             .and_then(|entity| capture_targets.get(entity).ok())
         {
-            let Some(plan) = capture_plans.plans.get(&capture.plan_id) else {
+            let Some(plan) = capture_plans.compiled_plans.get(&capture.plan_id) else {
                 text.0 = format!("Active capture plan `{}` is not loaded.", capture.plan_id);
                 continue;
             };
 
-            let Some(state) = plan
-                .states
-                .iter()
-                .find(|state| state.id == capture.current_state)
-            else {
+            let Some(state) = plan.state(&capture.current_state) else {
                 text.0 = format!(
                     "Current state `{}` was not found in plan `{}`.",
                     capture.current_state, capture.plan_id
@@ -165,7 +160,7 @@ pub fn update_capture_guidance(
             continue;
         }
 
-        let Some(plan) = capture_plans.plans.get(&readout.plan_id) else {
+        let Some(plan) = capture_plans.compiled_plans.get(&readout.plan_id) else {
             text.0 = format!("Capture plan `{}` is not loaded.", readout.plan_id);
             continue;
         };
@@ -315,44 +310,19 @@ fn world_velocity(true_params: &Vector6<f64>, linear_velocity: DVec3, disabled: 
     }
 }
 
-fn append_state_parameters(body: &mut String, state: &State) {
+fn append_state_parameters(body: &mut String, state: &CompiledCaptureState) {
     writeln!(body, "State parameters").unwrap();
-
-    let Some(parameters) = state.parameters.as_ref().and_then(Value::as_object) else {
-        writeln!(body, "- none").unwrap();
-        return;
-    };
-
-    if parameters.is_empty() {
-        writeln!(body, "- none").unwrap();
-        return;
-    }
-
-    let mut ordered_keys = Vec::new();
-    for key in ["max_velocity", "max_force", "shrink_rate"] {
-        if parameters.contains_key(key) {
-            ordered_keys.push(key.to_string());
-        }
-    }
-
-    let mut remaining_keys = parameters
-        .keys()
-        .filter(|key| !ordered_keys.iter().any(|ordered| ordered == *key))
-        .cloned()
-        .collect::<Vec<_>>();
-    remaining_keys.sort();
-    ordered_keys.extend(remaining_keys);
-
-    for key in ordered_keys {
-        if let Some(value) = parameters.get(&key).and_then(format_value) {
-            writeln!(body, "- {}: {}", key, value).unwrap();
-        }
+    let p = &state.parameters;
+    writeln!(body, "- max_velocity: {:.4}", p.max_velocity).unwrap();
+    writeln!(body, "- max_force: {:.4}", p.max_force).unwrap();
+    if let Some(sr) = p.shrink_rate {
+        writeln!(body, "- shrink_rate: {:.4}", sr).unwrap();
     }
 }
 
 fn append_transitions(
     body: &mut String,
-    state: &State,
+    state: &CompiledCaptureState,
     current_range: Option<f64>,
     current_rel_speed: Option<f64>,
     active_capture: bool,
@@ -363,61 +333,20 @@ fn append_transitions(
         writeln!(body, "Upcoming transitions").unwrap();
     }
 
-    let Some(transitions) = &state.transitions else {
-        writeln!(body, "- none").unwrap();
-        return;
-    };
-
-    if transitions.is_empty() {
+    if state.transitions.is_empty() {
         writeln!(body, "- none").unwrap();
         return;
     }
 
-    let mut found_transition = false;
-    for transition in transitions {
-        if let Some(line) = format_transition_line(transition, current_range, current_rel_speed) {
-            found_transition = true;
-            writeln!(body, "{}", line).unwrap();
+    for t in &state.transitions {
+        let mut conditions = Vec::new();
+        if let Some(limit) = t.distance_less_than {
+            conditions.push(format_condition("distance", "<", limit, "m", current_range));
         }
-    }
-
-    if !found_transition {
-        writeln!(body, "- conditions not available").unwrap();
-    }
-}
-
-fn format_transition_line(
-    transition: &Value,
-    current_range: Option<f64>,
-    current_rel_speed: Option<f64>,
-) -> Option<String> {
-    let to = transition.get("to").and_then(Value::as_str)?;
-    let mut conditions = Vec::new();
-
-    if let Some(distance) = transition.get("distance") {
-        let units = distance.get("units").and_then(Value::as_str).unwrap_or("m");
-        if let Some(limit) = distance.get("less_than").and_then(Value::as_f64) {
-            conditions.push(format_condition(
-                "distance",
-                "<",
-                limit,
-                units,
-                current_range,
-            ));
+        if let Some(limit) = t.distance_greater_than {
+            conditions.push(format_condition("distance", ">", limit, "m", current_range));
         }
-        if let Some(limit) = distance.get("greater_than").and_then(Value::as_f64) {
-            conditions.push(format_condition(
-                "distance",
-                ">",
-                limit,
-                units,
-                current_range,
-            ));
-        }
-    }
-
-    if let Some(relative_velocity) = transition.get("relative_velocity") {
-        if let Some(limit) = relative_velocity.get("less_than").and_then(Value::as_f64) {
+        if let Some(limit) = t.relative_velocity_less_than {
             conditions.push(format_condition(
                 "relative velocity",
                 "<",
@@ -426,10 +355,7 @@ fn format_transition_line(
                 current_rel_speed,
             ));
         }
-        if let Some(limit) = relative_velocity
-            .get("greater_than")
-            .and_then(Value::as_f64)
-        {
+        if let Some(limit) = t.relative_velocity_greater_than {
             conditions.push(format_condition(
                 "relative velocity",
                 ">",
@@ -438,13 +364,12 @@ fn format_transition_line(
                 current_rel_speed,
             ));
         }
+        if conditions.is_empty() {
+            writeln!(body, "- {} when conditions are met", t.to).unwrap();
+        } else {
+            writeln!(body, "- {} when {}", t.to, conditions.join(" and ")).unwrap();
+        }
     }
-
-    if conditions.is_empty() {
-        return Some(format!("- {} when conditions are met", to));
-    }
-
-    Some(format!("- {} when {}", to, conditions.join(" and ")))
 }
 
 fn format_condition(
@@ -482,20 +407,4 @@ fn format_condition(
     } else {
         format!("{} {} {}", label, comparator, threshold_text)
     }
-}
-
-fn format_value(value: &Value) -> Option<String> {
-    if let Some(float) = value.as_f64() {
-        return Some(format!("{:.2}", float));
-    }
-
-    if let Some(integer) = value.as_i64() {
-        return Some(integer.to_string());
-    }
-
-    if let Some(boolean) = value.as_bool() {
-        return Some(boolean.to_string());
-    }
-
-    value.as_str().map(ToString::to_string)
 }
