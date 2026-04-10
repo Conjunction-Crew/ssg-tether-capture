@@ -26,7 +26,6 @@ pub enum UiEvent {
         plan_id: String,
     },
     ToggleMapView,
-    ToggleOrigin,
     ChangeTimeWarp {
         increase: bool,
     },

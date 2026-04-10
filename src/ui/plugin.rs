@@ -378,9 +378,6 @@ fn handle_ui_events(
                     }
                 }
             }
-            UiEvent::ToggleOrigin => {
-                settings.dev_gizmos = !settings.dev_gizmos;
-            }
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
                     const MAX_TIME_WARP: u32 = 10000;
@@ -513,8 +510,7 @@ fn handle_ui_events(
                                         }
                                         user_plans_dirty.0 = true;
                                         // Prompt for restart only when sim-affecting params changed
-                                        let should_prompt =
-                                            editing_from_sim && !only_name_changed;
+                                        let should_prompt = editing_from_sim && !only_name_changed;
                                         form.open = false;
                                         form.reset();
                                         if should_prompt {

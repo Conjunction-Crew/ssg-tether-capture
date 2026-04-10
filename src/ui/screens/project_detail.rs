@@ -9,6 +9,7 @@ use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
+use crate::components::capture_components::CaptureComponent;
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
@@ -68,9 +69,6 @@ pub struct TimeWarpDecreaseButton;
 
 #[derive(Component)]
 pub struct TimeWarpIncreaseButton;
-
-#[derive(Component)]
-pub struct ToggleOriginButton;
 
 #[derive(Component)]
 pub struct CycleCameraButton;
@@ -880,32 +878,6 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
 
-                                // Toggle Origin button
-                                content
-                                    .spawn((
-                                        Button,
-                                        ToggleOriginButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Toggle Origin (O)"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
                                 // Cycle Camera Target button
                                 content
                                     .spawn((
@@ -958,6 +930,32 @@ pub fn spawn_project_detail_screen(
                                                 ..default()
                                             },
                                             TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Reset Sim button
+                                content
+                                    .spawn((
+                                        Button,
+                                        RestartSimButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.button_background),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Reset Sim"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.button_text),
                                         ));
                                     });
                             },
@@ -1873,7 +1871,6 @@ pub fn project_detail_interactions(
             Option<&BackButton>,
             Option<&CaptureButton>,
             Option<&MapViewButton>,
-            Option<&ToggleOriginButton>,
             Option<&TimeWarpDecreaseButton>,
             Option<&TimeWarpIncreaseButton>,
             Option<&CycleCameraButton>,
@@ -1885,6 +1882,7 @@ pub fn project_detail_interactions(
     >,
     mut commands: Commands,
     exit_modal_query: Query<Entity, With<ExitSimConfirmModal>>,
+    capture_entities: Query<Entity, With<CaptureComponent>>,
     mut events: MessageWriter<UiEvent>,
     screen: Res<State<crate::ui::state::UiScreen>>,
     theme: Res<UiTheme>,
@@ -1897,13 +1895,13 @@ pub fn project_detail_interactions(
 
     let any_modal_open =
         form.open || !exit_modal_query.is_empty() || !restart_modal_query.is_empty();
+    let capture_active = !capture_entities.is_empty();
 
     for (
         interaction,
         back_button,
         capture_button,
         map_view_button,
-        toggle_origin_button,
         time_warp_decrease,
         time_warp_increase,
         cycle_camera_button,
@@ -1912,8 +1910,14 @@ pub fn project_detail_interactions(
         mut background_color,
     ) in &mut interactions
     {
+        let is_capture = capture_button.is_some();
+        let is_exit_confirm = exit_confirm_button.is_some();
         match *interaction {
             Interaction::Pressed => {
+                // Capture button is disabled once capture is active
+                if is_capture && capture_active {
+                    continue;
+                }
                 *background_color = BackgroundColor(theme.button_background_hover);
                 // Exit modal buttons are always allowed
                 if exit_cancel_button.is_some() {
@@ -1934,8 +1938,6 @@ pub fn project_detail_interactions(
                     });
                 } else if map_view_button.is_some() {
                     events.write(UiEvent::ToggleMapView);
-                } else if toggle_origin_button.is_some() {
-                    events.write(UiEvent::ToggleOrigin);
                 } else if time_warp_decrease.is_some() {
                     events.write(UiEvent::ChangeTimeWarp { increase: false });
                 } else if time_warp_increase.is_some() {
@@ -1945,10 +1947,21 @@ pub fn project_detail_interactions(
                 }
             }
             Interaction::Hovered => {
-                *background_color = BackgroundColor(theme.button_background);
+                if is_capture && capture_active {
+                    // Keep dimmed appearance — don't show hover highlight
+                } else {
+                    *background_color = BackgroundColor(theme.button_background);
+                }
             }
             Interaction::None => {
-                *background_color = BackgroundColor(theme.panel_background_soft);
+                if is_capture && capture_active {
+                    *background_color = BackgroundColor(theme.panel_background);
+                } else if is_exit_confirm {
+                    // Preserve blue spawn color; avoid blink to soft on first frame
+                    *background_color = BackgroundColor(theme.button_background);
+                } else {
+                    *background_color = BackgroundColor(theme.panel_background_soft);
+                }
             }
         }
     }
