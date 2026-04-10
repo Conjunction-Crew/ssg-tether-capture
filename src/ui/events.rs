@@ -26,6 +26,7 @@ pub enum UiEvent {
         plan_id: String,
     },
     ToggleMapView,
+    ToggleCaptureGizmos,
     ChangeTimeWarp {
         increase: bool,
     },

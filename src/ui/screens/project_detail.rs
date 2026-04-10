@@ -26,6 +26,7 @@ use crate::resources::space_catalog::{
 };
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
+use crate::ui::screens::capture_plan::ScrollContentWrapper;
 use crate::ui::state::SelectedProject;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
@@ -72,6 +73,9 @@ pub struct TimeWarpIncreaseButton;
 
 #[derive(Component)]
 pub struct CycleCameraButton;
+
+#[derive(Component)]
+pub struct ToggleCaptureGizmosButton;
 
 #[derive(Component)]
 pub struct SidebarPanel;
@@ -439,7 +443,6 @@ pub fn spawn_project_detail_screen(
                                                 flex_grow: 1.0,
                                                 min_height: px(0.0),
                                                 flex_direction: FlexDirection::Column,
-                                                row_gap: px(4.0),
                                                 overflow: Overflow::scroll_y(),
                                                 scrollbar_width: 8.0,
                                                 ..default()
@@ -447,20 +450,52 @@ pub fn spawn_project_detail_screen(
                                         ))
                                         .observe(
                                             |mut ev: On<Pointer<Scroll>>,
-                                             mut query: Query<&mut ScrollPosition>| {
+                                             mut scroll_query: Query<&mut ScrollPosition>,
+                                             computed_nodes: Query<&ComputedNode>,
+                                             children_query: Query<&Children>,
+                                             wrapper_query: Query<(), With<ScrollContentWrapper>>| {
                                                 ev.propagate(false);
                                                 let scroll_amount = match ev.event.unit {
                                                     MouseScrollUnit::Line => ev.event.y * 24.0,
                                                     MouseScrollUnit::Pixel => ev.event.y,
                                                 };
-                                                if let Ok(mut scroll_pos) = query.get_mut(ev.entity)
+                                                if let Ok(mut scroll_pos) =
+                                                    scroll_query.get_mut(ev.entity)
                                                 {
                                                     scroll_pos.0.y -= scroll_amount;
                                                     scroll_pos.0.y = scroll_pos.0.y.max(0.0);
+                                                    if let (Ok(container), Ok(children)) = (
+                                                        computed_nodes.get(ev.entity),
+                                                        children_query.get(ev.entity),
+                                                    ) {
+                                                        if let Some(wrapper_height) = children
+                                                            .iter()
+                                                            .find(|c| wrapper_query.contains(*c))
+                                                            .and_then(|w| computed_nodes.get(w).ok())
+                                                            .map(|n| n.size().y)
+                                                        {
+                                                            let max_scroll =
+                                                                (wrapper_height - container.size().y)
+                                                                    .max(0.0);
+                                                            scroll_pos.0.y =
+                                                                scroll_pos.0.y.min(max_scroll);
+                                                        }
+                                                    }
                                                 }
                                             },
                                         )
-                                        .with_children(|results| {
+                                        .with_children(|catalog_viewport| {
+                                            catalog_viewport
+                                                .spawn((
+                                                    ScrollContentWrapper,
+                                                    Node {
+                                                        width: percent(100),
+                                                        flex_direction: FlexDirection::Column,
+                                                        row_gap: px(4.0),
+                                                        ..default()
+                                                    },
+                                                ))
+                                                .with_children(|results| {
                                             for slot in 0..CATALOG_PAGE_SIZE {
                                                 results
                                                     .spawn((
@@ -494,7 +529,8 @@ pub fn spawn_project_detail_screen(
                                                         ));
                                                     });
                                             }
-                                        });
+                                                }); // close ScrollContentWrapper with_children
+                                        }); // close catalog_viewport with_children
 
                                     panel
                                         .spawn(Node {
@@ -596,8 +632,6 @@ pub fn spawn_project_detail_screen(
                                     flex_shrink: 1.0,
                                     min_height: px(0.0),
                                     flex_direction: FlexDirection::Column,
-                                    row_gap: px(10.0),
-                                    padding: UiRect::all(px(12.0)),
                                     overflow: Overflow::scroll_y(),
                                     scrollbar_width: 8.0,
                                     ..default()
@@ -606,19 +640,49 @@ pub fn spawn_project_detail_screen(
                             ))
                             .observe(
                                 |mut ev: On<Pointer<Scroll>>,
-                                 mut query: Query<&mut ScrollPosition>| {
+                                 mut scroll_query: Query<&mut ScrollPosition>,
+                                 computed_nodes: Query<&ComputedNode>,
+                                 children_query: Query<&Children>,
+                                 wrapper_query: Query<(), With<ScrollContentWrapper>>| {
                                     ev.propagate(false);
                                     let scroll_amount = match ev.event.unit {
                                         MouseScrollUnit::Line => ev.event.y * 24.0,
                                         MouseScrollUnit::Pixel => ev.event.y,
                                     };
-                                    if let Ok(mut scroll_pos) = query.get_mut(ev.entity) {
+                                    if let Ok(mut scroll_pos) = scroll_query.get_mut(ev.entity) {
                                         scroll_pos.0.y -= scroll_amount;
                                         scroll_pos.0.y = scroll_pos.0.y.max(0.0);
+                                        if let (Ok(container), Ok(children)) = (
+                                            computed_nodes.get(ev.entity),
+                                            children_query.get(ev.entity),
+                                        ) {
+                                            if let Some(wrapper_height) = children
+                                                .iter()
+                                                .find(|c| wrapper_query.contains(*c))
+                                                .and_then(|w| computed_nodes.get(w).ok())
+                                                .map(|n| n.size().y)
+                                            {
+                                                let max_scroll =
+                                                    (wrapper_height - container.size().y).max(0.0);
+                                                scroll_pos.0.y = scroll_pos.0.y.min(max_scroll);
+                                            }
+                                        }
                                     }
                                 },
                             )
-                            .with_children(|sidebar| {
+                            .with_children(|sidebar_viewport| {
+                                sidebar_viewport
+                                    .spawn((
+                                        ScrollContentWrapper,
+                                        Node {
+                                            width: percent(100.0),
+                                            flex_direction: FlexDirection::Column,
+                                            row_gap: px(10.0),
+                                            padding: UiRect::all(px(12.0)),
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|sidebar| {
                         // === Project Information (collapsible) ===
                         spawn_collapsible_section(
                             sidebar,
@@ -878,6 +942,32 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
 
+                                // Toggle Capture Gizmos button
+                                content
+                                    .spawn((
+                                        Button,
+                                        ToggleCaptureGizmosButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Toggle Capture Gizmos (C)"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
                                 // Cycle Camera Target button
                                 content
                                     .spawn((
@@ -1047,7 +1137,8 @@ pub fn spawn_project_detail_screen(
                                 ));
                             },
                         );
-                    })
+                    }); // close ScrollContentWrapper with_children
+                    }) // close sidebar_viewport with_children
                     .id();
 
                         // Scrollbar
@@ -1876,9 +1967,14 @@ pub fn project_detail_interactions(
             Option<&CycleCameraButton>,
             Option<&ExitSimCancelButton>,
             Option<&ExitSimConfirmButton>,
+            Option<&ToggleCaptureGizmosButton>,
             &mut BackgroundColor,
         ),
-        (Changed<Interaction>, With<Button>),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            Without<CollapsibleToggle>,
+        ),
     >,
     mut commands: Commands,
     exit_modal_query: Query<Entity, With<ExitSimConfirmModal>>,
@@ -1907,6 +2003,7 @@ pub fn project_detail_interactions(
         cycle_camera_button,
         exit_cancel_button,
         exit_confirm_button,
+        toggle_gizmos_button,
         mut background_color,
     ) in &mut interactions
     {
@@ -1944,11 +2041,18 @@ pub fn project_detail_interactions(
                     events.write(UiEvent::ChangeTimeWarp { increase: true });
                 } else if cycle_camera_button.is_some() {
                     events.write(UiEvent::CycleCameraTarget);
+                } else if toggle_gizmos_button.is_some() {
+                    events.write(UiEvent::ToggleCaptureGizmos);
                 }
             }
             Interaction::Hovered => {
                 if is_capture && capture_active {
                     // Keep dimmed appearance — don't show hover highlight
+                } else if any_modal_open
+                    && exit_cancel_button.is_none()
+                    && exit_confirm_button.is_none()
+                {
+                    // Block hover highlight for non-exit-modal buttons when any modal is open
                 } else {
                     *background_color = BackgroundColor(theme.button_background);
                 }
@@ -2057,8 +2161,13 @@ pub fn restart_prompt_interactions(
 }
 
 pub fn collapsible_toggle_interaction(
-    toggles: Query<
-        (Entity, &Interaction, &CollapsibleToggle),
+    mut toggles: Query<
+        (
+            Entity,
+            &Interaction,
+            &CollapsibleToggle,
+            &mut BackgroundColor,
+        ),
         (Changed<Interaction>, With<Button>),
     >,
     mut contents: Query<(&mut Node, &CollapsibleContent)>,
@@ -2067,34 +2176,46 @@ pub fn collapsible_toggle_interaction(
     form: Res<NewCapturePlanForm>,
     exit_modal: Query<Entity, With<ExitSimConfirmModal>>,
     restart_modal: Query<Entity, With<RestartPromptModal>>,
+    theme: Res<UiTheme>,
 ) {
     let any_modal_open = form.open || !exit_modal.is_empty() || !restart_modal.is_empty();
-    if any_modal_open {
-        return;
-    }
-    for (entity, interaction, toggle) in &toggles {
-        if *interaction == Interaction::Pressed {
-            let mut collapsed = false;
-            for (mut node, content) in &mut contents {
-                if content.section == toggle.section {
-                    if node.display == Display::None {
-                        node.display = Display::Flex;
-                    } else {
-                        node.display = Display::None;
-                        collapsed = true;
+    for (entity, interaction, toggle, mut bg) in &mut toggles {
+        match *interaction {
+            Interaction::Pressed => {
+                if any_modal_open {
+                    continue;
+                }
+                *bg = BackgroundColor(theme.button_background_hover);
+                let mut collapsed = false;
+                for (mut node, content) in &mut contents {
+                    if content.section == toggle.section {
+                        if node.display == Display::None {
+                            node.display = Display::Flex;
+                        } else {
+                            node.display = Display::None;
+                            collapsed = true;
+                        }
+                    }
+                }
+                if let Ok(children) = children_query.get(entity) {
+                    for child in children {
+                        if let Ok(mut text) = texts.get_mut(*child) {
+                            text.0 = if collapsed {
+                                "<".to_string()
+                            } else {
+                                "v".to_string()
+                            };
+                        }
                     }
                 }
             }
-            if let Ok(children) = children_query.get(entity) {
-                for child in children {
-                    if let Ok(mut text) = texts.get_mut(*child) {
-                        text.0 = if collapsed {
-                            "<".to_string()
-                        } else {
-                            "v".to_string()
-                        };
-                    }
+            Interaction::Hovered => {
+                if !any_modal_open {
+                    *bg = BackgroundColor(theme.button_background);
                 }
+            }
+            Interaction::None => {
+                *bg = BackgroundColor(theme.panel_background_soft);
             }
         }
     }

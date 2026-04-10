@@ -26,8 +26,8 @@ use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
-    generate_filename, spawn_capture_plan_modal, sync_form_fields, tether_type_radio_interactions,
-    validate_form,
+    dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
+    sync_form_fields, tether_type_radio_interactions, validate_form,
 };
 use crate::ui::screens::home::{
     HomeScreen, cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
@@ -114,9 +114,12 @@ impl Plugin for UiPlugin {
                     input_field_interaction,
                     input_field_keyboard,
                     input_field_display,
-                    sync_form_fields,
-                    capture_plan_interactions,
-                    tether_type_radio_interactions,
+                    (
+                        sync_form_fields,
+                        capture_plan_interactions,
+                        tether_type_radio_interactions,
+                        (dropdown_interactions, sync_dropdown_labels).chain(),
+                    ),
                     poll_new_plan_modal,
                     poll_home_plan_refresh,
                     poll_exit_confirm_modal,
@@ -659,6 +662,9 @@ fn handle_ui_events(
             }
             UiEvent::SetUnitSystem(unit) => {
                 form.unit_system = *unit;
+            }
+            UiEvent::ToggleCaptureGizmos => {
+                settings.capture_gizmos = !settings.capture_gizmos;
             }
         }
     }

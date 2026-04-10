@@ -51,6 +51,40 @@ pub struct UnitMetricButton;
 #[derive(Component)]
 pub struct UnitImperialButton;
 
+#[derive(Component, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum DropdownField {
+    To,
+    Condition,
+}
+
+#[derive(Component, Clone)]
+pub struct DropdownTrigger {
+    pub is_approach: bool,
+    pub index: usize,
+    pub field: DropdownField,
+}
+
+#[derive(Component, Clone)]
+pub struct DropdownOptions {
+    pub is_approach: bool,
+    pub index: usize,
+    pub field: DropdownField,
+}
+
+#[derive(Component, Clone)]
+pub struct DropdownOption {
+    pub is_approach: bool,
+    pub index: usize,
+    pub field: DropdownField,
+    pub value: String,
+}
+
+#[derive(Component)]
+pub struct DropdownTriggerLabel;
+
+#[derive(Component)]
+pub struct ScrollContentWrapper;
+
 // ── Field ID tags so the keyboard system knows which field to update ──────
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
@@ -60,14 +94,10 @@ pub enum FormFieldId {
     TetherLength,
     ApproachMaxVelocity,
     ApproachMaxForce,
-    ApproachTransitionTo(usize),
-    ApproachTransitionDistanceKind(usize),
     ApproachTransitionDistanceValue(usize),
     TerminalMaxVelocity,
     TerminalMaxForce,
     TerminalShrinkRate,
-    TerminalTransitionTo(usize),
-    TerminalTransitionDistanceKind(usize),
     TerminalTransitionDistanceValue(usize),
     CaptureMaxVelocity,
     CaptureMaxForce,
@@ -191,6 +221,140 @@ fn field_row<'a>(
         });
 }
 
+fn spawn_dropdown<'a>(
+    parent: &mut ChildSpawnerCommands<'a>,
+    field: DropdownField,
+    is_approach: bool,
+    index: usize,
+    current_value: &str,
+    options: &[&str],
+    font: &Handle<Font>,
+    theme: &UiTheme,
+) {
+    let label = match field {
+        DropdownField::To => "To State",
+        DropdownField::Condition => "Condition",
+    };
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(2.0),
+            ..default()
+        })
+        .with_children(|col| {
+            col.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(theme.text_muted),
+            ));
+            col.spawn((
+                Button,
+                DropdownTrigger {
+                    is_approach,
+                    index,
+                    field,
+                },
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BorderColor::all(Color::srgba(0.3, 0.4, 0.6, 0.3)),
+                BackgroundColor(theme.panel_background_soft),
+            ))
+            .with_children(|trigger| {
+                trigger.spawn((
+                    DropdownTriggerLabel,
+                    Text::new(if current_value.is_empty() {
+                        "—"
+                    } else {
+                        current_value
+                    }),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_primary),
+                    Pickable::IGNORE,
+                ));
+                trigger.spawn((
+                    Text::new("▼"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 9.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_muted),
+                    Pickable::IGNORE,
+                ));
+            });
+            col.spawn((
+                DropdownOptions {
+                    is_approach,
+                    index,
+                    field,
+                },
+                Node {
+                    display: Display::None,
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BorderColor::all(Color::srgba(0.3, 0.4, 0.6, 0.3)),
+                BackgroundColor(Color::srgba(0.047, 0.063, 0.110, 1.0)),
+            ))
+            .with_children(|opts| {
+                for opt in options {
+                    let selected = *opt == current_value;
+                    opts.spawn((
+                        Button,
+                        DropdownOption {
+                            is_approach,
+                            index,
+                            field,
+                            value: opt.to_string(),
+                        },
+                        Node {
+                            width: Val::Percent(100.0),
+                            padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(if selected {
+                            theme.button_background
+                        } else {
+                            Color::srgba(0.0, 0.0, 0.0, 0.0)
+                        }),
+                    ))
+                    .with_child((
+                        Text::new(*opt),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(if selected {
+                            theme.button_text
+                        } else {
+                            theme.text_primary
+                        }),
+                        Pickable::IGNORE,
+                    ));
+                }
+            });
+        });
+}
+
 fn transition_rows<'a>(
     parent: &mut ChildSpawnerCommands<'a>,
     transitions: &[TransitionForm],
@@ -278,42 +442,34 @@ fn transition_rows<'a>(
                 });
 
                 // Fields: To, Kind, Value
-                let (to_id, kind_id, val_id) = if is_approach {
-                    (
-                        FormFieldId::ApproachTransitionTo(i),
-                        FormFieldId::ApproachTransitionDistanceKind(i),
-                        FormFieldId::ApproachTransitionDistanceValue(i),
-                    )
+                let val_id = if is_approach {
+                    FormFieldId::ApproachTransitionDistanceValue(i)
                 } else {
-                    (
-                        FormFieldId::TerminalTransitionTo(i),
-                        FormFieldId::TerminalTransitionDistanceKind(i),
-                        FormFieldId::TerminalTransitionDistanceValue(i),
-                    )
+                    FormFieldId::TerminalTransitionDistanceValue(i)
                 };
 
-                field_row(
+                spawn_dropdown(
                     row,
-                    "To State",
-                    to_id,
-                    "e.g. terminal",
+                    DropdownField::To,
+                    is_approach,
+                    i,
                     &t.to,
-                    false,
-                    false,
+                    &["approach", "terminal", "capture"],
                     font,
                     theme,
                 );
-                field_row(
+
+                spawn_dropdown(
                     row,
-                    "Condition (less_than / greater_than)",
-                    kind_id,
-                    "less_than",
+                    DropdownField::Condition,
+                    is_approach,
+                    i,
                     &t.distance_kind,
-                    false,
-                    false,
+                    &["less_than", "greater_than"],
                     font,
                     theme,
                 );
+
                 field_row(
                     row,
                     &format!("Distance ({dist_unit})"),
@@ -475,8 +631,6 @@ pub fn spawn_capture_plan_modal(
                                         flex_grow: 1.0,
                                         min_height: Val::Px(0.0),
                                         flex_direction: FlexDirection::Column,
-                                        row_gap: Val::Px(20.0),
-                                        padding: UiRect::all(Val::Px(20.0)),
                                         overflow: Overflow::scroll_y(),
                                         scrollbar_width: 8.0,
                                         ..default()
@@ -484,18 +638,52 @@ pub fn spawn_capture_plan_modal(
                                 ))
                                 .observe(
                                     |mut ev: On<Pointer<Scroll>>,
-                                     mut query: Query<&mut ScrollPosition>| {
+                                     mut scroll_query: Query<&mut ScrollPosition>,
+                                     computed_nodes: Query<&ComputedNode>,
+                                     children_query: Query<&Children>,
+                                     wrapper_query: Query<(), With<ScrollContentWrapper>>| {
                                         ev.propagate(false);
                                         let scroll_amount = match ev.event.unit {
                                             MouseScrollUnit::Line => ev.event.y * 24.0,
                                             MouseScrollUnit::Pixel => ev.event.y,
                                         };
-                                        if let Ok(mut scroll_pos) = query.get_mut(ev.entity) {
-                                            scroll_pos.0.y = (scroll_pos.0.y - scroll_amount).max(0.0);
+                                        if let Ok(mut scroll_pos) = scroll_query.get_mut(ev.entity)
+                                        {
+                                            scroll_pos.0.y =
+                                                (scroll_pos.0.y - scroll_amount).max(0.0);
+                                            if let Ok(container) = computed_nodes.get(ev.entity) {
+                                                let content_height = children_query
+                                                    .get(ev.entity)
+                                                    .ok()
+                                                    .and_then(|ch| {
+                                                        ch.iter().find(|c| {
+                                                            wrapper_query.contains(*c)
+                                                        })
+                                                    })
+                                                    .and_then(|w| computed_nodes.get(w).ok())
+                                                    .map(|n| n.size().y)
+                                                    .unwrap_or(0.0);
+                                                let max_scroll =
+                                                    (content_height - container.size().y).max(0.0);
+                                                scroll_pos.0.y =
+                                                    scroll_pos.0.y.min(max_scroll);
+                                            }
                                         }
                                     },
                                 )
-                                .with_children(|body| {
+                                .with_children(|scroll_viewport| {
+                                    scroll_viewport
+                                        .spawn((
+                                            ScrollContentWrapper,
+                                            Node {
+                                                width: Val::Percent(100.0),
+                                                flex_direction: FlexDirection::Column,
+                                                row_gap: Val::Px(20.0),
+                                                padding: UiRect::all(Val::Px(20.0)),
+                                                ..default()
+                                            },
+                                        ))
+                                        .with_children(|body| {
                             // ── Validation errors ────────────────────────
                             if has_errors {
                                 body.spawn((
@@ -790,7 +978,8 @@ pub fn spawn_capture_plan_modal(
                                 field_row(sec, &format!("Shrink Rate * ({vel_unit})"), FormFieldId::CaptureShrinkRate, "0.025", &form.capture_shrink_rate, true, false, &font, theme);
                             });
 
-                                })
+                                }); // close with_children(|body|
+                                }) // close with_children(|scroll_viewport|
                                 .id();
 
                             scroll_row
@@ -930,29 +1119,9 @@ pub fn sync_form_fields(
             FormFieldId::CaptureMaxVelocity => form.capture_max_velocity = field.value.clone(),
             FormFieldId::CaptureMaxForce => form.capture_max_force = field.value.clone(),
             FormFieldId::CaptureShrinkRate => form.capture_shrink_rate = field.value.clone(),
-            FormFieldId::ApproachTransitionTo(i) => {
-                if let Some(t) = form.approach_transitions.get_mut(*i) {
-                    t.to = field.value.clone();
-                }
-            }
-            FormFieldId::ApproachTransitionDistanceKind(i) => {
-                if let Some(t) = form.approach_transitions.get_mut(*i) {
-                    t.distance_kind = field.value.clone();
-                }
-            }
             FormFieldId::ApproachTransitionDistanceValue(i) => {
                 if let Some(t) = form.approach_transitions.get_mut(*i) {
                     t.distance_value = field.value.clone();
-                }
-            }
-            FormFieldId::TerminalTransitionTo(i) => {
-                if let Some(t) = form.terminal_transitions.get_mut(*i) {
-                    t.to = field.value.clone();
-                }
-            }
-            FormFieldId::TerminalTransitionDistanceKind(i) => {
-                if let Some(t) = form.terminal_transitions.get_mut(*i) {
-                    t.distance_kind = field.value.clone();
                 }
             }
             FormFieldId::TerminalTransitionDistanceValue(i) => {
@@ -1090,6 +1259,135 @@ pub fn capture_plan_interactions(
                 }
                 Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
                 Interaction::None => {}
+            }
+        }
+    }
+}
+
+pub fn dropdown_interactions(
+    mut buttons: Query<
+        (
+            &Interaction,
+            Option<&DropdownTrigger>,
+            Option<&DropdownOption>,
+            &mut BackgroundColor,
+        ),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            Or<(With<DropdownTrigger>, With<DropdownOption>)>,
+        ),
+    >,
+    mut options_containers: Query<(&DropdownOptions, &mut Node)>,
+    mut form: ResMut<NewCapturePlanForm>,
+    theme: Res<UiTheme>,
+) {
+    if !form.open {
+        return;
+    }
+    for (interaction, trigger, option, mut bg) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                if let Some(trig) = trigger {
+                    *bg = BackgroundColor(theme.button_background);
+                    // Toggle this dropdown; close all others
+                    for (opts, mut node) in &mut options_containers {
+                        if opts.is_approach == trig.is_approach
+                            && opts.index == trig.index
+                            && opts.field == trig.field
+                        {
+                            node.display = if node.display == Display::None {
+                                Display::Flex
+                            } else {
+                                Display::None
+                            };
+                        } else {
+                            node.display = Display::None;
+                        }
+                    }
+                } else if let Some(opt) = option {
+                    *bg = BackgroundColor(theme.button_background);
+                    // Write form value directly
+                    let transitions = if opt.is_approach {
+                        &mut form.approach_transitions
+                    } else {
+                        &mut form.terminal_transitions
+                    };
+                    if let Some(t) = transitions.get_mut(opt.index) {
+                        match opt.field {
+                            DropdownField::To => t.to = opt.value.clone(),
+                            DropdownField::Condition => t.distance_kind = opt.value.clone(),
+                        }
+                    }
+                    // Close the dropdown
+                    for (opts, mut node) in &mut options_containers {
+                        if opts.is_approach == opt.is_approach
+                            && opts.index == opt.index
+                            && opts.field == opt.field
+                        {
+                            node.display = Display::None;
+                        }
+                    }
+                }
+            }
+            Interaction::Hovered => {
+                *bg = BackgroundColor(theme.button_background);
+            }
+            Interaction::None => {
+                if trigger.is_some() {
+                    *bg = BackgroundColor(theme.panel_background_soft);
+                } else if let Some(opt) = option {
+                    let transitions = if opt.is_approach {
+                        &form.approach_transitions
+                    } else {
+                        &form.terminal_transitions
+                    };
+                    let selected = transitions
+                        .get(opt.index)
+                        .map(|t| match opt.field {
+                            DropdownField::To => t.to == opt.value,
+                            DropdownField::Condition => t.distance_kind == opt.value,
+                        })
+                        .unwrap_or(false);
+                    *bg = if selected {
+                        BackgroundColor(theme.button_background)
+                    } else {
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0))
+                    };
+                }
+            }
+        }
+    }
+}
+
+pub fn sync_dropdown_labels(
+    form: Res<NewCapturePlanForm>,
+    triggers: Query<(&DropdownTrigger, &Children)>,
+    mut labels: Query<&mut Text, With<DropdownTriggerLabel>>,
+) {
+    if !form.is_changed() {
+        return;
+    }
+    for (trigger, children) in &triggers {
+        let transitions = if trigger.is_approach {
+            &form.approach_transitions
+        } else {
+            &form.terminal_transitions
+        };
+        let current = transitions
+            .get(trigger.index)
+            .map(|t| match trigger.field {
+                DropdownField::To => t.to.as_str(),
+                DropdownField::Condition => t.distance_kind.as_str(),
+            })
+            .unwrap_or("");
+        for child in children.iter() {
+            if let Ok(mut text) = labels.get_mut(child) {
+                text.0 = if current.is_empty() {
+                    "—".to_string()
+                } else {
+                    current.to_string()
+                };
             }
         }
     }
