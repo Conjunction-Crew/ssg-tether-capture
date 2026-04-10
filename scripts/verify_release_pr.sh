@@ -63,7 +63,7 @@ if [ ! -f CHANGELOG.md ]; then
   exit 1
 fi
 
-if ! grep -qF "$NEW_VER" CHANGELOG.md; then
+if ! grep -qE "^## \[?v?${NEW_VER}\]?" CHANGELOG.md; then
   echo "ERROR: CHANGELOG.md does not contain an entry for version $NEW_VER." >&2
   echo "       Add a '## [${NEW_VER}]' (or '## v${NEW_VER}') section with release notes." >&2
   exit 1
