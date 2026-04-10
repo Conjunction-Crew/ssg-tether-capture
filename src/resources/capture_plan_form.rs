@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use serde_json::Value;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum UnitSystem {
@@ -57,6 +58,9 @@ pub struct NewCapturePlanForm {
     pub show_restart_prompt: bool,
     /// When true, the form is in view-only mode (e.g. viewing an example plan).
     pub read_only: bool,
+    /// Snapshot of the serialized plan taken when the form is opened for editing.
+    /// Used to detect whether any fields were actually changed before saving.
+    pub original_json: Option<Value>,
 }
 
 impl NewCapturePlanForm {

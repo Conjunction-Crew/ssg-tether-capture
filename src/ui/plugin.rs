@@ -434,62 +434,79 @@ fn handle_ui_events(
                 }
             }
             UiEvent::SaveCapturePlan => {
-                let errors = validate_form(&form);
-                if !errors.is_empty() {
-                    form.validation_errors = errors;
+                // If editing and nothing has changed, close the form without
+                // writing to disk or prompting for a sim restart.
+                if form.editing_plan_id.is_some()
+                    && form.original_json.as_ref() == Some(&build_capture_plan_json(&form))
+                {
+                    form.open = false;
+                    form.reset();
                 } else {
-                    form.validation_errors.clear();
-                    let filename = generate_filename(&form.plan_name);
-                    let dest = std::path::Path::new(&working_directory.path).join(&filename);
-                    // In edit mode, skip overwrite dialog and always overwrite
-                    let skip_overwrite_check = form.editing_plan_id.is_some();
-                    let was_editing = form.editing_plan_id.is_some();
-                    if dest.exists()
-                        && form.overwrite_conflict_path.is_none()
-                        && !skip_overwrite_check
-                    {
-                        form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
+                    let errors = validate_form(&form);
+                    if !errors.is_empty() {
+                        form.validation_errors = errors;
                     } else {
-                        let json = build_capture_plan_json(&form);
-                        match serde_json::to_string_pretty(&json) {
-                            Ok(content) => {
-                                if let Err(e) = std::fs::write(&dest, content) {
-                                    eprintln!("Failed to save capture plan: {e}");
-                                } else {
-                                    // Reload user plans
-                                    let new_user_plans = load_plans_from_dir(std::path::Path::new(
-                                        &working_directory.path,
-                                    ));
-                                    capture_plan_lib.user_plans = new_user_plans;
-                                    capture_plan_lib.plans = capture_plan_lib
-                                        .example_plans
-                                        .iter()
-                                        .chain(capture_plan_lib.user_plans.iter())
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect();
-                                    let refreshed: Vec<(String, CapturePlan)> = capture_plan_lib
-                                        .plans
-                                        .iter()
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect();
-                                    for (id, plan) in refreshed {
-                                        capture_plan_lib.insert_plan(id, plan);
-                                    }
-                                    user_plans_dirty.0 = true;
-                                    // If editing from the sim screen, prompt for restart
-                                    let should_prompt =
-                                        was_editing && selected_project.project_id.is_some();
-                                    form.open = false;
-                                    form.reset();
-                                    if should_prompt {
-                                        form.show_restart_prompt = true;
+                        form.validation_errors.clear();
+                        let filename = generate_filename(&form.plan_name);
+                        let dest = std::path::Path::new(&working_directory.path).join(&filename);
+                        // In edit mode, skip overwrite dialog and always overwrite
+                        let skip_overwrite_check = form.editing_plan_id.is_some();
+                        let was_editing = form.editing_plan_id.is_some();
+                        if dest.exists()
+                            && form.overwrite_conflict_path.is_none()
+                            && !skip_overwrite_check
+                        {
+                            form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
+                        } else {
+                            let json = build_capture_plan_json(&form);
+                            match serde_json::to_string_pretty(&json) {
+                                Ok(content) => {
+                                    if let Err(e) = std::fs::write(&dest, content) {
+                                        eprintln!("Failed to save capture plan: {e}");
+                                    } else {
+                                        // Reload user plans
+                                        let new_user_plans = load_plans_from_dir(
+                                            std::path::Path::new(&working_directory.path),
+                                        );
+                                        capture_plan_lib.user_plans = new_user_plans;
+                                        capture_plan_lib.plans = capture_plan_lib
+                                            .example_plans
+                                            .iter()
+                                            .chain(capture_plan_lib.user_plans.iter())
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect();
+                                        // Only compile immediately when creating a new plan or
+                                        // editing outside the sim screen. When editing from the
+                                        // sim screen the restart cycle re-enters UiScreen::Home
+                                        // which calls spawn_home_screen and recompiles from disk.
+                                        let editing_from_sim =
+                                            was_editing && selected_project.project_id.is_some();
+                                        if !editing_from_sim {
+                                            let refreshed: Vec<(String, CapturePlan)> =
+                                                capture_plan_lib
+                                                    .plans
+                                                    .iter()
+                                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                                    .collect();
+                                            for (id, plan) in refreshed {
+                                                capture_plan_lib.insert_plan(id, plan);
+                                            }
+                                        }
+                                        user_plans_dirty.0 = true;
+                                        // If editing from the sim screen, prompt for restart
+                                        let should_prompt = editing_from_sim;
+                                        form.open = false;
+                                        form.reset();
+                                        if should_prompt {
+                                            form.show_restart_prompt = true;
+                                        }
                                     }
                                 }
+                                Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
                             }
-                            Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
                         }
                     }
-                }
+                } // end else (form was changed)
             }
             UiEvent::ConfirmOverwriteCapturePlan => {
                 let filename = generate_filename(&form.plan_name);
@@ -619,6 +636,8 @@ fn handle_ui_events(
                         }
                     }
                     form.editing_plan_id = Some(plan_id.clone());
+                    // Snapshot the form state so we can detect unchanged edits on Save.
+                    form.original_json = Some(build_capture_plan_json(&form));
                     form.open = true;
                 }
             }
