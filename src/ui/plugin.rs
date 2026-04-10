@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 
-use crate::components::capture_components::CaptureComponent;
+use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
@@ -467,6 +467,14 @@ fn handle_ui_events(
                                         .chain(capture_plan_lib.user_plans.iter())
                                         .map(|(k, v)| (k.clone(), v.clone()))
                                         .collect();
+                                    let refreshed: Vec<(String, CapturePlan)> = capture_plan_lib
+                                        .plans
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect();
+                                    for (id, plan) in refreshed {
+                                        capture_plan_lib.insert_plan(id, plan);
+                                    }
                                     user_plans_dirty.0 = true;
                                     // If editing from the sim screen, prompt for restart
                                     let should_prompt =
@@ -501,6 +509,14 @@ fn handle_ui_events(
                                 .chain(capture_plan_lib.user_plans.iter())
                                 .map(|(k, v)| (k.clone(), v.clone()))
                                 .collect();
+                            let refreshed: Vec<(String, CapturePlan)> = capture_plan_lib
+                                .plans
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+                            for (id, plan) in refreshed {
+                                capture_plan_lib.insert_plan(id, plan);
+                            }
                             user_plans_dirty.0 = true;
                             form.open = false;
                             form.reset();
