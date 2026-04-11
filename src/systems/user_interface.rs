@@ -138,9 +138,14 @@ pub fn update_capture_guidance(
 
             let mut body = String::new();
             let time_in_state = capture.state_elapsed_time_s.max(0.0);
+            let plan_display_name = capture_plans
+                .plans
+                .get(&capture.plan_id)
+                .map(|p| p.name.as_str())
+                .unwrap_or(capture.plan_id.as_str());
 
             writeln!(body, "Target: {}", readout.target_label).unwrap();
-            writeln!(body, "Plan: {}", capture.plan_id).unwrap();
+            writeln!(body, "Plan: {}", plan_display_name).unwrap();
             writeln!(body, "Current state: {}", capture.current_state).unwrap();
             writeln!(body, "Time in state: {:.1} s", time_in_state).unwrap();
             writeln!(
@@ -174,9 +179,14 @@ pub fn update_capture_guidance(
         };
 
         let mut body = String::new();
+        let plan_display_name = capture_plans
+            .plans
+            .get(&readout.plan_id)
+            .map(|p| p.name.as_str())
+            .unwrap_or(readout.plan_id.as_str());
         writeln!(body, "Target: {}", readout.target_label).unwrap();
         writeln!(body, "Status: Idle").unwrap();
-        writeln!(body, "Plan: {}", readout.plan_id).unwrap();
+        writeln!(body, "Plan: {}", plan_display_name).unwrap();
         writeln!(body, "Initial state: {}", initial_state.id).unwrap();
         writeln!(
             body,

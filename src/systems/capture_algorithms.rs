@@ -129,6 +129,11 @@ pub fn capture_state_machine_update(
                     };
                 }
             }
+        } else {
+            warn!(
+                "Capture plan '{}' not found in compiled_plans — aborting capture.",
+                capture_component.plan_id
+            );
         }
     }
 }

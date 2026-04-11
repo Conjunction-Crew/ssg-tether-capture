@@ -36,7 +36,12 @@ pub struct CapturePlanDevice {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CapturePlan {
+    /// Display name shown to the user. Not used as a lookup key.
     pub name: String,
+    /// File-stem identifier used as the HashMap key in [`CapturePlanLibrary`].
+    /// Not serialized to JSON — populated by the loader and [`CapturePlanLibrary::insert_plan`].
+    #[serde(skip)]
+    pub id: String,
     pub states: Vec<State>,
     pub tether: String,
     #[serde(default)]

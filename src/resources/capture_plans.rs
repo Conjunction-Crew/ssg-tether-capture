@@ -57,7 +57,8 @@ pub struct CapturePlanLibrary {
 }
 
 impl CapturePlanLibrary {
-    pub fn insert_plan(&mut self, plan_id: String, plan: CapturePlan) {
+    pub fn insert_plan(&mut self, plan_id: String, mut plan: CapturePlan) {
+        plan.id = plan_id.clone();
         let compiled_plan = compile_capture_plan(&plan);
         self.plans.insert(plan_id.clone(), plan);
         self.compiled_plans.insert(plan_id, compiled_plan);
@@ -202,7 +203,7 @@ pub fn load_plans_from_dir_with_errors(
                 continue;
             }
         };
-        let plan = match serde_json::from_str::<CapturePlan>(&raw_json) {
+        let mut plan = match serde_json::from_str::<CapturePlan>(&raw_json) {
             Ok(p) => p,
             Err(e) => {
                 errors.insert(stem, vec![format!("Invalid JSON: {e}")]);
@@ -211,6 +212,7 @@ pub fn load_plans_from_dir_with_errors(
         };
         let validation_errors = validate_capture_plan(&stem, &plan);
         if validation_errors.is_empty() {
+            plan.id = stem.clone();
             plans.insert(stem, plan);
         } else {
             errors.insert(stem, validation_errors);

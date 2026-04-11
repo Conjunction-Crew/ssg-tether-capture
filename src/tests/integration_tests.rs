@@ -148,7 +148,7 @@ fn apply_force_to_target() {
         .commands()
         .entity(capture_body)
         .insert(CaptureComponent {
-            plan_id: plan.name.clone(),
+            plan_id: plan.id.clone(),
             current_state: plan
                 .states
                 .get(0)

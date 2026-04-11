@@ -498,18 +498,18 @@ fn handle_ui_events(
                                                 }
                                                 a == b
                                             });
-                                        // Compile immediately when creating a new plan, editing
-                                        // outside the sim, or when only the name changed.
-                                        if !editing_from_sim || only_name_changed {
-                                            let refreshed: Vec<(String, CapturePlan)> =
-                                                capture_plan_lib
-                                                    .plans
-                                                    .iter()
-                                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                                    .collect();
-                                            for (id, plan) in refreshed {
-                                                capture_plan_lib.insert_plan(id, plan);
-                                            }
+                                        // Always recompile after save so compiled_plans
+                                        // stays in sync. When editing from the sim with
+                                        // sim-affecting changes, we still prompt the user
+                                        // to restart, but capture will not fail with stale data.
+                                        let refreshed: Vec<(String, CapturePlan)> =
+                                            capture_plan_lib
+                                                .plans
+                                                .iter()
+                                                .map(|(k, v)| (k.clone(), v.clone()))
+                                                .collect();
+                                        for (id, plan) in refreshed {
+                                            capture_plan_lib.insert_plan(id, plan);
                                         }
                                         user_plans_dirty.0 = true;
                                         // Prompt for restart only when sim-affecting params changed
