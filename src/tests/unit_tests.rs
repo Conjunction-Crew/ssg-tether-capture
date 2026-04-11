@@ -3,12 +3,14 @@ mod tests {
     use serde_json::json;
 
     use crate::components::capture_components::{CapturePlan, State};
-    use crate::resources::capture_plans::{
-        build_capture_component, compile_capture_plan, load_plans_from_dir_with_errors,
-        parameter_value, validate_capture_plan, CapturePlanLibrary,
-    };
-    use crate::ui::screens::capture_plan::{build_capture_plan_json, generate_filename, validate_form};
     use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+    use crate::resources::capture_plans::{
+        CapturePlanLibrary, build_capture_component, compile_capture_plan,
+        load_plans_from_dir_with_errors, parameter_value, validate_capture_plan,
+    };
+    use crate::ui::screens::capture_plan::{
+        build_capture_plan_json, generate_filename, validate_form,
+    };
 
     // -------------------------------------------------------------------------
     // generate_filename
@@ -465,7 +467,11 @@ mod tests {
             distance_value: "50.0".to_string(),
         });
         let errors = validate_form(&form);
-        assert!(errors.iter().any(|e| e.contains("Approach Transition 1") && e.contains("To State")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Approach Transition 1") && e.contains("To State"))
+        );
     }
 
     #[test]
@@ -477,7 +483,11 @@ mod tests {
             distance_value: "50.0".to_string(),
         });
         let errors = validate_form(&form);
-        assert!(errors.iter().any(|e| e.contains("Approach Transition 1") && e.contains("condition")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Approach Transition 1") && e.contains("condition"))
+        );
     }
 
     #[test]
@@ -489,7 +499,11 @@ mod tests {
             distance_value: "far".to_string(),
         });
         let errors = validate_form(&form);
-        assert!(errors.iter().any(|e| e.contains("Approach Transition 1") && e.contains("number")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Approach Transition 1") && e.contains("number"))
+        );
     }
 
     #[test]
@@ -532,7 +546,10 @@ mod tests {
     fn build_plan_json_empty_transitions_produce_empty_array() {
         let form = valid_form(); // no transitions by default
         let json = build_capture_plan_json(&form);
-        assert_eq!(json["states"][0]["transitions"].as_array().unwrap().len(), 0);
+        assert_eq!(
+            json["states"][0]["transitions"].as_array().unwrap().len(),
+            0
+        );
     }
 
     #[test]
@@ -564,7 +581,8 @@ mod tests {
         for (stem, plan) in &plans {
             assert_eq!(
                 &plan.id, stem,
-                "plan.id should equal the file stem for '{}'", stem
+                "plan.id should equal the file stem for '{}'",
+                stem
             );
         }
     }
@@ -613,7 +631,10 @@ mod tests {
         plan.id = "test_plan".to_string();
         let json_str = serde_json::to_string(&plan).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert!(value.get("id").is_none(), "\"id\" must not appear in serialized JSON");
+        assert!(
+            value.get("id").is_none(),
+            "\"id\" must not appear in serialized JSON"
+        );
     }
 
     #[test]
@@ -652,7 +673,9 @@ mod tests {
         form.unit_system = UnitSystem::Metric;
         form.approach_max_velocity = "2.0".to_string();
         let json = build_capture_plan_json(&form);
-        let v = json["states"][0]["parameters"]["max_velocity"].as_f64().unwrap();
+        let v = json["states"][0]["parameters"]["max_velocity"]
+            .as_f64()
+            .unwrap();
         assert!((v - 2.0).abs() < 1e-9);
     }
 
@@ -662,7 +685,9 @@ mod tests {
         form.unit_system = UnitSystem::Imperial;
         form.approach_max_velocity = "1.0".to_string(); // 1 ft/s
         let json = build_capture_plan_json(&form);
-        let v = json["states"][0]["parameters"]["max_velocity"].as_f64().unwrap();
+        let v = json["states"][0]["parameters"]["max_velocity"]
+            .as_f64()
+            .unwrap();
         // 1 ft/s = 0.3048 m/s
         assert!((v - 0.3048).abs() < 1e-9);
     }
@@ -673,7 +698,9 @@ mod tests {
         form.unit_system = UnitSystem::Imperial;
         form.approach_max_force = "1.0".to_string(); // 1 lbf
         let json = build_capture_plan_json(&form);
-        let f = json["states"][0]["parameters"]["max_force"].as_f64().unwrap();
+        let f = json["states"][0]["parameters"]["max_force"]
+            .as_f64()
+            .unwrap();
         // 1 lbf = 4.44822 N
         assert!((f - 4.44822).abs() < 1e-4);
     }

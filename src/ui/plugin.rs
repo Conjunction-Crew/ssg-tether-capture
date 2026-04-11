@@ -361,10 +361,18 @@ fn handle_ui_events(
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
                             }
+                        } else {
+                            warn!(
+                                "CaptureDebris: plan_id '{}' not found in capture_plan_lib.plans (keys: {:?})",
+                                plan_id,
+                                capture_plan_lib.plans.keys().collect::<Vec<_>>()
+                            );
                         }
                     } else {
                         println!("entity already marked for capture!");
                     }
+                } else {
+                    warn!("CaptureDebris: entity is None for plan_id '{}'", plan_id);
                 }
             }
             UiEvent::ToggleMapView => {

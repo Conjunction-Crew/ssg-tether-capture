@@ -128,6 +128,14 @@ pub fn capture_state_machine_update(
                         println!("Faled to apply force for node");
                     };
                 }
+            } else {
+                warn!(
+                    "Capture plan '{}': tether '{}' not found in orbital_cache.tethers (available: {:?}). \
+                     Ensure the plan's tether name matches a registered tether.",
+                    capture_component.plan_id,
+                    plan.tether,
+                    orbital_entities.tethers.keys().collect::<Vec<_>>()
+                );
             }
         } else {
             warn!(
