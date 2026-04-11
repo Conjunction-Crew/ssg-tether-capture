@@ -1,0 +1,26 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!--
+    Minimal WiX v7 authoring using SDK-style Files/Payloads.
+    This file installs the release binary and the assets/ folder into
+    Program Files\SSG Tether Capture\
+  -->
+
+  <Package Id="SSG.Tether.Capture"
+           Name="SSG Tether Capture"
+           Version="$(var.Version)"
+           Manufacturer="Conjunction Crew"
+           Language="1033"
+           Platform="x64">
+
+    <Files Include="..\target\release\ssg_tether_capture.exe">
+      <DestinationDirectory>ProgramFilesFolder\SSG Tether Capture</DestinationDirectory>
+    </Files>
+
+    <!-- Include all files under assets/ into an assets subfolder inside the install dir -->
+    <Files Include="..\assets\**\*.*">
+      <DestinationDirectory>ProgramFilesFolder\SSG Tether Capture\assets</DestinationDirectory>
+    </Files>
+
+  </Package>
+
+</Wix>
