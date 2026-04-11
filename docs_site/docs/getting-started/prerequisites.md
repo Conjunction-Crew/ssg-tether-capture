@@ -98,9 +98,9 @@ dotnet build wix/SSG.wixproj -c Release
 
 Files added/updated in this repo to support v7:
 
-- [wix/SSG.wixproj](wix/SSG.wixproj) — SDK-style WiX project for `dotnet build`
-- [wix/main_v7.wix](wix/main_v7.wix) — modern `Files`/`Payloads` authoring example
-- [`scripts/run_windows_release_workflow.ps1`](scripts/run_windows_release_workflow.ps1) — now prefers `dotnet build` and falls back to legacy WiX v3 tools
+- `wix/SSG.wixproj` — SDK-style WiX project for `dotnet build`
+- `wix/main_v7.wix` — modern `Files`/`Payloads` authoring example
+- `scripts/run_windows_release_workflow.ps1` — now prefers `dotnet build` and falls back to legacy WiX v3 tools
 
 Migration checklist (high level):
 
