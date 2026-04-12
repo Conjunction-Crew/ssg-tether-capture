@@ -19,8 +19,8 @@ use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::plugins::gpu_compute::{
     GpuComputeEpochOrigin, GpuElements, eci_position_to_map, propagate_catalog_eci_state,
 };
-use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_log::{LogEvent, LogLevel};
+use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::space_catalog::{
@@ -1802,7 +1802,10 @@ pub fn catalog_interactions(
                                 log.write(LogEvent {
                                     level: LogLevel::Info,
                                     source: "propagation",
-                                    message: format!("Space object selected: {}", entry.object_name),
+                                    message: format!(
+                                        "Space object selected: {}",
+                                        entry.object_name
+                                    ),
                                 });
                             }
                         }

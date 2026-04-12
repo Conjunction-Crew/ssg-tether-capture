@@ -1,10 +1,11 @@
 use std::collections::{HashSet, VecDeque};
 
 use bevy::prelude::*;
+use serde::Serialize;
 
 // ─── Log Level ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum LogLevel {
     Error,
     Warn,
@@ -25,7 +26,7 @@ impl LogLevel {
 
 // ─── Log Entry ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LogEntry {
     /// Simulation timestamp formatted as "HH:MM:SS" (UTC).
     pub timestamp: String,

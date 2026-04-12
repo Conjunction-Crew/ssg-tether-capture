@@ -55,7 +55,8 @@ use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{
     ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
     log_level_filter_interaction, sync_terminal_log_display, terminal_clear_interaction,
-    terminal_keyboard_input, terminal_row_selection_interaction, terminal_toggle_interaction,
+    terminal_keyboard_input, terminal_row_selection_interaction, terminal_save_interaction,
+    terminal_toggle_interaction,
 };
 
 #[derive(Resource, Default)]
@@ -150,6 +151,7 @@ impl Plugin for UiPlugin {
                         terminal_toggle_interaction,
                         log_level_filter_interaction,
                         terminal_clear_interaction,
+                        terminal_save_interaction,
                         catalog_interactions,
                         catalog_keyboard_input,
                         refresh_space_catalog_results,
@@ -599,7 +601,10 @@ fn handle_ui_events(
                                         log.write(LogEvent {
                                             level: LogLevel::Error,
                                             source: "ui",
-                                            message: format!("Failed to write capture plan '{}': {e}", form.plan_name),
+                                            message: format!(
+                                                "Failed to write capture plan '{}': {e}",
+                                                form.plan_name
+                                            ),
                                         });
                                     } else {
                                         // Reload user plans
@@ -646,7 +651,10 @@ fn handle_ui_events(
                                         log.write(LogEvent {
                                             level: LogLevel::Info,
                                             source: "ui",
-                                            message: format!("Capture plan '{}' saved", form.plan_name),
+                                            message: format!(
+                                                "Capture plan '{}' saved",
+                                                form.plan_name
+                                            ),
                                         });
                                         // Prompt for restart only when sim-affecting params changed
                                         let should_prompt = editing_from_sim && !only_name_changed;
@@ -661,7 +669,10 @@ fn handle_ui_events(
                                     log.write(LogEvent {
                                         level: LogLevel::Error,
                                         source: "ui",
-                                        message: format!("Failed to serialize capture plan '{}': {e}", form.plan_name),
+                                        message: format!(
+                                            "Failed to serialize capture plan '{}': {e}",
+                                            form.plan_name
+                                        ),
                                     });
                                 }
                             }
@@ -679,7 +690,10 @@ fn handle_ui_events(
                             log.write(LogEvent {
                                 level: LogLevel::Error,
                                 source: "ui",
-                                message: format!("Failed to write capture plan '{}': {e}", form.plan_name),
+                                message: format!(
+                                    "Failed to write capture plan '{}': {e}",
+                                    form.plan_name
+                                ),
                             });
                         } else {
                             let new_user_plans =
@@ -713,7 +727,10 @@ fn handle_ui_events(
                         log.write(LogEvent {
                             level: LogLevel::Error,
                             source: "ui",
-                            message: format!("Failed to serialize capture plan '{}': {e}", form.plan_name),
+                            message: format!(
+                                "Failed to serialize capture plan '{}': {e}",
+                                form.plan_name
+                            ),
                         });
                     }
                 }

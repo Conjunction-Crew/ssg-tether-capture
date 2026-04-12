@@ -139,7 +139,9 @@ pub fn load_dataset_entities(
                                 log_events.write(LogEvent {
                                     level: LogLevel::Error,
                                     source: "propagation",
-                                    message: format!("Failed to parse eccentricity for object {id}"),
+                                    message: format!(
+                                        "Failed to parse eccentricity for object {id}"
+                                    ),
                                 });
                                 continue;
                             };
@@ -162,7 +164,9 @@ pub fn load_dataset_entities(
                                 log_events.write(LogEvent {
                                     level: LogLevel::Error,
                                     source: "propagation",
-                                    message: format!("Failed to parse ra_of_asc_node for object {id}"),
+                                    message: format!(
+                                        "Failed to parse ra_of_asc_node for object {id}"
+                                    ),
                                 });
                                 continue;
                             };
@@ -174,7 +178,9 @@ pub fn load_dataset_entities(
                                 log_events.write(LogEvent {
                                     level: LogLevel::Error,
                                     source: "propagation",
-                                    message: format!("Failed to parse arg_of_pericenter for object {id}"),
+                                    message: format!(
+                                        "Failed to parse arg_of_pericenter for object {id}"
+                                    ),
                                 });
                                 continue;
                             };
@@ -186,7 +192,9 @@ pub fn load_dataset_entities(
                                 log_events.write(LogEvent {
                                     level: LogLevel::Error,
                                     source: "propagation",
-                                    message: format!("Failed to parse mean_anomaly for object {id}"),
+                                    message: format!(
+                                        "Failed to parse mean_anomaly for object {id}"
+                                    ),
                                 });
                                 continue;
                             };

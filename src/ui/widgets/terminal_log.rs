@@ -1,10 +1,15 @@
+use std::path::Path;
+
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::picking::Pickable;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
 
-use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogLevel};
+use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
+use crate::resources::capture_plan_form::NewCapturePlanForm;
+use crate::resources::working_directory::WorkingDirectory;
+use crate::resources::world_time::WorldTime;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ClipboardRes;
 
@@ -36,6 +41,9 @@ pub struct LogLevelFilterButton {
 
 #[derive(Component)]
 pub struct TerminalClearButton;
+
+#[derive(Component)]
+pub struct TerminalSaveButton;
 
 // ─── Spawn Helper ─────────────────────────────────────────────────────────────
 
@@ -139,6 +147,31 @@ pub fn spawn_terminal_panel(
                         ))
                         .with_child((
                             Text::new("Clear"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 11.0,
+                                ..default()
+                            },
+                            TextColor(theme.text_muted),
+                            Pickable::IGNORE,
+                        ));
+
+                    // Save log button
+                    header
+                        .spawn((
+                            Button,
+                            TerminalSaveButton,
+                            Node {
+                                min_width: Val::Px(45.0),
+                                height: Val::Px(24.0),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                            BackgroundColor(theme.panel_background_soft),
+                        ))
+                        .with_child((
+                            Text::new("Save"),
                             TextFont {
                                 font: font.clone(),
                                 font_size: 11.0,
@@ -567,6 +600,115 @@ pub fn sync_terminal_log_display(
 
     log_ui.last_rendered_count = capture_log.entries.len();
     log_ui.last_rendered_filter = log_ui.active_filters.clone();
+}
+
+// ─── Save Interaction ─────────────────────────────────────────────────────────
+
+/// Writes all current log entries to `{working_directory}/logs/{plan}_{epoch}.jsonl`.
+///
+/// Each line of the output file is a self-contained JSON object
+/// (newline-delimited JSON / JSONL), making the files straightforward to
+/// process with `jq`, Python's `json` module, or any log-analytics toolchain.
+pub fn terminal_save_interaction(
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>, With<TerminalSaveButton>),
+    >,
+    capture_log: Res<CaptureLog>,
+    working_directory: Res<WorkingDirectory>,
+    form: Res<NewCapturePlanForm>,
+    world_time: Option<Res<WorldTime>>,
+    mut log: MessageWriter<LogEvent>,
+    theme: Res<UiTheme>,
+) {
+    for (interaction, mut bg) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                let epoch_str = world_time
+                    .as_ref()
+                    .map(|wt| format!("{}", wt.epoch))
+                    .unwrap_or_else(|| "unknown_time".to_string());
+
+                match write_log_to_file(
+                    &capture_log,
+                    &working_directory.path,
+                    &form.plan_name,
+                    &epoch_str,
+                ) {
+                    Ok(filename) => {
+                        log.write(LogEvent {
+                            level: LogLevel::Info,
+                            source: "system",
+                            message: format!("Log saved to logs/{filename}"),
+                        });
+                    }
+                    Err(e) => {
+                        log.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "system",
+                            message: format!("Failed to save log: {e}"),
+                        });
+                    }
+                }
+                *bg = BackgroundColor(theme.button_background_hover);
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background),
+            Interaction::None => *bg = BackgroundColor(theme.panel_background_soft),
+        }
+    }
+}
+
+fn write_log_to_file(
+    capture_log: &CaptureLog,
+    working_dir: &str,
+    plan_name: &str,
+    epoch_str: &str,
+) -> Result<String, String> {
+    let logs_dir = Path::new(working_dir).join("logs");
+    std::fs::create_dir_all(&logs_dir)
+        .map_err(|e| format!("could not create logs directory: {e}"))?;
+
+    let sanitized_plan: String = plan_name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let sanitized_plan = if sanitized_plan.is_empty() {
+        "unnamed".to_string()
+    } else {
+        sanitized_plan
+    };
+
+    let sanitized_epoch: String = epoch_str
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    let filename = format!("{sanitized_plan}_{sanitized_epoch}.jsonl");
+    let filepath = logs_dir.join(&filename);
+
+    let lines: Result<Vec<String>, _> = capture_log
+        .entries
+        .iter()
+        .map(|entry| serde_json::to_string(entry))
+        .collect();
+    let content = lines.map_err(|e| format!("serialization error: {e}"))?;
+    let content = content.join("\n");
+
+    std::fs::write(&filepath, content).map_err(|e| format!("write error: {e}"))?;
+
+    Ok(filename)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
