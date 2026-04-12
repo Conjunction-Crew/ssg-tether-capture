@@ -5,9 +5,42 @@ on:
     branches: [ "main", "dev" ]
   pull_request:
     branches: [ "main", "dev" ]
+    # Also run for release branches so the verify-release-pr job fires on PRs
+    # opened from release/* branches targeting main or dev.
 
 jobs:
+  verify-release-pr:
+    name: Verify release PR (version + changelog)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # This job runs for all PRs, but only performs checks for release/*
+    # source branches. For non-release PRs it is a no-op that succeeds.
+    steps:
+      - name: Skip when not a release branch
+        if: ${{ !startsWith(github.head_ref, 'release/') }}
+        run: |
+          echo "Not a release/* source branch; skipping release verification."
+
+      - name: Checkout repository (release branch)
+        if: ${{ startsWith(github.head_ref, 'release/') }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run release-PR verification script
+        if: ${{ startsWith(github.head_ref, 'release/') }}
+        run: |
+          chmod +x ./scripts/verify_release_pr.sh
+          ./scripts/verify_release_pr.sh
+
   build:
+    needs: [verify-release-pr]
+    if: |
+      always() &&
+      needs.verify-release-pr.result == 'success'
+    permissions:
+      contents: read
     strategy:
         matrix:
           os: [ubuntu-latest, windows-latest, macos-latest]

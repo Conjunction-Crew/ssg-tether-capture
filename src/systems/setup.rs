@@ -234,11 +234,17 @@ pub fn setup_tether(
     const DEFAULT_TETHER_LENGTH: f64 = 20.0;
     const DEFAULT_DIST_BETWEEN_JOINTS: f64 = 0.1;
 
-    let device = selected_project
+    let active_plan = selected_project
         .project_id
         .as_deref()
-        .and_then(|id| capture_plan_lib.plans.get(id))
-        .and_then(|plan| plan.device.as_ref());
+        .and_then(|id| capture_plan_lib.plans.get(id));
+
+    let tether_name = active_plan
+        .map(|plan| plan.tether.clone())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| "Tether1".to_string());
+
+    let device = active_plan.and_then(|plan| plan.device.as_ref());
 
     let tether_length = device
         .filter(|d| d.tether_length > 0.0)
@@ -301,7 +307,7 @@ pub fn setup_tether(
 
     orbital_entities
         .tethers
-        .insert("Tether1".to_string(), vec![tether_root]);
+        .insert(tether_name.clone(), vec![tether_root]);
 
     let mut prev_sphere = tether_root;
     let mut prev_half_extent = root_tail_radius;
@@ -370,7 +376,7 @@ pub fn setup_tether(
     // Add tail node to tether entity
     orbital_entities
         .tethers
-        .get_mut(&"Tether1".to_string())
+        .get_mut(&tether_name)
         .expect("Error getting tether")
         .push(prev_sphere);
 }

@@ -403,11 +403,11 @@ pub fn spawn_home_screen_inner(
                                 ..default()
                             })
                             .with_children(|list| {
-                                for (plan_name, plan) in &capture_plan_lib.user_plans {
+                                for (plan_id, plan) in &capture_plan_lib.user_plans {
                                     list.spawn((
                                         Button,
                                         HomeProjectButton {
-                                            project_id: plan_name.clone(),
+                                            project_id: plan_id.clone(),
                                         },
                                         Node {
                                             width: px(340.0),
@@ -445,7 +445,7 @@ pub fn spawn_home_screen_inner(
                                                 row.spawn((
                                                     Button,
                                                     EditCapturePlanButton {
-                                                        plan_id: plan_name.clone(),
+                                                        plan_id: plan_id.clone(),
                                                     },
                                                     Node {
                                                         min_width: px(36.0),
@@ -471,7 +471,7 @@ pub fn spawn_home_screen_inner(
                                             });
 
                                         button.spawn((
-                                            Text::new(plan_name.clone()),
+                                            Text::new(plan_id.clone()),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 12.0,
@@ -523,11 +523,11 @@ pub fn spawn_home_screen_inner(
                                 ..default()
                             })
                             .with_children(|list| {
-                                for (plan_name, plan) in &capture_plan_lib.example_plans {
+                                for (plan_id, plan) in &capture_plan_lib.example_plans {
                                     list.spawn((
                                         Button,
                                         HomeProjectButton {
-                                            project_id: plan_name.clone(),
+                                            project_id: plan_id.clone(),
                                         },
                                         Node {
                                             width: px(340.0),
@@ -553,7 +553,7 @@ pub fn spawn_home_screen_inner(
                                         ));
 
                                         button.spawn((
-                                            Text::new(plan_name.clone()),
+                                            Text::new(plan_id.clone()),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 12.0,

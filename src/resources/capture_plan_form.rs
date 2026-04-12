@@ -67,6 +67,7 @@ impl NewCapturePlanForm {
     pub fn reset(&mut self) {
         *self = NewCapturePlanForm {
             tether_type: "tether".to_string(),
+            tether_name: "Tether1".to_string(),
             tether_length: "20.0".to_string(),
             ..Default::default()
         };

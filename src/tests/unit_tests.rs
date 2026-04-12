@@ -3,12 +3,14 @@ mod tests {
     use serde_json::json;
 
     use crate::components::capture_components::{CapturePlan, State};
-    use crate::resources::capture_plans::{
-        build_capture_component, compile_capture_plan, load_plans_from_dir_with_errors,
-        parameter_value, validate_capture_plan,
-    };
-    use crate::ui::screens::capture_plan::{build_capture_plan_json, generate_filename, validate_form};
     use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+    use crate::resources::capture_plans::{
+        CapturePlanLibrary, build_capture_component, compile_capture_plan,
+        load_plans_from_dir_with_errors, parameter_value, validate_capture_plan,
+    };
+    use crate::ui::screens::capture_plan::{
+        build_capture_plan_json, generate_filename, validate_form,
+    };
 
     // -------------------------------------------------------------------------
     // generate_filename
@@ -40,6 +42,7 @@ mod tests {
     fn minimal_valid_plan() -> CapturePlan {
         CapturePlan {
             name: "Test Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![State {
                 id: "approach".to_string(),
@@ -118,6 +121,7 @@ mod tests {
     fn validate_plan_accepts_valid_internal_transition() {
         let plan = CapturePlan {
             name: "Two State Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![
                 State {
@@ -144,6 +148,7 @@ mod tests {
     fn validate_plan_errors_on_duplicate_state_ids() {
         let plan = CapturePlan {
             name: "Bad Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![
                 State {
@@ -198,6 +203,7 @@ mod tests {
     fn compile_plan_indexes_states_by_id() {
         let plan = CapturePlan {
             name: "Compiled Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![
                 State {
@@ -229,6 +235,7 @@ mod tests {
     fn compile_plan_parses_parameters_correctly() {
         let plan = CapturePlan {
             name: "Param Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![State {
                 id: "terminal".to_string(),
@@ -252,6 +259,7 @@ mod tests {
     fn compile_plan_parses_distance_transition_conditions() {
         let plan = CapturePlan {
             name: "Transition Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![State {
                 id: "approach".to_string(),
@@ -288,6 +296,7 @@ mod tests {
     fn build_capture_component_sets_first_state() {
         let plan = CapturePlan {
             name: "Plan".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![
                 State {
@@ -316,6 +325,7 @@ mod tests {
     fn build_capture_component_returns_none_for_empty_states() {
         let plan = CapturePlan {
             name: "Empty".to_string(),
+            id: String::new(),
             tether: "Tether1".to_string(),
             states: vec![],
             device: None,
@@ -457,7 +467,11 @@ mod tests {
             distance_value: "50.0".to_string(),
         });
         let errors = validate_form(&form);
-        assert!(errors.iter().any(|e| e.contains("Approach Transition 1") && e.contains("To State")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Approach Transition 1") && e.contains("To State"))
+        );
     }
 
     #[test]
@@ -469,7 +483,11 @@ mod tests {
             distance_value: "50.0".to_string(),
         });
         let errors = validate_form(&form);
-        assert!(errors.iter().any(|e| e.contains("Approach Transition 1") && e.contains("condition")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Approach Transition 1") && e.contains("condition"))
+        );
     }
 
     #[test]
@@ -481,7 +499,11 @@ mod tests {
             distance_value: "far".to_string(),
         });
         let errors = validate_form(&form);
-        assert!(errors.iter().any(|e| e.contains("Approach Transition 1") && e.contains("number")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Approach Transition 1") && e.contains("number"))
+        );
     }
 
     #[test]
@@ -524,7 +546,10 @@ mod tests {
     fn build_plan_json_empty_transitions_produce_empty_array() {
         let form = valid_form(); // no transitions by default
         let json = build_capture_plan_json(&form);
-        assert_eq!(json["states"][0]["transitions"].as_array().unwrap().len(), 0);
+        assert_eq!(
+            json["states"][0]["transitions"].as_array().unwrap().len(),
+            0
+        );
     }
 
     #[test]
@@ -540,6 +565,92 @@ mod tests {
         assert_eq!(transition["to"], "terminal");
         // The condition key should be "less_than", not hardcoded
         assert!(!transition["distance"]["less_than"].is_null());
+    }
+
+    // -------------------------------------------------------------------------
+    // plan.id — identity across loader, insert_plan, and serialization
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn loader_sets_plan_id_to_file_stem() {
+        // All plans loaded from disk must have their id populated with the file
+        // stem so that any code using plan.id gets the correct lookup key.
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/example_capture_plans");
+        let (plans, _) = load_plans_from_dir_with_errors(&dir);
+        for (stem, plan) in &plans {
+            assert_eq!(
+                &plan.id, stem,
+                "plan.id should equal the file stem for '{}'",
+                stem
+            );
+        }
+    }
+
+    #[test]
+    fn loader_id_is_independent_of_display_name() {
+        // The file stem (id) is independent of the JSON "name" field. A plan
+        // keyed under "example_plan" must have id == "example_plan" regardless
+        // of what its "name" field contains.
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/example_capture_plans");
+        let (plans, _) = load_plans_from_dir_with_errors(&dir);
+        if let Some(plan) = plans.get("example_plan") {
+            assert_eq!(plan.id, "example_plan");
+        }
+    }
+
+    #[test]
+    fn insert_plan_stamps_id_on_stored_plan() {
+        // insert_plan must always set plan.id = plan_id on the stored copy so
+        // callers can recover the lookup key from the plan struct itself.
+        let mut lib = CapturePlanLibrary::default();
+        let plan = minimal_valid_plan(); // plan.id starts as ""
+        lib.insert_plan("my_plan".to_string(), plan);
+        let stored = lib.plans.get("my_plan").unwrap();
+        assert_eq!(stored.id, "my_plan");
+    }
+
+    #[test]
+    fn insert_plan_id_is_file_stem_not_display_name() {
+        // plan.id must equal the HashMap key (file stem), not plan.name.
+        let mut lib = CapturePlanLibrary::default();
+        let mut plan = minimal_valid_plan();
+        plan.name = "My Fancy Plan".to_string(); // display name different from stem
+        lib.insert_plan("my_fancy_plan".to_string(), plan);
+        let stored = lib.plans.get("my_fancy_plan").unwrap();
+        assert_eq!(stored.id, "my_fancy_plan");
+        assert_ne!(stored.id, stored.name);
+    }
+
+    #[test]
+    fn plan_id_field_is_not_serialized_to_json() {
+        // plan.id is #[serde(skip)] so it must not appear in the output JSON.
+        // If it did, saved plan files would gain an unexpected "id" key.
+        let mut plan = minimal_valid_plan();
+        plan.id = "test_plan".to_string();
+        let json_str = serde_json::to_string(&plan).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert!(
+            value.get("id").is_none(),
+            "\"id\" must not appear in serialized JSON"
+        );
+    }
+
+    #[test]
+    fn plan_id_is_empty_after_json_deserialization() {
+        // When a plan is deserialized from JSON (no "id" key present), plan.id
+        // must default to "" — the loader sets it to the file stem afterwards.
+        let json = json!({
+            "name": "Test Plan",
+            "tether": "Tether1",
+            "states": [{
+                "id": "approach",
+                "parameters": { "max_velocity": 1.0, "max_force": 2.0 }
+            }]
+        });
+        let plan: CapturePlan = serde_json::from_value(json).unwrap();
+        assert_eq!(plan.id, "", "id should be empty before the loader sets it");
     }
 
     #[test]
@@ -562,7 +673,9 @@ mod tests {
         form.unit_system = UnitSystem::Metric;
         form.approach_max_velocity = "2.0".to_string();
         let json = build_capture_plan_json(&form);
-        let v = json["states"][0]["parameters"]["max_velocity"].as_f64().unwrap();
+        let v = json["states"][0]["parameters"]["max_velocity"]
+            .as_f64()
+            .unwrap();
         assert!((v - 2.0).abs() < 1e-9);
     }
 
@@ -572,7 +685,9 @@ mod tests {
         form.unit_system = UnitSystem::Imperial;
         form.approach_max_velocity = "1.0".to_string(); // 1 ft/s
         let json = build_capture_plan_json(&form);
-        let v = json["states"][0]["parameters"]["max_velocity"].as_f64().unwrap();
+        let v = json["states"][0]["parameters"]["max_velocity"]
+            .as_f64()
+            .unwrap();
         // 1 ft/s = 0.3048 m/s
         assert!((v - 0.3048).abs() < 1e-9);
     }
@@ -583,7 +698,9 @@ mod tests {
         form.unit_system = UnitSystem::Imperial;
         form.approach_max_force = "1.0".to_string(); // 1 lbf
         let json = build_capture_plan_json(&form);
-        let f = json["states"][0]["parameters"]["max_force"].as_f64().unwrap();
+        let f = json["states"][0]["parameters"]["max_force"]
+            .as_f64()
+            .unwrap();
         // 1 lbf = 4.44822 N
         assert!((f - 4.44822).abs() < 1e-4);
     }

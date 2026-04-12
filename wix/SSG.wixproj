@@ -1,0 +1,15 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
+    <Platform Condition="'$(Platform)'==''">x64</Platform>
+    <OutputName>ssg-tether-capture</OutputName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include existing main.wxs (kept for compatibility) -->
+    <Wix Include="main.wxs" />
+    <!-- If heat-generated fragment exists include it as well -->
+    <Wix Include="assets_fragment.wxs" Condition="Exists('assets_fragment.wxs')" />
+  </ItemGroup>
+
+</Project>

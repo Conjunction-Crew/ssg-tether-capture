@@ -77,15 +77,10 @@ jobs:
         with:
           lfs: true
 
-      - name: WiX preflight
-        shell: pwsh
-        run: |
-          Write-Host "WIX='$env:WIX'"
-          if (!(Test-Path "$env:WIX\\bin\\heat.exe")) {
-            Write-Error "WiX not found at $env:WIX\\bin\\heat.exe"
-            exit 1
-          }
-          Get-ChildItem "$env:WIX\\bin" -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
+      - name: Setup .NET (for WiX SDK)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
 
       - uses: actions/cache@v4
         with:
@@ -99,39 +94,21 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Harvest assets (WiX heat)
+      - name: Build MSI (dotnet / WiX SDK)
         run: |
-          & "$env:WIX\bin\heat.exe" dir "assets" `
-            -out "wix\assets_fragment.wxs" `
-            -cg AssetsComponentGroup `
-            -dr INSTALLDIR `
-            -scom -sfrag -srd -sreg `
-            -var "var.AssetsDir"
+          $tag = "${{ github.ref_name }}"
 
-      - name: Build MSI
-        run: |
-          $tag     = "${{ github.ref_name }}"
-          # WiX version must be X.Y.Z — strip 'v' prefix and any pre-release suffix
-          $version = $tag -replace '^v', '' -replace '-.*$', ''
-          $msi     = "ssg-tether-capture-${tag}-windows-x86_64.msi"
+          dotnet restore wix/SSG.wixproj
+          dotnet build wix/SSG.wixproj -c Release
 
-          & "$env:WIX\bin\candle.exe" `
-            -dVersion="$version" `
-            -dSourceDir="target\release" `
-            -dAssetsDir="assets" `
-            -arch x64 `
-            "wix\main.wxs" `
-            "wix\assets_fragment.wxs" `
-            -out "wix\"
-
-          & "$env:WIX\bin\light.exe" `
-            -ext WixUIExtension `
-            "wix\main.wixobj" `
-            "wix\assets_fragment.wixobj" `
-            -out "$msi"
-
-          # Write MSI path to GitHub env in PowerShell-safe way
-          Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+          $msiFile = Get-ChildItem -Path . -Recurse -Filter "*.msi" | Select-Object -First 1
+          if ($msiFile) {
+            $msi = $msiFile.FullName
+            Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+          } else {
+            Write-Error "MSI not found after dotnet build."
+            exit 1
+          }
 
       - name: Windows MSI Debug info
         shell: pwsh
