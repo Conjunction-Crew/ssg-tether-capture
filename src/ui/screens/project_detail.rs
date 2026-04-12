@@ -31,6 +31,7 @@ use crate::ui::screens::capture_plan::ScrollContentWrapper;
 use crate::ui::state::SelectedProject;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
+use crate::ui::widgets::terminal_log::spawn_terminal_panel;
 
 #[derive(Component)]
 pub struct SimScreen;
@@ -1216,6 +1217,9 @@ pub fn spawn_project_detail_screen(
                             ));
                     });
             });
+
+            // ── Capture Log terminal panel (full-width, below content row) ──
+            spawn_terminal_panel(root, &font, &theme);
 
             root.spawn((
                 OrbitLabel {

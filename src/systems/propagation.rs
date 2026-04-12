@@ -7,6 +7,7 @@ use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
 };
 use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
+use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
@@ -68,6 +69,7 @@ pub fn load_dataset_entities(
     gpu_elements: Option<ResMut<GpuElements>>,
     world_time: Res<WorldTime>,
     gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
+    mut log_events: MessageWriter<LogEvent>,
 ) {
     let plans_dir = crate::resolve_assets_dir().join("datasets");
     let mut gpu_elements = gpu_elements;
@@ -105,6 +107,12 @@ pub fn load_dataset_entities(
                         for object in data.data {
                             let Some(id_val) = object.norad_cat_id else {
                                 println!("Failed to parse norad cat id");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "dataset",
+                                    message: "Failed to parse norad_cat_id for an object"
+                                        .to_string(),
+                                });
                                 continue;
                             };
                             let Some(id) = id_val.as_u64() else {
@@ -112,6 +120,14 @@ pub fn load_dataset_entities(
                             };
                             let Some(mean_motion_val) = object.mean_motion else {
                                 println!("Failed to parse mean motion");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "dataset",
+                                    message: format!(
+                                        "Failed to parse mean_motion for object {:?}",
+                                        id_val
+                                    ),
+                                });
                                 continue;
                             };
                             let Some(mean_motion) = mean_motion_val.as_f64() else {
@@ -215,6 +231,11 @@ pub fn load_dataset_entities(
                         }
                     } else {
                         println!("Failed to parse dataset json");
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "dataset",
+                            message: format!("Failed to parse dataset JSON: {}", path.display()),
+                        });
                     }
                 }
             }
@@ -370,6 +391,7 @@ pub fn target_entity_reset_origin(
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
     world_time: Res<WorldTime>,
     orbital_cache: Res<OrbitalCache>,
+    mut log_events: MessageWriter<LogEvent>,
 ) {
     let Ok(target_entity) = target_entity_q.single() else {
         return;
@@ -384,6 +406,11 @@ pub fn target_entity_reset_origin(
     }
 
     println!("RESETTING! EPOCH: {}", world_time.epoch);
+    log_events.write(LogEvent {
+        level: LogLevel::Debug,
+        source: "propagation",
+        message: format!("Floating origin reset (epoch: {})", world_time.epoch),
+    });
 
     // Accumulate current linvel and position into rigidbodies
     println!("Num to reset: {}", true_params_query.iter().len());

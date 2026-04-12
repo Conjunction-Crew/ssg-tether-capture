@@ -13,6 +13,7 @@ use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
 };
@@ -52,6 +53,8 @@ use crate::ui::state::{SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{
     ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
+    log_level_filter_interaction, sync_terminal_log_display, terminal_clear_interaction,
+    terminal_keyboard_input, terminal_row_selection_interaction, terminal_toggle_interaction,
 };
 
 #[derive(Resource, Default)]
@@ -81,8 +84,11 @@ impl Plugin for UiPlugin {
             .init_resource::<SimPlanSyncState>()
             .init_resource::<CapturePlanLoadErrors>()
             .init_resource::<DataCollection>()
+            .init_resource::<CaptureLog>()
+            .init_resource::<CaptureLogUiState>()
             .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
+            .add_message::<LogEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
                 OnEnter(UiScreen::WorkingDirectorySetup),
@@ -99,6 +105,7 @@ impl Plugin for UiPlugin {
                 (
                     spawn_project_detail_screen.after(setup_entities),
                     reset_sync_state,
+                    reset_terminal_log_ui_state,
                 ),
             )
             .add_systems(
@@ -129,15 +136,22 @@ impl Plugin for UiPlugin {
                     poll_exit_confirm_modal,
                     poll_restart_prompt_modal,
                     poll_sim_restart,
+                    collect_log_events.run_if(in_state(UiScreen::Sim)),
                     (
                         project_detail_interactions,
                         collapsible_toggle_interaction,
+                        terminal_toggle_interaction,
+                        log_level_filter_interaction,
+                        terminal_clear_interaction,
                         catalog_interactions,
                         catalog_keyboard_input,
                         refresh_space_catalog_results,
                         sync_space_catalog_ui,
                         update_selected_catalog_overlay,
                         update_satellite_indicator_overlay,
+                        terminal_row_selection_interaction,
+                        terminal_keyboard_input,
+                        sync_terminal_log_display,
                     )
                         .chain()
                         .run_if(in_state(UiScreen::Sim)),
@@ -290,6 +304,38 @@ fn poll_sim_restart(
 
 fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
     *sync_state = SimPlanSyncState::default();
+}
+
+fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
+    // Preserve active_filters and existing log entries across sim screen re-entries,
+    // but reset per-frame UI state (scroll position, selection).
+    log_ui.is_user_scrolled = false;
+    log_ui.selected_rows = None;
+    log_ui.selection_anchor = None;
+    // Force a display rebuild so newly-spawned rows reflect the current log.
+    log_ui.last_rendered_count = usize::MAX;
+}
+
+/// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`].
+fn collect_log_events(
+    mut events: MessageReader<LogEvent>,
+    mut capture_log: ResMut<CaptureLog>,
+    world_time: Res<WorldTime>,
+) {
+    for event in events.read() {
+        let full_ts = format!("{}", world_time.epoch);
+        // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
+        let timestamp = full_ts
+            .get(11..19)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| full_ts.clone());
+        capture_log.push(LogEntry {
+            timestamp,
+            level: event.level,
+            source: event.source,
+            message: event.message.clone(),
+        });
+    }
 }
 
 fn handle_ui_events(

@@ -13,6 +13,18 @@ When preparing a release:
 
 ---
 
+## [Unreleased]
+
+### Changed
+- Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
+
+### Added
+- Capture log system and terminal panel UI for real-time logging of capture events, errors, and debug information.
+
+### Removed
+
+---
+
 ## [0.2.0-beta.6]
 
 ### Changed

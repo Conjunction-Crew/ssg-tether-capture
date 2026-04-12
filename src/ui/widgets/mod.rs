@@ -6,5 +6,13 @@ pub use input_field::{
     input_field_keyboard,
 };
 
+pub mod terminal_log;
+pub use terminal_log::{
+    LogLevelFilterButton, TerminalClearButton, TerminalLogRow, TerminalLogViewport,
+    TerminalLogWrapper, TerminalPanel, TerminalToggleButton, log_level_filter_interaction,
+    spawn_terminal_panel, sync_terminal_log_display, terminal_clear_interaction,
+    terminal_keyboard_input, terminal_row_selection_interaction, terminal_toggle_interaction,
+};
+
 #[derive(Component)]
 pub struct ScreenRoot;
