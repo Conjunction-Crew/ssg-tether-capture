@@ -106,7 +106,6 @@ pub fn load_dataset_entities(
                         let data: JsonOrbitalData = dataset;
                         for object in data.data {
                             let Some(id_val) = object.norad_cat_id else {
-                                println!("Failed to parse norad cat id");
                                 log_events.write(LogEvent {
                                     level: LogLevel::Error,
                                     source: "dataset",
@@ -119,7 +118,6 @@ pub fn load_dataset_entities(
                                 continue;
                             };
                             let Some(mean_motion_val) = object.mean_motion else {
-                                println!("Failed to parse mean motion");
                                 log_events.write(LogEvent {
                                     level: LogLevel::Error,
                                     source: "dataset",
@@ -138,14 +136,22 @@ pub fn load_dataset_entities(
                                 / (mean_motion_rad_s * mean_motion_rad_s))
                                 .powf(1.0 / 3.0);
                             let Some(eccentricity_val) = object.eccentricity else {
-                                println!("Failed to parse eccentricity");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "propagation",
+                                    message: format!("Failed to parse eccentricity for object {id}"),
+                                });
                                 continue;
                             };
                             let Some(eccentricity) = eccentricity_val.as_f64() else {
                                 continue;
                             };
                             let Some(inclination_val) = object.inclination else {
-                                println!("Failed to parse inclination");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "propagation",
+                                    message: format!("Failed to parse inclination for object {id}"),
+                                });
                                 continue;
                             };
                             let Some(inclination) = inclination_val.as_f64() else {
@@ -153,7 +159,11 @@ pub fn load_dataset_entities(
                             };
                             let inclination = inclination.to_radians();
                             let Some(raan_val) = object.ra_of_asc_node else {
-                                println!("Failed to parse ra of asc node");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "propagation",
+                                    message: format!("Failed to parse ra_of_asc_node for object {id}"),
+                                });
                                 continue;
                             };
                             let Some(raan) = raan_val.as_f64() else {
@@ -161,7 +171,11 @@ pub fn load_dataset_entities(
                             };
                             let raan = raan.to_radians();
                             let Some(argp_val) = object.arg_of_pericenter else {
-                                println!("Failed to parse arg of paricenter");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "propagation",
+                                    message: format!("Failed to parse arg_of_pericenter for object {id}"),
+                                });
                                 continue;
                             };
                             let Some(argp) = argp_val.as_f64() else {
@@ -169,7 +183,11 @@ pub fn load_dataset_entities(
                             };
                             let argp = argp.to_radians();
                             let Some(mean_anomaly_val) = object.mean_anomaly else {
-                                println!("Failed to parse mean anomaly");
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "propagation",
+                                    message: format!("Failed to parse mean_anomaly for object {id}"),
+                                });
                                 continue;
                             };
                             let Some(mean_anomaly) = mean_anomaly_val.as_f64() else {
@@ -230,7 +248,6 @@ pub fn load_dataset_entities(
                             }
                         }
                     } else {
-                        println!("Failed to parse dataset json");
                         log_events.write(LogEvent {
                             level: LogLevel::Error,
                             source: "dataset",
@@ -242,9 +259,17 @@ pub fn load_dataset_entities(
         }
     }
 
+    let entry_count = space_catalog.entries.len();
     space_catalog
         .entries
         .sort_by(|left, right| left.display_name().cmp(right.display_name()));
+    if entry_count > 0 {
+        log_events.write(LogEvent {
+            level: LogLevel::Info,
+            source: "propagation",
+            message: format!("Dataset loaded: {entry_count} objects"),
+        });
+    }
 }
 
 fn parse_dataset_epoch_fast(raw: &str) -> Option<Epoch> {
@@ -405,7 +430,6 @@ pub fn target_entity_reset_origin(
         return;
     }
 
-    println!("RESETTING! EPOCH: {}", world_time.epoch);
     log_events.write(LogEvent {
         level: LogLevel::Debug,
         source: "propagation",
@@ -413,7 +437,6 @@ pub fn target_entity_reset_origin(
     });
 
     // Accumulate current linvel and position into rigidbodies
-    println!("Num to reset: {}", true_params_query.iter().len());
     true_params_query.par_iter_mut().for_each(|mut orbital| {
         if let Some(prop) = orbital.propagator.as_mut() {
             let Ok(rv) = prop.state_eci(world_time.epoch) else {
@@ -427,8 +450,6 @@ pub fn target_entity_reset_origin(
 
             // Rebuild propagator
             *prop = KeplerianPropagator::from_eci(world_time.epoch, new_rv, 1.0);
-
-            println!("New propagator, New rv: {}", new_rv);
         }
     });
 
@@ -446,6 +467,7 @@ pub fn physics_bubble_add_remove(
     target_entity: Single<Entity, With<CameraTarget>>,
     mut orbital_cache: ResMut<OrbitalCache>,
     world_time: Res<WorldTime>,
+    mut log_events: MessageWriter<LogEvent>,
 ) {
     let entity = target_entity.into_inner();
 
@@ -477,7 +499,15 @@ pub fn physics_bubble_add_remove(
             ));
 
             commands.entity(entity).insert(RigidBodyDisabled);
-            println!("DISABLED SOMETHING");
+            log_events.write(LogEvent {
+                level: LogLevel::Debug,
+                source: "propagation",
+                message: format!(
+                    "Physics disabled for entity {:?} (dist {:.0} km from target)",
+                    entity,
+                    rb.position.0.length() / 1000.0,
+                ),
+            });
         } else if disabled_entities.contains(entity)
             && rb.position.0.length() < PHYSICS_ENABLE_RADIUS
         {
@@ -495,7 +525,15 @@ pub fn physics_bubble_add_remove(
 
             enabled = true;
 
-            println!("ENABLED SOMETHING");
+            log_events.write(LogEvent {
+                level: LogLevel::Debug,
+                source: "propagation",
+                message: format!(
+                    "Physics enabled for entity {:?} (dist {:.0} km from target)",
+                    entity,
+                    rb.position.0.length() / 1000.0,
+                ),
+            });
         }
 
         // Set disabled bodies rigidbody values to their global relative state (for capture algorithm)

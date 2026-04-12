@@ -169,3 +169,19 @@ Draws force vector gizmos for the active capture sequence when `Settings::captur
 **Schedule:** `Last`
 
 Draws orbital path gizmos for all active `Orbital` entities in the map view layer.
+
+---
+
+## Capture Log systems (`ui/plugin.rs`)
+
+### `collect_log_events`
+
+**Schedule:** `Update`
+
+Collects all `LogEvent` messages emitted during the frame and appends them to `CaptureLog` (evicting the oldest entry when the ring buffer is full). Stamps each entry with the current `WorldTime::epoch` in seconds. Runs unconditionally so events are never dropped regardless of which screen is active.
+
+### `sync_terminal_log_display`
+
+**Schedule:** `Update` (runs only in `UiScreen::Sim`)
+
+Rebuilds the `TerminalLogWrapper` child list when the number of entries in `CaptureLog` changes or when `CaptureLogUiState::active_filters` is modified. Applies level-filter visibility, per-row selection highlighting, and auto-scrolls the viewport to the bottom unless the user has manually scrolled up (`CaptureLogUiState::is_user_scrolled`).

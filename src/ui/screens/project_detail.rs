@@ -20,6 +20,7 @@ use crate::plugins::gpu_compute::{
     GpuComputeEpochOrigin, GpuElements, eci_position_to_map, propagate_catalog_eci_state,
 };
 use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
+use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::space_catalog::{
@@ -1639,6 +1640,8 @@ pub fn refresh_space_catalog_results(
     catalog: Res<SpaceObjectCatalog>,
     mut catalog_ui: ResMut<SpaceCatalogUiState>,
     mut filtered_results: ResMut<FilteredSpaceCatalogResults>,
+    mut log: MessageWriter<LogEvent>,
+    mut prev_count: Local<usize>,
 ) {
     let should_refresh = catalog.is_changed() || catalog_ui.is_changed();
     if !should_refresh {
@@ -1663,6 +1666,16 @@ pub fn refresh_space_catalog_results(
         .is_some_and(|selected_index| selected_index >= catalog.entries.len())
     {
         catalog_ui.selected_index = None;
+    }
+
+    let count = filtered_results.0.len();
+    if count != *prev_count {
+        log.write(LogEvent {
+            level: LogLevel::Debug,
+            source: "propagation",
+            message: format!("Catalog filter: {count} results"),
+        });
+        *prev_count = count;
     }
 }
 
@@ -1739,9 +1752,11 @@ pub fn catalog_interactions(
             )>,
         ),
     >,
+    catalog: Res<SpaceObjectCatalog>,
     filtered_results: Res<FilteredSpaceCatalogResults>,
     mut catalog_ui: ResMut<SpaceCatalogUiState>,
     theme: Res<UiTheme>,
+    mut log: MessageWriter<LogEvent>,
 ) {
     for (
         interaction,
@@ -1783,6 +1798,13 @@ pub fn catalog_interactions(
                             catalog_ui.selected_index = None;
                         } else {
                             catalog_ui.selected_index = Some(entry_index);
+                            if let Some(entry) = catalog.entries.get(entry_index) {
+                                log.write(LogEvent {
+                                    level: LogLevel::Info,
+                                    source: "propagation",
+                                    message: format!("Space object selected: {}", entry.object_name),
+                                });
+                            }
                         }
                     }
                 }
@@ -2322,6 +2344,7 @@ pub fn restart_prompt_interactions(
     mut next_screen: ResMut<NextState<crate::ui::state::UiScreen>>,
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     theme: Res<UiTheme>,
+    mut log: MessageWriter<LogEvent>,
 ) {
     for (interaction, restart_btn, dismiss_btn, recompile_btn, mut bg) in &mut buttons {
         if restart_btn.is_none() && dismiss_btn.is_none() && recompile_btn.is_none() {
@@ -2336,6 +2359,11 @@ pub fn restart_prompt_interactions(
                 if restart_btn.is_some() {
                     sync_state.in_sync = true;
                     sync_state.restart_requested = true;
+                    log.write(LogEvent {
+                        level: LogLevel::Info,
+                        source: "ui",
+                        message: "Simulation restart requested".to_string(),
+                    });
                     // Transition Home → Sim to trigger full cleanup and re-setup
                     next_screen.set(crate::ui::state::UiScreen::Home);
                 } else if recompile_btn.is_some() {
@@ -2349,6 +2377,11 @@ pub fn restart_prompt_interactions(
                         capture_plan_lib.insert_plan(id, plan);
                     }
                     sync_state.in_sync = true;
+                    log.write(LogEvent {
+                        level: LogLevel::Info,
+                        source: "ui",
+                        message: "Capture plan updated in situ — no restart required".to_string(),
+                    });
                 } else if dismiss_btn.is_some() {
                     sync_state.in_sync = false;
                 }

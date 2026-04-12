@@ -266,3 +266,77 @@ The following resources are initialised by `UiPlugin` (source: `src/ui/`):
 |---|---|
 | `SelectedProject` | The currently-selected capture plan's ID (`Option<String>`) |
 | `UiTheme` | Colour palette used by all UI screens |
+
+---
+
+## `CaptureLog`
+
+**Source:** `src/resources/capture_log.rs`
+
+A ring-buffer log that accumulates structured `LogEntry` records emitted by simulation systems. Displayed in the [Capture Log Terminal](../concepts/capture-log) widget on the sim screen.
+
+```rust
+pub struct CaptureLog {
+    pub entries: VecDeque<LogEntry>,
+    pub max_entries: usize, // default: 256
+}
+```
+
+When `entries.len() == max_entries`, `push()` evicts the oldest entry before appending the new one. The buffer is **never cleared automatically**; only the **Clear** button in the terminal header empties it.
+
+### `LogEntry`
+
+```rust
+pub struct LogEntry {
+    pub timestamp_s: f64, // WorldTime epoch seconds at time of emission
+    pub level: LogLevel,
+    pub source: &'static str, // e.g. "capture", "propagation", "sim"
+    pub message: String,
+}
+```
+
+### `LogLevel`
+
+```rust
+pub enum LogLevel { Error, Warn, Info, Debug }
+```
+
+| Variant | Display label | Colour |
+|---|---|---|
+| `Error` | `ERR` | Red |
+| `Warn` | `WARN` | Yellow |
+| `Info` | `INFO` | White |
+| `Debug` | `DBG` | Grey |
+
+### `LogEvent`
+
+```rust
+#[derive(Message)]
+pub struct LogEvent {
+    pub level: LogLevel,
+    pub source: &'static str,
+    pub message: String,
+}
+```
+
+The decoupled message type used by simulation systems to submit log entries without taking `ResMut<CaptureLog>` directly. Registered with `add_message::<LogEvent>()` in `UiPlugin`. Collected each frame by `collect_log_events`.
+
+---
+
+## `CaptureLogUiState`
+
+**Source:** `src/resources/capture_log.rs`
+
+Tracks the runtime state of the Capture Log Terminal panel.
+
+```rust
+pub struct CaptureLogUiState {
+    pub is_open: bool,
+    pub active_filters: HashSet<LogLevel>, // all four levels active by default
+    pub last_rendered_count: usize,
+    pub is_user_scrolled: bool,
+    pub selected_indices: HashSet<usize>, // indices into the filtered view
+}
+```
+
+`last_rendered_count` is compared against `CaptureLog::entries.len()` each frame to determine whether `sync_terminal_log_display` needs to rebuild the row list. Reset to `0` on `UiScreen::Sim` entry so the panel redraws on re-entry.
