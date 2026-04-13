@@ -78,7 +78,9 @@
          ApplicationFolderName; we only need the per-machine anchor here.
     ─────────────────────────────────────────────────────────────────── -->
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="APPLICATIONFOLDER" Name="SSG Tether Capture" />
+      <Directory Id="APPLICATIONFOLDER" Name="SSG Tether Capture">
+        <Directory Id="ASSETSFOLDER" Name="assets" />
+      </Directory>
     </StandardDirectory>
 
     <!-- Start Menu Programs folder -->
@@ -102,8 +104,8 @@
       </Component>
     </ComponentGroup>
 
-    <!-- Assets bundle (all files under assets/) installed alongside the exe -->
-    <ComponentGroup Id="AssetFiles" Directory="APPLICATIONFOLDER">
+    <!-- Assets bundle (all files under assets/) installed into assets\ subdirectory -->
+    <ComponentGroup Id="AssetFiles" Directory="ASSETSFOLDER">
       <Files Include="..\assets\**\*.*" />
     </ComponentGroup>
 
