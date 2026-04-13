@@ -15,18 +15,42 @@ use crate::{
 };
 
 pub fn egui_plots(
-    capture_entities: Single<Entity, With<CaptureComponent>>,
+    capture_entities: Query<Entity, With<CaptureComponent>>,
     mut contexts: EguiContexts,
     mut data_collection: ResMut<DataCollection>,
     working_directory: Res<WorkingDirectory>,
     selected_project: Res<SelectedProject>,
     capture_plan_lib: Res<CapturePlanLibrary>,
 ) {
-    let capture_entity = capture_entities.into_inner();
+    let capture_entity_count = capture_entities.iter().len();
+    if capture_entity_count != 1 {
+        if capture_entity_count == 0 {
+            debug!("Skipping egui plots: no active capture entity");
+        } else {
+            warn!(
+                "Skipping egui plots: expected one active capture entity, found {}",
+                capture_entity_count
+            );
+        }
+        return;
+    }
+
+    let capture_entity = capture_entities
+        .single()
+        .expect("capture entity count checked above");
+
     let Some(vel_data) = data_collection.velocity.get(&capture_entity) else {
+        debug!(
+            ?capture_entity,
+            "Skipping egui plots: missing velocity data for capture entity"
+        );
         return;
     };
     let Some(pos_data) = data_collection.position.get(&capture_entity) else {
+        debug!(
+            ?capture_entity,
+            "Skipping egui plots: missing position data for capture entity"
+        );
         return;
     };
 
@@ -71,14 +95,18 @@ pub fn egui_plots(
                 ui.label(export_dir);
                 ui.text_edit_singleline(&mut selected_filename);
                 if ui.button("Export").clicked() {
-                    println!("Exporting!");
                     export_clicked = false;
+                    let export_path = export_filepath + &selected_filename;
+                    info!(
+                        path = %export_path,
+                        rows = pos_data.len().min(vel_data.len()),
+                        "Exporting egui data collection CSV"
+                    );
 
-                    let mut wtr = match csv::Writer::from_path(export_filepath + &selected_filename)
-                    {
-                        Ok(wtr) => wtr,
+                    let mut wtr = match csv::Writer::from_path(&export_path) {
+                        Ok(writer) => writer,
                         Err(e) => {
-                            println!("Unable to create CSV writer: {}", e);
+                            error!(path = %export_path, error = %e, "Unable to create CSV writer");
                             return;
                         }
                     };
@@ -86,7 +114,7 @@ pub fn egui_plots(
                     if let Err(e) =
                         wtr.serialize(("seconds_since_start", "rel_position", "rel_velocity"))
                     {
-                        println!("Failed to write row: {}", e);
+                        error!(path = %export_path, error = %e, "Failed to write CSV header row");
                         return;
                     }
 
@@ -94,17 +122,22 @@ pub fn egui_plots(
                         Iterator::zip(pos_data.into_iter(), vel_data.into_iter())
                     {
                         if let Err(e) = wtr.serialize((pos_point.0, pos_point.1, vel_point.1)) {
-                            println!("Failed to write row: {}", e);
+                            error!(path = %export_path, error = %e, "Failed to write CSV data row");
                             return;
                         }
                     }
 
                     if let Err(e) = wtr.flush() {
-                        println!("Failed to flush CSV: {e}");
+                        error!(path = %export_path, error = %e, "Failed to flush CSV");
+                        return;
                     }
 
                     num_exports += 1;
-                    println!("Export complete!");
+                    info!(
+                        path = %export_path,
+                        exports_completed = num_exports,
+                        "Completed egui data collection CSV export"
+                    );
                 }
             } else if ui.button("Export to CSV").clicked() {
                 let project_id = selected_project
@@ -112,6 +145,10 @@ pub fn egui_plots(
                     .clone()
                     .expect("No project selected, when one should always be when in Sim state");
                 let Some(project) = capture_plan_lib.plans.get(&project_id) else {
+                    warn!(
+                        project_id = %project_id,
+                        "Unable to prepare egui CSV export filename: selected project not found"
+                    );
                     return;
                 };
                 selected_filename = format!(
@@ -120,6 +157,11 @@ pub fn egui_plots(
                     chrono::Local::now().format("%d-%m-%Y_%H-%M-%S").to_string()
                 );
                 export_clicked = true;
+                info!(
+                    project_id = %project_id,
+                    filename = %selected_filename,
+                    "Preparing egui data collection CSV export"
+                );
             }
         });
 

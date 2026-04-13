@@ -377,9 +377,17 @@ fn handle_ui_events(
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
                             } else {
-                                eprintln!("Error: Could not build capture component!");
+                                error!("Error: Could not build capture component!");
                                 continue;
                             }
+
+                            // Begin data collection on entity
+                            data_collection
+                                .position
+                                .insert(*capture_entity, Vec::<(f64, f64)>::new());
+                            data_collection
+                                .velocity
+                                .insert(*capture_entity, Vec::<(f64, f64)>::new());
                         } else {
                             warn!(
                                 "CaptureDebris: plan_id '{}' not found in capture_plan_lib.plans (keys: {:?})",
@@ -388,7 +396,7 @@ fn handle_ui_events(
                             );
                         }
                     } else {
-                        println!("Entity already marked for capture!");
+                        warn!("Entity already marked for capture!");
                     }
                 } else {
                     warn!("CaptureDebris: entity is None for plan_id '{}'", plan_id);
