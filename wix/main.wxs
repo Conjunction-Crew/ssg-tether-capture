@@ -165,12 +165,25 @@
     </Feature>
 
     <!-- ──────────────────────────────────────────────────────────────────
-         Wizard UI — WixUI_Advanced:
-           Welcome → License Agreement → Install Type (per-machine/per-user)
-           → Directory → Shortcuts → Ready → Progress → Finish
+         Wizard UI — WixUI_Advanced (base) with dialog-flow override:
+           Welcome → License Agreement → Install Scope (per-machine/per-user)
+           → Install Directory → Ready → Progress → Finish
+         By default WixUI_Advanced hides scope selection behind an "Advanced"
+         button on SetupTypeDlg. The Publish overrides below redirect the
+         LicenseAgreementDlg Next and InstallScopeDlg Back buttons so scope
+         selection is always a visible step in the normal wizard flow.
+         Publish Order=99 fires after any built-in lower-order events; for
+         NewDialog, the last event that fires determines the transition, so
+         our Order=99 entries override the built-in destination.
          WixUILicenseRtf points to our LICENSE.rtf.
     ─────────────────────────────────────────────────────────────────── -->
     <ui:WixUI Id="WixUI_Advanced" />
+    <UI>
+      <!-- After license acceptance, go straight to scope selection (skip SetupTypeDlg) -->
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallScopeDlg" Order="99">LicenseAccepted = "1"</Publish>
+      <!-- Back from scope selection returns to the license dialog -->
+      <Publish Dialog="InstallScopeDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="99">1</Publish>
+    </UI>
 
     <WixVariable Id="WixUILicenseRtf"    Value="LICENSE.rtf" />
     <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp" Overridable="yes" />

@@ -307,7 +307,7 @@ pub fn spawn_project_detail_screen(
                             Interaction::default(),
                             Node {
                                 position_type: PositionType::Absolute,
-                                left: px(12.0),
+                                right: px(12.0),
                                 bottom: px(12.0),
                                 flex_direction: FlexDirection::Column,
                                 row_gap: px(2.0),
