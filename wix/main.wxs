@@ -56,11 +56,12 @@
          Per-user / per-machine install scope support.
          WixUI_Advanced displays the scope-selection dialog.
          MSIINSTALLPERUSER=1  → per-user (LocalAppData), no elevation required.
-         MSIINSTALLPERUSER="" → per-machine (ProgramFiles), requires admin.
+         MSIINSTALLPERUSER unset → per-machine (ProgramFiles), requires admin.
          We default to per-machine but the user can switch in the wizard.
+         Marked Secure="yes" so the UI dialog can set it at install time.
     ─────────────────────────────────────────────────────────────────── -->
     <Property Id="WixAppFolder"      Value="WixPerMachineFolder" />
-    <Property Id="MSIINSTALLPERUSER" Value="" />
+    <Property Id="MSIINSTALLPERUSER" Secure="yes" />
 
     <!-- Shortcut options: both enabled by default; user can deselect -->
     <Property Id="INSTALL_STARTMENU" Value="1" />
@@ -110,8 +111,7 @@
          Start Menu shortcut (conditional on INSTALL_STARTMENU property)
     ─────────────────────────────────────────────────────────────────── -->
     <ComponentGroup Id="StartMenuShortcuts" Directory="ApplicationProgramsFolder">
-      <Component Id="StartMenuShortcut" Guid="B1C2D3E4-F567-4890-ABCD-EF1234567890">
-        <Condition>INSTALL_STARTMENU</Condition>
+      <Component Id="StartMenuShortcut" Guid="B1C2D3E4-F567-4890-ABCD-EF1234567890" Condition="INSTALL_STARTMENU">
         <Shortcut
           Id="StartMenuShortcutEntry"
           Name="SSG Tether Capture"
@@ -134,8 +134,7 @@
          Desktop shortcut (conditional on INSTALL_DESKTOP property)
     ─────────────────────────────────────────────────────────────────── -->
     <ComponentGroup Id="DesktopShortcuts" Directory="DesktopFolder">
-      <Component Id="DesktopShortcut" Guid="C2D3E4F5-6789-4ABC-DEF0-123456789ABC">
-        <Condition>INSTALL_DESKTOP</Condition>
+      <Component Id="DesktopShortcut" Guid="C2D3E4F5-6789-4ABC-DEF0-123456789ABC" Condition="INSTALL_DESKTOP">
         <Shortcut
           Id="DesktopShortcutEntry"
           Name="SSG Tether Capture"
