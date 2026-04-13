@@ -1,5 +1,7 @@
-[release]
-# cargo-release configuration for ssg-tether-capture
+# cargo-release configuration for ssg-tether-capture (cargo-release v1.x format)
+#
+# NOTE: cargo-release v1.x uses top-level keys — do NOT wrap these in a
+# [release] section; that header is silently ignored in v1.x.
 #
 # IMPORTANT: tag and push are disabled so that maintainers control exactly
 # when a tag (and therefore the release workflow) is created and pushed.
@@ -30,7 +32,6 @@ push = false
 # cargo-release proceeds.  Runs in the maintainer's local environment.
 pre-release-hook = ["./scripts/verify_release_pr.sh"]
 
-# After bumping and committing the version, create a versioned snapshot of
-# the Docusaurus docs and commit it into the release branch so the docs PR
-# is reviewable before the tag is ever pushed.
-post-release-hook = ["./scripts/post_release.sh"]
+# NOTE: There is no post-release-hook in cargo-release. The post_release.sh
+# script (versioned docs snapshot) must be run manually after cargo-release
+# completes, before pushing the tag.

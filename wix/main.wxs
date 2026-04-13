@@ -1,65 +1,255 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  WiX v3 installer definition for SSG Tether Capture.
+  WiX v7 installer definition for SSG Tether Capture.
 
-  BUILD PROCESS (handled automatically by release.yml):
-    1. heat.exe harvests the 'assets/' directory into wix/assets_fragment.wxs at build time.
-    2. candle.exe compiles this file and assets_fragment.wxs into .wixobj files.
-    3. light.exe links the .wixobj files into the final .msi.
+  BUILD PROCESS (release.yml / packaging-test.yml):
+    dotnet restore wix/SSG.wixproj
+    dotnet build  wix/SSG.wixproj -c Release
 
-  UPGRADE GUID: must never change — it uniquely identifies this product family across versions.
-    Changing it would break the upgrade path and cause duplicate installations.
+  UPGRADE GUID: must never change across versions — it identifies this product family.
+    Changing it breaks the upgrade path and causes side-by-side installs.
+
+  INSTALL SCOPES:
+    The user selects per-user or per-machine on the Install Scope screen.
+      Per-User (default, no admin) – installed to %LocalAppData%\Programs\SSG Tether Capture.
+      Per-Machine (admin required) – installed to %ProgramFiles%\SSG Tether Capture.
+    Package uses Scope="perUserOrMachine" which compiles ALLUSERS=2 into the
+    MSI summary stream.  This tells Windows Installer the package supports
+    both scopes and to honour MSIINSTALLPERUSER at runtime (set by InstallScopeDlg).
+    Without this, the default Scope="perMachine" bakes RequireElevation into
+    the MSI metadata and UAC fires regardless of MSIINSTALLPERUSER.
+
+  WIZARD SCREENS:
+    Welcome → License Agreement → Install Scope (per-user / per-machine) →
+    Ready → Progress → Finish
+    Per-user: no UAC prompt, installs to %LocalAppData%\Programs.
+    Per-machine: UAC prompt raised when install begins, installs to %ProgramFiles%.
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
-  <Product
-    Id="*"
+  <Package
     Name="SSG Tether Capture"
     Manufacturer="Conjunction Crew"
-    Version="$(var.Version)"
+    Version="$(var.PackageVersion)"
     Language="1033"
+    Scope="perUserOrMachine"
     UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068">
 
-    <Package
-      InstallerVersion="500"
-      Compressed="yes"
-      InstallScope="perMachine"
-      Platform="x64"
-      Description="SSG Tether Capture $(var.Version) Installer" />
+    <SummaryInformation Description="SSG Tether Capture Installer" />
 
-    <!-- Prevent downgrading and cleanly remove previous versions before installing -->
+    <!-- ──────────────────────────────────────────────────────────────────
+         Upgrade: auto-remove old version before installing the new one.
+         AllowSameVersionUpgrades prevents the installer from aborting when
+         re-running the same version (e.g. repair).
+    ─────────────────────────────────────────────────────────────────── -->
     <MajorUpgrade
       Schedule="afterInstallInitialize"
+      AllowSameVersionUpgrades="yes"
       DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
 
-    <Icon Id="AppIcon.ico" SourceFile="assets\logo\icon.ico" />
-    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
-
+    <!-- ──────────────────────────────────────────────────────────────────
+         Media / cabinet
+    ─────────────────────────────────────────────────────────────────── -->
     <Media Id="1" Cabinet="ssg.cab" EmbedCab="yes" />
 
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLDIR" Name="SSG Tether Capture">
+    <!-- ──────────────────────────────────────────────────────────────────
+         App icon shown in Add/Remove Programs
+    ─────────────────────────────────────────────────────────────────── -->
+    <Icon Id="AppIcon.ico" SourceFile="..\assets\logo\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
 
-          <!-- Main executable -->
-          <Component Id="MainExecutable" Guid="AAE3D0CC-5F9E-4E64-BBB1-F434C5047399" Win64="yes">
-            <File
-              Id="MainExe"
-              Name="ssg_tether_capture.exe"
-              Source="$(var.SourceDir)\ssg_tether_capture.exe"
-              KeyPath="yes" />
-          </Component>
+    <!-- ──────────────────────────────────────────────────────────────────
+         Per-user / per-machine install scope support.
+         InstallScopeDlg sets MSIINSTALLPERUSER and APPLICATIONFOLDER at
+         install time based on the user's choice.
+         MSIINSTALLPERUSER=1  → per-user (LocalAppData), no elevation required.
+         MSIINSTALLPERUSER unset → per-machine (ProgramFiles), requires admin.
+         Package has no Scope attribute so Windows Installer defers the
+         elevation decision to the MSIINSTALLPERUSER property at runtime.
+         Marked Secure="yes" so the UI dialog can set it at install time.
+    ─────────────────────────────────────────────────────────────────── -->
+    <Property Id="ApplicationFolderName" Value="SSG Tether Capture" />
+    <!-- Default to per-user so the wizard pre-selects "Just me" in InstallScopeDlg.
+         Scope="perUserOrMachine" (on Package) compiles ALLUSERS=2 into the MSI
+         summary stream, which tells Windows Installer to honour MSIINSTALLPERUSER
+         at runtime rather than always requiring admin.  MSIINSTALLPERUSER=1 is
+         set automatically by the Scope attribute; do not redeclare it here. -->
+    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
 
-        </Directory>
+    <!-- Shortcut options: both enabled by default; user can deselect -->
+    <Property Id="INSTALL_STARTMENU" Value="1" />
+    <Property Id="INSTALL_DESKTOP"   Value="1" />
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Directory layout.
+         APPLICATIONFOLDER is re-pointed at runtime by the SetPerUserFolder /
+         SetPerMachineFolder custom actions (see InstallUISequence below) before
+         cost calculation runs.  The ProgramFiles64Folder anchor here is the
+         fallback used when building the directory table; the actual install
+         location is always overridden by the custom actions.
+    ─────────────────────────────────────────────────────────────────── -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="SSG Tether Capture">
+        <Directory Id="ASSETSFOLDER" Name="assets" />
       </Directory>
-    </Directory>
+    </StandardDirectory>
 
+    <!-- Start Menu Programs folder -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="SSG Tether Capture" />
+    </StandardDirectory>
+
+    <!-- Desktop shortcut directory -->
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Components — main executable
+    ─────────────────────────────────────────────────────────────────── -->
+    <ComponentGroup Id="MainFiles" Directory="APPLICATIONFOLDER">
+      <Component Id="MainExecutable" Guid="AAE3D0CC-5F9E-4E64-BBB1-F434C5047399">
+        <File
+          Id="MainExe"
+          Name="ssg_tether_capture.exe"
+          Source="..\target\release\ssg_tether_capture.exe"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Assets bundle (all files under assets/) installed into assets\ subdirectory -->
+    <ComponentGroup Id="AssetFiles" Directory="ASSETSFOLDER">
+      <Files Include="..\assets\**\*.*" />
+    </ComponentGroup>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Start Menu shortcut (conditional on INSTALL_STARTMENU property)
+    ─────────────────────────────────────────────────────────────────── -->
+    <ComponentGroup Id="StartMenuShortcuts" Directory="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcut" Guid="B1C2D3E4-F567-4890-ABCD-EF1234567890" Condition="INSTALL_STARTMENU">
+        <Shortcut
+          Id="StartMenuShortcutEntry"
+          Name="SSG Tether Capture"
+          Description="SSG Tether Capture — orbital debris capture simulation"
+          Target="[APPLICATIONFOLDER]ssg_tether_capture.exe"
+          WorkingDirectory="APPLICATIONFOLDER"
+          Icon="AppIcon.ico" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\ConjunctionCrew\SSGTetherCapture"
+          Name="StartMenuInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Desktop shortcut (conditional on INSTALL_DESKTOP property)
+    ─────────────────────────────────────────────────────────────────── -->
+    <ComponentGroup Id="DesktopShortcuts" Directory="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="C2D3E4F5-6789-4ABC-DEF0-123456789ABC" Condition="INSTALL_DESKTOP">
+        <Shortcut
+          Id="DesktopShortcutEntry"
+          Name="SSG Tether Capture"
+          Description="SSG Tether Capture — orbital debris capture simulation"
+          Target="[APPLICATIONFOLDER]ssg_tether_capture.exe"
+          WorkingDirectory="APPLICATIONFOLDER"
+          Icon="AppIcon.ico" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\ConjunctionCrew\SSGTetherCapture"
+          Name="DesktopInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Features
+    ─────────────────────────────────────────────────────────────────── -->
     <Feature Id="MainFeature" Title="SSG Tether Capture" Level="1">
-      <ComponentRef Id="MainExecutable" />
-      <!-- AssetsComponentGroup is generated at build time by heat.exe harvesting the assets/ dir -->
-      <ComponentGroupRef Id="AssetsComponentGroup" />
+      <ComponentGroupRef Id="MainFiles" />
+      <ComponentGroupRef Id="AssetFiles" />
+      <ComponentGroupRef Id="StartMenuShortcuts" />
+      <ComponentGroupRef Id="DesktopShortcuts" />
     </Feature>
 
-  </Product>
+    <!-- ──────────────────────────────────────────────────────────────────
+         Scope resolution custom actions.
+
+         MSIINSTALLPERUSER is Secure="yes" so it propagates from the UI
+         sequence (where InstallScopeDlg sets it) into the execute sequence.
+         WixAppFolder is NOT Secure and does NOT propagate, so we must
+         condition on MSIINSTALLPERUSER, not WixAppFolder.
+
+         UI sequence   – runs Before="CostInitialize" so file costing uses
+                         the correct directory for disk-space reporting.
+         Execute sequence – runs Before="CostInitialize" so the install
+                         target is resolved before Windows Installer decides
+                         whether to request elevation.  With MSIINSTALLPERUSER=1
+                         and APPLICATIONFOLDER under LocalAppData, Windows
+                         installs without UAC.  With MSIINSTALLPERUSER unset
+                         and APPLICATIONFOLDER under ProgramFiles, Windows
+                         requests elevation via UAC before costing.
+    ─────────────────────────────────────────────────────────────────── -->
+    <CustomAction Id="SetPerUserFolder"
+                  Property="APPLICATIONFOLDER"
+                  Value="[LocalAppDataFolder]Programs\[ApplicationFolderName]\" />
+    <CustomAction Id="SetPerMachineFolder"
+                  Property="APPLICATIONFOLDER"
+                  Value="[ProgramFiles64Folder][ApplicationFolderName]\" />
+
+    <InstallUISequence>
+      <Custom Action="SetPerUserFolder"    Before="CostInitialize" Condition="MSIINSTALLPERUSER" />
+      <Custom Action="SetPerMachineFolder" Before="CostInitialize" Condition="NOT MSIINSTALLPERUSER" />
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <Custom Action="SetPerUserFolder"    Before="CostInitialize" Condition="MSIINSTALLPERUSER" />
+      <Custom Action="SetPerMachineFolder" Before="CostInitialize" Condition="NOT MSIINSTALLPERUSER" />
+    </InstallExecuteSequence>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Wizard UI
+         Base: WixUI_InstallDir  →  Welcome → License Agreement → [scope] →
+               Ready to Install → Progress → Exit
+         We inject InstallScopeDlg between LicenseAgreementDlg and
+         VerifyReadyDlg so the per-user / per-machine choice is always a
+         visible step in the main wizard flow (not hidden behind "Advanced").
+         Order=2 Publish events fire after each dialog's built-in Order=1
+         events; for NewDialog, the last event fired determines the
+         transition (last-wins), so our Order=2 entries silently override
+         the built-in InstallDirDlg destination.
+    ─────────────────────────────────────────────────────────────────── -->
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <!-- Required by WixUI_InstallDir; binds the dir dialog to our folder -->
+    <Property Id="WIXUI_INSTALLDIR" Value="APPLICATIONFOLDER" />
+
+    <UI>
+      <!-- Pull InstallScopeDlg into the WixUI_InstallDir dialog set -->
+      <DialogRef Id="InstallScopeDlg" />
+
+      <!-- LicenseAgreementDlg Next → InstallScopeDlg (skips InstallDirDlg) -->
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallScopeDlg" Order="2" Condition='LicenseAccepted = "1"' />
+
+      <!-- InstallScopeDlg Next → VerifyReadyDlg -->
+      <Publish Dialog="InstallScopeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="2" Condition="1" />
+
+      <!-- InstallScopeDlg Back → LicenseAgreementDlg -->
+      <Publish Dialog="InstallScopeDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="2" Condition="1" />
+
+      <!-- VerifyReadyDlg Back → InstallScopeDlg (skips InstallDirDlg) -->
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallScopeDlg" Order="2" Condition="NOT Installed" />
+    </UI>
+
+    <WixVariable Id="WixUILicenseRtf"       Value="LICENSE.rtf" />
+    <WixVariable Id="WixUISupportPerUser"    Value="1" />
+    <WixVariable Id="WixUISupportPerMachine" Value="1" />
+    <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp" Overridable="yes" />
+    <WixVariable Id="WixUIDialogBmp"     Value="..\assets\logo\installer_dialog.bmp" Overridable="yes" />
+
+  </Package>
 
 </Wix>

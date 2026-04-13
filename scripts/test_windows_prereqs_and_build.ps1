@@ -3,28 +3,40 @@
     Checks Windows build prerequisites and performs a local build + MSI package.
 
 .DESCRIPTION
-    - Checks for cargo (Rust toolchain), dotnet (.NET SDK), WIX env (legacy WiX v3), and signtool.
-    - Builds the Rust release binary via cargo.
-    - Prefers WixToolset.Sdk / dotnet build to produce the MSI.
-    - Falls back to legacy heat/candle/light if dotnet is unavailable.
-    - Exits with a non-zero code on first failure.
+    Mirrors exactly what release.yml and packaging-test.yml do on windows-latest:
+      1. Check prerequisites: cargo, dotnet
+      2. Build the Rust release binary via cargo
+      3. Build the MSI via dotnet / WixToolset.Sdk v7
+         (AcceptEula=wix7 is already set in wix/SSG.wixproj; the explicit
+          -p flag here is belt-and-suspenders for clarity)
+      4. Report the MSI location
+
+    The -Tag parameter overrides the version tag used in the output file name.
+    When omitted the script reads the version from Cargo.toml automatically.
+
+.PARAMETER Tag
+    Optional. Version tag for the output MSI name, e.g. "v0.3.0".
+    Defaults to "v<version>" parsed from Cargo.toml.
 
 .EXAMPLE
     .\scripts\test_windows_prereqs_and_build.ps1
+    .\scripts\test_windows_prereqs_and_build.ps1 -Tag v0.3.0
 #>
 
 #Requires -Version 5.1
 [CmdletBinding()]
-param()
+param(
+    [string]$Tag = ""
+)
 
 $ErrorActionPreference = 'Stop'
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
 function Write-Check {
-    param([string]$Label, [string]$Value)
-    Write-Host "[OK] " -ForegroundColor Green -NoNewline
-    Write-Host "$Label" -NoNewline
+    param([string]$Label, [string]$Value = "")
+    Write-Host "[OK]   " -ForegroundColor Green -NoNewline
+    Write-Host $Label -NoNewline
     if ($Value) { Write-Host ": $Value" } else { Write-Host }
 }
 
@@ -44,6 +56,32 @@ function Write-Step {
     Write-Host ">> $Message" -ForegroundColor Cyan
 }
 
+# ─── resolve tag / version ───────────────────────────────────────────────────
+
+Write-Step "Resolving version tag"
+
+if (-not $Tag) {
+    $cargoToml = Join-Path $PSScriptRoot '..\Cargo.toml'
+    if (Test-Path $cargoToml) {
+        $versionLine = Select-String -Path $cargoToml -Pattern '^\s*version\s*=' |
+                       Select-Object -First 1
+        if ($versionLine -match '"([^"]+)"') {
+            $Tag = "v$($Matches[1])"
+        }
+    }
+    if (-not $Tag) {
+        $Tag = "v0.0.0-local"
+        Write-Warn "Could not read version from Cargo.toml; using fallback tag: $Tag"
+    }
+}
+
+Write-Check "Version tag" $Tag
+
+# Derive MSI-safe PackageVersion: strip leading 'v' and any pre-release suffix.
+# MSI versions must be Major.Minor.Build with no labels (e.g. "-beta.1").
+$PackageVersion = $Tag -replace '^v', '' -replace '-.*$', ''
+Write-Check "Package version" $PackageVersion
+
 # ─── check: cargo ────────────────────────────────────────────────────────────
 
 Write-Step "Checking prerequisites"
@@ -55,7 +93,7 @@ if ($cargo) {
     $hasCargo = $true
 } else {
     Write-Fail "cargo not found in PATH. Install Rust via https://rustup.rs/"
-    $hasCargo = $false
+    exit 1
 }
 
 # ─── check: dotnet ───────────────────────────────────────────────────────────
@@ -64,25 +102,9 @@ $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
 if ($dotnet) {
     $dotnetVersion = & dotnet --version 2>&1
     Write-Check "dotnet" $dotnetVersion
-    $hasDotnet = $true
 } else {
-    Write-Warn "dotnet not found in PATH. WiX SDK (v7) build will be unavailable; will fall back to legacy WiX v3."
-    $hasDotnet = $false
-}
-
-# ─── check: WiX v3 (legacy) ──────────────────────────────────────────────────
-
-$hasWixV3 = $false
-if ($env:WIX) {
-    $heatExe = Join-Path $env:WIX 'bin\heat.exe'
-    if (Test-Path $heatExe) {
-        Write-Check "WiX v3 (legacy)" $env:WIX
-        $hasWixV3 = $true
-    } else {
-        Write-Warn "WIX env set to '$env:WIX' but heat.exe not found there."
-    }
-} else {
-    Write-Warn "WIX environment variable not set. Legacy WiX v3 build unavailable."
+    Write-Fail "dotnet not found in PATH. Install .NET 8 SDK from https://dotnet.microsoft.com/download"
+    exit 1
 }
 
 # ─── check: signtool (optional) ──────────────────────────────────────────────
@@ -94,32 +116,28 @@ if ($signtool) {
     Write-Warn "signtool.exe not found (optional). Install Windows 10/11 SDK to enable MSI code signing."
 }
 
-# ─── guard: must have at least one packaging path ───────────────────────────
-
-if (-not $hasDotnet -and -not $hasWixV3) {
-    Write-Fail "Neither dotnet (WiX SDK) nor WiX v3 (legacy) is available. Install at least one to package."
-    exit 1
-}
-
-if (-not $hasCargo) {
-    Write-Fail "cargo is required to build the Rust binary. Aborting."
-    exit 1
-}
-
 # ─── build: Rust release binary ──────────────────────────────────────────────
 
 Write-Step "Building Rust release binary (cargo build --release)"
-& cargo build --release
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "cargo build --release failed (exit $LASTEXITCODE)."
-    exit $LASTEXITCODE
+
+Push-Location (Join-Path $PSScriptRoot '..')
+try {
+    & cargo build --release
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "cargo build --release failed (exit $LASTEXITCODE)."
+        exit $LASTEXITCODE
+    }
+    Write-Check "Rust binary" "target\release\ssg_tether_capture.exe"
+} finally {
+    Pop-Location
 }
-Write-Check "Rust binary" "target\release\ssg_tether_capture.exe"
 
-# ─── package: prefer dotnet / WixToolset.Sdk ────────────────────────────────
+# ─── package: dotnet / WixToolset.Sdk v7 ────────────────────────────────────
 
-if ($hasDotnet) {
-    Write-Step "Restoring WiX SDK project (dotnet restore)"
+Write-Step "Restoring WiX SDK project (dotnet restore)"
+
+Push-Location (Join-Path $PSScriptRoot '..')
+try {
     & dotnet restore wix\SSG.wixproj
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "dotnet restore failed (exit $LASTEXITCODE)."
@@ -127,7 +145,8 @@ if ($hasDotnet) {
     }
 
     Write-Step "Building MSI (dotnet build wix\SSG.wixproj -c Release)"
-    & dotnet build wix\SSG.wixproj -c Release
+    # AcceptEula is already in SSG.wixproj; the -p flag is explicit for clarity.
+    & dotnet build wix\SSG.wixproj -c Release -p:AcceptEula=wix7 -p:PackageVersion=$PackageVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "dotnet build failed (exit $LASTEXITCODE)."
         exit $LASTEXITCODE
@@ -135,44 +154,25 @@ if ($hasDotnet) {
 
     $msiFile = Get-ChildItem -Path . -Recurse -Filter '*.msi' | Select-Object -First 1
     if ($msiFile) {
-        Write-Check "MSI built" $msiFile.FullName
+        # Rename to match release naming convention (skip if already correctly named)
+        $destName = "ssg-tether-capture-${Tag}-windows-x86_64.msi"
+        $destPath = Join-Path (Split-Path $msiFile.FullName) $destName
+        if ($msiFile.FullName -ne $destPath) {
+            Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+        }
+        Write-Check "MSI built" $destPath
     } else {
-        Write-Warn "dotnet build succeeded but no .msi file was found. Check wix\SSG.wixproj output configuration."
+        Write-Fail "dotnet build succeeded but no .msi file was found. Check wix\SSG.wixproj output."
+        exit 1
     }
-    exit 0
+} finally {
+    Pop-Location
 }
 
-# ─── fallback: legacy WiX v3 (heat / candle / light) ────────────────────────
+# ─── summary ──────────────────────────────────────────────────────────────────
 
-Write-Step "Falling back to legacy WiX v3 packaging"
-
-& "$env:WIX\bin\heat.exe" dir 'assets' `
-    -out 'wix\assets_fragment.wxs' `
-    -cg AssetsComponentGroup `
-    -dr INSTALLDIR `
-    -scom -sfrag -srd -sreg `
-    -var 'var.AssetsDir'
-if ($LASTEXITCODE -ne 0) { Write-Fail "heat.exe failed."; exit $LASTEXITCODE }
-
-$tag     = 'v0.2.0-beta.1'
-$version = $tag -replace '^v', '' -replace '-.*$', ''
-$msi     = "ssg-tether-capture-${tag}-windows-x86_64.msi"
-
-& "$env:WIX\bin\candle.exe" `
-    -dVersion="$version" `
-    -dSourceDir='target\release' `
-    -dAssetsDir='assets' `
-    -arch x64 `
-    'wix\main.wxs' `
-    'wix\assets_fragment.wxs' `
-    -out 'wix\'
-if ($LASTEXITCODE -ne 0) { Write-Fail "candle.exe failed."; exit $LASTEXITCODE }
-
-& "$env:WIX\bin\light.exe" `
-    -ext WixUIExtension `
-    'wix\main.wixobj' `
-    'wix\assets_fragment.wixobj' `
-    -out $msi
-if ($LASTEXITCODE -ne 0) { Write-Fail "light.exe failed."; exit $LASTEXITCODE }
-
-Write-Check "MSI built (legacy)" $msi
+""
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "  BUILD SUCCESS" -ForegroundColor Green
+Write-Host "  Tag    : $Tag" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
