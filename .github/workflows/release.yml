@@ -98,13 +98,20 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
 
+          # Derive MSI-safe PackageVersion: strip leading 'v' and any pre-release suffix.
+          # MSI versions must be Major.Minor.Build with no labels (e.g. "-beta.1").
+          $packageVersion = $tag -replace '^v', '' -replace '-.*$', ''
+          Write-Host "Package version: $packageVersion"
+
           dotnet restore wix/SSG.wixproj
-          dotnet build wix/SSG.wixproj -c Release
+          dotnet build wix/SSG.wixproj -c Release -p:PackageVersion=$packageVersion
 
           $msiFile = Get-ChildItem -Path . -Recurse -Filter "*.msi" | Select-Object -First 1
           if ($msiFile) {
-            $msi = $msiFile.FullName
-            Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+            $destName = "ssg-tether-capture-${tag}-windows-x86_64.msi"
+            $destPath = Join-Path (Split-Path $msiFile.FullName) $destName
+            Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+            Add-Content -Path $env:GITHUB_ENV -Value "MSI=$destPath"
           } else {
             Write-Error "MSI not found after dotnet build."
             exit 1

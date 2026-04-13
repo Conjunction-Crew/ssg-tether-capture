@@ -77,6 +77,11 @@ if (-not $Tag) {
 
 Write-Check "Version tag" $Tag
 
+# Derive MSI-safe PackageVersion: strip leading 'v' and any pre-release suffix.
+# MSI versions must be Major.Minor.Build with no labels (e.g. "-beta.1").
+$PackageVersion = $Tag -replace '^v', '' -replace '-.*$', ''
+Write-Check "Package version" $PackageVersion
+
 # ─── check: cargo ────────────────────────────────────────────────────────────
 
 Write-Step "Checking prerequisites"
@@ -141,7 +146,7 @@ try {
 
     Write-Step "Building MSI (dotnet build wix\SSG.wixproj -c Release)"
     # AcceptEula is already in SSG.wixproj; the -p flag is explicit for clarity.
-    & dotnet build wix\SSG.wixproj -c Release -p:AcceptEula=wix7
+    & dotnet build wix\SSG.wixproj -c Release -p:AcceptEula=wix7 -p:PackageVersion=$PackageVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "dotnet build failed (exit $LASTEXITCODE)."
         exit $LASTEXITCODE

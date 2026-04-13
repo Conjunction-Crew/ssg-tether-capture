@@ -24,7 +24,7 @@
   <Package
     Name="SSG Tether Capture"
     Manufacturer="Conjunction Crew"
-    Version="!(bind.FileVersion.MainExe)"
+    Version="$(var.PackageVersion)"
     Language="1033"
     UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068"
     Scope="perMachine">
@@ -70,16 +70,15 @@
 
     <!-- ──────────────────────────────────────────────────────────────────
          Directory layout.
-         APPLICATIONFOLDER is set by WixUI_Advanced based on scope choice:
+         APPLICATIONFOLDER is set by WixUI_Advanced based on the user's
+         scope choice at install time:
            per-machine → ProgramFiles64Folder\SSG Tether Capture
-           per-user    → LocalAppDataFolder\SSG Tether Capture
+           per-user    → LocalAppDataFolder\Programs\SSG Tether Capture
+         WixUI_Advanced resolves the per-user path internally via
+         ApplicationFolderName; we only need the per-machine anchor here.
     ─────────────────────────────────────────────────────────────────── -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="APPLICATIONFOLDER" Name="SSG Tether Capture" />
-    </StandardDirectory>
-
-    <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="APPLICATIONFOLDER_USER" Name="SSG Tether Capture" />
     </StandardDirectory>
 
     <!-- Start Menu Programs folder -->

@@ -33,6 +33,12 @@ if "!TAG!"=="" (
 if "!TAG!"=="" set TAG=v0.0.0-local
 echo [INFO] Version tag: !TAG!
 
+rem ── derive MSI-safe PackageVersion (strip leading 'v' and pre-release suffix) ─
+rem   MSI versions must be Major.Minor.Build with no labels (e.g. "-beta.1").
+set PKGVER=!TAG:~1!
+for /f "tokens=1 delims=-" %%V in ("!PKGVER!") do set PKGVER=%%V
+echo [INFO] Package version: !PKGVER!
+
 rem ── check: cargo ───────────────────────────────────────────────────
 where cargo >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
@@ -82,7 +88,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo ^>^> Building MSI (dotnet build wix\SSG.wixproj -c Release)
-dotnet build wix\SSG.wixproj -c Release /p:AcceptEula=wix7
+dotnet build wix\SSG.wixproj -c Release /p:AcceptEula=wix7 /p:PackageVersion=!PKGVER!
 if %ERRORLEVEL% NEQ 0 (
     echo [FAIL] dotnet build failed.
     popd
