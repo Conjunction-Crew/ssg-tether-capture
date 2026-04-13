@@ -4,13 +4,22 @@ name: Release
 #   v1.2.3          → production GitHub Release (latest)
 #   v1.2.3-beta.1   → pre-release GitHub Release
 #
-# Push a tag to trigger:
+# Push a tag to trigger (patches and pre-releases):
+#   git tag v0.2.1 && git push origin v0.2.1
 #   git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1
+#
+# Or merge a release/* branch into main (major and minor releases):
+#   All three platform builds run and a GitHub Release is published automatically.
+#   The version is read from Cargo.toml and a matching CHANGELOG.md entry is used
+#   as the release description.
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-beta*"
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 permissions:
   contents: write
@@ -19,11 +28,53 @@ env:
   CARGO_TERM_COLOR: always
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Linux build → tar.gz
+# Preflight – resolve tag name and release flags
+#
+# Runs for version tag pushes (patches + pre-releases) AND for merged PRs from
+# release/* branches (major + minor releases).  All other PR merges are ignored.
+# Outputs a normalised tag name used by every downstream job.
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
+  preflight:
+    name: Preflight – resolve tag
+    runs-on: ubuntu-latest
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.merged == true &&
+       startsWith(github.head_ref, 'release/'))
+    outputs:
+      tag_name:      ${{ steps.resolve.outputs.tag_name }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+      make_latest:   ${{ steps.resolve.outputs.make_latest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag name and flags
+        id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            # PR merge path: derive tag from Cargo.toml version
+            VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            TAG="v${VERSION}"
+          fi
+          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+          if [[ "${TAG}" == *"-beta"* ]]; then
+            echo "is_prerelease=true"  >> "$GITHUB_OUTPUT"
+            echo "make_latest=false"   >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"    >> "$GITHUB_OUTPUT"
+          fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Linux build → tar.gz
+# ─────────────────────────────────────────────────────────────────────────────
   build-linux:
     name: Build (Linux x86_64)
+    needs: [preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +100,7 @@ jobs:
 
       - name: Package tar.gz
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.preflight.outputs.tag_name }}"
           ARCHIVE="ssg-tether-capture-${TAG}-linux-x86_64.tar.gz"
           mkdir -p dist
           cp target/release/ssg_tether_capture dist/
@@ -71,6 +122,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Build (Windows x86_64)
+    needs: [preflight]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,7 +148,7 @@ jobs:
 
       - name: Build MSI (dotnet / WiX SDK)
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ needs.preflight.outputs.tag_name }}"
 
           # Derive MSI-safe PackageVersion: strip leading 'v' and any pre-release suffix.
           # MSI versions must be Major.Minor.Build with no labels (e.g. "-beta.1").
@@ -146,6 +198,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   build-macos:
     name: Build (macOS ARM64)
+    needs: [preflight]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -189,7 +242,7 @@ jobs:
 
       - name: Package DMG
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ needs.preflight.outputs.tag_name }}"
           APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
           # Determine runner architecture for DMG naming
           ARCH="$(uname -m)"
@@ -224,9 +277,11 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
-    needs: [build-linux, build-windows, build-macos]
+    needs: [preflight, build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
@@ -238,18 +293,27 @@ jobs:
           ls -R artifacts || true
           find artifacts -type f -maxdepth 4 -print || true
 
-      - name: Detect pre-release
-        id: flags
+      - name: Extract changelog entry
+        id: changelog
         run: |
-          if [[ "${{ github.ref_name }}" == *"-beta"* ]]; then
-            echo "prerelease=true"  >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          VERSION="${{ needs.preflight.outputs.tag_name }}"
+          VERSION="${VERSION#v}"
+          BODY=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "## [" ver "]") > 0) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "body<<${EOF}" >> "$GITHUB_OUTPUT"
+          echo "${BODY}"      >> "$GITHUB_OUTPUT"
+          echo "${EOF}"       >> "$GITHUB_OUTPUT"
 
       - uses: ncipollo/release-action@v1
         with:
+          tag: ${{ needs.preflight.outputs.tag_name }}
           artifacts: "artifacts/*"
-          generateReleaseNotes: true
-          prerelease: ${{ steps.flags.outputs.prerelease }}
-          makeLatest: ${{ steps.flags.outputs.prerelease == 'false' }}
+          body: ${{ steps.changelog.outputs.body }}
+          prerelease: ${{ needs.preflight.outputs.is_prerelease }}
+          makeLatest: ${{ needs.preflight.outputs.make_latest }}
