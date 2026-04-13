@@ -172,10 +172,8 @@
     <ui:WixUI Id="WixUI_Advanced" />
 
     <WixVariable Id="WixUILicenseRtf"    Value="LICENSE.rtf" />
-    <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp"
-                 Overridable="yes" />
-    <WixVariable Id="WixUIDialogBmp"     Value="..\assets\logo\installer_dialog.bmp"
-                 Overridable="yes" />
+    <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp" Overridable="yes" />
+    <WixVariable Id="WixUIDialogBmp"     Value="..\assets\logo\installer_dialog.bmp" Overridable="yes" />
 
   </Package>
 
