@@ -169,9 +169,7 @@
            → Directory → Shortcuts → Ready → Progress → Finish
          WixUILicenseRtf points to our LICENSE.rtf.
     ─────────────────────────────────────────────────────────────────── -->
-    <ui:WixUI
-      Id="WixUI_Advanced"
-      InstallDirectory="APPLICATIONFOLDER" />
+    <ui:WixUI Id="WixUI_Advanced" />
 
     <WixVariable Id="WixUILicenseRtf"    Value="LICENSE.rtf" />
     <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp"
