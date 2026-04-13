@@ -18,6 +18,9 @@ pub const PHYSICS_DISABLE_RADIUS: f64 = PHYSICS_ENABLE_RADIUS * 1.1;
 pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
 
 // Orbit controls widget — hold-to-accelerate
+/// Maximum pitch (radians) for the orbit camera — full ±180° so the user
+/// can rotate all the way around vertically.
+pub const ORBIT_MAX_PITCH_RAD: f32 = std::f32::consts::PI;
 /// Base orbit speed (rad/s) while a direction button is pressed.
 /// One quarter of the old fixed speed, giving fine-grained control on short taps.
 pub const ORBIT_WIDGET_BASE_ORBIT_SPEED: f32 = 0.2;

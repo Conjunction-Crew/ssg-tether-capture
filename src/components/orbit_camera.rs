@@ -1,3 +1,4 @@
+use crate::constants::ORBIT_MAX_PITCH_RAD;
 use bevy::prelude::{Component, Resource, Vec3};
 
 // Component to query the camera target
@@ -15,18 +16,6 @@ pub enum OrbitControlButton {
     ZoomIn,
     ZoomOut,
     ResetView,
-}
-
-/// Marker component on the orbit controls widget bounding-box container.
-/// Enables left-click-drag-to-orbit within the widget area.
-#[derive(Component, Debug, Clone)]
-pub struct OrbitControlsDragRegion;
-
-/// Tracks whether a left-click drag was initiated inside the orbit controls widget.
-#[derive(Resource, Default)]
-pub struct OrbitDragState {
-    /// True while a drag that started inside the bounding box is in progress.
-    pub active: bool,
 }
 
 /// Tracks which orbit control button is currently held and for how long.
@@ -68,7 +57,7 @@ impl Default for OrbitCameraParams {
             min_distance: 0.5,
             max_distance: 10000.0,
             sensitivity: 0.005,
-            max_pitch: 1.55,
+            max_pitch: ORBIT_MAX_PITCH_RAD,
             up: Vec3::Y,
         }
     }
