@@ -17,6 +17,17 @@ pub const PHYSICS_ENABLE_RADIUS: f64 = 100.0;
 pub const PHYSICS_DISABLE_RADIUS: f64 = PHYSICS_ENABLE_RADIUS * 1.1;
 pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
 
+// Orbit controls widget — hold-to-accelerate
+/// Base orbit speed (rad/s) while a direction button is pressed.
+/// One quarter of the old fixed speed, giving fine-grained control on short taps.
+pub const ORBIT_WIDGET_BASE_ORBIT_SPEED: f32 = 0.2;
+/// Base zoom speed (units/s) while a zoom button is pressed.
+pub const ORBIT_WIDGET_BASE_ZOOM_SPEED: f32 = 5.0;
+/// Seconds of continuous hold before acceleration kicks in.
+pub const ORBIT_WIDGET_HOLD_THRESHOLD_SECS: f32 = 2.0;
+/// Multiplier applied after the hold threshold (restores the original pre-constant speed).
+pub const ORBIT_WIDGET_ACCEL_MULTIPLIER: f32 = 4.0;
+
 // Other constants
 pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
     // Semi-major axis (meters)

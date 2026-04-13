@@ -1,4 +1,4 @@
-use bevy::prelude::{Component, Vec3};
+use bevy::prelude::{Component, Resource, Vec3};
 
 // Component to query the camera target
 #[derive(Component, Debug, Clone)]
@@ -15,6 +15,27 @@ pub enum OrbitControlButton {
     ZoomIn,
     ZoomOut,
     ResetView,
+}
+
+/// Marker component on the orbit controls widget bounding-box container.
+/// Enables left-click-drag-to-orbit within the widget area.
+#[derive(Component, Debug, Clone)]
+pub struct OrbitControlsDragRegion;
+
+/// Tracks whether a left-click drag was initiated inside the orbit controls widget.
+#[derive(Resource, Default)]
+pub struct OrbitDragState {
+    /// True while a drag that started inside the bounding box is in progress.
+    pub active: bool,
+}
+
+/// Tracks which orbit control button is currently held and for how long.
+#[derive(Resource, Default)]
+pub struct OrbitHoldState {
+    /// The button variant currently held.
+    pub held: Option<OrbitControlButton>,
+    /// Accumulated seconds the current button has been continuously held.
+    pub hold_secs: f32,
 }
 
 // A camera that "orbits" around a target. Hold right click to pan.
