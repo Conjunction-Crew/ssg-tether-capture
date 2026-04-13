@@ -60,8 +60,9 @@
          We default to per-machine but the user can switch in the wizard.
          Marked Secure="yes" so the UI dialog can set it at install time.
     ─────────────────────────────────────────────────────────────────── -->
-    <Property Id="WixAppFolder"      Value="WixPerMachineFolder" />
-    <Property Id="MSIINSTALLPERUSER" Secure="yes" />
+    <Property Id="ApplicationFolderName" Value="SSG Tether Capture" />
+    <Property Id="WixAppFolder"          Value="WixPerMachineFolder" />
+    <Property Id="MSIINSTALLPERUSER"     Secure="yes" />
 
     <!-- Shortcut options: both enabled by default; user can deselect -->
     <Property Id="INSTALL_STARTMENU" Value="1" />
