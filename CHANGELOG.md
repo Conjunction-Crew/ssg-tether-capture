@@ -13,6 +13,18 @@ When preparing a release:
 
 ---
 
+## [Unreleased]
+
+### Changed
+- Updated release workflow and scripts to resolve issues with the Windows version of the app and improved the MSI installer
+
+### Added
+- UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
+
+### Removed
+
+---
+
 ## [0.2.0-beta.1] - 2026-04-10
 
 ### Changed

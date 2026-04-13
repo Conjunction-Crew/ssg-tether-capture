@@ -3,13 +3,17 @@
     <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
     <Platform Condition="'$(Platform)'==''">x64</Platform>
     <OutputName>ssg-tether-capture</OutputName>
+    <!-- Accept the WiX v7 OSMF EULA (direct acceptance for CI/CD builds).
+         See https://docs.firegiant.com/wix/osmf/ for payment/sponsorship requirements. -->
+    <AcceptEula>wix7</AcceptEula>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Include existing main.wxs (kept for compatibility) -->
     <Wix Include="main.wxs" />
-    <!-- If heat-generated fragment exists include it as well -->
-    <Wix Include="assets_fragment.wxs" Condition="Exists('assets_fragment.wxs')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="7.*" />
   </ItemGroup>
 
 </Project>

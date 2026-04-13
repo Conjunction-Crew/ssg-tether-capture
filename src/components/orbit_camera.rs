@@ -4,6 +4,19 @@ use bevy::prelude::{Component, Vec3};
 #[derive(Component, Debug, Clone)]
 pub struct CameraTarget;
 
+/// Marker component on the on-screen orbit-controls widget buttons.
+/// Used by `orbit_camera_ui_controls` to drive camera rotation, zoom, and reset.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub enum OrbitControlButton {
+    OrbitLeft,
+    OrbitRight,
+    OrbitUp,
+    OrbitDown,
+    ZoomIn,
+    ZoomOut,
+    ResetView,
+}
+
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]
 pub struct OrbitCamera {

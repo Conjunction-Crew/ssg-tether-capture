@@ -10,7 +10,12 @@ impl Plugin for OrbitCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (orbit_camera_input, orbit_camera_switch_target).run_if(in_state(UiScreen::Sim)),
+            (
+                orbit_camera_input,
+                orbit_camera_switch_target,
+                orbit_camera_ui_controls,
+            )
+                .run_if(in_state(UiScreen::Sim)),
         )
         .add_systems(
             PostUpdate,

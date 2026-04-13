@@ -1,65 +1,184 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  WiX v3 installer definition for SSG Tether Capture.
+  WiX v7 installer definition for SSG Tether Capture.
 
-  BUILD PROCESS (handled automatically by release.yml):
-    1. heat.exe harvests the 'assets/' directory into wix/assets_fragment.wxs at build time.
-    2. candle.exe compiles this file and assets_fragment.wxs into .wixobj files.
-    3. light.exe links the .wixobj files into the final .msi.
+  BUILD PROCESS (release.yml / packaging-test.yml):
+    dotnet restore wix/SSG.wixproj
+    dotnet build  wix/SSG.wixproj -c Release
 
-  UPGRADE GUID: must never change — it uniquely identifies this product family across versions.
-    Changing it would break the upgrade path and cause duplicate installations.
+  UPGRADE GUID: must never change across versions — it identifies this product family.
+    Changing it breaks the upgrade path and causes side-by-side installs.
+
+  INSTALL SCOPES:
+    WixUI_Advanced lets the user choose at install time:
+      Per-Machine (default) – installed to %ProgramFiles%\SSG Tether Capture, requires admin elevation.
+      Per-User (no admin)   – installed to %LocalAppData%\SSG Tether Capture, no UAC prompt.
+
+  WIZARD SCREENS:
+    Welcome → License Agreement → Install Type (per-machine / per-user) →
+    Install Directory → Shortcut Options → Ready → Progress → Finish
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
-  <Product
-    Id="*"
+  <Package
     Name="SSG Tether Capture"
     Manufacturer="Conjunction Crew"
-    Version="$(var.Version)"
+    Version="!(bind.FileVersion.MainExe)"
     Language="1033"
-    UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068">
+    UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068"
+    Scope="perMachine">
 
-    <Package
-      InstallerVersion="500"
-      Compressed="yes"
-      InstallScope="perMachine"
-      Platform="x64"
-      Description="SSG Tether Capture $(var.Version) Installer" />
+    <SummaryInformation Description="SSG Tether Capture Installer" />
 
-    <!-- Prevent downgrading and cleanly remove previous versions before installing -->
+    <!-- ──────────────────────────────────────────────────────────────────
+         Upgrade: auto-remove old version before installing the new one.
+         AllowSameVersionUpgrades prevents the installer from aborting when
+         re-running the same version (e.g. repair).
+    ─────────────────────────────────────────────────────────────────── -->
     <MajorUpgrade
       Schedule="afterInstallInitialize"
+      AllowSameVersionUpgrades="yes"
       DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
 
-    <Icon Id="AppIcon.ico" SourceFile="assets\logo\icon.ico" />
-    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
-
+    <!-- ──────────────────────────────────────────────────────────────────
+         Media / cabinet
+    ─────────────────────────────────────────────────────────────────── -->
     <Media Id="1" Cabinet="ssg.cab" EmbedCab="yes" />
 
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLDIR" Name="SSG Tether Capture">
+    <!-- ──────────────────────────────────────────────────────────────────
+         App icon shown in Add/Remove Programs
+    ─────────────────────────────────────────────────────────────────── -->
+    <Icon Id="AppIcon.ico" SourceFile="..\assets\logo\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
 
-          <!-- Main executable -->
-          <Component Id="MainExecutable" Guid="AAE3D0CC-5F9E-4E64-BBB1-F434C5047399" Win64="yes">
-            <File
-              Id="MainExe"
-              Name="ssg_tether_capture.exe"
-              Source="$(var.SourceDir)\ssg_tether_capture.exe"
-              KeyPath="yes" />
-          </Component>
+    <!-- ──────────────────────────────────────────────────────────────────
+         Per-user / per-machine install scope support.
+         WixUI_Advanced displays the scope-selection dialog.
+         MSIINSTALLPERUSER=1  → per-user (LocalAppData), no elevation required.
+         MSIINSTALLPERUSER="" → per-machine (ProgramFiles), requires admin.
+         We default to per-machine but the user can switch in the wizard.
+    ─────────────────────────────────────────────────────────────────── -->
+    <Property Id="WixAppFolder"      Value="WixPerMachineFolder" />
+    <Property Id="MSIINSTALLPERUSER" Value="" />
 
-        </Directory>
-      </Directory>
-    </Directory>
+    <!-- Shortcut options: both enabled by default; user can deselect -->
+    <Property Id="INSTALL_STARTMENU" Value="1" />
+    <Property Id="INSTALL_DESKTOP"   Value="1" />
 
+    <!-- ──────────────────────────────────────────────────────────────────
+         Directory layout.
+         APPLICATIONFOLDER is set by WixUI_Advanced based on scope choice:
+           per-machine → ProgramFiles64Folder\SSG Tether Capture
+           per-user    → LocalAppDataFolder\SSG Tether Capture
+    ─────────────────────────────────────────────────────────────────── -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="SSG Tether Capture" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="APPLICATIONFOLDER_USER" Name="SSG Tether Capture" />
+    </StandardDirectory>
+
+    <!-- Start Menu Programs folder -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="SSG Tether Capture" />
+    </StandardDirectory>
+
+    <!-- Desktop shortcut directory -->
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Components — main executable
+    ─────────────────────────────────────────────────────────────────── -->
+    <ComponentGroup Id="MainFiles" Directory="APPLICATIONFOLDER">
+      <Component Id="MainExecutable" Guid="AAE3D0CC-5F9E-4E64-BBB1-F434C5047399">
+        <File
+          Id="MainExe"
+          Name="ssg_tether_capture.exe"
+          Source="..\target\release\ssg_tether_capture.exe"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Assets bundle (all files under assets/) installed alongside the exe -->
+    <ComponentGroup Id="AssetFiles" Directory="APPLICATIONFOLDER">
+      <Files Include="..\assets\**\*.*" />
+    </ComponentGroup>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Start Menu shortcut (conditional on INSTALL_STARTMENU property)
+    ─────────────────────────────────────────────────────────────────── -->
+    <ComponentGroup Id="StartMenuShortcuts" Directory="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcut" Guid="B1C2D3E4-F567-4890-ABCD-EF1234567890">
+        <Condition>INSTALL_STARTMENU</Condition>
+        <Shortcut
+          Id="StartMenuShortcutEntry"
+          Name="SSG Tether Capture"
+          Description="SSG Tether Capture — orbital debris capture simulation"
+          Target="[APPLICATIONFOLDER]ssg_tether_capture.exe"
+          WorkingDirectory="APPLICATIONFOLDER"
+          Icon="AppIcon.ico" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\ConjunctionCrew\SSGTetherCapture"
+          Name="StartMenuInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Desktop shortcut (conditional on INSTALL_DESKTOP property)
+    ─────────────────────────────────────────────────────────────────── -->
+    <ComponentGroup Id="DesktopShortcuts" Directory="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="C2D3E4F5-6789-4ABC-DEF0-123456789ABC">
+        <Condition>INSTALL_DESKTOP</Condition>
+        <Shortcut
+          Id="DesktopShortcutEntry"
+          Name="SSG Tether Capture"
+          Description="SSG Tether Capture — orbital debris capture simulation"
+          Target="[APPLICATIONFOLDER]ssg_tether_capture.exe"
+          WorkingDirectory="APPLICATIONFOLDER"
+          Icon="AppIcon.ico" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\ConjunctionCrew\SSGTetherCapture"
+          Name="DesktopInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Features
+    ─────────────────────────────────────────────────────────────────── -->
     <Feature Id="MainFeature" Title="SSG Tether Capture" Level="1">
-      <ComponentRef Id="MainExecutable" />
-      <!-- AssetsComponentGroup is generated at build time by heat.exe harvesting the assets/ dir -->
-      <ComponentGroupRef Id="AssetsComponentGroup" />
+      <ComponentGroupRef Id="MainFiles" />
+      <ComponentGroupRef Id="AssetFiles" />
+      <ComponentGroupRef Id="StartMenuShortcuts" />
+      <ComponentGroupRef Id="DesktopShortcuts" />
     </Feature>
 
-  </Product>
+    <!-- ──────────────────────────────────────────────────────────────────
+         Wizard UI — WixUI_Advanced:
+           Welcome → License Agreement → Install Type (per-machine/per-user)
+           → Directory → Shortcuts → Ready → Progress → Finish
+         WixUILicenseRtf points to our LICENSE.rtf.
+    ─────────────────────────────────────────────────────────────────── -->
+    <ui:WixUI
+      Id="WixUI_Advanced"
+      InstallDirectory="APPLICATIONFOLDER" />
+
+    <WixVariable Id="WixUILicenseRtf"    Value="LICENSE.rtf" />
+    <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp"
+                 Overridable="yes" />
+    <WixVariable Id="WixUIDialogBmp"     Value="..\assets\logo\installer_dialog.bmp"
+                 Overridable="yes" />
+
+  </Package>
 
 </Wix>
