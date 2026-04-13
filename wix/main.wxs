@@ -178,13 +178,6 @@
          WixUILicenseRtf points to our LICENSE.rtf.
     ─────────────────────────────────────────────────────────────────── -->
     <ui:WixUI Id="WixUI_Advanced" />
-    <UI>
-      <!-- After license acceptance, go straight to scope selection (skip SetupTypeDlg) -->
-      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallScopeDlg" Order="99" Condition='LicenseAccepted = "1"' />
-      <!-- Back from scope selection returns to the license dialog -->
-      <Publish Dialog="InstallScopeDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="99" Condition="1" />
-    </UI>
-
     <WixVariable Id="WixUILicenseRtf"    Value="LICENSE.rtf" />
     <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp" Overridable="yes" />
     <WixVariable Id="WixUIDialogBmp"     Value="..\assets\logo\installer_dialog.bmp" Overridable="yes" />
