@@ -7,6 +7,7 @@ use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
+use bevy_egui::EguiPrimaryContextPass;
 
 use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
@@ -19,10 +20,12 @@ use crate::resources::capture_plans::{
     CapturePlanLibrary, CapturePlanLoadErrors, build_capture_component, load_plans_from_dir,
     load_plans_from_dir_with_errors,
 };
+use crate::resources::data_collection::DataCollection;
 use crate::resources::settings::Settings;
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
+use crate::ui::egui::egui_plots;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -38,8 +41,8 @@ use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     refresh_space_catalog_results, reset_space_catalog_ui_state, restart_prompt_interactions,
     spawn_exit_confirm_modal, spawn_project_detail_screen, spawn_restart_prompt_modal,
-    sync_space_catalog_ui, update_selected_catalog_overlay, update_sync_indicator,
-    view_edit_plan_interactions,
+    sync_space_catalog_ui, update_satellite_indicator_overlay, update_selected_catalog_overlay,
+    update_sync_indicator, view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
@@ -77,6 +80,7 @@ impl Plugin for UiPlugin {
             .init_resource::<ExitConfirmPending>()
             .init_resource::<SimPlanSyncState>()
             .init_resource::<CapturePlanLoadErrors>()
+            .init_resource::<DataCollection>()
             .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
@@ -102,7 +106,7 @@ impl Plugin for UiPlugin {
                 (cleanup_project_detail_screen, reset_space_catalog_ui_state),
             )
             .add_systems(
-                Update,
+                Last,
                 (
                     working_directory_setup_interactions,
                     poll_file_dialog_task,
@@ -133,11 +137,16 @@ impl Plugin for UiPlugin {
                         refresh_space_catalog_results,
                         sync_space_catalog_ui,
                         update_selected_catalog_overlay,
+                        update_satellite_indicator_overlay,
                     )
                         .chain()
                         .run_if(in_state(UiScreen::Sim)),
                     handle_ui_events,
                 ),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                egui_plots.run_if(in_state(UiScreen::Sim)),
             );
     }
 }
@@ -300,10 +309,16 @@ fn handle_ui_events(
         Without<UiCamera>,
     >,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
-    mut settings: ResMut<Settings>,
-    mut user_plans_dirty: ResMut<UserPlansDirty>,
-    mut exit_confirm_pending: ResMut<ExitConfirmPending>,
+    ui_runtime: (
+        ResMut<Settings>,
+        ResMut<UserPlansDirty>,
+        ResMut<ExitConfirmPending>,
+        ResMut<DataCollection>,
+    ),
 ) {
+    let (mut settings, mut user_plans_dirty, mut exit_confirm_pending, mut data_collection) =
+        ui_runtime;
+
     for event in ui_events.read() {
         match event {
             UiEvent::OpenProject(project_id) => {
@@ -356,11 +371,14 @@ fn handle_ui_events(
                         if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
                             // Now, mark the entity for capture
                             if let Some(capture_component) = build_capture_component(
-                                plan_id,
+                                plan_id.as_str(),
                                 plan,
                                 physics_time.elapsed_secs_f64(),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                            } else {
+                                eprintln!("Error: Could not build capture component!");
+                                continue;
                             }
                         } else {
                             warn!(
@@ -370,7 +388,7 @@ fn handle_ui_events(
                             );
                         }
                     } else {
-                        println!("entity already marked for capture!");
+                        println!("Entity already marked for capture!");
                     }
                 } else {
                     warn!("CaptureDebris: entity is None for plan_id '{}'", plan_id);

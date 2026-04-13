@@ -1,6 +1,7 @@
 pub mod capture_plan_form;
 pub mod capture_plans;
 pub mod celestials;
+pub mod data_collection;
 pub mod orbital_cache;
 pub mod settings;
 pub mod space_catalog;

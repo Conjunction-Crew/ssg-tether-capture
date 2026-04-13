@@ -3,7 +3,6 @@ use crate::{
     resources::{settings::Settings, space_catalog::SpaceCatalogUiState, world_time::WorldTime},
 };
 
-use avian3d::prelude::{Physics, PhysicsTime};
 use bevy::{
     camera::visibility::RenderLayers,
     pbr::{Atmosphere, AtmosphereSettings},

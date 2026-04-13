@@ -12,7 +12,9 @@ use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin
 use bevy::math::DVec3;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::transform::TransformSystems;
 use bevy::ui_widgets::UiWidgetsPlugins;
+use bevy_egui::EguiPlugin;
 use systems::setup::*;
 
 use crate::constants::{MAP_LAYER, SCENE_LAYER};
@@ -68,6 +70,7 @@ pub fn run() {
     .add_plugins(TabNavigationPlugin)
     .add_plugins(UiWidgetsPlugins)
     .add_plugins(UiPlugin)
+    .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
     .add_plugins(GpuComputePlugin)
     .add_systems(
@@ -99,8 +102,13 @@ pub fn create_app() -> App {
                 update_time_warp_readout,
                 update_capture_telemetry,
                 update_capture_guidance,
-                map_orbitals,
             )
+                .run_if(in_state(UiScreen::Sim)),
+        )
+        .add_systems(
+            PostUpdate,
+            map_orbitals
+                .after(TransformSystems::Propagate)
                 .run_if(in_state(UiScreen::Sim)),
         )
         .add_systems(Last, orbital_gizmos.run_if(in_state(UiScreen::Sim)))

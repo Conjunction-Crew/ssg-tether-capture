@@ -28,7 +28,6 @@ pub fn orbital_gizmos(
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     world_time: Res<WorldTime>,
     mut gizmos: Gizmos,
-    orbital_cache: Res<OrbitalCache>,
 ) {
     let render_layers = camera_s.into_inner();
 
@@ -210,6 +209,7 @@ pub fn dev_gizmos(
     mut gizmos: Gizmos,
     settings: Res<Settings>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
+    orbital_cache: Res<OrbitalCache>,
 ) {
     let render_layers = camera_s.into_inner();
 
@@ -229,6 +229,21 @@ pub fn dev_gizmos(
         PHYSICS_ENABLE_RADIUS as f32,
         Srgba::new(1.0, 0.0, 0.0, 0.2),
     );
+
+    // Center of Mass gizmos
+    orbital_cache
+        .com_rv
+        .iter()
+        .for_each(|(_entity, (com_r, _com_v))| {
+            gizmos.sphere(
+                Isometry3d::new(
+                    com_r.as_vec3(),
+                    Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, 0.0),
+                ),
+                1.0,
+                Srgba::new(0.0, 1.0, 1.0, 0.5),
+            );
+        });
 
     // Floating origin reset gizmo
     gizmos.sphere(

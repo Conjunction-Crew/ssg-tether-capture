@@ -2,7 +2,7 @@ use avian3d::{
     math::PI,
     prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
 };
-use bevy::{math::DVec3, prelude::*};
+use bevy::{math::DVec3, prelude::*, state::commands};
 
 use crate::{
     components::capture_components::CaptureComponent,
@@ -11,17 +11,22 @@ use crate::{
             CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePlan,
             CompiledCaptureStateParameters, CompiledCaptureTransition,
         },
+        data_collection::{self, DataCollection},
         orbital_cache::OrbitalCache,
+        world_time::WorldTime,
     },
     systems::physics::PHYS_DT,
 };
 
 pub fn capture_state_machine_update(
+    mut commands: Commands,
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    orbital_entities: Res<OrbitalCache>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
+    orbital_cache: Res<OrbitalCache>,
+    mut data_collection: ResMut<DataCollection>,
+    world_time: Res<WorldTime>,
 ) {
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
@@ -43,7 +48,7 @@ pub fn capture_state_machine_update(
             .compiled_plans
             .get(&capture_component.plan_id)
         {
-            if let Some(nodes) = orbital_entities.tethers.get(&plan.tether) {
+            if let Some(nodes) = orbital_cache.tethers.get(&plan.tether) {
                 let root_capture_radius = capture_sphere_radius.radius;
 
                 let shared_state_parameters = nodes
@@ -82,6 +87,26 @@ pub fn capture_state_machine_update(
                     let rel_r_len = rel_r.length();
                     let rel_v_len = rel_v.length();
 
+                    // Insert current pos and vel into tracking vectors
+                    if idx == 0 {
+                        if let Some(pos_collect) = data_collection.position.get_mut(&capture_entity)
+                        {
+                            pos_collect.push((
+                                world_time.epoch.unix_timestamp()
+                                    - world_time.start_epoch.unix_timestamp(),
+                                rel_r_len,
+                            ));
+                        };
+                        if let Some(vel_collect) = data_collection.velocity.get_mut(&capture_entity)
+                        {
+                            vel_collect.push((
+                                world_time.epoch.unix_timestamp()
+                                    - world_time.start_epoch.unix_timestamp(),
+                                rel_v_len,
+                            ));
+                        };
+                    }
+
                     let mut force_vec = DVec3::ZERO;
                     let max_velocity = shared_state_parameters.max_velocity;
                     let max_force = shared_state_parameters.max_force;
@@ -93,7 +118,7 @@ pub fn capture_state_machine_update(
 
                     // If vel is high, kill vel
                     if rel_v_len > max_velocity {
-                        force_vec += -rel_v.normalize_or_zero();
+                        force_vec += -rel_v.normalize_or_zero() * 2.0;
                     }
                     // If too close, force in opposite dir
                     if rel_r_len < capture_radius * 0.8 {
@@ -134,7 +159,7 @@ pub fn capture_state_machine_update(
                      Ensure the plan's tether name matches a registered tether.",
                     capture_component.plan_id,
                     plan.tether,
-                    orbital_entities.tethers.keys().collect::<Vec<_>>()
+                    orbital_cache.tethers.keys().collect::<Vec<_>>()
                 );
             }
         } else {
@@ -142,6 +167,7 @@ pub fn capture_state_machine_update(
                 "Capture plan '{}' not found in compiled_plans — aborting capture.",
                 capture_component.plan_id
             );
+            commands.entity(capture_entity).remove::<CaptureComponent>();
         }
     }
 }

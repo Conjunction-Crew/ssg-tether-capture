@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use crate::components::orbit::{Earth, Orbit, TetherNode};
+use crate::components::orbit::{Earth, Orbit, TetherNode, TetherRoot};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::capture_plans::CapturePlanLibrary;
@@ -19,6 +19,7 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use nalgebra::Vector6;
 
 pub fn setup_lighting(mut commands: Commands) {
     let sun_rotation = Quat::from_rotation_x(0.0);
@@ -120,15 +121,11 @@ pub fn setup_celestial(
 
 pub fn setup_entities(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
     mut orbital_entities: ResMut<OrbitalCache>,
     asset_server: Res<AssetServer>,
 ) {
-    let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
-
     // Skybox
     let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
 
@@ -172,7 +169,7 @@ pub fn setup_entities(
             map_params: OrbitCameraParams {
                 distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32
                     + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32),
-                min_distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32,
+                min_distance: 0.2,
                 ..default()
             },
         },
@@ -204,14 +201,24 @@ pub fn setup_entities(
                 DespawnOnExit(UiScreen::Sim),
                 SceneRoot(scene),
                 RigidBody::Dynamic,
-                Orbit::FromElements(ISS_ORBIT),
+                RigidBodyDisabled,
+                Orbit::FromElements(Vector6::new(
+                    // Semi-major axis (meters)
+                    6_799_830.0,
+                    // Eccentricity (dimensionless)
+                    0.00112,
+                    // Inclination (radians)
+                    0.90114,
+                    // Right ascension of ascending node (radians)
+                    3.54993,
+                    // Argument of periapsis (radians)
+                    1.51296,
+                    // Mean anomaly (radians)
+                    4.77190,
+                )),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
-                // AngularVelocity {
-                //     0: Vec3::new(0.01, 0.01, 0.01),
-                //     ..default()
-                // },
                 Transform::from_xyz(150.0, 0.0, 300.0),
             ))
             .id(),
@@ -294,6 +301,7 @@ pub fn setup_tether(
         .spawn((
             DespawnOnExit(UiScreen::Sim),
             CameraTarget,
+            TetherRoot,
             RenderLayers::layer(SCENE_LAYER),
             RigidBody::Dynamic,
             sphere_collider.clone(),

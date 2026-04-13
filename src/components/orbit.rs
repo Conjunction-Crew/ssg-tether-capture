@@ -1,8 +1,4 @@
-use bevy::{
-    ecs::entity::Entity,
-    math::DVec3,
-    prelude::{Component, Quat, Vec3},
-};
+use bevy::{ecs::entity::Entity, prelude::Component};
 use brahe::KeplerianPropagator;
 use nalgebra::Vector6;
 use serde::Deserialize;
@@ -11,6 +7,10 @@ use serde_json::Value;
 // Component to query Earth.
 #[derive(Component)]
 pub struct Earth;
+
+// A root tether node
+#[derive(Component, Debug, Clone)]
+pub struct TetherRoot;
 
 // Component for identifying a root node of a tether system.
 #[derive(Component, Debug, Clone)]

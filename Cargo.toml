@@ -10,9 +10,13 @@ publish = false
 
 [dependencies]
 bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
+bevy_egui = { version = "0.39.1" }
+egui_plot = { version = "0.34.1" }
 avian3d = { version = "0.6.1", default-features = false, features = ["simd", "parallel", "3d", "f64", "parry-f64", "xpbd_joints", "collider-from-mesh", "bevy_scene"] }
 ndarray = { version = "0.16.1" }
 serde = { version = "1.0.228", features = ["derive"] }
+csv = { version = "1.4.0" }
+chrono = { version = "0.4.41" }
 serde_json = { version = "1.0.149" }
 brahe = { version = "1.1.4" }
 nalgebra = { version = "0.34.1" }
@@ -25,6 +29,28 @@ bevy = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg
 bevy_math = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
 bevy_reflect = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
 bevy_reflect_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_a11y = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_app = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_asset = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_camera = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_color = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_core_pipeline = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_ecs = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_image = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_input = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_log = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_mesh = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_picking = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_platform = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_render = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_shader = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_time = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_transform = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_ui_render = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_utils = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_window = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_winit = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
 
 [[bin]]
 name = "ssg_tether_capture"
@@ -32,9 +58,21 @@ path = "src/main.rs"
 test = false
 bench = false
 
+[profile.dev]
+opt-level = 1
+debug = true
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
+
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 strip = true
 
