@@ -22,6 +22,8 @@ When preparing a release:
 ### Added
 - Capture log system and terminal panel UI for real-time logging of capture events, errors, and debug information.
 - Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
+- UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
+- Adds `.bat` and `.ps1` scripts for checking and installing prerequisites on Windows (e.g., WiX Toolset for MSI packaging)
 
 ### Removed
 
