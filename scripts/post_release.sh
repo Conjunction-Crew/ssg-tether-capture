@@ -159,7 +159,7 @@ if [ -n "$DROPPED_VERSIONS" ] && [ -f "$POLICY_FILE" ]; then
       # Append the new entry before the closing marker
       TMPFILE=$(mktemp)
       awk -v entry="$ENTRY" \
-        '/<!-- OLDER_RELEASES_END -->/ { print entry }
+        '/\{\/* OLDER_RELEASES_END \*\/\}/ { print entry }
          { print }' \
         "$POLICY_FILE" > "$TMPFILE"
       mv "$TMPFILE" "$POLICY_FILE"

@@ -40,6 +40,6 @@ Replace `vX.Y.Z` with the version you need.
 The entries below are maintained automatically by `scripts/post_release.sh`
 whenever a versioned doc set is retired from the live site.
 
-<!-- OLDER_RELEASES_START -->
+{/* OLDER_RELEASES_START */}
 _No versioned doc sets have been retired yet. Links will appear here automatically as versions age out._
-<!-- OLDER_RELEASES_END -->
+{/* OLDER_RELEASES_END */}
