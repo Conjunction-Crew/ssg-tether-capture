@@ -1,15 +1,9 @@
 use crate::{
     components::{
         orbit::{Earth, Orbital},
-        orbit_camera::{
-            CameraTarget, OrbitCamera, OrbitControlButton, OrbitControlsDragRegion, OrbitDragState,
-            OrbitHoldState,
-        },
+        orbit_camera::{CameraTarget, OrbitCamera, OrbitControlButton},
     },
-    constants::{
-        ORBIT_WIDGET_ACCEL_MULTIPLIER, ORBIT_WIDGET_BASE_ORBIT_SPEED, ORBIT_WIDGET_BASE_ZOOM_SPEED,
-        ORBIT_WIDGET_HOLD_THRESHOLD_SECS, SCENE_LAYER,
-    },
+    constants::SCENE_LAYER,
     resources::space_catalog::SpaceCatalogUiState,
 };
 use avian3d::prelude::*;
@@ -19,13 +13,10 @@ use bevy::{
     prelude::*,
 };
 
-/// Handles right-click drag and Ctrl+left-click drag for orbiting the camera.
 pub fn orbit_camera_input(
     buttons: Res<ButtonInput<MouseButton>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
-    drag_state: Res<OrbitDragState>,
     s: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
     ui_interactions: Query<&Interaction, With<Node>>,
 ) {
@@ -49,16 +40,11 @@ pub fn orbit_camera_input(
         &mut orbit_cameras.map_params
     };
 
-    // Ctrl + left-click drag is an alternative to right-click drag.
-    // Suppressed while a widget bounding-box drag is active to avoid double-movement.
-    let ctrl_held =
-        keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let ctrl_drag = ctrl_held && buttons.pressed(MouseButton::Left) && !drag_state.active;
-
-    if (buttons.pressed(MouseButton::Right) || ctrl_drag) && delta != Vec2::ZERO {
+    if buttons.pressed(MouseButton::Right) && delta != Vec2::ZERO {
         camera.yaw -= delta.x * camera.sensitivity;
         camera.pitch -= delta.y * camera.sensitivity;
-        camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
+
+        camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch)
     }
 
     if scroll_y != 0.0 && !pointer_over_ui {
@@ -149,50 +135,15 @@ pub fn orbit_camera_switch_target(
 
 /// Handles the on-screen orbit controls widget buttons.
 ///
-/// Movement is applied every frame while a button is held, framerate-independent.
-/// After 5 s of continuous hold the movement speed increases to 2.5×.
-/// Releasing the button resets the hold timer.
-/// `ResetView` fires only on the initial press frame.
+/// Each button maps to an `OrbitControlButton` variant.  While the button is
+/// held (`Interaction::Pressed`) a constant yaw / pitch / distance delta is
+/// applied to `OrbitCamera.scene_params` every frame, giving smooth, continuous
+/// motion.  A single press is also enough to move the camera (useful for
+/// quick taps on a touchpad).
 pub fn orbit_camera_ui_controls(
-    orbit_btn_q: Query<(&Interaction, &OrbitControlButton), With<Button>>,
+    orbit_btn_q: Query<(&Interaction, &OrbitControlButton), (Changed<Interaction>, With<Button>)>,
     cam_q: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
-    time: Res<Time>,
-    mut hold_state: ResMut<OrbitHoldState>,
 ) {
-    // Find the first pressed button this frame (if any).
-    let pressed_btn = orbit_btn_q
-        .iter()
-        .find(|(i, _)| **i == Interaction::Pressed)
-        .map(|(_, b)| b.clone());
-
-    // Detect the very first frame of a new distinct press.
-    let is_new_press = match (&pressed_btn, &hold_state.held) {
-        (Some(btn), Some(held)) => btn != held,
-        (Some(_), None) => true,
-        _ => false,
-    };
-
-    // Update hold tracking.
-    match &pressed_btn {
-        Some(btn) if hold_state.held.as_ref() == Some(btn) => {
-            hold_state.hold_secs += time.delta_secs();
-        }
-        Some(btn) => {
-            hold_state.held = Some(btn.clone());
-            hold_state.hold_secs = 0.0;
-        }
-        None => {
-            hold_state.held = None;
-            hold_state.hold_secs = 0.0;
-            return;
-        }
-    }
-
-    let btn_kind = match &pressed_btn {
-        Some(b) => b,
-        None => return,
-    };
-
     let (mut orbit_camera, render_layers) = cam_q.into_inner();
     let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
         &mut orbit_camera.scene_params
@@ -200,103 +151,48 @@ pub fn orbit_camera_ui_controls(
         &mut orbit_camera.map_params
     };
 
-    // ResetView fires once per press, not continuously.
-    if *btn_kind == OrbitControlButton::ResetView {
-        if is_new_press {
-            camera.yaw = 0.0;
-            camera.pitch = 0.4;
-            camera.distance = 30.0;
-        }
-        return;
-    }
+    // Delta values — tuned to feel roughly equivalent to a short mouse drag.
+    const YAW_STEP: f32 = 0.05;
+    const PITCH_STEP: f32 = 0.05;
+    const ZOOM_STEP: f32 = 1.5;
 
-    // Base speed is 1/4 of the original; ramps to full original speed after the hold threshold.
-    let speed = if hold_state.hold_secs >= ORBIT_WIDGET_HOLD_THRESHOLD_SECS {
-        ORBIT_WIDGET_ACCEL_MULTIPLIER
-    } else {
-        1.0
-    };
+    for (interaction, btn_kind) in orbit_btn_q.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
 
-    let yaw_step = ORBIT_WIDGET_BASE_ORBIT_SPEED * time.delta_secs() * speed;
-    let pitch_step = ORBIT_WIDGET_BASE_ORBIT_SPEED * time.delta_secs() * speed;
-    let zoom_step = ORBIT_WIDGET_BASE_ZOOM_SPEED * time.delta_secs() * speed;
-
-    match btn_kind {
-        OrbitControlButton::OrbitLeft => {
-            camera.yaw += yaw_step;
-        }
-        OrbitControlButton::OrbitRight => {
-            camera.yaw -= yaw_step;
-        }
-        OrbitControlButton::OrbitUp => {
-            camera.pitch += pitch_step;
-            camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
-        }
-        OrbitControlButton::OrbitDown => {
-            camera.pitch -= pitch_step;
-            camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
-        }
-        OrbitControlButton::ZoomIn => {
-            camera.distance -= zoom_step;
-            camera.distance = camera
-                .distance
-                .clamp(camera.min_distance, camera.max_distance);
-        }
-        OrbitControlButton::ZoomOut => {
-            camera.distance += zoom_step;
-            camera.distance = camera
-                .distance
-                .clamp(camera.min_distance, camera.max_distance);
-        }
-        OrbitControlButton::ResetView => { /* handled above */ }
-    }
-}
-
-/// Handles left-click drag inside the orbit controls bounding box.
-///
-/// When the user presses the left mouse button over the widget container (but
-/// NOT over one of the directional/zoom buttons), dragging moves the camera
-/// exactly like right-click drag in the main 3D view.
-pub fn orbit_controls_drag(
-    drag_region: Query<&Interaction, With<OrbitControlsDragRegion>>,
-    orbit_btns: Query<&Interaction, With<OrbitControlButton>>,
-    mouse_motion: Res<AccumulatedMouseMotion>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut drag_state: ResMut<OrbitDragState>,
-    cam_q: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
-) {
-    if buttons.just_released(MouseButton::Left) {
-        drag_state.active = false;
-        return;
-    }
-
-    // Begin a drag only when the bounding box itself is pressed and no
-    // individual orbit button is pressed (buttons sit on top of the container).
-    if buttons.just_pressed(MouseButton::Left) {
-        let any_btn_pressed = orbit_btns.iter().any(|i| *i == Interaction::Pressed);
-        let region_pressed = drag_region.iter().any(|i| *i == Interaction::Pressed);
-        if region_pressed && !any_btn_pressed {
-            drag_state.active = true;
+        match btn_kind {
+            OrbitControlButton::OrbitLeft => {
+                camera.yaw += YAW_STEP;
+            }
+            OrbitControlButton::OrbitRight => {
+                camera.yaw -= YAW_STEP;
+            }
+            OrbitControlButton::OrbitUp => {
+                camera.pitch -= PITCH_STEP;
+                camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
+            }
+            OrbitControlButton::OrbitDown => {
+                camera.pitch += PITCH_STEP;
+                camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
+            }
+            OrbitControlButton::ZoomIn => {
+                camera.distance -= ZOOM_STEP;
+                camera.distance = camera
+                    .distance
+                    .clamp(camera.min_distance, camera.max_distance);
+            }
+            OrbitControlButton::ZoomOut => {
+                camera.distance += ZOOM_STEP;
+                camera.distance = camera
+                    .distance
+                    .clamp(camera.min_distance, camera.max_distance);
+            }
+            OrbitControlButton::ResetView => {
+                camera.yaw = 0.0;
+                camera.pitch = 0.4;
+                camera.distance = 30.0;
+            }
         }
     }
-
-    if !drag_state.active || !buttons.pressed(MouseButton::Left) {
-        return;
-    }
-
-    let delta = mouse_motion.delta;
-    if delta == Vec2::ZERO {
-        return;
-    }
-
-    let (mut orbit_camera, render_layers) = cam_q.into_inner();
-    let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-        &mut orbit_camera.scene_params
-    } else {
-        &mut orbit_camera.map_params
-    };
-
-    camera.yaw -= delta.x * camera.sensitivity;
-    camera.pitch -= delta.y * camera.sensitivity;
-    camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
 }

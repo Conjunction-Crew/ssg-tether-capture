@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit_camera::{OrbitControlButton, OrbitControlsDragRegion};
+use crate::components::orbit_camera::OrbitControlButton;
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
@@ -303,23 +303,16 @@ pub fn spawn_project_detail_screen(
                         // Positioned bottom-left of the 3D view. Provides
                         // click-and-hold orbit, zoom, and reset-view controls
                         // as an alternative to right-click-drag + scroll.
-                        // Left-click-drag anywhere inside the bounding box
-                        // also orbits the camera (orbit_controls_drag system).
                         left.spawn((
-                            OrbitControlsDragRegion,
-                            Interaction::default(),
                             Node {
                                 position_type: PositionType::Absolute,
                                 right: px(12.0),
                                 bottom: px(12.0),
                                 flex_direction: FlexDirection::Column,
                                 row_gap: px(2.0),
-                                padding: UiRect::all(px(6.0)),
-                                border: UiRect::all(px(1.0)),
                                 ..default()
                             },
-                            BackgroundColor(Color::srgba(0.059, 0.078, 0.133, 0.80)),
-                            BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.12)),
+                            Pickable::IGNORE,
                         ))
                         .with_children(|orbit_widget| {
                             // ── Row 1: Orbit Up ─────────────────────────────
