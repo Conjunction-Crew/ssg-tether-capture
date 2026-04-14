@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit_camera::OrbitControlButton;
+use crate::components::orbit_camera::{OrbitControlButton, OrbitControlsWidget};
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
@@ -330,10 +330,11 @@ pub fn spawn_project_detail_screen(
                         // click-and-hold orbit, zoom, and reset-view controls
                         // as an alternative to right-click-drag + scroll.
                         left.spawn((
+                            OrbitControlsWidget,
                             Interaction::default(),
                             Node {
                                 position_type: PositionType::Absolute,
-                                left: px(12.0),
+                                right: px(12.0),
                                 bottom: px(12.0),
                                 flex_direction: FlexDirection::Column,
                                 row_gap: px(2.0),

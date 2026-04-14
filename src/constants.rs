@@ -31,6 +31,9 @@ pub const ORBIT_WIDGET_HOLD_THRESHOLD_SECS: f32 = 2.0;
 /// Multiplier applied after the hold threshold (restores the original pre-constant speed).
 pub const ORBIT_WIDGET_ACCEL_MULTIPLIER: f32 = 4.0;
 
+/// Minimum terminal height when uncollapsed, as a fraction of total window height.
+pub const MIN_TERMINAL_HEIGHT_PERCENT: f32 = 0.25;
+
 // Other constants
 pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
     // Semi-major axis (meters)

@@ -7,6 +7,7 @@ use bevy_egui::{
     egui::{self, Color32, RichText},
 };
 
+use crate::constants::MIN_TERMINAL_HEIGHT_PERCENT;
 use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::NewCapturePlanForm;
 use crate::resources::working_directory::WorkingDirectory;
@@ -56,13 +57,31 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
     }
 
     // ── Panel ────────────────────────────────────────────────────────────────
-    egui::TopBottomPanel::bottom("capture_log_terminal")
+    let screen_height = ctx.screen_rect().height();
+    let min_h = if p.log_ui.is_open {
+        screen_height * MIN_TERMINAL_HEIGHT_PERCENT
+    } else {
+        28.0
+    };
+    let panel_response = egui::TopBottomPanel::bottom("capture_log_terminal")
         .resizable(true)
-        .min_height(28.0)
-        .max_height(400.0)
+        .min_height(min_h)
+        .max_height(screen_height * 0.75)
         .show(ctx, |ui| {
             // ── Toolbar ──────────────────────────────────────────────────────
             ui.horizontal(|ui| {
+                // Collapse/expand toggle — left-anchored, mirrors CollapsingHeader convention
+                {
+                    let openness = if p.log_ui.is_open { 1.0 } else { 0.0 };
+                    let icon_w = ui.spacing().icon_width;
+                    let (_, resp) =
+                        ui.allocate_exact_size(egui::vec2(icon_w, icon_w), egui::Sense::click());
+                    egui::collapsing_header::paint_default_icon(ui, openness, &resp);
+                    if resp.clicked() {
+                        p.log_ui.is_open = !p.log_ui.is_open;
+                    }
+                }
+
                 ui.label(
                     RichText::new("Capture Log")
                         .color(Color32::from_rgb(97, 168, 252))
@@ -134,13 +153,6 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
                         }
                     }
                 }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let toggle_label = if p.log_ui.is_open { "▼" } else { "▲" };
-                    if ui.button(toggle_label).clicked() {
-                        p.log_ui.is_open = !p.log_ui.is_open;
-                    }
-                });
             });
 
             // ── Log viewport (only when expanded) ────────────────────────────
@@ -246,6 +258,7 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
                     }
                 });
         });
+    p.log_ui.panel_height = panel_response.response.rect.height();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

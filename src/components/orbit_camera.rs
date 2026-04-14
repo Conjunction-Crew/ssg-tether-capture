@@ -18,6 +18,11 @@ pub enum OrbitControlButton {
     ResetView,
 }
 
+/// Marker component on the orbit-controls widget container node.
+/// Used to reposition the widget above the terminal panel when it is open.
+#[derive(Component, Default)]
+pub struct OrbitControlsWidget;
+
 /// Tracks which orbit control button is currently held and for how long.
 #[derive(Resource, Default)]
 pub struct OrbitHoldState {

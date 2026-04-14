@@ -87,6 +87,9 @@ pub struct CaptureLogUiState {
     pub selected_rows: Option<(usize, usize)>,
     /// Anchor row for shift-click range selection.
     pub selection_anchor: Option<usize>,
+    /// Height in pixels of the rendered terminal panel (updated each frame).
+    /// Used by other systems to offset UI elements above the terminal.
+    pub panel_height: f32,
 }
 
 impl Default for CaptureLogUiState {
@@ -104,6 +107,7 @@ impl Default for CaptureLogUiState {
             last_rendered_filter: all,
             selected_rows: None,
             selection_anchor: None,
+            panel_height: 0.0,
         }
     }
 }
