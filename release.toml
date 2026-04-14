@@ -32,6 +32,7 @@ push = false
 # cargo-release proceeds.  Runs in the maintainer's local environment.
 pre-release-hook = ["./scripts/verify_release_pr.sh"]
 
-# NOTE: There is no post-release-hook in cargo-release. The post_release.sh
-# script (versioned docs snapshot) must be run manually after cargo-release
-# completes, before pushing the tag.
+# NOTE: cargo-release has no post-release-hook. Use ./scripts/do_release.sh
+# instead of invoking cargo-release directly — it chains cargo-release and
+# post_release.sh automatically so versioned docs are created without an
+# extra manual step.

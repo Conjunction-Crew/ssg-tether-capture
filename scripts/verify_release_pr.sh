@@ -19,11 +19,19 @@
 set -eu
 
 # ---------------------------------------------------------------------------
-# 1. Extract new version from Cargo.toml
+# 1. Determine the new version
+#    When invoked as a cargo-release pre-release-hook, cargo-release has not
+#    yet written the bumped version to Cargo.toml, but it does export VERSION
+#    with the new value.  Prefer that env var; fall back to Cargo.toml for
+#    standalone / CI invocations (where the bump has already been committed).
 # ---------------------------------------------------------------------------
-NEW_VER=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)
+if [ -n "${NEW_VERSION:-}" ]; then
+  NEW_VER="$NEW_VERSION"
+else
+  NEW_VER=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)
+fi
 if [ -z "$NEW_VER" ]; then
-  echo "ERROR: Could not extract version from Cargo.toml" >&2
+  echo "ERROR: Could not determine new version (NEW_VERSION env var not set and Cargo.toml parse failed)" >&2
   exit 1
 fi
 echo "Cargo.toml version: $NEW_VER"
@@ -42,15 +50,40 @@ if [ -z "$LATEST_VER" ]; then
 else
   echo "Latest tag: $LATEST_TAG (version $LATEST_VER)"
 
-  LOWER=$(printf "%s\n%s" "$LATEST_VER" "$NEW_VER" | sort -V | head -n1)
-  if [ "$LOWER" = "$NEW_VER" ]; then
-    # $NEW_VER sorts first, meaning it is less than or equal to $LATEST_VER.
-    if [ "$NEW_VER" = "$LATEST_VER" ]; then
-      echo "ERROR: New version ($NEW_VER) must be greater than latest tag ($LATEST_VER) — did you forget to bump?" >&2
-    else
-      echo "ERROR: New version ($NEW_VER) is less than latest tag ($LATEST_VER)" >&2
-    fi
+  # Strip pre-release suffix (everything from the first '-' onward) to get
+  # the semver core, e.g. "0.2.0-beta.6" -> "0.2.0".
+  NEW_CORE="${NEW_VER%%-*}"
+  LATEST_CORE="${LATEST_VER%%-*}"
+
+  if [ "$NEW_VER" = "$LATEST_VER" ]; then
+    echo "ERROR: New version ($NEW_VER) must be greater than latest tag ($LATEST_VER) — did you forget to bump?" >&2
     exit 1
+  elif [ "$NEW_CORE" = "$LATEST_CORE" ]; then
+    # Same X.Y.Z core: per semver, a release (no suffix) is GREATER than any
+    # pre-release of the same core.  sort -V gets this wrong, so handle it here.
+    NEW_HAS_PRE=0; [ "$NEW_VER" != "$NEW_CORE" ] && NEW_HAS_PRE=1
+    LATEST_HAS_PRE=0; [ "$LATEST_VER" != "$LATEST_CORE" ] && LATEST_HAS_PRE=1
+    if [ "$NEW_HAS_PRE" -eq 1 ] && [ "$LATEST_HAS_PRE" -eq 0 ]; then
+      echo "ERROR: New version ($NEW_VER) is a pre-release but latest tag ($LATEST_VER) is already a release" >&2
+      exit 1
+    fi
+    # new=release, latest=pre-release → new is newer: OK
+    # new=pre-release, latest=pre-release, different suffix → fall through to sort -V
+    if [ "$NEW_HAS_PRE" -eq 1 ] && [ "$LATEST_HAS_PRE" -eq 1 ]; then
+      LOWER=$(printf "%s\n%s" "$LATEST_VER" "$NEW_VER" | sort -V | head -n1)
+      if [ "$LOWER" = "$NEW_VER" ]; then
+        echo "ERROR: New version ($NEW_VER) is less than latest tag ($LATEST_VER)" >&2
+        exit 1
+      fi
+    fi
+  else
+    # Different cores: compare only the X.Y.Z parts with sort -V to avoid
+    # pre-release suffix confusion.
+    LOWER=$(printf "%s\n%s" "$LATEST_CORE" "$NEW_CORE" | sort -V | head -n1)
+    if [ "$LOWER" = "$NEW_CORE" ]; then
+      echo "ERROR: New version ($NEW_VER) is less than latest tag ($LATEST_VER)" >&2
+      exit 1
+    fi
   fi
   echo "Version comparison OK ($LATEST_VER → $NEW_VER)"
 fi
