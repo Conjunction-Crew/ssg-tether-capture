@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [v0.2.1-beta.1] - 2026-04-14
+## [v0.2.1-beta.1]
 
 ### Changed
 - Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
