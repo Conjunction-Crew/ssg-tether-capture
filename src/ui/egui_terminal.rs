@@ -58,7 +58,7 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
     // ── Panel ────────────────────────────────────────────────────────────────
     let screen_height = ctx.screen_rect().height();
     let min_h = if p.log_ui.is_open {
-        screen_height 
+        screen_height * 0.25
     } else {
         28.0
     };
