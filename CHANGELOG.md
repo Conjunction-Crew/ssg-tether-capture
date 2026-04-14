@@ -17,12 +17,10 @@ When preparing a release:
 
 ### Changed
 - Updated release workflow and scripts to resolve issues with the Windows version of the app and improved the MSI installer
-- Updated orbit controls to support holding Ctrl + mouse drag for orbiting in the 3D view
 - Updated `post_release.sh` script to only trigger versioned docs for major and minor releases and limit versioned docs to last 10 releases
 - Changes favicon for the docs site and updates the metadata used for link previews
 
 ### Added
-- UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
 - Adds `.bat` and `.ps1` scripts for checking and installing prerequisites on Windows (e.g., WiX Toolset for MSI packaging)
 - Adds assets for the Windows MSI installer banner and dialog backgrounds
 
