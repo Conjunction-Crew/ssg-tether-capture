@@ -17,6 +17,8 @@ When preparing a release:
 
 ### Changed
 - Updates `release.yml` to resolve ad-hoc signing issues making the resulting DMG/.app unusable on macOS
+- Updates directory resolution strategy to use platform-correct asset paths (e.g., `assets/datasets/`) and support correct resolution when running from a macOS `.app` bundle
+- Adds JSON config to store the working directory path and updates the UI to read/write from this config for persistence across app restarts
 
 ---
 

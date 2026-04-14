@@ -20,7 +20,7 @@ use crate::resources::capture_plans::{
     load_plans_from_dir_with_errors,
 };
 use crate::resources::settings::Settings;
-use crate::resources::working_directory::WorkingDirectory;
+use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::events::UiEvent;
@@ -323,6 +323,7 @@ fn handle_ui_events(
             }
             UiEvent::WorkingDirectorySelected(path) => {
                 working_directory.path = path.clone();
+                save_to_config(&path);
                 if let Err(e) = std::fs::create_dir_all(path) {
                     eprintln!("Failed to create working directory: {e}");
                 }
