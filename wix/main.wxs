@@ -10,13 +10,20 @@
     Changing it breaks the upgrade path and causes side-by-side installs.
 
   INSTALL SCOPES:
-    WixUI_Advanced lets the user choose at install time:
-      Per-Machine (default) – installed to %ProgramFiles%\SSG Tether Capture, requires admin elevation.
-      Per-User (no admin)   – installed to %LocalAppData%\SSG Tether Capture, no UAC prompt.
+    The user selects per-user or per-machine on the Install Scope screen.
+      Per-User (default, no admin) – installed to %LocalAppData%\Programs\SSG Tether Capture.
+      Per-Machine (admin required) – installed to %ProgramFiles%\SSG Tether Capture.
+    Package uses Scope="perUserOrMachine" which compiles ALLUSERS=2 into the
+    MSI summary stream.  This tells Windows Installer the package supports
+    both scopes and to honour MSIINSTALLPERUSER at runtime (set by InstallScopeDlg).
+    Without this, the default Scope="perMachine" bakes RequireElevation into
+    the MSI metadata and UAC fires regardless of MSIINSTALLPERUSER.
 
   WIZARD SCREENS:
-    Welcome → License Agreement → Install Type (per-machine / per-user) →
-    Install Directory → Shortcut Options → Ready → Progress → Finish
+    Welcome → License Agreement → Install Scope (per-user / per-machine) →
+    Ready → Progress → Finish
+    Per-user: no UAC prompt, installs to %LocalAppData%\Programs.
+    Per-machine: UAC prompt raised when install begins, installs to %ProgramFiles%.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
@@ -26,8 +33,8 @@
     Manufacturer="Conjunction Crew"
     Version="$(var.PackageVersion)"
     Language="1033"
-    UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068"
-    Scope="perMachine">
+    Scope="perUserOrMachine"
+    UpgradeCode="10AA6E67-5472-4441-A59D-80D264B3F068">
 
     <SummaryInformation Description="SSG Tether Capture Installer" />
 
@@ -54,15 +61,21 @@
 
     <!-- ──────────────────────────────────────────────────────────────────
          Per-user / per-machine install scope support.
-         WixUI_Advanced displays the scope-selection dialog.
+         InstallScopeDlg sets MSIINSTALLPERUSER and APPLICATIONFOLDER at
+         install time based on the user's choice.
          MSIINSTALLPERUSER=1  → per-user (LocalAppData), no elevation required.
          MSIINSTALLPERUSER unset → per-machine (ProgramFiles), requires admin.
-         We default to per-machine but the user can switch in the wizard.
+         Package has no Scope attribute so Windows Installer defers the
+         elevation decision to the MSIINSTALLPERUSER property at runtime.
          Marked Secure="yes" so the UI dialog can set it at install time.
     ─────────────────────────────────────────────────────────────────── -->
     <Property Id="ApplicationFolderName" Value="SSG Tether Capture" />
-    <Property Id="WixAppFolder"          Value="WixPerMachineFolder" />
-    <Property Id="MSIINSTALLPERUSER"     Secure="yes" />
+    <!-- Default to per-user so the wizard pre-selects "Just me" in InstallScopeDlg.
+         Scope="perUserOrMachine" (on Package) compiles ALLUSERS=2 into the MSI
+         summary stream, which tells Windows Installer to honour MSIINSTALLPERUSER
+         at runtime rather than always requiring admin.  MSIINSTALLPERUSER=1 is
+         set automatically by the Scope attribute; do not redeclare it here. -->
+    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
 
     <!-- Shortcut options: both enabled by default; user can deselect -->
     <Property Id="INSTALL_STARTMENU" Value="1" />
@@ -70,12 +83,11 @@
 
     <!-- ──────────────────────────────────────────────────────────────────
          Directory layout.
-         APPLICATIONFOLDER is set by WixUI_Advanced based on the user's
-         scope choice at install time:
-           per-machine → ProgramFiles64Folder\SSG Tether Capture
-           per-user    → LocalAppDataFolder\Programs\SSG Tether Capture
-         WixUI_Advanced resolves the per-user path internally via
-         ApplicationFolderName; we only need the per-machine anchor here.
+         APPLICATIONFOLDER is re-pointed at runtime by the SetPerUserFolder /
+         SetPerMachineFolder custom actions (see InstallUISequence below) before
+         cost calculation runs.  The ProgramFiles64Folder anchor here is the
+         fallback used when building the directory table; the actual install
+         location is always overridden by the custom actions.
     ─────────────────────────────────────────────────────────────────── -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="APPLICATIONFOLDER" Name="SSG Tether Capture">
@@ -165,20 +177,76 @@
     </Feature>
 
     <!-- ──────────────────────────────────────────────────────────────────
-         Wizard UI — WixUI_Advanced (base) with dialog-flow override:
-           Welcome → License Agreement → Install Scope (per-machine/per-user)
-           → Install Directory → Ready → Progress → Finish
-         By default WixUI_Advanced hides scope selection behind an "Advanced"
-         button on SetupTypeDlg. The Publish overrides below redirect the
-         LicenseAgreementDlg Next and InstallScopeDlg Back buttons so scope
-         selection is always a visible step in the normal wizard flow.
-         Publish Order=99 fires after any built-in lower-order events; for
-         NewDialog, the last event that fires determines the transition, so
-         our Order=99 entries override the built-in destination.
-         WixUILicenseRtf points to our LICENSE.rtf.
+         Scope resolution custom actions.
+
+         MSIINSTALLPERUSER is Secure="yes" so it propagates from the UI
+         sequence (where InstallScopeDlg sets it) into the execute sequence.
+         WixAppFolder is NOT Secure and does NOT propagate, so we must
+         condition on MSIINSTALLPERUSER, not WixAppFolder.
+
+         UI sequence   – runs Before="CostInitialize" so file costing uses
+                         the correct directory for disk-space reporting.
+         Execute sequence – runs Before="CostInitialize" so the install
+                         target is resolved before Windows Installer decides
+                         whether to request elevation.  With MSIINSTALLPERUSER=1
+                         and APPLICATIONFOLDER under LocalAppData, Windows
+                         installs without UAC.  With MSIINSTALLPERUSER unset
+                         and APPLICATIONFOLDER under ProgramFiles, Windows
+                         requests elevation via UAC before costing.
     ─────────────────────────────────────────────────────────────────── -->
-    <ui:WixUI Id="WixUI_Advanced" />
-    <WixVariable Id="WixUILicenseRtf"    Value="LICENSE.rtf" />
+    <CustomAction Id="SetPerUserFolder"
+                  Property="APPLICATIONFOLDER"
+                  Value="[LocalAppDataFolder]Programs\[ApplicationFolderName]\" />
+    <CustomAction Id="SetPerMachineFolder"
+                  Property="APPLICATIONFOLDER"
+                  Value="[ProgramFiles64Folder][ApplicationFolderName]\" />
+
+    <InstallUISequence>
+      <Custom Action="SetPerUserFolder"    Before="CostInitialize" Condition="MSIINSTALLPERUSER" />
+      <Custom Action="SetPerMachineFolder" Before="CostInitialize" Condition="NOT MSIINSTALLPERUSER" />
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <Custom Action="SetPerUserFolder"    Before="CostInitialize" Condition="MSIINSTALLPERUSER" />
+      <Custom Action="SetPerMachineFolder" Before="CostInitialize" Condition="NOT MSIINSTALLPERUSER" />
+    </InstallExecuteSequence>
+
+    <!-- ──────────────────────────────────────────────────────────────────
+         Wizard UI
+         Base: WixUI_InstallDir  →  Welcome → License Agreement → [scope] →
+               Ready to Install → Progress → Exit
+         We inject InstallScopeDlg between LicenseAgreementDlg and
+         VerifyReadyDlg so the per-user / per-machine choice is always a
+         visible step in the main wizard flow (not hidden behind "Advanced").
+         Order=2 Publish events fire after each dialog's built-in Order=1
+         events; for NewDialog, the last event fired determines the
+         transition (last-wins), so our Order=2 entries silently override
+         the built-in InstallDirDlg destination.
+    ─────────────────────────────────────────────────────────────────── -->
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <!-- Required by WixUI_InstallDir; binds the dir dialog to our folder -->
+    <Property Id="WIXUI_INSTALLDIR" Value="APPLICATIONFOLDER" />
+
+    <UI>
+      <!-- Pull InstallScopeDlg into the WixUI_InstallDir dialog set -->
+      <DialogRef Id="InstallScopeDlg" />
+
+      <!-- LicenseAgreementDlg Next → InstallScopeDlg (skips InstallDirDlg) -->
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallScopeDlg" Order="2" Condition='LicenseAccepted = "1"' />
+
+      <!-- InstallScopeDlg Next → VerifyReadyDlg -->
+      <Publish Dialog="InstallScopeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="2" Condition="1" />
+
+      <!-- InstallScopeDlg Back → LicenseAgreementDlg -->
+      <Publish Dialog="InstallScopeDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Order="2" Condition="1" />
+
+      <!-- VerifyReadyDlg Back → InstallScopeDlg (skips InstallDirDlg) -->
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallScopeDlg" Order="2" Condition="NOT Installed" />
+    </UI>
+
+    <WixVariable Id="WixUILicenseRtf"       Value="LICENSE.rtf" />
+    <WixVariable Id="WixUISupportPerUser"    Value="1" />
+    <WixVariable Id="WixUISupportPerMachine" Value="1" />
     <WixVariable Id="WixUIBannerBmp"     Value="..\assets\logo\installer_banner.bmp" Overridable="yes" />
     <WixVariable Id="WixUIDialogBmp"     Value="..\assets\logo\installer_dialog.bmp" Overridable="yes" />
 

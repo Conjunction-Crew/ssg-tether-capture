@@ -154,10 +154,12 @@ try {
 
     $msiFile = Get-ChildItem -Path . -Recurse -Filter '*.msi' | Select-Object -First 1
     if ($msiFile) {
-        # Rename to match release naming convention
+        # Rename to match release naming convention (skip if already correctly named)
         $destName = "ssg-tether-capture-${Tag}-windows-x86_64.msi"
         $destPath = Join-Path (Split-Path $msiFile.FullName) $destName
-        Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+        if ($msiFile.FullName -ne $destPath) {
+            Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+        }
         Write-Check "MSI built" $destPath
     } else {
         Write-Fail "dotnet build succeeded but no .msi file was found. Check wix\SSG.wixproj output."

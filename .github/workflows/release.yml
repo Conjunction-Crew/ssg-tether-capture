@@ -162,7 +162,9 @@ jobs:
           if ($msiFile) {
             $destName = "ssg-tether-capture-${tag}-windows-x86_64.msi"
             $destPath = Join-Path (Split-Path $msiFile.FullName) $destName
-            Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+            if ($msiFile.FullName -ne $destPath) {
+              Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+            }
             Add-Content -Path $env:GITHUB_ENV -Value "MSI=$destPath"
           } else {
             Write-Error "MSI not found after dotnet build."

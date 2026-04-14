@@ -224,11 +224,11 @@ pub fn orbit_camera_ui_controls(
             camera.yaw -= yaw_step;
         }
         OrbitControlButton::OrbitUp => {
-            camera.pitch -= pitch_step;
+            camera.pitch += pitch_step;
             camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
         }
         OrbitControlButton::OrbitDown => {
-            camera.pitch += pitch_step;
+            camera.pitch -= pitch_step;
             camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
         }
         OrbitControlButton::ZoomIn => {
