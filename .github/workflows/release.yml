@@ -219,8 +219,8 @@ jobs:
 
       - name: Install cargo-bundle
         run: |
-          if ! command -v cargo-bundle &> /dev/null; then
-            cargo install cargo-bundle
+          if ! cargo-bundle --version 2>/dev/null | grep -qF "0.6.1"; then
+            cargo install cargo-bundle --version "0.6.1" --force
           fi
 
       - name: Build and bundle .app
