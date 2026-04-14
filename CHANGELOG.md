@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [v0.2.2-beta.1]
+## [v0.2.1-beta.1]
 
 ### Changed
 - Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
@@ -24,6 +24,21 @@ When preparing a release:
 - Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
 
 ### Removed
+
+---
+
+## [0.2.0] - 2026-04-14
+
+### Release Notes
+- This is the first public production release of SSG Tether Capture, minor version 0.2.0
+- App installers are available for Windows (MSI), macOS (DMG), and Linux (tar.gz)
+- This release of the application includes the following new features:
+  - Project level support to create, edit, and save capture plans to directory on your machine
+  - A user interface to simulate the capture of a RSO (Resident Space Object) using a flexible tether
+  - Capture plans allow you to define various parameters of the capture scenario including distance, force, and velocity thresholds to define when the capture moves through phases
+  - The Project Detail view presents various simulation controls, a Simulation HUD (heads up display), a capture log interface which can be used for debugging, on screen graphs to visualize the forces and velocities at play, and a catalog of space objects to choose from when defining your capture scenario
+  - The app includes an example capture plan (`assets/capture_plans/example_capture_plan.json`) which simulates the capture of a piece of debris by a tethered satellite; you can use this as a starting point to create your own capture plans
+- This release includes an updated documentation site which includes various information about the project, how to get started, and guides on how to use the app and create your own capture plans; the docs site is available at https://conjunction-crew.github.io/ssg-tether-capture/
 
 ---
 
