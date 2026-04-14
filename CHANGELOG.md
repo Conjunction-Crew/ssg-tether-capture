@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [Unreleased]
+## [0.2.0-beta.5] - 2026-04-13
 
 ### Changed
 - Updated release workflow and scripts to resolve issues with the Windows version of the app and improved the MSI installer
