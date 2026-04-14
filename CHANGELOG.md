@@ -22,7 +22,7 @@ When preparing a release:
   - Project level support to create, edit, and save capture plans to directory on your machine
   - A user interface to simulate the capture of a RSO (Resident Space Object) using a flexible tether
   - Capture plans allow you to define various parameters of the capture scenario including distance, force, and velocity thresholds to define when the capture moves through phases
-  - The Project Detail view presents various simulation controls, a Simulation HUD (heads up display), a capture log interface which can be used for debugging, on screen graphs to visualize the forces and velocities at play, and a catalog of space objects to choose from when defining your capture scenario
+  - The Project Detail view presents various simulation controls, a simulation HUD (heads up display), a section which provides detailed information on the progress within the capture plan, and a catalog of space objects to choose from when defining your capture scenario
   - The app includes an example capture plan (`assets/capture_plans/example_capture_plan.json`) which simulates the capture of a piece of debris by a tethered satellite; you can use this as a starting point to create your own capture plans
 - This release includes an updated documentation site which includes various information about the project, how to get started, and guides on how to use the app and create your own capture plans; the docs site is available at https://conjunction-crew.github.io/ssg-tether-capture/
 
