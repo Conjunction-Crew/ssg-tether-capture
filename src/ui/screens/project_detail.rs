@@ -10,7 +10,6 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit_camera::OrbitControlButton;
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
@@ -298,80 +297,6 @@ pub fn spawn_project_detail_screen(
                                 ..default()
                             },
                         ));
-
-                        // ── On-screen orbit controls widget ─────────────────
-                        // Positioned bottom-left of the 3D view. Provides
-                        // click-and-hold orbit, zoom, and reset-view controls
-                        // as an alternative to right-click-drag + scroll.
-                        left.spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                right: px(12.0),
-                                bottom: px(12.0),
-                                flex_direction: FlexDirection::Column,
-                                row_gap: px(2.0),
-                                ..default()
-                            },
-                            Pickable::IGNORE,
-                        ))
-                        .with_children(|orbit_widget| {
-                            // ── Row 1: Orbit Up ─────────────────────────────
-                            orbit_widget
-                                .spawn(Node {
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::Center,
-                                    column_gap: px(2.0),
-                                    ..default()
-                                })
-                                .with_children(|row| {
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::OrbitUp, "^");
-                                });
-
-                            // ── Row 2: Orbit Left | Reset | Orbit Right ──────
-                            orbit_widget
-                                .spawn(Node {
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::Center,
-                                    column_gap: px(2.0),
-                                    ..default()
-                                })
-                                .with_children(|row| {
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::OrbitLeft, "<");
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::ResetView, "o");
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::OrbitRight, ">");
-                                });
-
-                            // ── Row 3: Orbit Down ────────────────────────────
-                            orbit_widget
-                                .spawn(Node {
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::Center,
-                                    column_gap: px(2.0),
-                                    ..default()
-                                })
-                                .with_children(|row| {
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::OrbitDown, "v");
-                                });
-
-                            // ── Row 4: separator ─────────────────────────────
-                            orbit_widget.spawn(Node {
-                                height: px(4.0),
-                                ..default()
-                            });
-
-                            // ── Row 5: Zoom In | Zoom Out ─────────────────────
-                            orbit_widget
-                                .spawn(Node {
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::Center,
-                                    column_gap: px(2.0),
-                                    ..default()
-                                })
-                                .with_children(|row| {
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::ZoomIn, "+");
-                                    spawn_orbit_btn(row, &font, &theme, OrbitControlButton::ZoomOut, "-");
-                                });
-                        });
 
                         left.spawn((
                             Node {
@@ -1289,41 +1214,6 @@ pub fn spawn_project_detail_screen(
                     BackgroundColor(theme.panel_background),
                 ));
             });
-        });
-}
-
-/// Spawns a single button in the on-screen orbit controls widget.
-fn spawn_orbit_btn(
-    parent: &mut ChildSpawnerCommands,
-    font: &Handle<Font>,
-    theme: &UiTheme,
-    kind: OrbitControlButton,
-    label: &str,
-) {
-    parent
-        .spawn((
-            Button,
-            kind,
-            Node {
-                width: Val::Px(32.0),
-                height: Val::Px(32.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(theme.panel_background),
-        ))
-        .with_children(|btn| {
-            btn.spawn((
-                Text::new(label),
-                TextFont {
-                    font: font.clone(),
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(theme.text_primary),
-                Pickable::IGNORE,
-            ));
         });
 }
 

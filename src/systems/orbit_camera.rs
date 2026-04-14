@@ -1,7 +1,7 @@
 use crate::{
     components::{
         orbit::{Earth, Orbital},
-        orbit_camera::{CameraTarget, OrbitCamera, OrbitControlButton},
+        orbit_camera::{CameraTarget, OrbitCamera},
     },
     constants::SCENE_LAYER,
     resources::space_catalog::SpaceCatalogUiState,
@@ -131,68 +131,4 @@ pub fn orbit_camera_switch_target(
         }
     }
     commands.entity(next_target).insert(CameraTarget);
-}
-
-/// Handles the on-screen orbit controls widget buttons.
-///
-/// Each button maps to an `OrbitControlButton` variant.  While the button is
-/// held (`Interaction::Pressed`) a constant yaw / pitch / distance delta is
-/// applied to `OrbitCamera.scene_params` every frame, giving smooth, continuous
-/// motion.  A single press is also enough to move the camera (useful for
-/// quick taps on a touchpad).
-pub fn orbit_camera_ui_controls(
-    orbit_btn_q: Query<(&Interaction, &OrbitControlButton), (Changed<Interaction>, With<Button>)>,
-    cam_q: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
-) {
-    let (mut orbit_camera, render_layers) = cam_q.into_inner();
-    let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-        &mut orbit_camera.scene_params
-    } else {
-        &mut orbit_camera.map_params
-    };
-
-    // Delta values — tuned to feel roughly equivalent to a short mouse drag.
-    const YAW_STEP: f32 = 0.05;
-    const PITCH_STEP: f32 = 0.05;
-    const ZOOM_STEP: f32 = 1.5;
-
-    for (interaction, btn_kind) in orbit_btn_q.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
-        match btn_kind {
-            OrbitControlButton::OrbitLeft => {
-                camera.yaw += YAW_STEP;
-            }
-            OrbitControlButton::OrbitRight => {
-                camera.yaw -= YAW_STEP;
-            }
-            OrbitControlButton::OrbitUp => {
-                camera.pitch -= PITCH_STEP;
-                camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
-            }
-            OrbitControlButton::OrbitDown => {
-                camera.pitch += PITCH_STEP;
-                camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
-            }
-            OrbitControlButton::ZoomIn => {
-                camera.distance -= ZOOM_STEP;
-                camera.distance = camera
-                    .distance
-                    .clamp(camera.min_distance, camera.max_distance);
-            }
-            OrbitControlButton::ZoomOut => {
-                camera.distance += ZOOM_STEP;
-                camera.distance = camera
-                    .distance
-                    .clamp(camera.min_distance, camera.max_distance);
-            }
-            OrbitControlButton::ResetView => {
-                camera.yaw = 0.0;
-                camera.pitch = 0.4;
-                camera.distance = 30.0;
-            }
-        }
-    }
 }
