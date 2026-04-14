@@ -20,7 +20,8 @@ When preparing a release:
 - Updates docs to include information about the new capture log terminal panel and its features.
 
 ### Added
-- Capture log system and terminal panel UI based on `egui` for real-time logging of capture events, errors, and debug information.
+- Capture log system and terminal panel UI for real-time logging of capture events, errors, and debug information.
+- Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
 
 ### Removed
 

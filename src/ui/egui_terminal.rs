@@ -7,7 +7,6 @@ use bevy_egui::{
     egui::{self, Color32, RichText},
 };
 
-use crate::constants::MIN_TERMINAL_HEIGHT_PERCENT;
 use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::NewCapturePlanForm;
 use crate::resources::working_directory::WorkingDirectory;
@@ -59,7 +58,7 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
     // ── Panel ────────────────────────────────────────────────────────────────
     let screen_height = ctx.screen_rect().height();
     let min_h = if p.log_ui.is_open {
-        screen_height * MIN_TERMINAL_HEIGHT_PERCENT
+        screen_height 
     } else {
         28.0
     };

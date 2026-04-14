@@ -1,36 +1,8 @@
-use crate::constants::ORBIT_MAX_PITCH_RAD;
-use bevy::prelude::{Component, Resource, Vec3};
+use bevy::prelude::{Component, Vec3};
 
 // Component to query the camera target
 #[derive(Component, Debug, Clone)]
 pub struct CameraTarget;
-
-/// Marker component on the on-screen orbit-controls widget buttons.
-/// Used by `orbit_camera_ui_controls` to drive camera rotation, zoom, and reset.
-#[derive(Component, Debug, Clone, PartialEq, Eq)]
-pub enum OrbitControlButton {
-    OrbitLeft,
-    OrbitRight,
-    OrbitUp,
-    OrbitDown,
-    ZoomIn,
-    ZoomOut,
-    ResetView,
-}
-
-/// Marker component on the orbit-controls widget container node.
-/// Used to reposition the widget above the terminal panel when it is open.
-#[derive(Component, Default)]
-pub struct OrbitControlsWidget;
-
-/// Tracks which orbit control button is currently held and for how long.
-#[derive(Resource, Default)]
-pub struct OrbitHoldState {
-    /// The button variant currently held.
-    pub held: Option<OrbitControlButton>,
-    /// Accumulated seconds the current button has been continuously held.
-    pub hold_secs: f32,
-}
 
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]
@@ -65,7 +37,7 @@ impl Default for OrbitCameraParams {
             sensitivity: 0.002,
             #[cfg(not(windows))]
             sensitivity: 0.005,
-            max_pitch: ORBIT_MAX_PITCH_RAD,
+            max_pitch: 1.55,
             up: Vec3::Y,
         }
     }

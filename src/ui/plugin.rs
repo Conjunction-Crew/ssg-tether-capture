@@ -12,7 +12,7 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
-use crate::components::orbit_camera::{CameraTarget, OrbitControlsWidget};
+use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{
@@ -39,14 +39,14 @@ use crate::ui::screens::home::{
     HomeScreen, cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
     update_home_working_directory_label,
 };
-use crate::ui::screens::project_detail::{{
+use crate::ui::screens::project_detail::{
     RestartPromptModal, SimScreen, catalog_interactions, catalog_keyboard_input,
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     refresh_space_catalog_results, reset_space_catalog_ui_state, restart_prompt_interactions,
     spawn_exit_confirm_modal, spawn_project_detail_screen, spawn_restart_prompt_modal,
     sync_space_catalog_ui, update_satellite_indicator_overlay, update_selected_catalog_overlay,
     update_sync_indicator, view_edit_plan_interactions,
-}};
+};
 use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
     spawn_working_directory_setup_screen, working_directory_setup_interactions,
@@ -143,7 +143,6 @@ impl Plugin for UiPlugin {
                     poll_restart_prompt_modal,
                     poll_sim_restart,
                     collect_log_events.run_if(in_state(UiScreen::Sim)),
-                    update_orbit_controls_bottom.run_if(in_state(UiScreen::Sim)),
                     (
                         update_sim_screen_bottom_padding,
                         project_detail_interactions,
@@ -318,16 +317,6 @@ fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
     log_ui.selection_anchor = None;
     // Force a display rebuild so newly-spawned rows reflect the current log.
     log_ui.last_rendered_count = usize::MAX;
-}
-
-/// Repositions the orbit-controls widget above the terminal panel each frame.
-fn update_orbit_controls_bottom(
-    log_ui: Res<CaptureLogUiState>,
-    mut orbit_widget: Query<&mut Node, With<OrbitControlsWidget>>,
-) {
-    for mut node in &mut orbit_widget {
-        node.bottom = Val::Px(log_ui.panel_height + 12.0);
-    }
 }
 
 /// Pads the sim screen root so Bevy UI content stops above the egui terminal panel.
