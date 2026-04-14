@@ -6,6 +6,7 @@ description = "Orbital tether capture simulation and mission planning."
 license = "MIT"
 repository = "https://github.com/Conjunction-Crew/ssg-tether-capture"
 homepage = "https://conjunction-crew.github.io/ssg-tether-capture/"
+publish = false
 
 [dependencies]
 bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
@@ -42,5 +43,3 @@ identifier = "com.conjunction-crew.ssg-tether-capture"
 resources = ["assets"]
 short_description = "Orbital tether capture simulation and mission planning."
 icon = ["assets/logo/icon.icns"]
-
-publish = false
