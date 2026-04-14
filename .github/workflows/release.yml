@@ -219,8 +219,8 @@ jobs:
 
       - name: Install cargo-bundle
         run: |
-          if ! command -v cargo-bundle &> /dev/null; then
-            cargo install cargo-bundle
+          if ! cargo-bundle --version 2>/dev/null | grep -qF "0.6.1"; then
+            cargo install cargo-bundle --version "0.6.1" --force
           fi
 
       - name: Build and bundle .app
@@ -241,6 +241,24 @@ jobs:
             exit 1
           fi
           uname -m
+
+      - name: Ad-hoc sign .app
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          # Ad-hoc signing (-) does not require an Apple Developer account but
+          # prevents Gatekeeper from treating the app as "damaged and can't be
+          # opened" when downloaded from the internet (quarantine xattr).
+          # Without any signature, macOS 13+ blocks the app unconditionally.
+          # With an ad-hoc signature, users see "unverified developer" instead
+          # and can bypass it via right-click → Open.
+          # Sign the binary first, then the bundle wrapper (order matters).
+          codesign --force --deep --sign - \
+            --options runtime \
+            "$APP_PATH/Contents/MacOS/ssg_tether_capture"
+          codesign --force --deep --sign - \
+            --options runtime \
+            "$APP_PATH"
+          codesign --verify --verbose "$APP_PATH"
 
       - name: Package DMG
         run: |

@@ -13,6 +13,15 @@ When preparing a release:
 
 ---
 
+## [0.2.0-beta.6]
+
+### Changed
+- Updates `release.yml` to resolve ad-hoc signing issues making the resulting DMG/.app unusable on macOS
+- Updates directory resolution strategy to use platform-correct asset paths (e.g., `assets/datasets/`) and support correct resolution when running from a macOS `.app` bundle
+- Adds JSON config to store the working directory path and updates the UI to read/write from this config for persistence across app restarts
+
+---
+
 ## [0.2.0-beta.5] - 2026-04-13
 
 ### Changed
@@ -23,8 +32,6 @@ When preparing a release:
 ### Added
 - Adds `.bat` and `.ps1` scripts for checking and installing prerequisites on Windows (e.g., WiX Toolset for MSI packaging)
 - Adds assets for the Windows MSI installer banner and dialog backgrounds
-
-### Removed
 
 ---
 

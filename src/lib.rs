@@ -35,24 +35,26 @@ use crate::systems::user_interface::{
 use crate::ui::plugin::UiPlugin;
 use crate::ui::state::UiScreen;
 
-/// Returns the absolute path to the `assets/` directory.
+/// Returns the absolute path to the `assets/` directory as a [`PathBuf`].
 ///
 /// On macOS, when running inside a `.app` bundle, assets live at
 /// `Contents/Resources/assets/` and are not reachable via a relative path
-/// regardless of CWD. Detect this case and return an absolute path so Bevy's
-/// `AssetPlugin` finds them however the app was launched (Finder, Spotlight,
-/// CLI `open`, etc.).
-fn resolve_asset_path() -> String {
+/// regardless of CWD. Detect this case and return an absolute path so any
+/// runtime file-system access finds them however the app was launched
+/// (Finder, Spotlight, CLI `open`, etc.).
+pub(crate) fn resolve_assets_dir() -> std::path::PathBuf {
     #[cfg(target_os = "macos")]
     if let Some(path) = std::env::current_exe().ok().and_then(|exe| {
         let assets = exe.parent()?.parent()?.join("Resources").join("assets");
-        assets
-            .is_dir()
-            .then(|| assets.to_string_lossy().into_owned())
+        assets.is_dir().then_some(assets)
     }) {
         return path;
     }
-    "assets".to_string()
+    std::path::PathBuf::from("assets")
+}
+
+fn resolve_asset_path() -> String {
+    resolve_assets_dir().to_string_lossy().into_owned()
 }
 
 // Main entrypoint to run the desktop application.
