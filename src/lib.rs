@@ -21,12 +21,12 @@ use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::gpu_compute::GpuComputePlugin;
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
+use crate::resources::capture_log::LogEvent;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
     FilteredSpaceCatalogResults, SpaceCatalogUiState, SpaceObjectCatalog,
 };
-use crate::resources::capture_log::LogEvent;
 use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
 use crate::systems::physics::FIXED_HZ;
 use crate::systems::user_input::{
