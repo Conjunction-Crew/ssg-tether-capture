@@ -33,6 +33,9 @@ impl Default for OrbitCameraParams {
             pitch: 0.0,
             min_distance: 0.5,
             max_distance: 10000.0,
+            #[cfg(windows)] // Decreased default sensitivity on windows due to quirks.
+            sensitivity: 0.002,
+            #[cfg(not(windows))]
             sensitivity: 0.005,
             max_pitch: 1.55,
             up: Vec3::Y,

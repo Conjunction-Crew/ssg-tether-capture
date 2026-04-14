@@ -3,13 +3,25 @@
     <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
     <Platform Condition="'$(Platform)'==''">x64</Platform>
     <OutputName>ssg-tether-capture</OutputName>
+    <!-- Accept the WiX v7 OSMF EULA (direct acceptance for CI/CD builds).
+         See https://docs.firegiant.com/wix/osmf/ for payment/sponsorship requirements. -->
+    <AcceptEula>wix7</AcceptEula>
+    <!-- PackageVersion is passed from CI / build scripts via -p:PackageVersion=X.Y.Z.
+         The version must be a valid MSI version (Major.Minor.Build, each component within
+         range). Pre-release suffixes (-beta.1 etc.) must be stripped before passing here.
+         0.1.0 is the fallback for ad-hoc local builds where no version is given. -->
+    <PackageVersion Condition="'$(PackageVersion)'==''">0.1.0</PackageVersion>
+    <DefineConstants>PackageVersion=$(PackageVersion)</DefineConstants>
+    <!-- ICE60: data files without a Language value — benign for non-localised assets. -->
+    <SuppressIces>ICE60</SuppressIces>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Include existing main.wxs (kept for compatibility) -->
     <Wix Include="main.wxs" />
-    <!-- If heat-generated fragment exists include it as well -->
-    <Wix Include="assets_fragment.wxs" Condition="Exists('assets_fragment.wxs')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="7.*" />
   </ItemGroup>
 
 </Project>
