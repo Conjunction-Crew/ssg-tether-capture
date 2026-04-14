@@ -13,6 +13,13 @@ When preparing a release:
 
 ---
 
+## [0.2.0-beta.6]
+
+### Changed
+- Updates `release.yml` to resolve ad-hoc signing issues making the resulting DMG/.app unusable on macOS
+
+---
+
 ## [0.2.0-beta.5] - 2026-04-13
 
 ### Changed
@@ -25,8 +32,6 @@ When preparing a release:
 - UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
 - Adds `.bat` and `.ps1` scripts for checking and installing prerequisites on Windows (e.g., WiX Toolset for MSI packaging)
 - Adds assets for the Windows MSI installer banner and dialog backgrounds
-
-### Removed
 
 ---
 
