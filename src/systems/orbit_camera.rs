@@ -1,7 +1,10 @@
 use crate::{
     components::{
         orbit::{Earth, Orbital},
-        orbit_camera::{CameraTarget, OrbitCamera, OrbitControlButton, OrbitHoldState},
+        orbit_camera::{
+            CameraTarget, OrbitCamera, OrbitControlButton, OrbitControlsDragRegion, OrbitDragState,
+            OrbitHoldState,
+        },
     },
     constants::{
         ORBIT_WIDGET_ACCEL_MULTIPLIER, ORBIT_WIDGET_BASE_ORBIT_SPEED, ORBIT_WIDGET_BASE_ZOOM_SPEED,
@@ -22,6 +25,7 @@ pub fn orbit_camera_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
+    drag_state: Res<OrbitDragState>,
     s: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
     ui_interactions: Query<&Interaction, With<Node>>,
 ) {
@@ -46,9 +50,10 @@ pub fn orbit_camera_input(
     };
 
     // Ctrl + left-click drag is an alternative to right-click drag.
+    // Suppressed while a widget bounding-box drag is active to avoid double-movement.
     let ctrl_held =
         keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let ctrl_drag = ctrl_held && buttons.pressed(MouseButton::Left);
+    let ctrl_drag = ctrl_held && buttons.pressed(MouseButton::Left) && !drag_state.active;
 
     if (buttons.pressed(MouseButton::Right) || ctrl_drag) && delta != Vec2::ZERO {
         camera.yaw -= delta.x * camera.sensitivity;
@@ -245,4 +250,53 @@ pub fn orbit_camera_ui_controls(
         }
         OrbitControlButton::ResetView => { /* handled above */ }
     }
+}
+
+/// Handles left-click drag inside the orbit controls bounding box.
+///
+/// When the user presses the left mouse button over the widget container (but
+/// NOT over one of the directional/zoom buttons), dragging moves the camera
+/// exactly like right-click drag in the main 3D view.
+pub fn orbit_controls_drag(
+    drag_region: Query<&Interaction, With<OrbitControlsDragRegion>>,
+    orbit_btns: Query<&Interaction, With<OrbitControlButton>>,
+    mouse_motion: Res<AccumulatedMouseMotion>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut drag_state: ResMut<OrbitDragState>,
+    cam_q: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
+) {
+    if buttons.just_released(MouseButton::Left) {
+        drag_state.active = false;
+        return;
+    }
+
+    // Begin a drag only when the bounding box itself is pressed and no
+    // individual orbit button is pressed (buttons sit on top of the container).
+    if buttons.just_pressed(MouseButton::Left) {
+        let any_btn_pressed = orbit_btns.iter().any(|i| *i == Interaction::Pressed);
+        let region_pressed = drag_region.iter().any(|i| *i == Interaction::Pressed);
+        if region_pressed && !any_btn_pressed {
+            drag_state.active = true;
+        }
+    }
+
+    if !drag_state.active || !buttons.pressed(MouseButton::Left) {
+        return;
+    }
+
+    let delta = mouse_motion.delta;
+    if delta == Vec2::ZERO {
+        return;
+    }
+
+    let (mut orbit_camera, render_layers) = cam_q.into_inner();
+    let camera = if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        &mut orbit_camera.scene_params
+    } else {
+        &mut orbit_camera.map_params
+    };
+
+    camera.yaw -= delta.x * camera.sensitivity;
+    camera.pitch -= delta.y * camera.sensitivity;
+    camera.pitch = camera.pitch.clamp(-camera.max_pitch, camera.max_pitch);
 }
