@@ -28,6 +28,7 @@ use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::egui::egui_plots;
+use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -54,9 +55,6 @@ use crate::ui::state::{SelectedProject, UiScreen};
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{
     ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
-    log_level_filter_interaction, sync_terminal_log_display, terminal_clear_interaction,
-    terminal_keyboard_input, terminal_row_selection_interaction, terminal_save_interaction,
-    terminal_toggle_interaction,
 };
 
 #[derive(Resource, Default)]
@@ -148,19 +146,12 @@ impl Plugin for UiPlugin {
                     (
                         project_detail_interactions,
                         collapsible_toggle_interaction,
-                        terminal_toggle_interaction,
-                        log_level_filter_interaction,
-                        terminal_clear_interaction,
-                        terminal_save_interaction,
                         catalog_interactions,
                         catalog_keyboard_input,
                         refresh_space_catalog_results,
                         sync_space_catalog_ui,
                         update_selected_catalog_overlay,
                         update_satellite_indicator_overlay,
-                        terminal_row_selection_interaction,
-                        terminal_keyboard_input,
-                        sync_terminal_log_display,
                     )
                         .chain()
                         .run_if(in_state(UiScreen::Sim)),
@@ -169,7 +160,9 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                egui_plots.run_if(in_state(UiScreen::Sim)),
+                (egui_terminal_panel, egui_plots)
+                    .chain()
+                    .run_if(in_state(UiScreen::Sim)),
             );
     }
 }
@@ -366,15 +359,12 @@ fn handle_ui_events(
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
     ui_runtime: (
         ResMut<Settings>,
-        ResMut<UserPlansDirty>,
-        ResMut<ExitConfirmPending>,
         ResMut<DataCollection>,
     ),
     mut flow: UiFlowState,
     mut log: MessageWriter<LogEvent>,
 ) {
-    let (mut settings, mut user_plans_dirty, mut exit_confirm_pending, mut data_collection) =
-        ui_runtime;
+    let (mut settings, mut data_collection) = ui_runtime;
 
     for event in ui_events.read() {
         match event {

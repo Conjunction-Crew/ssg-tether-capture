@@ -13,17 +13,14 @@ When preparing a release:
 
 ---
 
-## [v0.2.1-beta.1]
+## [v0.2.2-beta.1]
 
 ### Changed
 - Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
 - Updates docs to include information about the new capture log terminal panel and its features.
 
 ### Added
-- Capture log system and terminal panel UI for real-time logging of capture events, errors, and debug information.
-- Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
-- UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
-- Adds `.bat` and `.ps1` scripts for checking and installing prerequisites on Windows (e.g., WiX Toolset for MSI packaging)
+- Capture log system and terminal panel UI based on `egui` for real-time logging of capture events, errors, and debug information.
 
 ### Removed
 
