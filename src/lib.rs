@@ -26,6 +26,7 @@ use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
     FilteredSpaceCatalogResults, SpaceCatalogUiState, SpaceObjectCatalog,
 };
+use crate::resources::capture_log::LogEvent;
 use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
 use crate::systems::physics::FIXED_HZ;
 use crate::systems::user_input::{
@@ -135,6 +136,10 @@ pub fn create_app() -> App {
         .init_resource::<SpaceCatalogUiState>()
         .init_resource::<FilteredSpaceCatalogResults>()
         .init_resource::<Settings>();
+
+    // Register LogEvent message channel so systems using `MessageWriter<LogEvent>`
+    // are valid during startup/state transitions (tests rely on this).
+    app.add_message::<LogEvent>();
 
     app
 }
