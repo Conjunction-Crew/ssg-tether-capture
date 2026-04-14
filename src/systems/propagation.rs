@@ -1,6 +1,5 @@
 use std::f64::consts::PI;
 use std::fs;
-use std::path::PathBuf;
 
 use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode};
 use crate::components::orbit_camera::CameraTarget;
@@ -64,7 +63,7 @@ pub fn load_dataset_entities(
     world_time: Res<WorldTime>,
     gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
 ) {
-    let plans_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/datasets");
+    let plans_dir = crate::resolve_assets_dir().join("datasets");
     let mut gpu_elements = gpu_elements;
     let mut gpu_epoch_origin = gpu_epoch_origin;
     let reference_epoch = if let Some(origin) = gpu_epoch_origin.as_deref_mut() {
@@ -80,7 +79,14 @@ pub fn load_dataset_entities(
         gpu_elements.0.clear();
     }
 
-    for dataset_file_result in fs::read_dir(&plans_dir).expect("failed to read dataset dir") {
+    let dir_iter = match fs::read_dir(&plans_dir) {
+        Ok(iter) => iter,
+        Err(e) => {
+            warn!("Could not read dataset directory {plans_dir:?}: {e}");
+            return;
+        }
+    };
+    for dataset_file_result in dir_iter {
         if let Ok(dataset_file) = dataset_file_result {
             let path = dataset_file.path();
             if path
