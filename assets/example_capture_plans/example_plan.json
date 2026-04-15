@@ -1,0 +1,56 @@
+{
+  "name": "example_plan",
+  "tether": "Tether1",
+  "device": {
+    "type": "tether",
+    "tether_length": 20.0
+  },
+  "states": [
+    {
+      "id": "approach",
+      "parameters": {
+        "max_velocity": 1.0,
+        "max_force": 2.0
+      },
+      "transitions": [
+        {
+          "to": "terminal",
+          "distance": {
+            "less_than": 50.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "terminal",
+      "parameters": {
+        "max_velocity": 0.5,
+        "max_force": 2.0,
+        "shrink_rate": 0.01
+      },
+      "transitions": [
+        {
+          "to": "capture",
+          "distance": {
+            "less_than": 5.0,
+            "units": "m"
+          }
+        },
+        {
+          "to": "approach",
+          "distance": {
+            "greater_than": 50.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "capture",
+      "parameters": {
+        "max_velocity": 0.5,
+        "max_force": 2.0,
+        "shrink_rate": 0.005
+      }
+    }
+  ]
+}

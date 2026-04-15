@@ -1,0 +1,339 @@
+name: Release
+
+# Triggers on SemVer tags:
+#   v1.2.3          → production GitHub Release (latest)
+#   v1.2.3-beta.1   → pre-release GitHub Release
+#
+# Push a tag to trigger (patches and pre-releases):
+#   git tag v0.2.1 && git push origin v0.2.1
+#   git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1
+#
+# Or merge a release/* branch into main (major and minor releases):
+#   All three platform builds run and a GitHub Release is published automatically.
+#   The version is read from Cargo.toml and a matching CHANGELOG.md entry is used
+#   as the release description.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta*"
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Preflight – resolve tag name and release flags
+#
+# Runs for version tag pushes (patches + pre-releases) AND for merged PRs from
+# release/* branches (major + minor releases).  All other PR merges are ignored.
+# Outputs a normalised tag name used by every downstream job.
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  preflight:
+    name: Preflight – resolve tag
+    runs-on: ubuntu-latest
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.merged == true &&
+       startsWith(github.head_ref, 'release/'))
+    outputs:
+      tag_name:      ${{ steps.resolve.outputs.tag_name }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+      make_latest:   ${{ steps.resolve.outputs.make_latest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag name and flags
+        id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            # PR merge path: derive tag from Cargo.toml version
+            VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+            TAG="v${VERSION}"
+          fi
+          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+          if [[ "${TAG}" == *"-beta"* ]]; then
+            echo "is_prerelease=true"  >> "$GITHUB_OUTPUT"
+            echo "make_latest=false"   >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"    >> "$GITHUB_OUTPUT"
+          fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Linux build → tar.gz
+# ─────────────────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Build (Linux x86_64)
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libasound2-dev libudev-dev
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: linux-cargo-release-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package tar.gz
+        run: |
+          TAG="${{ needs.preflight.outputs.tag_name }}"
+          ARCHIVE="ssg-tether-capture-${TAG}-linux-x86_64.tar.gz"
+          mkdir -p dist
+          cp target/release/ssg_tether_capture dist/
+          cp -r assets dist/
+          tar -C dist -czf "$ARCHIVE" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ env.ARCHIVE }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Windows build → .msi
+#
+# WiX v3.11 is pre-installed on windows-latest runners at %WIX%.
+# assets/ is harvested at build time by heat.exe to avoid maintaining a
+# static file list in source control.
+# ─────────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Build (Windows x86_64)
+    needs: [preflight]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup .NET (for WiX SDK)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: windows-cargo-release-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Build MSI (dotnet / WiX SDK)
+        run: |
+          $tag = "${{ needs.preflight.outputs.tag_name }}"
+
+          # Derive MSI-safe PackageVersion: strip leading 'v' and any pre-release suffix.
+          # MSI versions must be Major.Minor.Build with no labels (e.g. "-beta.1").
+          $packageVersion = $tag -replace '^v', '' -replace '-.*$', ''
+          Write-Host "Package version: $packageVersion"
+
+          dotnet restore wix/SSG.wixproj
+          dotnet build wix/SSG.wixproj -c Release -p:PackageVersion=$packageVersion
+
+          $msiFile = Get-ChildItem -Path . -Recurse -Filter "*.msi" | Select-Object -First 1
+          if ($msiFile) {
+            $destName = "ssg-tether-capture-${tag}-windows-x86_64.msi"
+            $destPath = Join-Path (Split-Path $msiFile.FullName) $destName
+            if ($msiFile.FullName -ne $destPath) {
+              Copy-Item -Path $msiFile.FullName -Destination $destPath -Force
+            }
+            Add-Content -Path $env:GITHUB_ENV -Value "MSI=$destPath"
+          } else {
+            Write-Error "MSI not found after dotnet build."
+            exit 1
+          }
+
+      - name: Windows MSI Debug info
+        shell: pwsh
+        run: |
+          Write-Host "Contents of wix directory:"
+          if (Test-Path wix) { Get-ChildItem wix -Recurse -Force | ForEach-Object { Write-Host $_.FullName } } else { Write-Host "wix directory not found" }
+          Write-Host "Artifacts in target\\release:"
+          if (Test-Path target\\release) { Get-ChildItem target\\release -Recurse | ForEach-Object { Write-Host $_.FullName } } else { Write-Host "target\\release not found" }
+          Write-Host "GITHUB_ENV preview:"
+          if (Test-Path $env:GITHUB_ENV) { Get-Content $env:GITHUB_ENV } else { Write-Host "GITHUB_ENV not found" }
+          if (!(Test-Path $env:MSI)) { Write-Error "MSI not found: $env:MSI"; exit 1 } else { Write-Host "MSI exists: $env:MSI" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ env.MSI }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# macOS build → .dmg
+#
+# cargo-bundle creates a .app with the binary + assets inside Contents/Resources/.
+# hdiutil (built-in) wraps the .app in a compressed DMG ready for distribution.
+# The macOS CWD fix in src/main.rs ensures Bevy finds assets/ at runtime.
+#
+# NOTE: The .app is ad-hoc unsigned. Users on macOS 13+ must right-click → Open
+# to bypass Gatekeeper on first launch. Add Apple Developer ID signing here when
+# a certificate is available.
+# ─────────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build (macOS ARM64)
+    needs: [preflight]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: macos-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-cargo-release-
+
+      - name: Install cargo-bundle
+        run: |
+          if ! cargo-bundle --version 2>/dev/null | grep -qF "0.6.1"; then
+            cargo install cargo-bundle --version "0.6.1" --force
+          fi
+
+      - name: Build and bundle .app
+        run: cargo bundle --release
+
+      - name: macOS bundle debug
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          echo "Listing bundle directory:"
+          ls -la "target/release/bundle" || true
+          echo "Contents of app Contents/MacOS:"
+          ls -la "$APP_PATH/Contents/MacOS" || true
+          if [ -f "$APP_PATH/Contents/MacOS/ssg_tether_capture" ]; then
+            file "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+            otool -L "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+          else
+            echo "Binary not found inside app bundle!"
+            exit 1
+          fi
+          uname -m
+
+      - name: Ad-hoc sign .app
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          # Ad-hoc signing (-) does not require an Apple Developer account but
+          # prevents Gatekeeper from treating the app as "damaged and can't be
+          # opened" when downloaded from the internet (quarantine xattr).
+          # Without any signature, macOS 13+ blocks the app unconditionally.
+          # With an ad-hoc signature, users see "unverified developer" instead
+          # and can bypass it via right-click → Open.
+          # Sign the binary first, then the bundle wrapper (order matters).
+          codesign --force --deep --sign - \
+            --options runtime \
+            "$APP_PATH/Contents/MacOS/ssg_tether_capture"
+          codesign --force --deep --sign - \
+            --options runtime \
+            "$APP_PATH"
+          codesign --verify --verbose "$APP_PATH"
+
+      - name: Package DMG
+        run: |
+          TAG="${{ needs.preflight.outputs.tag_name }}"
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          # Determine runner architecture for DMG naming
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH_LABEL="x86_64" ;;
+            arm64) ARCH_LABEL="arm64" ;;
+            *) ARCH_LABEL="$ARCH" ;;
+          esac
+          DMG="ssg-tether-capture-${TAG}-macos-${ARCH_LABEL}.dmg"
+
+          hdiutil create \
+            -volname "SSG Tether Capture" \
+            -srcfolder "$APP_PATH" \
+            -ov -format UDZO \
+            "$DMG"
+
+          if [ ! -f "$DMG" ]; then
+            echo "DMG not created!"
+            ls -la
+            exit 1
+          fi
+
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ env.DMG }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Publish GitHub Release
+# ─────────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [preflight, build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+
+      - name: Show downloaded artifacts
+        run: |
+          echo "Artifacts content:"
+          ls -R artifacts || true
+          find artifacts -type f -maxdepth 4 -print || true
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          VERSION="${{ needs.preflight.outputs.tag_name }}"
+          VERSION="${VERSION#v}"
+          BODY=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "## [" ver "]") > 0) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "body<<${EOF}" >> "$GITHUB_OUTPUT"
+          echo "${BODY}"      >> "$GITHUB_OUTPUT"
+          echo "${EOF}"       >> "$GITHUB_OUTPUT"
+
+      - uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.preflight.outputs.tag_name }}
+          artifacts: "artifacts/*"
+          body: ${{ steps.changelog.outputs.body }}
+          prerelease: ${{ needs.preflight.outputs.is_prerelease }}
+          makeLatest: ${{ needs.preflight.outputs.make_latest }}

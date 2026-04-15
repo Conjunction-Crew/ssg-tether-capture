@@ -1,0 +1,176 @@
+name: Packaging Test
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    name: Build (Linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-packaging-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: linux-packaging-test-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package tar.gz
+        run: |
+          TAG="${{ github.run_id }}"
+          ARCHIVE="ssg-tether-capture-${TAG}-linux-x86_64.tar.gz"
+          mkdir -p dist
+          cp target/release/ssg_tether_capture dist/ || true
+          cp -r assets dist/ || true
+          tar -C dist -czf "$ARCHIVE" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ env.ARCHIVE }}
+
+  build-windows:
+    name: Build (Windows x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup .NET (for WiX SDK)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-packaging-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: windows-packaging-test-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Build MSI (dotnet / WiX SDK)
+        shell: pwsh
+        run: |
+          $tag = "${{ github.run_id }}"
+          $msi = ""
+
+          # Restore and build the SDK-style WiX project. The SSG.wixproj includes main.wxs/main_v7.wix or assets.
+          dotnet restore wix/SSG.wixproj
+          dotnet build wix/SSG.wixproj -c Release
+
+          # locate the produced MSI
+          $msiFile = Get-ChildItem -Path . -Recurse -Filter "*.msi" | Select-Object -First 1
+          if ($msiFile) {
+            $msi = $msiFile.FullName
+            Write-Host "Built MSI: $msi"
+            Add-Content -Path $env:GITHUB_ENV -Value "MSI=$msi"
+          } else {
+            Write-Error "MSI not found after dotnet build."
+            exit 1
+          }
+
+      - name: Windows MSI Debug info
+        shell: pwsh
+        run: |
+          Write-Host "GITHUB_ENV preview:"
+          if (Test-Path $env:GITHUB_ENV) { Get-Content $env:GITHUB_ENV } else { Write-Host "GITHUB_ENV not found" }
+          if (!(Test-Path $env:MSI)) { Write-Error "MSI not found: $env:MSI"; exit 1 } else { Write-Host "MSI exists: $env:MSI" }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ env.MSI }}
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: macos-packaging-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-packaging-test-
+
+      - name: Install cargo-bundle
+        run: |
+          if ! cargo-bundle --version 2>/dev/null | grep -qF "0.6.1"; then
+            cargo install cargo-bundle --version "0.6.1" --force
+          fi
+
+      - name: Build and bundle .app
+        run: cargo bundle --release
+
+      - name: macOS bundle debug
+        run: |
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          echo "Listing bundle dir:"
+          ls -la "target/release/bundle" || true
+          ls -la "$APP_PATH/Contents/MacOS" || true
+          if [ -f "$APP_PATH/Contents/MacOS/ssg_tether_capture" ]; then
+            file "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+            otool -L "$APP_PATH/Contents/MacOS/ssg_tether_capture" || true
+          else
+            echo "Binary not found inside app bundle!"
+            exit 1
+          fi
+
+      - name: Package DMG
+        run: |
+          TAG="${{ github.run_id }}"
+          APP_PATH="target/release/bundle/osx/SSG Tether Capture.app"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH_LABEL="x86_64" ;;
+            arm64) ARCH_LABEL="arm64" ;;
+            *) ARCH_LABEL="$ARCH" ;;
+          esac
+          DMG="ssg-tether-capture-${TAG}-macos-${ARCH_LABEL}.dmg"
+
+          hdiutil create \
+            -volname "SSG Tether Capture" \
+            -srcfolder "$APP_PATH" \
+            -ov -format UDZO \
+            "$DMG"
+
+          if [ ! -f "$DMG" ]; then
+            echo "DMG not created!"
+            ls -la
+            exit 1
+          fi
+
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ env.DMG }}

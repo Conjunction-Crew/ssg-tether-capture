@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 120 120">
+  <!-- Generator: Adobe Illustrator 30.0.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 123)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #0a0f1e;
+      }
+
+      .st1 {
+        stroke-width: 12px;
+      }
+
+      .st1, .st2, .st3, .st4, .st5, .st6, .st7, .st8, .st9, .st10, .st11, .st12, .st13, .st14, .st15, .st16, .st17, .st18, .st19, .st20 {
+        isolation: isolate;
+      }
+
+      .st1, .st2, .st4, .st21, .st6, .st7, .st22, .st14, .st18, .st19, .st20 {
+        fill: none;
+      }
+
+      .st1, .st2, .st13, .st17 {
+        opacity: .2;
+      }
+
+      .st1, .st2, .st18 {
+        stroke: #22c55e;
+      }
+
+      .st1, .st22 {
+        stroke-miterlimit: 4;
+      }
+
+      .st2 {
+        stroke-width: 12px;
+      }
+
+      .st3 {
+        fill: #22c55e;
+        opacity: .3;
+      }
+
+      .st4 {
+        stroke-width: .6px;
+      }
+
+      .st4, .st9, .st15 {
+        opacity: .7;
+      }
+
+      .st4, .st14, .st19, .st20 {
+        stroke: #60a5fa;
+      }
+
+      .st5 {
+        fill: #10b981;
+      }
+
+      .st5, .st11 {
+        opacity: .8;
+      }
+
+      .st23 {
+        fill: url(#radial-gradient);
+      }
+
+      .st21 {
+        stroke: url(#linear-gradient1);
+        stroke-linecap: round;
+        stroke-width: 5px;
+      }
+
+      .st21, .st22 {
+        stroke-dasharray: 8 4;
+      }
+
+      .st6, .st7 {
+        stroke: #93c5fd;
+      }
+
+      .st6, .st14 {
+        opacity: .5;
+      }
+
+      .st6, .st14, .st20 {
+        stroke-width: .4px;
+      }
+
+      .st7 {
+        stroke-width: .3px;
+      }
+
+      .st7, .st18 {
+        opacity: .4;
+      }
+
+      .st8 {
+        opacity: .9;
+      }
+
+      .st8, .st9, .st10, .st11, .st12, .st13 {
+        fill: #60a5fa;
+      }
+
+      .st10 {
+        opacity: .8;
+      }
+
+      .st12 {
+        opacity: .2;
+      }
+
+      .st22 {
+        stroke: url(#linear-gradient);
+        stroke-width: 5px;
+      }
+
+      .st15, .st16, .st17 {
+        fill: #93c5fd;
+      }
+
+      .st16, .st19, .st20 {
+        opacity: .6;
+      }
+
+      .st18 {
+        stroke-width: 1.5px;
+      }
+
+      .st19 {
+        stroke-width: .5px;
+      }
+    </style>
+    <linearGradient id="linear-gradient" x1="-875.9" y1="599.2" x2="-874.9" y2="598.2" gradientTransform="translate(-17900.8 38551.8) rotate(90) scale(44 -30)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset=".5" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient1" x1="-857.6" y1="591.4" x2="-856.6" y2="590.4" gradientTransform="translate(18612.7 29621) scale(21.7 -50)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset=".5" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient" cx="-808.6" cy="552.6" fx="-808.6" fy="552.6" r=".5" gradientTransform="translate(8126 5576) scale(10 -10)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#059669"/>
+    </radialGradient>
+  </defs>
+  <rect class="st0" x="0" y="0" width="120" height="120" rx="8" ry="8"/>
+  <line class="st19" x1="15" y1="12" x2="15" y2="28"/>
+  <line class="st19" x1="7" y1="20" x2="23" y2="20"/>
+  <circle class="st11" cx="15" cy="20" r="3"/>
+  <circle class="st12" cx="15" cy="20" r="6"/>
+  <line class="st6" x1="100" y1="18" x2="100" y2="32"/>
+  <line class="st6" x1="93" y1="25" x2="107" y2="25"/>
+  <circle class="st15" cx="100" cy="25" r="2.5"/>
+  <circle class="st17" cx="100" cy="25" r="5"/>
+  <line class="st4" x1="90" y1="76" x2="90" y2="94"/>
+  <line class="st4" x1="81" y1="85" x2="99" y2="85"/>
+  <circle class="st8" cx="90" cy="85" r="3.5"/>
+  <circle class="st12" cx="90" cy="85" r="7"/>
+  <line class="st6" x1="20" y1="89" x2="20" y2="101"/>
+  <line class="st6" x1="14" y1="95" x2="26" y2="95"/>
+  <circle class="st16" cx="20" cy="95" r="2"/>
+  <circle class="st17" cx="20" cy="95" r="4"/>
+  <line class="st14" x1="105" y1="53" x2="105" y2="67"/>
+  <line class="st14" x1="98" y1="60" x2="112" y2="60"/>
+  <circle class="st9" cx="105" cy="60" r="2.5"/>
+  <circle class="st12" cx="105" cy="60" r="5"/>
+  <line class="st7" x1="25" y1="44" x2="25" y2="56"/>
+  <line class="st7" x1="19" y1="50" x2="31" y2="50"/>
+  <circle class="st16" cx="25" cy="50" r="1.8"/>
+  <circle class="st17" cx="25" cy="50" r="3.5"/>
+  <line class="st20" x1="85" y1="9" x2="85" y2="21"/>
+  <line class="st20" x1="79" y1="15" x2="91" y2="15"/>
+  <circle class="st10" cx="85" cy="15" r="2.2"/>
+  <circle class="st13" cx="85" cy="15" r="4.5"/>
+  <ellipse class="st1" cx="60" cy="35" rx="15" ry="22" transform="translate(2.9 74.6) rotate(-65)"/>
+  <path class="st2" d="M40,50c-6.7,10-8.3,20-5,30,3.3,10,10,16.7,20,20"/>
+  <ellipse class="st22" cx="60" cy="35" rx="15" ry="22" transform="translate(2.9 74.6) rotate(-65)"/>
+  <path class="st21" d="M40,50c-6.7,10-8.3,20-5,30,3.3,10,10,16.7,20,20"/>
+  <circle class="st23" cx="40" cy="50" r="5"/>
+  <circle class="st3" cx="40" cy="50" r="5"/>
+  <circle class="st18" cx="40" cy="50" r="8"/>
+  <circle class="st5" cx="60" cy="34" r="2">
+    <animate accumulate="none" additive="replace" attributeName="opacity" calcMode="linear" dur="2s" fill="remove" repeatCount="indefinite" restart="always" values="0.3;1;0.3"/>
+  </circle>
+</svg>

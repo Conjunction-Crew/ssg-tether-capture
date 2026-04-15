@@ -1,15 +1,6 @@
-use bevy::prelude::*;
-
+/// This is the main entrypoint for the application.
+/// Shared logic between the app and test environments
+/// can be found in lib.rs
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.build())
-        .run();
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test1() {
-        assert!(true);
-    }
+    ssg_tether_capture::run();
 }

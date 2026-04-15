@@ -1,0 +1,38 @@
+# cargo-release configuration for ssg-tether-capture (cargo-release v1.x format)
+#
+# NOTE: cargo-release v1.x uses top-level keys — do NOT wrap these in a
+# [release] section; that header is silently ignored in v1.x.
+#
+# IMPORTANT: tag and push are disabled so that maintainers control exactly
+# when a tag (and therefore the release workflow) is created and pushed.
+# Maintainers run `cargo release <level>` locally on a release branch to
+# bump Cargo.toml and version the docs, then open a PR for review.  Once
+# the PR is merged they push the annotated tag manually:
+#
+#   git tag v<version>
+#   git push origin v<version>
+#
+# That tag push is the ONLY trigger for release.yml (build + GitHub Release)
+# and deploy-docs.yml (docs-site deploy).  Nothing runs automatically until
+# that intentional push.
+
+# Never publish to crates.io — this is a binary-only crate.
+publish = false
+
+# Do NOT create or push a git tag automatically.
+tag = false
+push = false
+
+# cargo-release will still commit the Cargo.toml version bump and any files
+# touched by the hooks below using the default commit message.
+# Override the commit message template if desired:
+# pre-release-commit-message = "chore: release {{version}}"
+
+# Verify that the version was bumped and CHANGELOG.md is updated before
+# cargo-release proceeds.  Runs in the maintainer's local environment.
+pre-release-hook = ["./scripts/verify_release_pr.sh"]
+
+# NOTE: cargo-release has no post-release-hook. Use ./scripts/do_release.sh
+# instead of invoking cargo-release directly — it chains cargo-release and
+# post_release.sh automatically so versioned docs are created without an
+# extra manual step.

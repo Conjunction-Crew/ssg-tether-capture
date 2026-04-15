@@ -1,7 +1,46 @@
 [package]
 name = "ssg_tether_capture"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+description = "Orbital tether capture simulation and mission planning."
+license = "MIT"
+repository = "https://github.com/Conjunction-Crew/ssg-tether-capture"
+homepage = "https://conjunction-crew.github.io/ssg-tether-capture/"
+publish = false
 
 [dependencies]
-bevy = "0.18.0"
+bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
+avian3d = { version = "0.6.1", default-features = false, features = ["simd", "parallel", "3d", "f64", "parry-f64", "xpbd_joints", "collider-from-mesh", "bevy_scene"] }
+ndarray = { version = "0.16.1" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149" }
+brahe = { version = "1.1.4" }
+nalgebra = { version = "0.34.1" }
+rfd = { version = "0.15" }
+arboard = { version = "3" }
+dirs = { version = "5" }
+
+[patch.crates-io]
+bevy = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_math = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_reflect = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+bevy_reflect_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
+
+[[bin]]
+name = "ssg_tether_capture"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[package.metadata.bundle]
+name = "SSG Tether Capture"
+identifier = "com.conjunction-crew.ssg-tether-capture"
+resources = ["assets"]
+short_description = "Orbital tether capture simulation and mission planning."
+icon = ["assets/logo/icon.icns"]
