@@ -1,8 +1,6 @@
-use avian3d::{
-    PhysicsPlugins,
-    prelude::{PhysicsSchedule, PhysicsSystems},
-};
+use avian3d::{PhysicsPlugins, prelude::PhysicsSystems};
 use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
+use brahe::Epoch;
 
 use crate::{
     resources::{
@@ -14,8 +12,8 @@ use crate::{
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            cache_eci_states, floating_origin_update_visuals, init_orbitals, load_dataset_entities,
-            physics_bubble_add_remove, target_entity_reset_origin,
+            cache_eci_states, calculate_com_rv, floating_origin_update_visuals, init_orbitals,
+            load_dataset_entities, physics_bubble_add_remove, target_entity_reset_origin,
         },
     },
     ui::state::UiScreen,
@@ -31,7 +29,7 @@ impl Plugin for OrbitalMechanicsPlugin {
         app.add_plugins(PhysicsPlugins::new(ManualPhysics))
             .add_systems(
                 OnEnter(UiScreen::Sim),
-                (init_sim_resources, load_dataset_entities).chain(),
+                (init_sim_resources, load_dataset_entities, setup_time).chain(),
             )
             .add_systems(OnExit(UiScreen::Sim), remove_sim_resources)
             .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
@@ -46,12 +44,15 @@ impl Plugin for OrbitalMechanicsPlugin {
             )
             .add_systems(
                 ManualPhysics,
-                (
-                    (cache_eci_states).in_set(PhysicsSystems::First),
-                    (physics_bubble_add_remove, target_entity_reset_origin)
-                        .in_set(PhysicsSystems::Prepare),
-                    (capture_state_machine_update).in_set(PhysicsSystems::Last),
+                ((
+                    calculate_com_rv,
+                    target_entity_reset_origin,
+                    cache_eci_states,
+                    physics_bubble_add_remove,
+                    capture_state_machine_update,
                 )
+                    .chain()
+                    .in_set(PhysicsSystems::Last),)
                     .run_if(in_state(UiScreen::Sim)),
             );
     }
@@ -69,4 +70,9 @@ fn remove_sim_resources(mut commands: Commands) {
     commands.remove_resource::<OrbitalCache>();
     commands.remove_resource::<WorldTime>();
     commands.remove_resource::<CaptureSphereRadius>();
+}
+
+pub fn setup_time(mut world_time: ResMut<WorldTime>) {
+    world_time.start_epoch = Epoch::now();
+    world_time.epoch = Epoch::now();
 }

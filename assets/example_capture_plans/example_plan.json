@@ -7,6 +7,21 @@
   },
   "states": [
     {
+      "id": "rendezvous",
+      "parameters": {
+        "max_velocity": 5.0,
+        "max_force": 5.0
+      },
+      "transitions": [
+        {
+          "to": "approach",
+          "distance": {
+            "less_than": 200.0
+          }
+        }
+      ]
+    },
+    {
       "id": "approach",
       "parameters": {
         "max_velocity": 1.0,

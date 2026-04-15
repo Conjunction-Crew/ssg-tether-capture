@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 use std::fs;
 
-use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode};
+use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode, TetherRoot};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
@@ -11,7 +11,7 @@ use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
 
-use avian3d::prelude::{Collider, RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
@@ -20,41 +20,47 @@ use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, GM_EARTH, KeplerianPropagator, TimeSystem};
 use nalgebra::{DVector, Vector6};
 
-fn calculate_com_rv(
-    target_entity: Entity,
-    rigidbodies: &Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
-    nodes: &Query<(Entity, &TetherNode)>,
-) -> Option<(DVec3, DVec3)> {
-    let Ok(target_rb) = rigidbodies.get(target_entity) else {
-        return None;
-    };
-
-    let mut weighted_pos = (target_rb.position.0
-        + target_rb.rotation.0 * target_rb.center_of_mass.0)
-        * target_rb.mass.value();
-    let mut weighted_linvel = target_rb.linear_velocity.0 * target_rb.mass.value();
-    let mut total_mass = target_rb.mass.value();
-
-    for (node_entity, node) in nodes.iter() {
-        if node.root != target_entity {
-            continue;
-        }
-
-        let Ok(node_rb) = rigidbodies.get(node_entity) else {
+pub fn calculate_com_rv(
+    entities: Query<Entity, With<TetherRoot>>,
+    rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
+    nodes: Query<(Entity, &TetherNode)>,
+    mut orbital_cache: ResMut<OrbitalCache>,
+) {
+    for entity in entities {
+        let Ok(target_rb) = rigidbodies.get(entity) else {
             continue;
         };
 
-        weighted_pos += (node_rb.position.0 + node_rb.rotation.0 * node_rb.center_of_mass.0)
-            * node_rb.mass.value();
-        weighted_linvel += node_rb.linear_velocity.0 * node_rb.mass.value();
-        total_mass += node_rb.mass.value();
-    }
+        let mut weighted_pos = (target_rb.position.0
+            + target_rb.rotation.0 * target_rb.center_of_mass.0)
+            * target_rb.mass.value();
+        let mut weighted_linvel = target_rb.linear_velocity.0 * target_rb.mass.value();
+        let mut total_mass = target_rb.mass.value();
 
-    if total_mass <= 0.0 {
-        return None;
-    }
+        for (node_entity, node) in nodes.iter() {
+            if node.root != entity {
+                continue;
+            }
 
-    Some((weighted_pos / total_mass, weighted_linvel / total_mass))
+            let Ok(node_rb) = rigidbodies.get(node_entity) else {
+                continue;
+            };
+
+            weighted_pos += (node_rb.position.0 + node_rb.rotation.0 * node_rb.center_of_mass.0)
+                * node_rb.mass.value();
+            weighted_linvel += node_rb.linear_velocity.0 * node_rb.mass.value();
+            total_mass += node_rb.mass.value();
+        }
+
+        if total_mass <= 0.0 {
+            continue;
+        }
+
+        orbital_cache.com_rv.insert(
+            entity,
+            (weighted_pos / total_mass, weighted_linvel / total_mass),
+        );
+    }
 }
 
 pub fn load_dataset_entities(
@@ -268,7 +274,6 @@ fn parse_dataset_epoch_fast(raw: &str) -> Option<Epoch> {
 
 pub fn init_orbitals(
     mut commands: Commands,
-    mut orbital_entities: ResMut<OrbitalCache>,
     mut q: Query<(Entity, &Orbit, &mut Orbital), Added<Orbit>>,
 ) {
     for (entity, init, mut orbital) in &mut q {
@@ -362,27 +367,23 @@ pub fn floating_origin_update_visuals(
 pub fn target_entity_reset_origin(
     mut true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
     mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
-    nodes: Query<(Entity, &TetherNode)>,
     target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
     world_time: Res<WorldTime>,
+    orbital_cache: Res<OrbitalCache>,
 ) {
     let Ok(target_entity) = target_entity_q.single() else {
         return;
     };
 
-    let Ok(target_rb) = rigidbodies.get(target_entity) else {
+    let Some((com_r, com_v)) = orbital_cache.com_rv.get(&target_entity) else {
         return;
     };
 
-    if target_rb.position.0.length() <= MAX_ORIGIN_OFFSET {
+    if com_r.length() <= MAX_ORIGIN_OFFSET {
         return;
     }
 
     println!("RESETTING! EPOCH: {}", world_time.epoch);
-
-    let Some((com_r, com_v)) = calculate_com_rv(target_entity, &rigidbodies, &nodes) else {
-        return;
-    };
 
     // Accumulate current linvel and position into rigidbodies
     println!("Num to reset: {}", true_params_query.iter().len());

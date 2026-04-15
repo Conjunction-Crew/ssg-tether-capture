@@ -4,8 +4,9 @@ use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraPara
 use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
 use crate::create_app;
 use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
+use crate::resources::data_collection::DataCollection;
 use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::world_time::{self, WorldTime};
+use crate::resources::world_time::WorldTime;
 use crate::systems::physics::fixed_physics_step;
 use crate::ui::state::UiScreen;
 use avian3d::collider_tree::ColliderTreeDiagnostics;
@@ -37,6 +38,7 @@ fn test_app() -> App {
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
     .init_resource::<ColliderTreeDiagnostics>()
+    .init_resource::<DataCollection>()
     .init_resource::<WorldTime>();
     app
 }
@@ -102,7 +104,6 @@ fn apply_force_to_target() {
     let capture_body = app
         .world_mut()
         .spawn((
-            CameraTarget,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(40.0, 40.0, 40.0),
@@ -145,8 +146,7 @@ fn apply_force_to_target() {
 
     // Now, mark the entity for capture
     app.world_mut()
-        .commands()
-        .entity(capture_body)
+        .entity_mut(capture_body)
         .insert(CaptureComponent {
             plan_id: plan.id.clone(),
             current_state: plan

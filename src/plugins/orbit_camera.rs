@@ -1,7 +1,7 @@
 use bevy::prelude::*;
+use bevy::transform::TransformSystems;
 
 use crate::systems::orbit_camera::*;
-use crate::systems::propagation::floating_origin_update_visuals;
 use crate::ui::state::UiScreen;
 
 pub struct OrbitCameraPlugin;
@@ -15,7 +15,7 @@ impl Plugin for OrbitCameraPlugin {
         .add_systems(
             PostUpdate,
             orbit_camera_track
-                .after(floating_origin_update_visuals)
+                .before(TransformSystems::Propagate)
                 .run_if(in_state(UiScreen::Sim)),
         );
     }

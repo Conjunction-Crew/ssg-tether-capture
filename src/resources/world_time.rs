@@ -5,6 +5,7 @@ use brahe::Epoch;
 pub struct WorldTime {
     pub multiplier: u32,
     pub epoch: Epoch,
+    pub start_epoch: Epoch,
 }
 
 impl Default for WorldTime {
@@ -12,6 +13,7 @@ impl Default for WorldTime {
         Self {
             multiplier: 1,
             epoch: Epoch::now(),
+            start_epoch: Epoch::now(),
         }
     }
 }
