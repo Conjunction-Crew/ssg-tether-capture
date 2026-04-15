@@ -13,6 +13,20 @@ When preparing a release:
 
 ---
 
+## [v0.2.2-beta.1]
+
+### Changed
+- Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
+- Updates docs to include information about the new capture log terminal panel and its features.
+
+### Added
+- Capture log system and terminal panel UI for real-time logging of capture events, errors, and debug information.
+- Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
+
+### Removed
+
+---
+
 ## [0.2.0-beta.6]
 
 ### Changed
@@ -26,14 +40,19 @@ When preparing a release:
 
 ### Changed
 - Updated release workflow and scripts to resolve issues with the Windows version of the app and improved the MSI installer
+- Updated orbit controls to support holding Ctrl + mouse drag for orbiting in the 3D view
 - Updated `post_release.sh` script to only trigger versioned docs for major and minor releases and limit versioned docs to last 10 releases
 - Changes favicon for the docs site and updates the metadata used for link previews
 
 ### Added
 - Adds `.bat` and `.ps1` scripts for checking and installing prerequisites on Windows (e.g., WiX Toolset for MSI packaging)
 - Adds assets for the Windows MSI installer banner and dialog backgrounds
+- UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
+
+### Removed
 
 ---
+
 
 ## [0.2.0-beta.1] - 2026-04-10
 

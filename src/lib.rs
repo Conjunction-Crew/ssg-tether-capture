@@ -21,6 +21,7 @@ use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::gpu_compute::GpuComputePlugin;
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
 use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
+use crate::resources::capture_log::LogEvent;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
@@ -135,6 +136,10 @@ pub fn create_app() -> App {
         .init_resource::<SpaceCatalogUiState>()
         .init_resource::<FilteredSpaceCatalogResults>()
         .init_resource::<Settings>();
+
+    // Register LogEvent message channel so systems using `MessageWriter<LogEvent>`
+    // are valid during startup/state transitions (tests rely on this).
+    app.add_message::<LogEvent>();
 
     app
 }

@@ -7,6 +7,7 @@ use bevy::{math::DVec3, prelude::*, state::commands};
 use crate::{
     components::capture_components::CaptureComponent,
     resources::{
+        capture_log::{LogEvent, LogLevel},
         capture_plans::{
             CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePlan,
             CompiledCaptureStateParameters, CompiledCaptureTransition,
@@ -27,6 +28,7 @@ pub fn capture_state_machine_update(
     orbital_cache: Res<OrbitalCache>,
     mut data_collection: ResMut<DataCollection>,
     world_time: Res<WorldTime>,
+    mut log_events: MessageWriter<LogEvent>,
 ) {
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
@@ -51,24 +53,29 @@ pub fn capture_state_machine_update(
             if let Some(nodes) = orbital_cache.tethers.get(&plan.tether) {
                 let root_capture_radius = capture_sphere_radius.radius;
 
-                let shared_state_parameters = nodes
-                    .first()
-                    .and_then(|&root_node| {
-                        rb_forces.p0().get(root_node).ok().map(|root_rb| {
-                            let root_rel_r = capture_entity_position.0 - root_rb.position.0;
-                            let root_rel_v = root_rb.linear_velocity.0 - capture_entity_linvel.0;
-                            resolve_root_state(
-                                &mut capture_component,
-                                plan,
-                                root_rel_r.length(),
-                                root_rel_v.length(),
-                                &mut capture_sphere_radius,
-                            )
-                        })
+                // Compute root-relative position/velocity first so that the
+                // rb_forces.p0() borrow is fully released before calling
+                // resolve_root_state (which needs &mut log_events).
+                let root_rv: Option<(f64, f64)> = nodes.first().and_then(|&root_node| {
+                    rb_forces.p0().get(root_node).ok().map(|root_rb| {
+                        let r = capture_entity_position.0 - root_rb.position.0;
+                        let v = root_rb.linear_velocity.0 - capture_entity_linvel.0;
+                        (r.length(), v.length())
                     })
-                    .unwrap_or_else(|| {
-                        current_state_parameters(plan, &capture_component.current_state)
-                    });
+                });
+
+                let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
+                    resolve_root_state(
+                        &mut capture_component,
+                        plan,
+                        r_len,
+                        v_len,
+                        &mut capture_sphere_radius,
+                        &mut log_events,
+                    )
+                } else {
+                    current_state_parameters(plan, &capture_component.current_state)
+                };
 
                 let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
 
@@ -151,6 +158,14 @@ pub fn capture_state_machine_update(
                         node_forces.apply_force(force_vec.normalize() * max_force);
                     } else {
                         println!("Faled to apply force for node");
+                        log_events.write(LogEvent {
+                            level: LogLevel::Warn,
+                            source: "capture",
+                            message: format!(
+                                "Failed to apply force to tether node {} (RigidBody unavailable)",
+                                idx
+                            ),
+                        });
                     };
                 }
             } else {
@@ -161,6 +176,14 @@ pub fn capture_state_machine_update(
                     plan.tether,
                     orbital_cache.tethers.keys().collect::<Vec<_>>()
                 );
+                log_events.write(LogEvent {
+                    level: LogLevel::Error,
+                    source: "capture",
+                    message: format!(
+                        "Tether '{}' not found for plan '{}'",
+                        plan.tether, capture_component.plan_id
+                    ),
+                });
             }
         } else {
             warn!(
@@ -168,6 +191,14 @@ pub fn capture_state_machine_update(
                 capture_component.plan_id
             );
             commands.entity(capture_entity).remove::<CaptureComponent>();
+            log_events.write(LogEvent {
+                level: LogLevel::Error,
+                source: "capture",
+                message: format!(
+                    "Compiled plan '{}' not found — capture aborted",
+                    capture_component.plan_id
+                ),
+            });
         }
     }
 }
@@ -187,6 +218,7 @@ fn resolve_root_state(
     rel_r_length: f64,
     rel_v_length: f64,
     capture_sphere_radius: &mut CaptureSphereRadius,
+    log_events: &mut MessageWriter<LogEvent>,
 ) -> CompiledCaptureStateParameters {
     let Some(&start_index) = plan.state_indices.get(&capture_component.current_state) else {
         return CompiledCaptureStateParameters::default();
@@ -208,7 +240,13 @@ fn resolve_root_state(
         }
 
         for transition in &state.transitions {
-            apply_transition(capture_component, transition, rel_r_length, rel_v_length);
+            apply_transition(
+                capture_component,
+                transition,
+                rel_r_length,
+                rel_v_length,
+                log_events,
+            );
         }
     }
 
@@ -220,13 +258,15 @@ fn apply_transition(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
+    log_events: &mut MessageWriter<LogEvent>,
 ) {
     if let Some(limit) = transition.distance_less_than {
         if rel_r_length < limit {
             transition_to(
                 capture_component,
                 &transition.to,
-                format!("distance {} < {}", rel_r_length, limit),
+                format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
+                log_events,
             );
         }
     }
@@ -236,7 +276,8 @@ fn apply_transition(
             transition_to(
                 capture_component,
                 &transition.to,
-                format!("distance {} > {}", rel_r_length, limit),
+                format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
+                log_events,
             );
         }
     }
@@ -246,7 +287,8 @@ fn apply_transition(
             transition_to(
                 capture_component,
                 &transition.to,
-                format!("velocity {} < {}", rel_v_length, limit),
+                format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
+                log_events,
             );
         }
     }
@@ -256,14 +298,28 @@ fn apply_transition(
             transition_to(
                 capture_component,
                 &transition.to,
-                format!("velocity {} > {}", rel_v_length, limit),
+                format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
+                log_events,
             );
         }
     }
 }
 
-fn transition_to(capture_component: &mut CaptureComponent, new_state: &str, reason: String) {
+fn transition_to(
+    capture_component: &mut CaptureComponent,
+    new_state: &str,
+    reason: String,
+    log_events: &mut MessageWriter<LogEvent>,
+) {
     println!("Transition: {}, Reason: {}", new_state, reason);
+    log_events.write(LogEvent {
+        level: LogLevel::Info,
+        source: "capture",
+        message: format!(
+            "State: {} → {} ({})",
+            capture_component.current_state, new_state, reason
+        ),
+    });
     capture_component.current_state = String::from(new_state);
     capture_component.state_enter_time_s = 0.0;
     capture_component.state_elapsed_time_s = 0.0;

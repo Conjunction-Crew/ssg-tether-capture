@@ -272,3 +272,74 @@ fn floating_origin_resets() {
     // Expect position to have been reset
     assert!(reset_transform.length() < 1.0);
 }
+
+// ─── Capture Log integration tests (A4) ──────────────────────────────────────
+
+use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEvent, LogLevel};
+use crate::ui::plugin::collect_log_events;
+
+/// Build a minimal app wired up to test `collect_log_events`.
+fn log_test_app() -> App {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .add_message::<LogEvent>()
+        .init_resource::<CaptureLog>()
+        .init_resource::<CaptureLogUiState>()
+        .init_resource::<WorldTime>()
+        .add_systems(Update, collect_log_events);
+    app
+}
+
+#[test]
+fn collect_log_events_appends_to_capture_log() {
+    let mut app = log_test_app();
+
+    // Emit one LogEvent via a startup system before the Update tick.
+    app.add_systems(Startup, |mut writer: MessageWriter<LogEvent>| {
+        writer.write(LogEvent {
+            level: LogLevel::Info,
+            source: "test",
+            message: "hello".to_string(),
+        });
+    });
+
+    app.update(); // Startup runs, then Update (collect_log_events) runs.
+
+    let log = app.world().resource::<CaptureLog>();
+    assert_eq!(log.entries.len(), 1);
+    assert_eq!(log.entries[0].level, LogLevel::Info);
+    assert_eq!(log.entries[0].source, "test");
+    assert_eq!(log.entries[0].message, "hello");
+}
+
+#[test]
+fn collect_log_events_respects_ring_buffer_limit() {
+    let mut app = log_test_app();
+
+    // Override default max_entries to something small for the test.
+    app.world_mut().resource_mut::<CaptureLog>().max_entries = 5;
+
+    app.add_systems(Startup, |mut writer: MessageWriter<LogEvent>| {
+        for i in 0..10u32 {
+            writer.write(LogEvent {
+                level: LogLevel::Debug,
+                source: "test",
+                message: format!("msg {i}"),
+            });
+        }
+    });
+
+    app.update();
+
+    let log = app.world().resource::<CaptureLog>();
+    assert_eq!(
+        log.entries.len(),
+        5,
+        "ring buffer should cap at max_entries"
+    );
+    assert_eq!(
+        log.entries[0].message, "msg 5",
+        "oldest entries should be evicted"
+    );
+    assert_eq!(log.entries[4].message, "msg 9");
+}

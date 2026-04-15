@@ -15,8 +15,7 @@ use bevy::{
 use bevy_egui::input::EguiWantsInput;
 
 pub fn orbit_camera_input(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     s: Single<(&mut OrbitCamera, &RenderLayers), With<Camera3d>>,
@@ -46,13 +45,7 @@ pub fn orbit_camera_input(
         &mut orbit_cameras.map_params
     };
 
-    if (((keyboard_input.pressed(KeyCode::ControlLeft)
-        || keyboard_input.pressed(KeyCode::ControlRight))
-        && mouse_buttons.pressed(MouseButton::Left))
-        || mouse_buttons.pressed(MouseButton::Right))
-        && delta != Vec2::ZERO
-        && !pointer_over_ui
-    {
+    if buttons.pressed(MouseButton::Right) && delta != Vec2::ZERO && !pointer_over_ui {
         camera.yaw -= delta.x * camera.sensitivity;
         camera.pitch -= delta.y * camera.sensitivity;
 

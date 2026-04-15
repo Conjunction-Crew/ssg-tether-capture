@@ -4,6 +4,7 @@ use std::ops::RangeInclusive;
 use crate::components::orbit::{Earth, Orbit, TetherNode, TetherRoot};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
+use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_cache::OrbitalCache;
@@ -125,6 +126,7 @@ pub fn setup_entities(
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
     mut orbital_entities: ResMut<OrbitalCache>,
     asset_server: Res<AssetServer>,
+    mut log_events: MessageWriter<LogEvent>,
 ) {
     // Skybox
     let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
@@ -223,6 +225,13 @@ pub fn setup_entities(
             ))
             .id(),
     );
+
+    let debris_count = orbital_entities.debris.len();
+    log_events.write(LogEvent {
+        level: LogLevel::Info,
+        source: "sim",
+        message: format!("Simulation initialized — {debris_count} debris entity loaded"),
+    });
 }
 
 pub fn setup_tether(
@@ -232,6 +241,7 @@ pub fn setup_tether(
     mut orbital_entities: ResMut<OrbitalCache>,
     selected_project: Res<SelectedProject>,
     capture_plan_lib: Res<CapturePlanLibrary>,
+    mut log_events: MessageWriter<LogEvent>,
 ) {
     let root_tail_radius: f64 = 0.50;
     let rope_radius: f64 = 0.25;
@@ -387,4 +397,18 @@ pub fn setup_tether(
         .get_mut(&tether_name)
         .expect("Error getting tether")
         .push(prev_sphere);
+
+    let node_count = orbital_entities
+        .tethers
+        .get(&tether_name)
+        .map(|n| n.len())
+        .unwrap_or(0);
+    log_events.write(LogEvent {
+        level: LogLevel::Info,
+        source: "sim",
+        message: format!(
+            "Tether '{}' initialized ({} nodes, {:.1} m)",
+            tether_name, node_count, tether_length,
+        ),
+    });
 }

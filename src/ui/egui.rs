@@ -60,9 +60,12 @@ pub fn egui_plots(
     let mut selected_filename: String = settings.csv_export_filename.clone();
     let mut num_exports = settings.num_exports_completed.clone();
 
+    let ctx = contexts.ctx_mut().unwrap();
+    let available_rect = ctx.available_rect();
     egui::Window::new("Data Collection")
         .default_pos(Pos2::new(0.0, 1920.0))
-        .show(contexts.ctx_mut().unwrap(), |ui| {
+        .constrain_to(available_rect)
+        .show(ctx, |ui| {
             let pos_points: PlotPoints = pos_data
                 .into_iter()
                 .map(|(epoch, vel)| [*epoch, *vel])

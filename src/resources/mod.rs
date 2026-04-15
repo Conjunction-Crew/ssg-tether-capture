@@ -1,3 +1,4 @@
+pub mod capture_log;
 pub mod capture_plan_form;
 pub mod capture_plans;
 pub mod celestials;

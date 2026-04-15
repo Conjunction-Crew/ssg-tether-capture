@@ -10,6 +10,7 @@ use crate::{
     },
     constants::{EARTH_RADIUS, MAP_UNITS_TO_M},
     resources::{
+        capture_log::{LogEvent, LogLevel},
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCaptureState},
         orbital_cache::OrbitalCache,
         world_time::WorldTime,
@@ -54,6 +55,8 @@ pub fn update_capture_telemetry(
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureTelemetryReadout)>,
     orbitals: Res<OrbitalCache>,
+    mut log: MessageWriter<LogEvent>,
+    mut prev_status: Local<String>,
 ) {
     for (mut text, readout) in &mut readouts {
         let Some(metrics) = capture_metrics(
@@ -76,6 +79,15 @@ pub fn update_capture_telemetry(
             Some(capture) => format!("Engaged ({})", capture.current_state),
             None => "Idle".to_string(),
         };
+
+        if capture_status != *prev_status {
+            log.write(LogEvent {
+                level: LogLevel::Info,
+                source: "capture",
+                message: format!("Capture status → {capture_status}"),
+            });
+            *prev_status = capture_status.clone();
+        }
 
         let inside_capture_sphere = if metrics.range_m <= capture_sphere_radius.radius as f64 {
             "Yes"

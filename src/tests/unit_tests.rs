@@ -704,4 +704,117 @@ mod tests {
         // 1 lbf = 4.44822 N
         assert!((f - 4.44822).abs() < 1e-4);
     }
+
+    // -------------------------------------------------------------------------
+    // CaptureLog ring-buffer (A1)
+    // -------------------------------------------------------------------------
+
+    use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogLevel};
+
+    fn make_entry(msg: &str) -> LogEntry {
+        LogEntry {
+            timestamp: "00:00:00".to_string(),
+            level: LogLevel::Info,
+            source: "test",
+            message: msg.to_string(),
+        }
+    }
+
+    #[test]
+    fn capture_log_push_within_capacity() {
+        let mut log = CaptureLog::default();
+        for i in 0..10 {
+            log.push(make_entry(&format!("entry {i}")));
+        }
+        assert_eq!(log.entries.len(), 10);
+        assert_eq!(log.entries[0].message, "entry 0");
+        assert_eq!(log.entries[9].message, "entry 9");
+    }
+
+    #[test]
+    fn capture_log_push_evicts_oldest_at_capacity() {
+        let mut log = CaptureLog {
+            entries: std::collections::VecDeque::new(),
+            max_entries: 3,
+        };
+        for i in 0..4 {
+            log.push(make_entry(&format!("entry {i}")));
+        }
+        assert_eq!(log.entries.len(), 3);
+        // "entry 0" must have been evicted
+        assert_eq!(log.entries[0].message, "entry 1");
+        assert_eq!(log.entries[2].message, "entry 3");
+    }
+
+    #[test]
+    fn capture_log_push_single_slot_always_keeps_newest() {
+        let mut log = CaptureLog {
+            entries: std::collections::VecDeque::new(),
+            max_entries: 1,
+        };
+        for i in 0..5 {
+            log.push(make_entry(&format!("entry {i}")));
+        }
+        assert_eq!(log.entries.len(), 1);
+        assert_eq!(log.entries[0].message, "entry 4");
+    }
+
+    #[test]
+    fn capture_log_clear_empties_entries() {
+        let mut log = CaptureLog::default();
+        for i in 0..5 {
+            log.push(make_entry(&format!("entry {i}")));
+        }
+        log.clear();
+        assert!(log.entries.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // LogLevel helpers (A2)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn log_level_labels() {
+        assert_eq!(LogLevel::Error.label(), "ERR");
+        assert_eq!(LogLevel::Warn.label(), "WARN");
+        assert_eq!(LogLevel::Info.label(), "INFO");
+        assert_eq!(LogLevel::Debug.label(), "DBG");
+    }
+
+    #[test]
+    fn log_level_hash_eq_all_four_variants_are_distinct() {
+        let mut set = std::collections::HashSet::new();
+        for _ in 0..3 {
+            set.insert(LogLevel::Error);
+            set.insert(LogLevel::Warn);
+            set.insert(LogLevel::Info);
+            set.insert(LogLevel::Debug);
+        }
+        assert_eq!(set.len(), 4);
+    }
+
+    // -------------------------------------------------------------------------
+    // CaptureLogUiState defaults (A3)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn capture_log_ui_state_default_has_all_filters_active() {
+        let state = CaptureLogUiState::default();
+        assert!(state.active_filters.contains(&LogLevel::Error));
+        assert!(state.active_filters.contains(&LogLevel::Warn));
+        assert!(state.active_filters.contains(&LogLevel::Info));
+        assert!(state.active_filters.contains(&LogLevel::Debug));
+        assert!(!state.is_open);
+        assert!(state.selected_rows.is_none());
+        assert!(state.selection_anchor.is_none());
+    }
+
+    #[test]
+    fn capture_log_ui_state_filter_toggle_removes_level() {
+        let mut state = CaptureLogUiState::default();
+        state.active_filters.remove(&LogLevel::Debug);
+        assert_eq!(state.active_filters.len(), 3);
+        assert!(!state.active_filters.contains(&LogLevel::Debug));
+        assert!(state.active_filters.contains(&LogLevel::Info));
+    }
 }

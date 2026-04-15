@@ -189,6 +189,49 @@ pub struct InputField {
 
 Three systems manage input fields: `input_field_interaction` (focus on click), `input_field_keyboard` (routes key events to the focused field), `input_field_display` (syncs the displayed text node).
 
+### `TerminalLog`
+
+**Source:** `src/ui/widgets/terminal_log.rs`
+
+A collapsible terminal panel displayed at the bottom of the sim screen. Renders entries from the `CaptureLog` resource in a scrollable, filterable viewport using a monospace font.
+
+**Marker components:**
+
+| Component | Description |
+|---|---|
+| `TerminalPanel` | Root container node (column layout, full width) |
+| `TerminalLogViewport` | Scrollable content area; holds `ScrollPosition` |
+| `TerminalLogWrapper` | Inner column that contains the dynamically-spawned row entities |
+| `TerminalLogRow` | Marks each log row; carries `entry_index` (position in the filtered list) |
+| `TerminalToggleButton` | The open/close chevron button in the header |
+| `LogLevelFilterButton` | Per-level toggle button; carries `level: LogLevel` |
+| `TerminalClearButton` | Clears `CaptureLog` entries when clicked |
+
+**Spawn function:**
+
+```rust
+pub fn spawn_terminal_panel(
+    parent: &mut ChildSpawnerCommands,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+)
+```
+
+Called at the end of `spawn_project_detail_screen` to append the panel as the last child of the sim screen root.
+
+**Systems:**
+
+| System | Description |
+|---|---|
+| `terminal_toggle_interaction` | Expands/collapses the viewport and updates the button label |
+| `log_level_filter_interaction` | Toggles per-level visibility; forces a display rebuild |
+| `terminal_clear_interaction` | Clears `CaptureLog` and resets the rendered row count |
+| `terminal_row_selection_interaction` | Handles click and shift-click row selection |
+| `terminal_keyboard_input` | Ctrl+A (select all), Ctrl+C (copy selection to clipboard) |
+| `sync_terminal_log_display` | Rebuilds row entities when entry count or active filters change; auto-scrolls when `is_user_scrolled` is false |
+
+All terminal systems run inside the Sim-only `.chain().run_if(in_state(UiScreen::Sim))` group registered in `UiPlugin`.
+
 ---
 
 ## Theme (`theme.rs`)

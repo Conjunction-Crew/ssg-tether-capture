@@ -77,6 +77,10 @@ changes faster without sacrificing precision on short taps.
 | `,` / `.` | Decrease / increase time warp multiplier |
 | Click an object | Select it as the camera tracking target |
 
+## Capture Log Terminal
+
+A collapsible panel at the bottom of the sim screen displays real-time structured log output from the capture state machine, propagation system, and simulation events. Click **^** to expand it. Entries are colour-coded by severity and can be filtered, selected, and copied to the clipboard. See [Capture Log](../concepts/capture-log) for full details.
+
 ## Running tests
 
 ```bash

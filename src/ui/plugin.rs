@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use avian3d::prelude::{Physics, RigidBody};
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
+use bevy::ecs::system::SystemParam;
 use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
@@ -13,6 +14,7 @@ use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
 };
@@ -26,6 +28,7 @@ use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_entities;
 use crate::ui::egui::egui_plots;
+use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -37,7 +40,7 @@ use crate::ui::screens::home::{
     update_home_working_directory_label,
 };
 use crate::ui::screens::project_detail::{
-    RestartPromptModal, catalog_interactions, catalog_keyboard_input,
+    RestartPromptModal, SimScreen, catalog_interactions, catalog_keyboard_input,
     cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
     refresh_space_catalog_results, reset_space_catalog_ui_state, restart_prompt_interactions,
     spawn_exit_confirm_modal, spawn_project_detail_screen, spawn_restart_prompt_modal,
@@ -63,6 +66,12 @@ struct UserPlansDirty(bool);
 #[derive(Resource, Default)]
 struct ExitConfirmPending(bool);
 
+#[derive(SystemParam)]
+struct UiFlowState<'w> {
+    plans_dirty: ResMut<'w, UserPlansDirty>,
+    exit_confirm: ResMut<'w, ExitConfirmPending>,
+}
+
 pub struct UiPlugin;
 
 #[derive(Component)]
@@ -81,8 +90,11 @@ impl Plugin for UiPlugin {
             .init_resource::<SimPlanSyncState>()
             .init_resource::<CapturePlanLoadErrors>()
             .init_resource::<DataCollection>()
+            .init_resource::<CaptureLog>()
+            .init_resource::<CaptureLogUiState>()
             .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
+            .add_message::<LogEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
                 OnEnter(UiScreen::WorkingDirectorySetup),
@@ -99,6 +111,7 @@ impl Plugin for UiPlugin {
                 (
                     spawn_project_detail_screen.after(setup_entities),
                     reset_sync_state,
+                    reset_terminal_log_ui_state,
                 ),
             )
             .add_systems(
@@ -129,7 +142,9 @@ impl Plugin for UiPlugin {
                     poll_exit_confirm_modal,
                     poll_restart_prompt_modal,
                     poll_sim_restart,
+                    collect_log_events.run_if(in_state(UiScreen::Sim)),
                     (
+                        update_sim_screen_bottom_padding,
                         project_detail_interactions,
                         collapsible_toggle_interaction,
                         catalog_interactions,
@@ -146,7 +161,9 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                egui_plots.run_if(in_state(UiScreen::Sim)),
+                (egui_terminal_panel, egui_plots)
+                    .chain()
+                    .run_if(in_state(UiScreen::Sim)),
             );
     }
 }
@@ -292,6 +309,48 @@ fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
     *sync_state = SimPlanSyncState::default();
 }
 
+fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
+    // Preserve active_filters and existing log entries across sim screen re-entries,
+    // but reset per-frame UI state (scroll position, selection).
+    log_ui.is_user_scrolled = false;
+    log_ui.selected_rows = None;
+    log_ui.selection_anchor = None;
+    // Force a display rebuild so newly-spawned rows reflect the current log.
+    log_ui.last_rendered_count = usize::MAX;
+}
+
+/// Pads the sim screen root so Bevy UI content stops above the egui terminal panel.
+fn update_sim_screen_bottom_padding(
+    log_ui: Res<CaptureLogUiState>,
+    mut screen: Query<&mut Node, With<SimScreen>>,
+) {
+    for mut node in &mut screen {
+        node.padding.bottom = Val::Px(log_ui.panel_height);
+    }
+}
+
+/// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`].
+pub fn collect_log_events(
+    mut events: MessageReader<LogEvent>,
+    mut capture_log: ResMut<CaptureLog>,
+    world_time: Res<WorldTime>,
+) {
+    for event in events.read() {
+        let full_ts = format!("{}", world_time.epoch);
+        // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
+        let timestamp = full_ts
+            .get(11..19)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| full_ts.clone());
+        capture_log.push(LogEntry {
+            timestamp,
+            level: event.level,
+            source: event.source,
+            message: event.message.clone(),
+        });
+    }
+}
+
 fn handle_ui_events(
     mut commands: Commands,
     mut ui_events: MessageReader<UiEvent>,
@@ -309,15 +368,11 @@ fn handle_ui_events(
         Without<UiCamera>,
     >,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
-    ui_runtime: (
-        ResMut<Settings>,
-        ResMut<UserPlansDirty>,
-        ResMut<ExitConfirmPending>,
-        ResMut<DataCollection>,
-    ),
+    ui_runtime: (ResMut<Settings>, ResMut<DataCollection>),
+    mut flow: UiFlowState,
+    mut log: MessageWriter<LogEvent>,
 ) {
-    let (mut settings, mut user_plans_dirty, mut exit_confirm_pending, mut data_collection) =
-        ui_runtime;
+    let (mut settings, mut data_collection) = ui_runtime;
 
     for event in ui_events.read() {
         match event {
@@ -331,10 +386,10 @@ fn handle_ui_events(
                 next_screen.set(UiScreen::Home);
             }
             UiEvent::ShowExitConfirm => {
-                exit_confirm_pending.0 = true;
+                flow.exit_confirm.0 = true;
             }
             UiEvent::CancelExitConfirm => {
-                exit_confirm_pending.0 = false;
+                flow.exit_confirm.0 = false;
             }
             UiEvent::WorkingDirectorySelected(path) => {
                 working_directory.path = path.clone();
@@ -359,7 +414,6 @@ fn handle_ui_events(
                 next_screen.set(UiScreen::WorkingDirectorySetup);
             }
             UiEvent::CaptureDebris { entity, plan_id } => {
-                println!("Trying to capture");
                 if let Some(capture_entity) = entity {
                     // Check if the entity is not already marked for capture
                     if !capture_entities.contains(*capture_entity) {
@@ -376,8 +430,21 @@ fn handle_ui_events(
                                 physics_time.elapsed_secs_f64(),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                                log.write(LogEvent {
+                                    level: LogLevel::Info,
+                                    source: "ui",
+                                    message: format!(
+                                        "Capture initiated for entity {capture_entity:?} with plan '{plan_id}'"
+                                    ),
+                                });
                             } else {
-                                error!("Error: Could not build capture component!");
+                                log.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "ui",
+                                    message: format!(
+                                        "Failed to initiate capture for entity {capture_entity:?} with plan '{plan_id}'"
+                                    ),
+                                });
                                 continue;
                             }
 
@@ -389,17 +456,29 @@ fn handle_ui_events(
                                 .velocity
                                 .insert(*capture_entity, Vec::<(f64, f64)>::new());
                         } else {
-                            warn!(
-                                "CaptureDebris: plan_id '{}' not found in capture_plan_lib.plans (keys: {:?})",
-                                plan_id,
-                                capture_plan_lib.plans.keys().collect::<Vec<_>>()
-                            );
+                            log.write(LogEvent {
+                                level: LogLevel::Error,
+                                source: "ui",
+                                message: format!("Capture plan '{plan_id}' not found"),
+                            });
                         }
                     } else {
-                        warn!("Entity already marked for capture!");
+                        log.write(LogEvent {
+                            level: LogLevel::Warn,
+                            source: "ui",
+                            message: format!(
+                                "Entity {capture_entity:?} already marked for capture — ignoring"
+                            ),
+                        });
                     }
                 } else {
-                    warn!("CaptureDebris: entity is None for plan_id '{}'", plan_id);
+                    log.write(LogEvent {
+                        level: LogLevel::Warn,
+                        source: "ui",
+                        message: format!(
+                            "Capture initiated with no target entity for plan '{plan_id}'"
+                        ),
+                    });
                 }
             }
             UiEvent::ToggleMapView => {
@@ -420,10 +499,18 @@ fn handle_ui_events(
                 if let Some(ref mut world_time) = world_time {
                     const MAX_TIME_WARP: u32 = 10000;
                     const MIN_TIME_WARP: u32 = 1;
+                    let prev = world_time.multiplier;
                     if *increase && world_time.multiplier * 2 <= MAX_TIME_WARP {
                         world_time.multiplier *= 2;
                     } else if !increase && world_time.multiplier / 2 >= MIN_TIME_WARP {
                         world_time.multiplier /= 2;
+                    }
+                    if world_time.multiplier != prev {
+                        log.write(LogEvent {
+                            level: LogLevel::Info,
+                            source: "ui",
+                            message: format!("Time warp → {}x", world_time.multiplier),
+                        });
                     }
                 }
             }
@@ -442,6 +529,11 @@ fn handle_ui_events(
                         }
                     }
                     commands.entity(next_target).insert(CameraTarget);
+                    log.write(LogEvent {
+                        level: LogLevel::Info,
+                        source: "ui",
+                        message: format!("Camera target → entity {next_target:?}"),
+                    });
                 }
             }
             UiEvent::OpenNewCapturePlanForm => {
@@ -504,7 +596,14 @@ fn handle_ui_events(
                             match serde_json::to_string_pretty(&json) {
                                 Ok(content) => {
                                     if let Err(e) = std::fs::write(&dest, content) {
-                                        eprintln!("Failed to save capture plan: {e}");
+                                        log.write(LogEvent {
+                                            level: LogLevel::Error,
+                                            source: "ui",
+                                            message: format!(
+                                                "Failed to write capture plan '{}': {e}",
+                                                form.plan_name
+                                            ),
+                                        });
                                     } else {
                                         // Reload user plans
                                         let new_user_plans = load_plans_from_dir(
@@ -546,7 +645,15 @@ fn handle_ui_events(
                                         for (id, plan) in refreshed {
                                             capture_plan_lib.insert_plan(id, plan);
                                         }
-                                        user_plans_dirty.0 = true;
+                                        flow.plans_dirty.0 = true;
+                                        log.write(LogEvent {
+                                            level: LogLevel::Info,
+                                            source: "ui",
+                                            message: format!(
+                                                "Capture plan '{}' saved",
+                                                form.plan_name
+                                            ),
+                                        });
                                         // Prompt for restart only when sim-affecting params changed
                                         let should_prompt = editing_from_sim && !only_name_changed;
                                         form.open = false;
@@ -556,7 +663,16 @@ fn handle_ui_events(
                                         }
                                     }
                                 }
-                                Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
+                                Err(e) => {
+                                    log.write(LogEvent {
+                                        level: LogLevel::Error,
+                                        source: "ui",
+                                        message: format!(
+                                            "Failed to serialize capture plan '{}': {e}",
+                                            form.plan_name
+                                        ),
+                                    });
+                                }
                             }
                         }
                     }
@@ -569,7 +685,14 @@ fn handle_ui_events(
                 match serde_json::to_string_pretty(&json) {
                     Ok(content) => {
                         if let Err(e) = std::fs::write(&dest, content) {
-                            eprintln!("Failed to save capture plan: {e}");
+                            log.write(LogEvent {
+                                level: LogLevel::Error,
+                                source: "ui",
+                                message: format!(
+                                    "Failed to write capture plan '{}': {e}",
+                                    form.plan_name
+                                ),
+                            });
                         } else {
                             let new_user_plans =
                                 load_plans_from_dir(std::path::Path::new(&working_directory.path));
@@ -588,12 +711,26 @@ fn handle_ui_events(
                             for (id, plan) in refreshed {
                                 capture_plan_lib.insert_plan(id, plan);
                             }
-                            user_plans_dirty.0 = true;
+                            flow.plans_dirty.0 = true;
+                            log.write(LogEvent {
+                                level: LogLevel::Info,
+                                source: "ui",
+                                message: format!("Capture plan '{}' saved", form.plan_name),
+                            });
                             form.open = false;
                             form.reset();
                         }
                     }
-                    Err(e) => eprintln!("Failed to serialize capture plan: {e}"),
+                    Err(e) => {
+                        log.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "ui",
+                            message: format!(
+                                "Failed to serialize capture plan '{}': {e}",
+                                form.plan_name
+                            ),
+                        });
+                    }
                 }
             }
             UiEvent::CancelOverwriteCapturePlan => {
@@ -692,6 +829,11 @@ fn handle_ui_events(
                     form.editing_plan_id = Some(plan_id.clone());
                     // Snapshot the form state so we can detect unchanged edits on Save.
                     form.original_json = Some(build_capture_plan_json(&form));
+                    log.write(LogEvent {
+                        level: LogLevel::Info,
+                        source: "ui",
+                        message: format!("Opened '{}' for editing", plan_id),
+                    });
                     form.open = true;
                 }
             }
