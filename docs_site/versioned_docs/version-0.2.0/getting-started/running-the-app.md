@@ -42,10 +42,36 @@ Plans are stored as JSON files in your working directory. Example plans (loaded 
 
 ## Controls
 
+### Camera navigation
+
 | Input | Action |
 |---|---|
-| Right-click + drag | Pan the orbit camera |
+| Right-click + drag | Orbit the camera |
+| `Ctrl` + left-click + drag | Orbit the camera (trackpad-friendly alternative) |
 | Scroll wheel | Zoom in / out |
+| `Tab` | Cycle camera tracking target |
+
+### On-screen orbit controls widget
+
+A small control pad is displayed in the bottom-left corner of the 3D view. It
+provides an alternative to right-click drag that works well on trackpads, touch
+screens, or any pointer device.
+
+| Control | Action |
+|---|---|
+| ← ↑ ↓ → arrows | Orbit the camera left, up, down, right |
+| `+` / `−` | Zoom in / out |
+| o | Reset view to default position |
+| Left-click + drag inside the widget box | Orbit the camera (same as right-click drag) |
+
+**Hold-to-accelerate:** Holding any direction or zoom button for more than 5
+seconds ramps the movement speed up to 2.5× normal, making large viewpoint
+changes faster without sacrificing precision on short taps.
+
+### Other controls
+
+| Input | Action |
+|---|---|
 | `M` | Toggle between scene view and orbital map view |
 | `O` | Toggle the floating origin debug marker |
 | `,` / `.` | Decrease / increase time warp multiplier |

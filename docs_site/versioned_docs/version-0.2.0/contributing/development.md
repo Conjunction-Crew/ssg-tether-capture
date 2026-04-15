@@ -142,23 +142,33 @@ After review and CI is green, merge the release PR into `main` (or `dev`).
 
 #### 6 — Push the tag (triggers release + docs deploy)
 
-After the merge commit is on `main`, pull and tag it:
+**Stable release** — after the merge commit is on `main`, pull and tag it:
 
 ```bash
 git checkout main
 git pull
-git tag v0.2.0            # stable release
+git tag v0.2.0
 git push origin v0.2.0
 ```
 
-For a beta:
+**Pre-release (beta)** — use `cargo release beta` on the release branch to
+bump the version to the next `-beta.N` suffix, then push the tag manually:
 
 ```bash
-git checkout dev
-git pull
+# Dry-run first — shows exactly what will change without modifying anything:
+cargo release beta
+
+# When the preview looks correct, execute:
+cargo release beta --execute --no-confirm
+
+# Then push the tag that cargo-release committed (but did not push):
 git tag v0.2.0-beta.1
 git push origin v0.2.0-beta.1
 ```
+
+> `cargo release beta` increments the beta counter automatically:
+> `0.2.0-beta.1` → `0.2.0-beta.2`, or promotes a non-pre-release to
+> `<current>-beta.1` if no beta suffix exists yet.
 
 Pushing the tag triggers two workflows:
 - **`release.yml`** — builds Linux/Windows/macOS artifacts and publishes a
