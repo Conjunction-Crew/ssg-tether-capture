@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 3
 ---
 
 # Versioned Docs Policy
@@ -13,8 +13,8 @@ snapshot — they are shipped as regular commits without freezing the docs.
 
 At most **10** versioned doc sets are kept live on the documentation site at any
 one time. When a new Major/Minor release is cut and the count would exceed 10,
-the oldest versioned set is removed automatically by `scripts/post_release.sh`.
-See [Release Workflow](./release-workflow.md) for when and how to run it.
+the oldest versioned set is removed from the site automatically by
+`scripts/post_release.sh`.
 
 | Version format | Versioned docs snapshot? |
 |---|---|
