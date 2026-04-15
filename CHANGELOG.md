@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [v0.3.0-beta.3]
+## [v0.3.0-rc.1] 🔬 - 2026-04-14
 
 ### Changed
 - Updates comments in `release.toml` to clarify the updated release process
@@ -21,6 +21,7 @@ When preparing a release:
 - Updates `pr.yaml` to trigger on PRs raised against `dev` and pushes on `dev`, adds steps to test build the docs (but not deploy), and adds steps to auto-tag the release
 - Updates docs in the `/contributing` section to break out release info into its own doc and clarify info about versioned docs
 - Update `post_release.sh` to clarify comments and add the CHANGELOG → docs sync
+- Adds `v0.2.0` docs version from branch `release/v0.2.0`
 
 ### Added
 - Adds `release-workflow.md` to the contributing docs with detailed instructions on how to cut a release
@@ -29,9 +30,10 @@ When preparing a release:
 
 ### Removed
 - Removes `post_release.sh` as cargo-release 1.x does not support a post-release hook; the versioned docs snapshot is now created automatically by `deploy-docs.yml` on tag push for major/minor releases, and the pruning script can be run manually if needed.
+- Removes `v0.2.0-beta.1` docs version from the versioned docs site as part of the pruning process; the docs for this release are still available in the `release/v0.2.0-beta.1` branch on GitHub.
 
 
-## [v0.3.0-beta.2] - 2026-04-14
+## [v0.3.0-beta.2] 🧪 - 2026-04-14
 
 ### Changed
 - Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
@@ -42,7 +44,7 @@ When preparing a release:
 - Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
 
 
-## [v0.3.0-beta.1] - 2026-04-14
+## [v0.3.0-beta.1] 🧪 - 2026-04-14
 
 ### Changed
 - Updates `orbital_entities` to be names `orbital_cache`
@@ -54,7 +56,7 @@ When preparing a release:
 - Adds center of mass gizmo which highlights RSOs with a box around them with a label
 
 
-## [0.2.0] - 2026-04-14
+## [0.2.0] 🚀 - 2026-04-14
 
 ### Release Notes
 - This is the first public production release of SSG Tether Capture, minor version 0.2.0
@@ -68,7 +70,7 @@ When preparing a release:
 - This release includes an updated documentation site which includes various information about the project, how to get started, and guides on how to use the app and create your own capture plans; the docs site is available at https://conjunction-crew.github.io/ssg-tether-capture/
 
 
-## [0.2.0-beta.6] 
+## [0.2.0-beta.6] 🧪
 
 ### Changed
 - Updates `release.yml` to resolve ad-hoc signing issues making the resulting DMG/.app unusable on macOS
@@ -76,7 +78,7 @@ When preparing a release:
 - Adds JSON config to store the working directory path and updates the UI to read/write from this config for persistence across app restarts
 
 
-## [0.2.0-beta.5] - 2026-04-13
+## [0.2.0-beta.5] 🧪 - 2026-04-13
 
 ### Changed
 - Updated release workflow and scripts to resolve issues with the Windows version of the app and improved the MSI installer
@@ -99,7 +101,7 @@ When preparing a release:
 - No change log entry provided for this pre-release version. Please refer to the commit history for details on changes included in this release.
 
 
-## [0.2.0-beta.1] - 2026-04-10
+## [0.2.0-beta.1] 🧪 - 2026-04-10
 
 ### Changed
 - Adopts `cargo-release` for automated versioning and changelog management.
@@ -138,7 +140,7 @@ When preparing a release:
 - Fixes font asset path referencing for Windows bundle packaging
 
 
-## [0.1.1-beta.1] — 2026-04-08
+## [0.1.1-beta.1] 🧪 — 2026-04-08
 
 ### Changed
 - Updated release workflow to build and package artifacts for Linux, Windows
@@ -147,7 +149,7 @@ When preparing a release:
   the production release marked as latest.
 
 
-## [0.1.0] - 2026-04-03
+## [0.1.0] 🚀 - 2026-04-03
 
 ### Added
 - Initial project scaffold: Bevy + Avian3d physics, orbital-mechanics plugin.
