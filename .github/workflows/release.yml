@@ -1,25 +1,20 @@
 name: Release
 
-# Triggers on SemVer tags:
-#   v1.2.3          → production GitHub Release (latest)
-#   v1.2.3-beta.1   → pre-release GitHub Release
+# Triggers on SemVer tags pushed by the auto-tag job in pr.yaml:
+#   v1.2.3        → production GitHub Release (latest)
+#   v1.2.3-rc.1   → pre-release GitHub Release
 #
-# Push a tag to trigger (patches and pre-releases):
-#   git tag v0.2.1 && git push origin v0.2.1
-#   git tag v0.2.0-beta.1 && git push origin v0.2.0-beta.1
+# Beta tags (v1.2.3-beta.N) are created by auto-tag but do NOT trigger this
+# workflow — they are lightweight checkpoints only.
 #
-# Or merge a release/* branch into main (major and minor releases):
-#   All three platform builds run and a GitHub Release is published automatically.
-#   The version is read from Cargo.toml and a matching CHANGELOG.md entry is used
-#   as the release description.
+# The auto-tag job in pr.yaml creates tags using GH_PAT after every successful
+# merge to dev, so tags should never be pushed manually.  A GitHub Tag Ruleset
+# (pattern: v*.*.* , bypass: PAT owner only) enforces this.
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+-beta*"
-  pull_request:
-    types: [closed]
-    branches: [main]
+      - "v[0-9]+.[0-9]+.[0-9]+-rc*"
 
 permissions:
   contents: write
@@ -38,11 +33,7 @@ jobs:
   preflight:
     name: Preflight – resolve tag
     runs-on: ubuntu-latest
-    if: |
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.merged == true &&
-       startsWith(github.head_ref, 'release/'))
+    if: startsWith(github.ref, 'refs/tags/v')
     outputs:
       tag_name:      ${{ steps.resolve.outputs.tag_name }}
       is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
@@ -53,15 +44,10 @@ jobs:
       - name: Resolve tag name and flags
         id: resolve
         run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            TAG="${{ github.ref_name }}"
-          else
-            # PR merge path: derive tag from Cargo.toml version
-            VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-            TAG="v${VERSION}"
-          fi
+          TAG="${{ github.ref_name }}"
           echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
-          if [[ "${TAG}" == *"-beta"* ]]; then
+          # RC tags (v1.2.3-rc.N) are pre-releases; stable tags (v1.2.3) are latest.
+          if [[ "${TAG}" == *"-rc"* ]]; then
             echo "is_prerelease=true"  >> "$GITHUB_OUTPUT"
             echo "make_latest=false"   >> "$GITHUB_OUTPUT"
           else

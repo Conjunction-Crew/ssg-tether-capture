@@ -13,7 +13,25 @@ When preparing a release:
 
 ---
 
-## [v0.2.2-beta.1]
+## [v0.3.0-beta.3]
+
+### Changed
+- Updates comments in `release.toml` to clarify the updated release process
+- Updates `deploy-docs.yml` to trigger on pushes to tags only, adds steps to sync the changlog with the docs to publish it, build the versioned docs, adds step to verify the versioned docs integrity before deploying
+- Updates `pr.yaml` to trigger on PRs raised against `dev` and pushes on `dev`, adds steps to test build the docs (but not deploy), and adds steps to auto-tag the release
+- Updates docs in the `/contributing` section to break out release info into its own doc and clarify info about versioned docs
+- Update `post_release.sh` to clarify comments and add the CHANGELOG → docs sync
+
+### Added
+- Adds `release-workflow.md` to the contributing docs with detailed instructions on how to cut a release
+- Adds `cicd-workflows.md` to the contributing docs with an overview and reference for all CI/CD workflows in the project
+- Adds `prune_versioned_docs.sh` script to manage pruning old versioned doc sets beyond the 10-version cap
+
+### Removed
+- Removes `post_release.sh` as cargo-release 1.x does not support a post-release hook; the versioned docs snapshot is now created automatically by `deploy-docs.yml` on tag push for major/minor releases, and the pruning script can be run manually if needed.
+
+
+## [v0.3.0-beta.2] - 2026-04-14
 
 ### Changed
 - Refactors capture algorithm systems to emit `LogEvent` messages for significant events (state transitions, capture success/failure, errors) instead of direct `println!` statements.
@@ -23,18 +41,40 @@ When preparing a release:
 - Capture log system and terminal panel UI for real-time logging of capture events, errors, and debug information.
 - Added new `capture_log.md` document detailing the features and usage of the capture log terminal.
 
-### Removed
 
----
+## [v0.3.0-beta.1] - 2026-04-14
 
-## [0.2.0-beta.6]
+### Changed
+- Updates `orbital_entities` to be names `orbital_cache`
+- Updates required packages to support the use of `egui` and to use certain crate packages from our `bevy` forked version
+
+### Added
+- A new feature to graph the relative velocity and forces applied to the target object during capture attempts, with a toggle in the UI to show/hide the graph.
+- A data collection feature which would eventually allow you to export data captured by the app matching the graphs presented in the UI
+- Adds center of mass gizmo which highlights RSOs with a box around them with a label
+
+
+## [0.2.0] - 2026-04-14
+
+### Release Notes
+- This is the first public production release of SSG Tether Capture, minor version 0.2.0
+- App installers are available for Windows (MSI), macOS (DMG), and Linux (tar.gz)
+- This release of the application includes the following new features:
+  - Project level support to create, edit, and save capture plans to directory on your machine
+  - A user interface to simulate the capture of a RSO (Resident Space Object) using a flexible tether
+  - Capture plans allow you to define various parameters of the capture scenario including distance, force, and velocity thresholds to define when the capture moves through phases
+  - The Project Detail view presents various simulation controls, a simulation HUD (heads up display), a section which provides detailed information on the progress within the capture plan, and a catalog of space objects to choose from when defining your capture scenario
+  - The app includes an example capture plan (`assets/capture_plans/example_capture_plan.json`) which simulates the capture of a piece of debris by a tethered satellite; you can use this as a starting point to create your own capture plans
+- This release includes an updated documentation site which includes various information about the project, how to get started, and guides on how to use the app and create your own capture plans; the docs site is available at https://conjunction-crew.github.io/ssg-tether-capture/
+
+
+## [0.2.0-beta.6] 
 
 ### Changed
 - Updates `release.yml` to resolve ad-hoc signing issues making the resulting DMG/.app unusable on macOS
 - Updates directory resolution strategy to use platform-correct asset paths (e.g., `assets/datasets/`) and support correct resolution when running from a macOS `.app` bundle
 - Adds JSON config to store the working directory path and updates the UI to read/write from this config for persistence across app restarts
 
----
 
 ## [0.2.0-beta.5] - 2026-04-13
 
@@ -49,9 +89,14 @@ When preparing a release:
 - Adds assets for the Windows MSI installer banner and dialog backgrounds
 - UI buttons to control orbit/zoom controls within the 3D view (in addition to mouse controls)
 
-### Removed
+## [0.2.0-beta.4]
+- No change log entry provided for this pre-release version. Please refer to the commit history for details on changes included in this release.
 
----
+## [0.2.0-beta.3]
+- No change log entry provided for this pre-release version. Please refer to the commit history for details on changes included in this release.
+
+## [0.2.0-beta.2]
+- No change log entry provided for this pre-release version. Please refer to the commit history for details on changes included in this release.
 
 
 ## [0.2.0-beta.1] - 2026-04-10
@@ -92,7 +137,6 @@ When preparing a release:
 - Adds `resolve_asset_path()` for correct asset resolution when running from a macOS `.app` bundle
 - Fixes font asset path referencing for Windows bundle packaging
 
----
 
 ## [0.1.1-beta.1] — 2026-04-08
 
@@ -102,7 +146,6 @@ When preparing a release:
 - Pre-release (beta) tags now create a GitHub pre-release; stable tags create
   the production release marked as latest.
 
----
 
 ## [0.1.0] - 2026-04-03
 

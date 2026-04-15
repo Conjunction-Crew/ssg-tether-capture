@@ -8,9 +8,9 @@
 #   2. CHANGELOG.md contains an entry for the new version.
 #
 # Usage:
-#   Called automatically by cargo-release as pre-release-hook (see .release.toml).
-#   Also called by the GitHub Actions verify-release-pr job in pr.yaml for any
-#   PR whose source branch matches release/*.
+#   Called automatically by cargo-release as pre-release-hook (see release.toml).
+#   Also called by the GitHub Actions verify-pr job in pr.yaml for every PR and
+#   post-merge push to dev.
 #
 # Exit codes:
 #   0  — all checks passed
