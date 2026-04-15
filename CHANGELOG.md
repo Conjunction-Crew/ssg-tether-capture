@@ -13,6 +13,18 @@ When preparing a release:
 
 ---
 
+## [v0.3.0-beta.3] 🧪
+
+### Changed
+- Updated guides in the contributing section to link to new install guides
+
+### Added
+- Install guides for Linux, Windows, and macOS in the docs site with detailed installation steps and screenshots for each platform.
+
+### Removed
+- Deleted old assets from initial Docusaurus setup that are no longer used in the current docs site design
+
+
 ## [v0.3.0-rc.1] 🔬 - 2026-04-14
 
 ### Changed
