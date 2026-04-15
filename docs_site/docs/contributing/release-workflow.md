@@ -78,12 +78,10 @@ cargo release major --execute --no-confirm
 
 Because `release.toml` sets `tag = false` and `push = false`, **no tag is created or pushed by cargo-release**. The tag is created automatically by CI after the PR merges.
 
-:::note
-**The versioned docs snapshot is created automatically after the tag is pushed.**
-For major/minor releases, `deploy-docs.yml` snapshots `docs_site/docs/` as a
-new versioned set and pushes the resulting commit to `dev`. No manual step is
-required.
-:::
+> **The versioned docs snapshot is created automatically after the tag is pushed.**
+> For major/minor releases, `deploy-docs.yml` snapshots `docs_site/docs/` as a
+> new versioned set and pushes the resulting commit to `dev`. No manual step is
+> required.
 
 ### 4 — Open a PR to dev
 
