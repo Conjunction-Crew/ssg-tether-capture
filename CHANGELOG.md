@@ -17,6 +17,7 @@ When preparing a release:
 
 ### Changed
 - Updated guides in the contributing section to link to new install guides
+- Removed `base_url` from `tsconfig.json`
 
 ### Added
 - Install guides for Linux, Windows, and macOS in the docs site with detailed installation steps and screenshots for each platform.
