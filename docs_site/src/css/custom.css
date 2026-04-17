@@ -84,6 +84,63 @@
   color: #94a3b8;
 }
 
+/* Screenshot helper for docs images */
+.screenshot {
+  display: block;
+  width: auto;
+  max-width: min(900px, 100%);
+  height: auto;
+  margin: 1rem auto;
+  border-radius: 6px;
+  border: 1px solid rgba(15,23,42,0.06);
+  box-shadow: 0 4px 10px rgba(2,6,23,0.12);
+}
+
+/* Use this modifier for intentionally smaller/compact screenshots */
+.screenshot--small {
+  display: block;
+  width: auto;
+  max-width: 400px;
+  height: auto;
+  margin: 1rem auto;
+  border-radius: 6px;
+  border: 1px solid rgba(15,23,42,0.06);
+  box-shadow: 0 4px 10px rgba(2,6,23,0.12);
+}
+
+[data-theme='dark'] .screenshot--small,
+[data-theme='dark'] .screenshot {
+  border-color: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.6);
+}
+
+/* Frame wrapper for full-bleed screenshots so borders/shadows remain visible */
+.screenshot-frame {
+  display: block;
+  width: 100%;
+  padding: 0.5rem; /* inner padding so shadow/border are outside image */
+  margin: 1rem 0;
+  border-radius: 8px;
+  box-sizing: border-box;
+  border: 1px solid rgba(15,23,42,0.06);
+  box-shadow: 0 6px 18px rgba(2,6,23,0.12);
+  background: transparent;
+}
+
+.screenshot-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: none; /* frame provides the border */
+  box-shadow: none;
+}
+
+[data-theme='dark'] .screenshot-frame {
+  border-color: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 8px 22px rgba(2, 6, 23, 0.6);
+}
+
 /* Navbar sizing */
 :root {
   --ifm-navbar-height: 5rem;

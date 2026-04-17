@@ -19,6 +19,7 @@ When preparing a release:
 - Updated guides in the contributing section to link to new install guides
 - Removed `base_url` from `tsconfig.json`
 - Updated `docusaurus.config.js` to show the versions dropdown in the upper right corner and to allow for the latest unreleased docs to be viewed
+- Updates `custom.css` to add styling for screenshots in the install guides
 
 ### Added
 - Install guides for Linux, Windows, and macOS in the docs site with detailed installation steps and screenshots for each platform.
