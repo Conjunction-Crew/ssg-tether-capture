@@ -40,6 +40,20 @@ const config: Config = {
       'classic',
       {
         docs: {
+          // Make the last released version the default shown to users
+          lastVersion: '0.2.0',
+          // Expose the working (unreleased) docs under `next` so you can preview them
+          versions: {
+            current: {
+              label: 'Unreleased',
+              path: 'next',
+              banner: 'unreleased',
+              badge: true,
+            },
+            '0.2.0': {
+              label: '0.2.0',
+            },
+          },
           sidebarPath: './sidebars.ts',
         },
         blog: false,
@@ -62,12 +76,17 @@ const config: Config = {
         alt: 'Tether Capture Logo',
         src: 'img/tether-capture-logo.svg',
       },
-      items: [
+        items: [
         {
           type: 'docSidebar',
           sidebarId: 'mainSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        // Show the version dropdown in the navbar so users can switch to 'Unreleased' (`next`)
+        {
+          type: 'docsVersionDropdown',
+          position: 'right',
         },
         {
           href: 'https://github.com/conjunction-crew/ssg-tether-capture',
