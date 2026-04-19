@@ -1,3 +1,4 @@
+use bevy::prelude::{Quat, Vec3};
 use nalgebra::Vector6;
 
 // Camera layers
@@ -11,6 +12,15 @@ pub const EARTH_ATMOSPHERE_RADIUS: f32 = 6_460_000.0;
 
 // Map constants
 pub const MAP_UNITS_TO_M: f64 = 100000.0;
+pub const EARTH_TEXTURE_NORTH_AXIS: Vec3 = Vec3::Z;
+
+pub fn orbit_frame_rotation() -> Quat {
+    Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
+}
+
+pub fn eci_to_orbit_frame(position_eci: Vec3) -> Vec3 {
+    orbit_frame_rotation() * position_eci
+}
 
 // Floating origin constants
 pub const PHYSICS_ENABLE_RADIUS: f64 = 100.0;

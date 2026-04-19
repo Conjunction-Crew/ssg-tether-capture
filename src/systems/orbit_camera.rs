@@ -97,7 +97,7 @@ pub fn orbit_camera_track(
     }
 
     let up = camera.up.normalize_or(Vec3::Y);
-    let earth_axis = (earth_transform.rotation * Vec3::Y).normalize_or(Vec3::Y);
+    let earth_axis = (earth_transform.rotation * EARTH_TEXTURE_NORTH_AXIS).normalize_or(Vec3::Y);
     let base_forward = (earth_axis - up * earth_axis.dot(up))
         .normalize_or((Vec3::NEG_Z - up * Vec3::NEG_Z.dot(up)).normalize_or(Vec3::X));
     let right = base_forward.cross(up).normalize_or(Vec3::X);

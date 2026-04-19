@@ -54,7 +54,7 @@ pub fn toggle_map_view(
 }
 
 const MAX_TIME_WARP: u32 = 10000;
-const MIN_TIME_WARP: u32 = 1;
+const MIN_TIME_WARP: u32 = 0;
 
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -68,11 +68,19 @@ pub fn change_time_warp(
 
     let prev = world_time.multiplier;
     if keyboard_input.just_pressed(KeyCode::Period) && world_time.multiplier * 2 <= MAX_TIME_WARP {
-        world_time.multiplier *= 2;
+        if world_time.multiplier == 0 {
+            world_time.multiplier = 1;
+        } else {
+            world_time.multiplier *= 2;
+        }
     } else if keyboard_input.just_pressed(KeyCode::Comma)
         && world_time.multiplier / 2 >= MIN_TIME_WARP
     {
-        world_time.multiplier /= 2;
+        if world_time.multiplier == 1 {
+            world_time.multiplier = 0;
+        } else {
+            world_time.multiplier /= 2;
+        }
     }
     if world_time.multiplier != prev {
         log.write(LogEvent {
