@@ -5,7 +5,6 @@ use bevy::ecs::observer::On;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseScrollUnit;
-use bevy::math::DVec3;
 use bevy::picking::Pickable;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
@@ -18,7 +17,7 @@ use crate::components::capture_components::CaptureComponent;
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
-use crate::constants::{ISS_ORBIT, MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::constants::{ISS_ORBIT, MAP_LAYER, SCENE_LAYER, UI_LAYER};
 use crate::plugins::gpu_compute::{
     GpuComputeEpochOrigin, GpuElements, eci_position_to_map, propagate_catalog_eci_state,
 };
@@ -2700,17 +2699,18 @@ pub fn update_satellite_indicator_overlay(
             return;
         };
 
-        let scale = MAP_UNITS_TO_M;
-        let base = DVec3::new(params[0] / scale, params[1] / scale, params[2] / scale);
-        let world_position = if disabled {
-            base
+        let position_eci = if disabled {
+            Vec3::new(params[0] as f32, params[1] as f32, params[2] as f32)
         } else {
-            base + rb.position.0 / scale
+            Vec3::new(
+                (params[0] + rb.position.0.x) as f32,
+                (params[1] + rb.position.0.y) as f32,
+                (params[2] + rb.position.0.z) as f32,
+            )
         };
+        let world_position = eci_position_to_map(position_eci);
 
-        let Ok(viewport_position) =
-            camera.world_to_viewport(camera_transform, world_position.as_vec3())
-        else {
+        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, world_position) else {
             overlay_node.display = Display::None;
             return;
         };
@@ -2806,6 +2806,7 @@ pub fn project_detail_interactions(
     theme: Res<UiTheme>,
     form: Res<NewCapturePlanForm>,
     restart_modal_query: Query<Entity, With<RestartPromptModal>>,
+    selection: Res<OrbitalSelectionState>,
 ) {
     if *screen.get() != crate::ui::state::UiScreen::Sim {
         return;
@@ -2814,6 +2815,7 @@ pub fn project_detail_interactions(
     let any_modal_open =
         form.open || !exit_modal_query.is_empty() || !restart_modal_query.is_empty();
     let capture_active = !capture_entities.is_empty();
+    let can_start_sim = selection.target.is_some() && selection.chaser.is_some();
 
     for (
         interaction,
@@ -2836,6 +2838,9 @@ pub fn project_detail_interactions(
             Interaction::Pressed => {
                 // Capture button is disabled once capture is active
                 if is_capture && capture_active {
+                    continue;
+                } else if start_sim.is_some() && !can_start_sim {
+                    *background_color = BackgroundColor(theme.panel_background);
                     continue;
                 }
                 *background_color = BackgroundColor(theme.button_background_hover);
@@ -2873,6 +2878,8 @@ pub fn project_detail_interactions(
             Interaction::Hovered => {
                 if is_capture && capture_active {
                     // Keep dimmed appearance — don't show hover highlight
+                } else if start_sim.is_some() && !can_start_sim {
+                    // Keep dimmed appearance until both target and chaser orbits are selected
                 } else if any_modal_open
                     && exit_cancel_button.is_none()
                     && exit_confirm_button.is_none()
@@ -2884,6 +2891,8 @@ pub fn project_detail_interactions(
             }
             Interaction::None => {
                 if is_capture && capture_active {
+                    *background_color = BackgroundColor(theme.panel_background);
+                } else if start_sim.is_some() && !can_start_sim {
                     *background_color = BackgroundColor(theme.panel_background);
                 } else if is_exit_confirm {
                     // Preserve blue spawn color; avoid blink to soft on first frame

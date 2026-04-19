@@ -3,7 +3,8 @@ use crate::{
         orbit::{Earth, Orbital},
         orbit_camera::{CameraTarget, OrbitCamera},
     },
-    constants::{EARTH_TEXTURE_NORTH_AXIS, MAP_UNITS_TO_M, SCENE_LAYER},
+    constants::{EARTH_TEXTURE_NORTH_AXIS, SCENE_LAYER},
+    plugins::gpu_compute::eci_position_to_map,
     resources::{orbital_cache::OrbitalCache, space_catalog::SpaceCatalogUiState},
 };
 use avian3d::prelude::*;
@@ -86,11 +87,11 @@ pub fn orbit_camera_track(
         }
     } else if let Some((_, entity)) = target {
         if let Some(target_rv) = orbital_cache.eci_states.get(&entity) {
-            camera.focus = Vec3::new(
-                (target_rv[0] / MAP_UNITS_TO_M) as f32,
-                (target_rv[1] / MAP_UNITS_TO_M) as f32,
-                (target_rv[2] / MAP_UNITS_TO_M) as f32,
-            );
+            camera.focus = eci_position_to_map(Vec3::new(
+                target_rv[0] as f32,
+                target_rv[1] as f32,
+                target_rv[2] as f32,
+            ));
         }
     }
 
