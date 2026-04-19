@@ -4,7 +4,7 @@ use nalgebra::Vector6;
 
 use crate::{
     components::{
-        orbit::{Orbit, TetherNode},
+        orbit::{Orbit, TetherNode, TetherRoot},
         orbit_camera::CameraTarget,
     },
     constants::{ISS_ORBIT, PHYSICS_DISABLE_RADIUS, SCENE_LAYER},
@@ -122,6 +122,7 @@ pub fn spawn_tether(
         .spawn((
             DespawnOnExit(UiScreen::Sim),
             CameraTarget,
+            TetherRoot,
             RenderLayers::layer(SCENE_LAYER),
             RigidBody::Dynamic,
             sphere_collider.clone(),
