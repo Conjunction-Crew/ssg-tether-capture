@@ -12,6 +12,7 @@ use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin
 use bevy::math::DVec3;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::state::app::StatesPlugin;
 use bevy::transform::TransformSystems;
 use bevy::ui_widgets::UiWidgetsPlugins;
 use bevy_egui::EguiPlugin;
@@ -20,7 +21,7 @@ use systems::setup::*;
 use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::gpu_compute::GpuComputePlugin;
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
-use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
+use crate::plugins::orbital_mechanics::{OrbitalMechanicsPlugin, SimState};
 use crate::resources::capture_log::LogEvent;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::settings::Settings;
@@ -70,7 +71,6 @@ pub fn run() {
     .add_plugins(InputDispatchPlugin)
     .add_plugins(TabNavigationPlugin)
     .add_plugins(UiWidgetsPlugins)
-    .add_plugins(UiPlugin)
     .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
     .add_plugins(GpuComputePlugin);

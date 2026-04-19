@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
 use crate::components::orbit::Earth;
-use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
+use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plans::CapturePlanLibrary;

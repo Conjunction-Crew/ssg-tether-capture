@@ -15,6 +15,7 @@ use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::plugins::orbital_mechanics::SimState;
+use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
 };
@@ -25,9 +26,11 @@ use crate::resources::capture_plans::{
 use crate::resources::data_collection::DataCollection;
 use crate::resources::settings::Settings;
 use crate::resources::space_catalog::OrbitalSelectionState;
-use crate::resources::working_directory::WorkingDirectory;
+use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_camera;
+use crate::ui::egui::egui_plots;
+use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -39,12 +42,13 @@ use crate::ui::screens::home::{
     update_home_working_directory_label,
 };
 use crate::ui::screens::project_detail::{
-    RestartPromptModal, catalog_interactions, catalog_keyboard_input,
+    RestartPromptModal, SimScreen, catalog_interactions, catalog_keyboard_input,
     cleanup_project_detail_screen, collapsible_toggle_interaction, orbital_selection_interactions,
     project_detail_interactions, refresh_space_catalog_results, reset_space_catalog_ui_state,
     restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
     spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_space_catalog_ui,
-    update_selected_catalog_overlay, update_sync_indicator, view_edit_plan_interactions,
+    update_satellite_indicator_overlay, update_selected_catalog_overlay, update_sync_indicator,
+    view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
@@ -380,7 +384,7 @@ fn handle_ui_events(
     mut selected_project: ResMut<SelectedProject>,
     mut working_directory: ResMut<WorkingDirectory>,
     mut file_dialog_task: ResMut<FileDialogTask>,
-    mut form: ResMut<NewCapturePlanForm>,
+
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     mut orbital_selection: ResMut<OrbitalSelectionState>,
     mut world_time: Option<ResMut<WorldTime>>,
@@ -393,13 +397,14 @@ fn handle_ui_events(
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
     ui_runtime: (
         ResMut<Settings>,
-        ResMut<UserPlansDirty>,
-        ResMut<ExitConfirmPending>,
         ResMut<NextState<SimState>>,
+        ResMut<DataCollection>,
+        ResMut<NewCapturePlanForm>,
     ),
+    mut flow: UiFlowState,
+    mut log: MessageWriter<LogEvent>,
 ) {
-    let (mut settings, mut user_plans_dirty, mut exit_confirm_pending, mut next_sim_state) =
-        ui_runtime;
+    let (mut settings, mut next_sim_state, mut data_collection, mut form) = ui_runtime;
 
     for event in ui_events.read() {
         match event {
@@ -532,6 +537,7 @@ fn handle_ui_events(
                 if let Some(ref mut world_time) = world_time {
                     const MAX_TIME_WARP: u32 = 10000;
                     const MIN_TIME_WARP: u32 = 0;
+                    let prev = world_time.multiplier;
                     if *increase && world_time.multiplier * 2 <= MAX_TIME_WARP {
                         if world_time.multiplier == 0 {
                             world_time.multiplier = 1;
