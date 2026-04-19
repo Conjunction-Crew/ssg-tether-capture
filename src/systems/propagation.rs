@@ -4,7 +4,7 @@ use std::fs;
 use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode, TetherRoot};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
-    MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS,
+    MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS, eci_to_orbit_frame,
 };
 use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
 use crate::resources::capture_log::{LogEvent, LogLevel};
@@ -409,11 +409,12 @@ pub fn floating_origin_update_visuals(
 
     // Earth translation becomes new position
     let mut earth_transform = earth.into_inner();
-    let new_translation = -Vec3::new(
-        (target_rv[0]) as f32 + target_transform.translation.x,
-        (target_rv[1]) as f32 + target_transform.translation.y,
-        (target_rv[2]) as f32 + target_transform.translation.z,
-    );
+    let target_position = eci_to_orbit_frame(Vec3::new(
+        target_rv[0] as f32,
+        target_rv[1] as f32,
+        target_rv[2] as f32,
+    ));
+    let new_translation = target_transform.translation - target_position;
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;
 }

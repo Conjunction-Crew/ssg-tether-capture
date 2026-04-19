@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    constants::{MAP_LAYER, MAP_UNITS_TO_M},
+    constants::{MAP_LAYER, MAP_UNITS_TO_M, eci_to_orbit_frame},
     resources::space_catalog::SpaceCatalogUiState,
     resources::world_time::WorldTime,
     ui::state::UiScreen,
@@ -284,11 +284,7 @@ pub fn propagate_catalog_eci_state(
 
 pub fn eci_position_to_map(position_eci: Vec3) -> Vec3 {
     let scale = MAP_UNITS_TO_M as f32;
-    Vec3::new(
-        position_eci.x / scale,
-        position_eci.z / scale,
-        -position_eci.y / scale,
-    )
+    eci_to_orbit_frame(position_eci) / scale
 }
 
 fn wrap_angle(angle: f64) -> f64 {

@@ -11,11 +11,22 @@ use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::{
     components::{capture_components::CaptureComponent, orbit::Orbital},
-    constants::{MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER},
+    constants::{
+        MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER,
+        orbit_frame_rotation,
+    },
+    plugins::gpu_compute::{
+        GpuElements, GpuOrbitalElements, eci_position_to_map, propagate_catalog_eci_state,
+    },
+    plugins::orbital_mechanics::SimState,
     resources::{
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
         orbital_cache::OrbitalCache,
         settings::Settings,
+        space_catalog::{
+            EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
+            SelectedOrbitalObject, SpaceCatalogUiState, SpaceObjectCatalog,
+        },
         world_time::WorldTime,
     },
 };
@@ -23,8 +34,94 @@ use crate::{
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct CaptureGizmoConfigGroup;
 
+fn draw_orbital_from_elements(
+    semi_major: f32,
+    eccentricity: f32,
+    inclination: f32,
+    raan: f32,
+    arg_of_perigee: f32,
+    frame_rotation: Quat,
+    color: Srgba,
+    gizmos: &mut Gizmos,
+) {
+    if semi_major <= 0.0 || !(0.0..1.0).contains(&eccentricity) {
+        return;
+    }
+
+    let map_scale = MAP_UNITS_TO_M as f32;
+    let scaled_semi_major = semi_major / map_scale;
+    let semi_minor = semi_major * (1.0 - eccentricity * eccentricity).sqrt() / map_scale;
+
+    let rotation = frame_rotation
+        * Quat::from_axis_angle(Vec3::Z, raan)
+        * Quat::from_axis_angle(Vec3::X, inclination)
+        * Quat::from_axis_angle(Vec3::Z, arg_of_perigee);
+
+    let center_offset = rotation * Vec3::new(-scaled_semi_major * eccentricity, 0.0, 0.0);
+
+    gizmos
+        .ellipse(
+            Isometry3d::new(center_offset, rotation),
+            Vec2::new(scaled_semi_major, semi_minor),
+            color,
+        )
+        .resolution(512);
+}
+
+fn draw_orbital_selection_from_elements(
+    elements: &EditableOrbitalElements,
+    color: Srgba,
+    gizmos: &mut Gizmos,
+) {
+    draw_orbital_from_elements(
+        elements.semi_major_axis_m as f32,
+        elements.eccentricity as f32,
+        elements.inclination_rad as f32,
+        elements.raan_rad as f32,
+        elements.arg_perigee_rad as f32,
+        orbit_frame_rotation(),
+        color,
+        gizmos,
+    );
+
+    let orbital_point = GpuOrbitalElements {
+        id: 0,
+        a: elements.semi_major_axis_m as f32,
+        e: elements.eccentricity as f32,
+        i: elements.inclination_rad as f32,
+        raan: elements.raan_rad as f32,
+        argp: elements.arg_perigee_rad as f32,
+        mean_anomaly: elements.mean_anomaly_rad as f32,
+        epoch_offset_seconds: elements.epoch_offset_seconds as f32,
+    };
+
+    if let Some((position_eci, _velocity_eci)) =
+        propagate_catalog_eci_state(&orbital_point, elements.epoch_offset_seconds as f32)
+    {
+        gizmos.sphere(
+            Isometry3d::new(eci_position_to_map(position_eci), Quat::IDENTITY),
+            1.5,
+            color,
+        );
+    }
+}
+
+fn selected_orbital_gpu_index(selected: &SelectedOrbitalObject) -> Option<usize> {
+    match &selected.source {
+        OrbitalSelectionSource::Catalog { gpu_index, .. } => Some(*gpu_index),
+        OrbitalSelectionSource::Custom { .. } => None,
+    }
+}
+
+fn selection_contains_gpu_index(selection: &OrbitalSelectionState, gpu_index: usize) -> bool {
+    [&selection.target, &selection.chaser]
+        .into_iter()
+        .flatten()
+        .any(|selected| selected_orbital_gpu_index(selected) == Some(gpu_index))
+}
+
 pub fn orbital_gizmos(
-    orbitals: Query<(&Orbital, Option<&RigidBodyDisabled>)>,
+    orbitals: Query<&Orbital>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     world_time: Res<WorldTime>,
     mut gizmos: Gizmos,
@@ -36,9 +133,10 @@ pub fn orbital_gizmos(
         return;
     }
 
-    for (orbital, disabled) in orbitals {
+    // Draw orbitals with an active propagator
+    for orbital in orbitals {
         let Some(propagator) = orbital.propagator.clone() else {
-            return;
+            continue;
         };
 
         if let Ok(elements) = propagator.state_koe_osc(world_time.epoch, AngleFormat::Radians) {
@@ -46,24 +144,63 @@ pub fn orbital_gizmos(
                 continue;
             }
 
-            let map_scale = MAP_UNITS_TO_M as f64;
-            let semi_major = (elements.x / map_scale) as f32;
-            let semi_minor =
-                (elements.x * (1.0 - elements.y * elements.y).sqrt() / map_scale) as f32;
+            draw_orbital_from_elements(
+                elements.x as f32,
+                elements.y as f32,
+                elements.z as f32,
+                elements.w as f32,
+                elements.a as f32,
+                orbit_frame_rotation(),
+                Srgba::new(0.0, 0.0, 1.0, 0.1),
+                &mut gizmos,
+            );
+        }
+    }
 
-            let rotation = Quat::from_axis_angle(Vec3::Z, elements.w as f32)
-                * Quat::from_axis_angle(Vec3::X, elements.z as f32)
-                * Quat::from_axis_angle(Vec3::Z, elements.a as f32);
+    if *sim_state.get() == SimState::Running {
+        return;
+    }
 
-            let center_offset = rotation * Vec3::new(-semi_major * elements.y as f32, 0.0, 0.0);
+    let orbital_selection = orbital_selection.as_deref();
 
-            gizmos
-                .ellipse(
-                    Isometry3d::new(center_offset, rotation),
-                    Vec2::new(semi_major, semi_minor),
-                    Srgba::new(0.0, 0.0, 1.0, 0.1),
-                )
-                .resolution(512);
+    // Draw the orbital of the currently selected catalog object
+    if let Some(id) = catalog_ui_state.into_inner().selected_index {
+        if let Some(entry) = catalog.entries.get(id) {
+            let catalog_orbit_already_selected = orbital_selection
+                .is_some_and(|selection| selection_contains_gpu_index(selection, entry.gpu_index));
+
+            if !catalog_orbit_already_selected {
+                if let Some(elements) = gpu_elements.0.get(entry.gpu_index) {
+                    draw_orbital_from_elements(
+                        elements.a,
+                        elements.e,
+                        elements.i,
+                        elements.raan,
+                        elements.argp,
+                        orbit_frame_rotation(),
+                        Srgba::new(0.0, 0.0, 1.0, 0.1),
+                        &mut gizmos,
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(orbital_selection) = orbital_selection {
+        if let Some(target) = orbital_selection.target.as_ref() {
+            draw_orbital_selection_from_elements(
+                &target.elements,
+                Srgba::new(0.2, 1.0, 0.45, 0.22),
+                &mut gizmos,
+            );
+        }
+
+        if let Some(chaser) = orbital_selection.chaser.as_ref() {
+            draw_orbital_selection_from_elements(
+                &chaser.elements,
+                Srgba::new(1.0, 0.72, 0.15, 0.22),
+                &mut gizmos,
+            );
         }
     }
 }

@@ -19,6 +19,13 @@ use crate::{
     ui::state::UiScreen,
 };
 
+#[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
+pub enum SimState {
+    #[default]
+    Setup,
+    Running,
+}
+
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ManualPhysics;
 
@@ -26,7 +33,8 @@ pub struct OrbitalMechanicsPlugin;
 
 impl Plugin for OrbitalMechanicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(PhysicsPlugins::new(ManualPhysics))
+        app.init_state::<SimState>()
+            .add_plugins(PhysicsPlugins::new(ManualPhysics))
             .add_systems(
                 OnEnter(UiScreen::Sim),
                 (init_sim_resources, load_dataset_entities, setup_time).chain(),
@@ -35,12 +43,15 @@ impl Plugin for OrbitalMechanicsPlugin {
             .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
             .add_systems(
                 FixedUpdate,
-                fixed_physics_step.run_if(in_state(UiScreen::Sim)),
+                fixed_physics_step
+                    .run_if(in_state(UiScreen::Sim))
+                    .run_if(in_state(SimState::Running)),
             )
             .add_systems(
                 Update,
                 (dev_gizmos, capture_gizmos, floating_origin_update_visuals)
-                    .run_if(in_state(UiScreen::Sim)),
+                    .run_if(in_state(UiScreen::Sim))
+                    .run_if(in_state(SimState::Running)),
             )
             .add_systems(
                 ManualPhysics,
