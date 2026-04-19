@@ -125,6 +125,11 @@ pub fn orbital_gizmos(
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     world_time: Res<WorldTime>,
     mut gizmos: Gizmos,
+    catalog_ui_state: Res<SpaceCatalogUiState>,
+    catalog: Res<SpaceObjectCatalog>,
+    gpu_elements: Res<GpuElements>,
+    orbital_selection: Option<Res<OrbitalSelectionState>>,
+    sim_state: Res<State<SimState>>,
 ) {
     let render_layers = camera_s.into_inner();
 
