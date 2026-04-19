@@ -5,6 +5,7 @@ use crate::resources::capture_plan_form::UnitSystem;
 #[derive(Message, Debug, Clone)]
 pub enum UiEvent {
     OpenProject(String),
+    StartSim,
     BackToHome,
     ShowExitConfirm,
     CancelExitConfirm,

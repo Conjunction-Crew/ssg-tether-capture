@@ -5,26 +5,31 @@ use bevy::ecs::observer::On;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseScrollUnit;
-use bevy::math::DVec3;
 use bevy::picking::Pickable;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
-use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
+use bevy::ui_widgets::{
+    ControlOrientation, CoreScrollbarThumb, Scrollbar, Slider, SliderPrecision, SliderRange,
+    SliderStep, SliderThumb, SliderValue, TrackClick, ValueChange,
+};
 
 use crate::components::capture_components::CaptureComponent;
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
-use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::constants::{ISS_ORBIT, MAP_LAYER, SCENE_LAYER, UI_LAYER};
 use crate::plugins::gpu_compute::{
     GpuComputeEpochOrigin, GpuElements, eci_position_to_map, propagate_catalog_eci_state,
 };
+use crate::plugins::orbital_mechanics::SimState;
 use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::space_catalog::{
-    FilteredSpaceCatalogResults, SpaceCatalogUiState, SpaceObjectCatalog,
+    EditableOrbitalElements, FilteredSpaceCatalogResults, OrbitalSelectionRole,
+    OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject, SpaceCatalogUiState,
+    SpaceObjectCatalog,
 };
 use crate::resources::working_directory::WorkingDirectory;
 use crate::ui::events::UiEvent;
@@ -48,6 +53,7 @@ pub struct CaptureButton {
 #[derive(Component, PartialEq, Eq, Clone, Copy)]
 pub enum CollapsibleSection {
     ProjectInformation,
+    OrbitalSelection,
     TimeWarp,
     SimulationControls,
     SimulationHud,
@@ -62,6 +68,66 @@ pub struct CollapsibleToggle {
 #[derive(Component)]
 pub struct CollapsibleContent {
     pub section: CollapsibleSection,
+}
+
+#[derive(Component)]
+pub struct StartSimButton;
+
+#[derive(Component)]
+pub struct UseCatalogSelectionButton {
+    pub role: OrbitalSelectionRole,
+}
+
+#[derive(Component)]
+pub struct CreateCustomOrbitButton {
+    pub role: OrbitalSelectionRole,
+}
+
+#[derive(Component)]
+pub struct CurrentCatalogSelectionText;
+
+#[derive(Component)]
+pub struct OrbitalSelectionSummaryText {
+    pub role: OrbitalSelectionRole,
+}
+
+#[derive(Component)]
+pub struct OrbitalSelectionSliderGroup {
+    pub role: OrbitalSelectionRole,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrbitalElementField {
+    SemiMajorAxis,
+    Eccentricity,
+    Inclination,
+    Raan,
+    ArgPerigee,
+    MeanAnomaly,
+}
+
+#[derive(Component)]
+pub struct OrbitalElementSlider {
+    pub role: OrbitalSelectionRole,
+    pub field: OrbitalElementField,
+}
+
+#[derive(Component)]
+pub struct OrbitalElementSliderFill {
+    pub role: OrbitalSelectionRole,
+    pub field: OrbitalElementField,
+}
+
+#[derive(Component)]
+pub struct OrbitalElementSliderThumb {
+    pub role: OrbitalSelectionRole,
+    pub field: OrbitalElementField,
+}
+
+#[derive(Component)]
+pub struct OrbitalElementSliderValueText {
+    pub role: OrbitalSelectionRole,
+    pub field: OrbitalElementField,
 }
 
 #[derive(Component)]
@@ -181,6 +247,14 @@ fn position_overlay_at_viewport_center(node: &mut Node, center: Vec2, size_px: f
     node.width = px(size_px);
     node.height = px(size_px);
 }
+const ORBITAL_ELEMENT_FIELDS: [OrbitalElementField; 6] = [
+    OrbitalElementField::SemiMajorAxis,
+    OrbitalElementField::Eccentricity,
+    OrbitalElementField::Inclination,
+    OrbitalElementField::Raan,
+    OrbitalElementField::ArgPerigee,
+    OrbitalElementField::MeanAnomaly,
+];
 
 pub fn spawn_project_detail_screen(
     mut commands: Commands,
@@ -190,6 +264,7 @@ pub fn spawn_project_detail_screen(
     orbital_cache: Res<OrbitalCache>,
     capture_plan_lib: Res<CapturePlanLibrary>,
     working_directory: Res<WorkingDirectory>,
+    sim_state: Res<State<SimState>>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
@@ -851,7 +926,56 @@ pub fn spawn_project_detail_screen(
                             },
                         );
 
+                        if *sim_state.get() == SimState::Setup {
+                            spawn_collapsible_section(
+                                sidebar,
+                                &font,
+                                &theme,
+                                "Orbital Selection",
+                                CollapsibleSection::OrbitalSelection,
+                                |content| {
+                                    content.spawn((
+                                        Text::new(
+                                            "Pick a catalog object on the map, assign it to target or chaser, or create a custom orbit.",
+                                        ),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.text_muted),
+                                    ));
+
+                                    content.spawn((
+                                        CurrentCatalogSelectionText,
+                                        Text::new("Selected catalog object: none"),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 11.0,
+                                            ..default()
+                                        },
+                                        TextColor(theme.text_primary),
+                                    ));
+
+                                    spawn_orbital_selection_role_editor(
+                                        content,
+                                        &font,
+                                        &theme,
+                                        OrbitalSelectionRole::Target,
+                                    );
+                                    spawn_orbital_selection_role_editor(
+                                        content,
+                                        &font,
+                                        &theme,
+                                        OrbitalSelectionRole::Chaser,
+                                    );
+                                },
+                            );
+                        }
+
                         // === Time Warp (collapsible) ===
+
+                        if *sim_state.get() == SimState::Running {
                         spawn_collapsible_section(
                             sidebar,
                             &font,
@@ -934,6 +1058,7 @@ pub fn spawn_project_detail_screen(
                                     });
                             },
                         );
+                    }
 
                         // === Simulation Controls (collapsible) ===
                         spawn_collapsible_section(
@@ -943,6 +1068,35 @@ pub fn spawn_project_detail_screen(
                             "Simulation Controls",
                             CollapsibleSection::SimulationControls,
                             |content| {
+                                if *sim_state.get() == SimState::Setup {
+                                // Start Sim button
+                                content
+                                    .spawn((
+                                        Button,
+                                        StartSimButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Start Simulation"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+                                }
+
+                                if *sim_state.get() == SimState::Running {
                                 // Map View button
                                 content
                                     .spawn((
@@ -994,7 +1148,7 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
 
-                                // Toggle Origin button
+                                // Toggle Capture Gizmos button
                                 content
                                     .spawn((
                                         Button,
@@ -1036,7 +1190,7 @@ pub fn spawn_project_detail_screen(
                                     ))
                                     .with_children(|btn| {
                                         btn.spawn((
-                                            Text::new("Cycle Camera Target (Tab)"),
+                                            Text::new("Cycle Target (Tab)"),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 14.0,
@@ -1100,6 +1254,7 @@ pub fn spawn_project_detail_screen(
                                             TextColor(theme.button_text),
                                         ));
                                     });
+                                }
                             },
                         );
 
@@ -1398,6 +1553,445 @@ fn spawn_collapsible_section(
                 ))
                 .with_children(content_builder);
         });
+}
+
+fn spawn_orbital_selection_role_editor(
+    parent: &mut ChildSpawnerCommands,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+    role: OrbitalSelectionRole,
+) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(8.0),
+                padding: UiRect::all(px(10.0)),
+                ..default()
+            },
+            BackgroundColor(theme.panel_background_soft),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new(format!("{} Orbit", orbital_selection_role_label(role))),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(theme.text_accent),
+            ));
+
+            card.spawn((
+                OrbitalSelectionSummaryText { role },
+                Text::new("No orbit selected"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(theme.text_primary),
+            ));
+
+            card.spawn(Node {
+                width: percent(100),
+                flex_direction: FlexDirection::Row,
+                column_gap: px(8.0),
+                ..default()
+            })
+            .with_children(|buttons| {
+                buttons
+                    .spawn((
+                        Button,
+                        UseCatalogSelectionButton { role },
+                        Node {
+                            flex_grow: 1.0,
+                            min_height: px(34.0),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            padding: UiRect::axes(px(8.0), px(6.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme.panel_background),
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Use Selected"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 11.0,
+                                ..default()
+                            },
+                            TextColor(theme.text_primary),
+                        ));
+                    });
+
+                buttons
+                    .spawn((
+                        Button,
+                        CreateCustomOrbitButton { role },
+                        Node {
+                            flex_grow: 1.0,
+                            min_height: px(34.0),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            padding: UiRect::axes(px(8.0), px(6.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme.panel_background),
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Create Custom"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 11.0,
+                                ..default()
+                            },
+                            TextColor(theme.text_primary),
+                        ));
+                    });
+            });
+
+            card.spawn((
+                OrbitalSelectionSliderGroup { role },
+                Node {
+                    width: percent(100),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(8.0),
+                    ..default()
+                },
+            ))
+            .with_children(|sliders| {
+                for field in ORBITAL_ELEMENT_FIELDS {
+                    spawn_orbital_element_slider(sliders, font, theme, role, field);
+                }
+            });
+        });
+}
+
+fn spawn_orbital_element_slider(
+    parent: &mut ChildSpawnerCommands,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+    role: OrbitalSelectionRole,
+    field: OrbitalElementField,
+) {
+    let spec = orbital_element_slider_spec(field);
+    parent
+        .spawn(Node {
+            width: percent(100),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn(Node {
+                width: percent(100),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                column_gap: px(8.0),
+                ..default()
+            })
+            .with_children(|header| {
+                header.spawn((
+                    Text::new(spec.label),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_muted),
+                ));
+
+                header.spawn((
+                    OrbitalElementSliderValueText { role, field },
+                    Text::new("--"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(theme.text_primary),
+                ));
+            });
+
+            row.spawn((
+                OrbitalElementSlider { role, field },
+                Slider {
+                    track_click: TrackClick::Drag,
+                },
+                SliderValue(spec.default_value),
+                SliderRange::new(spec.min, spec.max),
+                SliderStep(spec.step),
+                SliderPrecision(spec.precision),
+                Interaction::default(),
+                Pickable::default(),
+                Node {
+                    width: percent(100),
+                    height: px(20.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+            ))
+            .observe(orbital_element_slider_changed)
+            .with_children(|slider| {
+                slider.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(0.0),
+                        top: px(8.0),
+                        width: percent(100),
+                        height: px(4.0),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(theme.panel_background),
+                    Pickable::IGNORE,
+                ));
+
+                slider.spawn((
+                    OrbitalElementSliderFill { role, field },
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(0.0),
+                        top: px(8.0),
+                        width: percent(0),
+                        height: px(4.0),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(theme.button_background),
+                    Pickable::IGNORE,
+                ));
+
+                slider.spawn((
+                    SliderThumb,
+                    OrbitalElementSliderThumb { role, field },
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: percent(0),
+                        top: px(3.0),
+                        width: px(14.0),
+                        height: px(14.0),
+                        border: UiRect::all(px(2.0)),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(theme.text_primary),
+                    BorderColor::all(theme.button_background),
+                    Pickable::IGNORE,
+                ));
+            });
+        });
+}
+
+fn orbital_element_slider_changed(
+    value_change: On<ValueChange<f32>>,
+    mut commands: Commands,
+    sliders: Query<&OrbitalElementSlider>,
+    mut selection: ResMut<OrbitalSelectionState>,
+) {
+    let Ok(slider) = sliders.get(value_change.source) else {
+        return;
+    };
+
+    if let Some(selected) = selected_orbital_object_mut(&mut selection, slider.role) {
+        write_slider_value_to_elements(&mut selected.elements, slider.field, value_change.value);
+    }
+
+    commands
+        .entity(value_change.source)
+        .insert(SliderValue(value_change.value));
+}
+
+struct OrbitalElementSliderSpec {
+    label: &'static str,
+    min: f32,
+    max: f32,
+    step: f32,
+    precision: i32,
+    default_value: f32,
+    suffix: &'static str,
+}
+
+fn orbital_element_slider_spec(field: OrbitalElementField) -> OrbitalElementSliderSpec {
+    match field {
+        OrbitalElementField::SemiMajorAxis => OrbitalElementSliderSpec {
+            label: "Semi-major axis",
+            min: 6_400.0,
+            max: 80_000.0,
+            step: 10.0,
+            precision: 0,
+            default_value: (ISS_ORBIT[0] / 1_000.0) as f32,
+            suffix: "km",
+        },
+        OrbitalElementField::Eccentricity => OrbitalElementSliderSpec {
+            label: "Eccentricity",
+            min: 0.0,
+            max: 0.95,
+            step: 0.001,
+            precision: 4,
+            default_value: ISS_ORBIT[1] as f32,
+            suffix: "",
+        },
+        OrbitalElementField::Inclination => OrbitalElementSliderSpec {
+            label: "Inclination",
+            min: 0.0,
+            max: 180.0,
+            step: 0.1,
+            precision: 2,
+            default_value: (ISS_ORBIT[2] as f32).to_degrees(),
+            suffix: "deg",
+        },
+        OrbitalElementField::Raan => OrbitalElementSliderSpec {
+            label: "RAAN",
+            min: 0.0,
+            max: 360.0,
+            step: 0.1,
+            precision: 2,
+            default_value: (ISS_ORBIT[3] as f32).to_degrees(),
+            suffix: "deg",
+        },
+        OrbitalElementField::ArgPerigee => OrbitalElementSliderSpec {
+            label: "Argument of perigee",
+            min: 0.0,
+            max: 360.0,
+            step: 0.1,
+            precision: 2,
+            default_value: (ISS_ORBIT[4] as f32).to_degrees(),
+            suffix: "deg",
+        },
+        OrbitalElementField::MeanAnomaly => OrbitalElementSliderSpec {
+            label: "Mean anomaly",
+            min: 0.0,
+            max: 360.0,
+            step: 0.1,
+            precision: 2,
+            default_value: (ISS_ORBIT[5] as f32).to_degrees(),
+            suffix: "deg",
+        },
+    }
+}
+
+fn selected_orbital_object(
+    selection: Option<&OrbitalSelectionState>,
+    role: OrbitalSelectionRole,
+) -> Option<&SelectedOrbitalObject> {
+    match role {
+        OrbitalSelectionRole::Target => selection.and_then(|selection| selection.target.as_ref()),
+        OrbitalSelectionRole::Chaser => selection.and_then(|selection| selection.chaser.as_ref()),
+    }
+}
+
+fn selected_orbital_object_mut(
+    selection: &mut OrbitalSelectionState,
+    role: OrbitalSelectionRole,
+) -> Option<&mut SelectedOrbitalObject> {
+    match role {
+        OrbitalSelectionRole::Target => selection.target.as_mut(),
+        OrbitalSelectionRole::Chaser => selection.chaser.as_mut(),
+    }
+}
+
+fn orbital_selection_role_label(role: OrbitalSelectionRole) -> &'static str {
+    match role {
+        OrbitalSelectionRole::Target => "Target",
+        OrbitalSelectionRole::Chaser => "Chaser",
+    }
+}
+
+fn orbital_selection_source_label(selected: &SelectedOrbitalObject) -> String {
+    match &selected.source {
+        OrbitalSelectionSource::Catalog { label, .. } => format!("Catalog: {label}"),
+        OrbitalSelectionSource::Custom { label } => label.clone(),
+    }
+}
+
+fn slider_value_from_elements(
+    elements: &EditableOrbitalElements,
+    field: OrbitalElementField,
+) -> f32 {
+    match field {
+        OrbitalElementField::SemiMajorAxis => (elements.semi_major_axis_m / 1_000.0) as f32,
+        OrbitalElementField::Eccentricity => elements.eccentricity as f32,
+        OrbitalElementField::Inclination => elements.inclination_rad.to_degrees() as f32,
+        OrbitalElementField::Raan => normalized_degrees(elements.raan_rad),
+        OrbitalElementField::ArgPerigee => normalized_degrees(elements.arg_perigee_rad),
+        OrbitalElementField::MeanAnomaly => normalized_degrees(elements.mean_anomaly_rad),
+    }
+}
+
+fn clamped_slider_value_from_elements(
+    elements: &EditableOrbitalElements,
+    field: OrbitalElementField,
+) -> f32 {
+    let spec = orbital_element_slider_spec(field);
+    slider_value_from_elements(elements, field).clamp(spec.min, spec.max)
+}
+
+fn write_slider_value_to_elements(
+    elements: &mut EditableOrbitalElements,
+    field: OrbitalElementField,
+    value: f32,
+) {
+    match field {
+        OrbitalElementField::SemiMajorAxis => {
+            elements.semi_major_axis_m = value as f64 * 1_000.0;
+        }
+        OrbitalElementField::Eccentricity => {
+            elements.eccentricity = value as f64;
+        }
+        OrbitalElementField::Inclination => {
+            elements.inclination_rad = (value as f64).to_radians();
+        }
+        OrbitalElementField::Raan => {
+            elements.raan_rad = (value as f64).to_radians();
+        }
+        OrbitalElementField::ArgPerigee => {
+            elements.arg_perigee_rad = (value as f64).to_radians();
+        }
+        OrbitalElementField::MeanAnomaly => {
+            elements.mean_anomaly_rad = (value as f64).to_radians();
+        }
+    }
+}
+
+fn normalized_degrees(radians: f64) -> f32 {
+    let mut degrees = radians.to_degrees() % 360.0;
+    if degrees < 0.0 {
+        degrees += 360.0;
+    }
+    degrees as f32
+}
+
+fn slider_fraction(elements: &EditableOrbitalElements, field: OrbitalElementField) -> f32 {
+    let spec = orbital_element_slider_spec(field);
+    let value = slider_value_from_elements(elements, field);
+    if spec.max <= spec.min {
+        0.0
+    } else {
+        ((value - spec.min) / (spec.max - spec.min)).clamp(0.0, 1.0)
+    }
+}
+
+fn format_orbital_element_value(
+    elements: &EditableOrbitalElements,
+    field: OrbitalElementField,
+) -> String {
+    let spec = orbital_element_slider_spec(field);
+    let value = slider_value_from_elements(elements, field);
+    let precision = spec.precision.max(0) as usize;
+    if spec.suffix.is_empty() {
+        format!("{value:.precision$}")
+    } else {
+        format!("{value:.precision$} {}", spec.suffix)
+    }
 }
 
 pub fn cleanup_project_detail_screen(
@@ -2105,17 +2699,18 @@ pub fn update_satellite_indicator_overlay(
             return;
         };
 
-        let scale = MAP_UNITS_TO_M;
-        let base = DVec3::new(params[0] / scale, params[1] / scale, params[2] / scale);
-        let world_position = if disabled {
-            base
+        let position_eci = if disabled {
+            Vec3::new(params[0] as f32, params[1] as f32, params[2] as f32)
         } else {
-            base + rb.position.0 / scale
+            Vec3::new(
+                (params[0] + rb.position.0.x) as f32,
+                (params[1] + rb.position.0.y) as f32,
+                (params[2] + rb.position.0.z) as f32,
+            )
         };
+        let world_position = eci_position_to_map(position_eci);
 
-        let Ok(viewport_position) =
-            camera.world_to_viewport(camera_transform, world_position.as_vec3())
-        else {
+        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, world_position) else {
             overlay_node.display = Display::None;
             return;
         };
@@ -2185,6 +2780,7 @@ pub fn project_detail_interactions(
     mut interactions: Query<
         (
             &Interaction,
+            Option<&StartSimButton>,
             Option<&BackButton>,
             Option<&CaptureButton>,
             Option<&MapViewButton>,
@@ -2210,6 +2806,7 @@ pub fn project_detail_interactions(
     theme: Res<UiTheme>,
     form: Res<NewCapturePlanForm>,
     restart_modal_query: Query<Entity, With<RestartPromptModal>>,
+    selection: Res<OrbitalSelectionState>,
 ) {
     if *screen.get() != crate::ui::state::UiScreen::Sim {
         return;
@@ -2218,9 +2815,11 @@ pub fn project_detail_interactions(
     let any_modal_open =
         form.open || !exit_modal_query.is_empty() || !restart_modal_query.is_empty();
     let capture_active = !capture_entities.is_empty();
+    let can_start_sim = selection.target.is_some() && selection.chaser.is_some();
 
     for (
         interaction,
+        start_sim,
         back_button,
         capture_button,
         map_view_button,
@@ -2240,10 +2839,15 @@ pub fn project_detail_interactions(
                 // Capture button is disabled once capture is active
                 if is_capture && capture_active {
                     continue;
+                } else if start_sim.is_some() && !can_start_sim {
+                    *background_color = BackgroundColor(theme.panel_background);
+                    continue;
                 }
                 *background_color = BackgroundColor(theme.button_background_hover);
                 // Exit modal buttons are always allowed
-                if exit_cancel_button.is_some() {
+                if start_sim.is_some() {
+                    events.write(UiEvent::StartSim);
+                } else if exit_cancel_button.is_some() {
                     for entity in &exit_modal_query {
                         commands.entity(entity).despawn();
                     }
@@ -2274,6 +2878,8 @@ pub fn project_detail_interactions(
             Interaction::Hovered => {
                 if is_capture && capture_active {
                     // Keep dimmed appearance — don't show hover highlight
+                } else if start_sim.is_some() && !can_start_sim {
+                    // Keep dimmed appearance until both target and chaser orbits are selected
                 } else if any_modal_open
                     && exit_cancel_button.is_none()
                     && exit_confirm_button.is_none()
@@ -2285,6 +2891,8 @@ pub fn project_detail_interactions(
             }
             Interaction::None => {
                 if is_capture && capture_active {
+                    *background_color = BackgroundColor(theme.panel_background);
+                } else if start_sim.is_some() && !can_start_sim {
                     *background_color = BackgroundColor(theme.panel_background);
                 } else if is_exit_confirm {
                     // Preserve blue spawn color; avoid blink to soft on first frame
@@ -2341,6 +2949,7 @@ pub fn restart_prompt_interactions(
     modal_query: Query<Entity, With<RestartPromptModal>>,
     mut sync_state: ResMut<SimPlanSyncState>,
     mut next_screen: ResMut<NextState<crate::ui::state::UiScreen>>,
+    mut next_sim_state: ResMut<NextState<SimState>>,
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     theme: Res<UiTheme>,
     mut log: MessageWriter<LogEvent>,
@@ -2364,6 +2973,7 @@ pub fn restart_prompt_interactions(
                         message: "Simulation restart requested".to_string(),
                     });
                     // Transition Home → Sim to trigger full cleanup and re-setup
+                    next_sim_state.set(SimState::Setup);
                     next_screen.set(crate::ui::state::UiScreen::Home);
                 } else if recompile_btn.is_some() {
                     // Apply changes live without restarting the sim.
@@ -2468,5 +3078,185 @@ pub fn update_sync_indicator(
         } else {
             Display::Flex
         };
+    }
+}
+
+pub fn sync_orbital_selection_ui(
+    mut commands: Commands,
+    selection: Option<Res<OrbitalSelectionState>>,
+    catalog: Res<SpaceObjectCatalog>,
+    catalog_ui: Res<SpaceCatalogUiState>,
+    mut sliders: Query<(Entity, &OrbitalElementSlider, &SliderValue)>,
+    mut text_queries: ParamSet<(
+        Query<&mut Text, With<CurrentCatalogSelectionText>>,
+        Query<(&mut Text, &OrbitalSelectionSummaryText)>,
+        Query<(&mut Text, &OrbitalElementSliderValueText)>,
+    )>,
+    mut node_queries: ParamSet<(
+        Query<(&mut Node, &OrbitalSelectionSliderGroup)>,
+        Query<(&mut Node, &OrbitalElementSliderFill)>,
+        Query<(&mut Node, &OrbitalElementSliderThumb)>,
+    )>,
+) {
+    let selection = selection.as_deref();
+    let catalog_label = catalog_ui
+        .selected_index
+        .and_then(|index| catalog.entries.get(index))
+        .map(|entry| format!("Selected catalog object: {}", entry.display_label()))
+        .unwrap_or_else(|| "Selected catalog object: none".to_string());
+
+    for mut text in &mut text_queries.p0() {
+        text.0 = catalog_label.clone();
+    }
+
+    for (mut text, summary) in &mut text_queries.p1() {
+        text.0 = selected_orbital_object(selection, summary.role)
+            .map(|selected| {
+                format!(
+                    "{}: {}",
+                    orbital_selection_role_label(summary.role),
+                    orbital_selection_source_label(selected)
+                )
+            })
+            .unwrap_or_else(|| {
+                format!(
+                    "{}: No orbit selected",
+                    orbital_selection_role_label(summary.role)
+                )
+            });
+    }
+
+    for (mut node, group) in &mut node_queries.p0() {
+        node.display = if selected_orbital_object(selection, group.role).is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    for (entity, slider, value) in &mut sliders {
+        let next_value = selected_orbital_object(selection, slider.role)
+            .map(|selected| clamped_slider_value_from_elements(&selected.elements, slider.field))
+            .unwrap_or_else(|| orbital_element_slider_spec(slider.field).default_value);
+
+        if (value.0 - next_value).abs() > f32::EPSILON {
+            commands.entity(entity).insert(SliderValue(next_value));
+        }
+    }
+
+    for (mut text, value_text) in &mut text_queries.p2() {
+        text.0 = selected_orbital_object(selection, value_text.role)
+            .map(|selected| format_orbital_element_value(&selected.elements, value_text.field))
+            .unwrap_or_else(|| "--".to_string());
+    }
+
+    for (mut node, fill) in &mut node_queries.p1() {
+        let width = selected_orbital_object(selection, fill.role)
+            .map(|selected| slider_fraction(&selected.elements, fill.field) * 100.0)
+            .unwrap_or(0.0);
+        node.width = percent(width);
+    }
+
+    for (mut node, thumb) in &mut node_queries.p2() {
+        let left = selected_orbital_object(selection, thumb.role)
+            .map(|selected| slider_fraction(&selected.elements, thumb.field) * 100.0)
+            .unwrap_or(0.0);
+        node.left = percent(left);
+    }
+}
+
+pub fn orbital_selection_interactions(
+    mut buttons: Query<
+        (
+            &Interaction,
+            Option<&UseCatalogSelectionButton>,
+            Option<&CreateCustomOrbitButton>,
+            &mut BackgroundColor,
+        ),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            Or<(
+                With<UseCatalogSelectionButton>,
+                With<CreateCustomOrbitButton>,
+            )>,
+        ),
+    >,
+    catalog_ui: Res<SpaceCatalogUiState>,
+    catalog: Res<SpaceObjectCatalog>,
+    gpu_elements: Res<GpuElements>,
+    mut selection: ResMut<OrbitalSelectionState>,
+    theme: Res<UiTheme>,
+) {
+    for (interaction, catalog_selection, custom_orbit, mut background_color) in &mut buttons {
+        match *interaction {
+            Interaction::Pressed => {
+                *background_color = BackgroundColor(theme.button_background_hover);
+
+                if let Some(button) = catalog_selection {
+                    let Some(catalog_index) = catalog_ui.selected_index else {
+                        continue;
+                    };
+                    let Some(entry) = catalog.entries.get(catalog_index) else {
+                        continue;
+                    };
+                    let Some(elements) = gpu_elements.0.get(entry.gpu_index) else {
+                        continue;
+                    };
+
+                    let selected = SelectedOrbitalObject {
+                        source: OrbitalSelectionSource::Catalog {
+                            catalog_index,
+                            gpu_index: entry.gpu_index,
+                            label: entry.display_label(),
+                        },
+                        elements: EditableOrbitalElements {
+                            semi_major_axis_m: elements.a as f64,
+                            eccentricity: elements.e as f64,
+                            inclination_rad: elements.i as f64,
+                            raan_rad: elements.raan as f64,
+                            arg_perigee_rad: elements.argp as f64,
+                            mean_anomaly_rad: elements.mean_anomaly as f64,
+                            epoch_offset_seconds: elements.epoch_offset_seconds as f64,
+                        },
+                    };
+
+                    match button.role {
+                        OrbitalSelectionRole::Target => selection.target = Some(selected),
+                        OrbitalSelectionRole::Chaser => selection.chaser = Some(selected),
+                    }
+                } else if let Some(button) = custom_orbit {
+                    let label = match button.role {
+                        OrbitalSelectionRole::Target => "Custom Target",
+                        OrbitalSelectionRole::Chaser => "Custom Chaser",
+                    };
+                    let selected = SelectedOrbitalObject {
+                        source: OrbitalSelectionSource::Custom {
+                            label: label.to_string(),
+                        },
+                        elements: EditableOrbitalElements {
+                            semi_major_axis_m: ISS_ORBIT[0],
+                            eccentricity: ISS_ORBIT[1],
+                            inclination_rad: ISS_ORBIT[2],
+                            raan_rad: ISS_ORBIT[3],
+                            arg_perigee_rad: ISS_ORBIT[4],
+                            mean_anomaly_rad: ISS_ORBIT[5],
+                            epoch_offset_seconds: 0.0,
+                        },
+                    };
+
+                    match button.role {
+                        OrbitalSelectionRole::Target => selection.target = Some(selected),
+                        OrbitalSelectionRole::Chaser => selection.chaser = Some(selected),
+                    }
+                }
+            }
+            Interaction::Hovered => {
+                *background_color = BackgroundColor(theme.button_background);
+            }
+            Interaction::None => {
+                *background_color = BackgroundColor(theme.panel_background_soft);
+            }
+        }
     }
 }

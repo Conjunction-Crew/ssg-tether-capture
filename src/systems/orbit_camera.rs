@@ -3,7 +3,8 @@ use crate::{
         orbit::{Earth, Orbital},
         orbit_camera::{CameraTarget, OrbitCamera},
     },
-    constants::{MAP_UNITS_TO_M, SCENE_LAYER},
+    constants::{EARTH_TEXTURE_NORTH_AXIS, SCENE_LAYER},
+    plugins::gpu_compute::eci_position_to_map,
     resources::{orbital_cache::OrbitalCache, space_catalog::SpaceCatalogUiState},
 };
 use avian3d::prelude::*;
@@ -76,28 +77,26 @@ pub fn orbit_camera_track(
         &mut orbit_camera.map_params
     };
     let earth_transform = earth.into_inner();
-
-    let Ok((target_transform, entity)) = targets.single() else {
-        return;
-    };
+    let target = targets.single().ok();
 
     if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-        camera.focus = target_transform.translation;
-        camera.up =
-            -(earth_transform.translation - target_transform.translation).normalize_or(Vec3::NEG_Y);
-    } else {
-        let Some(target_rv) = orbital_cache.eci_states.get(&entity) else {
-            return;
-        };
-        camera.focus = Vec3::new(
-            (target_rv[0] / MAP_UNITS_TO_M) as f32,
-            (target_rv[1] / MAP_UNITS_TO_M) as f32,
-            (target_rv[2] / MAP_UNITS_TO_M) as f32,
-        );
+        if let Some((target_transform, _)) = target {
+            camera.focus = target_transform.translation;
+            camera.up = -(earth_transform.translation - target_transform.translation)
+                .normalize_or(Vec3::NEG_Y);
+        }
+    } else if let Some((_, entity)) = target {
+        if let Some(target_rv) = orbital_cache.eci_states.get(&entity) {
+            camera.focus = eci_position_to_map(Vec3::new(
+                target_rv[0] as f32,
+                target_rv[1] as f32,
+                target_rv[2] as f32,
+            ));
+        }
     }
 
     let up = camera.up.normalize_or(Vec3::Y);
-    let earth_axis = (earth_transform.rotation * Vec3::Y).normalize_or(Vec3::Y);
+    let earth_axis = (earth_transform.rotation * EARTH_TEXTURE_NORTH_AXIS).normalize_or(Vec3::Y);
     let base_forward = (earth_axis - up * earth_axis.dot(up))
         .normalize_or((Vec3::NEG_Z - up * Vec3::NEG_Z.dot(up)).normalize_or(Vec3::X));
     let right = base_forward.cross(up).normalize_or(Vec3::X);

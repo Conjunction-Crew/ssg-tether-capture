@@ -16,7 +16,6 @@ use avian3d::prelude::*;
 use bevy::ecs::relationship::RelationshipSourceCollection;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use bevy::state::app::StatesPlugin;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
 use brahe::utils::DOrbitStateProvider;
 
@@ -28,9 +27,7 @@ fn test_app() -> App {
         AssetPlugin::default(),
         InputPlugin,
         ScenePlugin,
-        StatesPlugin,
     ))
-    .init_state::<UiScreen>()
     .init_asset::<Mesh>()
     .init_asset::<StandardMaterial>()
     .init_asset::<GizmoAsset>()

@@ -2,13 +2,13 @@ use std::fmt::Write;
 
 use crate::{
     components::{
-        capture_components::{CaptureComponent, State},
-        orbit::Orbital,
+        capture_components::CaptureComponent,
         user_interface::{
             CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
         },
     },
-    constants::{EARTH_RADIUS, MAP_UNITS_TO_M},
+    constants::{EARTH_RADIUS, SCENE_LAYER},
+    plugins::gpu_compute::eci_position_to_map,
     resources::{
         capture_log::{LogEvent, LogLevel},
         capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCaptureState},
@@ -258,23 +258,15 @@ pub fn map_orbitals(
             continue;
         };
 
-        let base = DVec3::new(
-            params[0] / MAP_UNITS_TO_M,
-            params[1] / MAP_UNITS_TO_M,
-            params[2] / MAP_UNITS_TO_M,
-        );
-        let world_position = if disabled {
-            base
-        } else {
-            base + rb.position.0 / MAP_UNITS_TO_M
-        };
+        let world_position = eci_position_to_map(Vec3::new(
+            (params[0] + rb.position.0.x) as f32,
+            (params[1] + rb.position.0.y) as f32,
+            (params[2] + rb.position.0.z) as f32,
+        ));
 
-        if let Ok(viewport_position) =
-            cam.world_to_viewport(cam_transform, world_position.as_vec3())
-        {
-            position_label_at_viewport_center(&mut node, viewport_position, MAP_LABEL_BOX_SIZE_PX);
-        } else {
-            node.display = Display::None;
+        if let Ok(viewport_position) = cam.world_to_viewport(cam_transform, world_position) {
+            node.top = Val::Px(viewport_position.y);
+            node.left = Val::Px(viewport_position.x);
         }
     }
 }
