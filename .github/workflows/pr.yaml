@@ -2,48 +2,41 @@ name: PR
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "dev" ]
   pull_request:
-    branches: [ "main", "dev" ]
-    # Also run for release branches so the verify-release-pr job fires on PRs
-    # opened from release/* branches targeting main or dev.
+    branches: [ "dev" ]
 
 jobs:
-  verify-release-pr:
-    name: Verify release PR (version + changelog)
+  # ───────────────────────────────────────────────────────────────────────────
+  # Verify that Cargo.toml version is strictly greater than the latest git tag
+  # and that CHANGELOG.md contains an entry for the new version.  Runs on every
+  # PR and on every direct push to dev (post-merge validation).
+  # ───────────────────────────────────────────────────────────────────────────
+  verify-pr:
+    name: Verify version and changelog
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # This job runs for all PRs, but only performs checks for release/*
-    # source branches. For non-release PRs it is a no-op that succeeds.
     steps:
-      - name: Skip when not a release branch
-        if: ${{ !startsWith(github.head_ref, 'release/') }}
-        run: |
-          echo "Not a release/* source branch; skipping release verification."
-
-      - name: Checkout repository (release branch)
-        if: ${{ startsWith(github.head_ref, 'release/') }}
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run release-PR verification script
-        if: ${{ startsWith(github.head_ref, 'release/') }}
+      - name: Check version bump and changelog entry
         run: |
           chmod +x ./scripts/verify_release_pr.sh
           ./scripts/verify_release_pr.sh
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Cross-platform cargo build + test matrix
+  # ───────────────────────────────────────────────────────────────────────────
   build:
-    needs: [verify-release-pr]
-    if: |
-      always() &&
-      needs.verify-release-pr.result == 'success'
+    needs: [verify-pr]
     permissions:
       contents: read
     strategy:
-        matrix:
-          os: [ubuntu-latest, windows-latest, macos-latest]
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -65,10 +58,87 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        
+
       - name: Build
         run: cargo build
 
       - name: Run Tests
         run: cargo test
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Build the Docusaurus docs site to catch broken links / build errors.
+  # Also enforces the 10-versioned-docs cap defined in post_release.sh.
+  # ───────────────────────────────────────────────────────────────────────────
+  docs-build:
+    name: Build docs site
+    needs: [verify-pr]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ./docs_site/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./docs_site
+
+      - name: Sync changelog into docs
+        run: cp CHANGELOG.md ./docs_site/docs/release-notes.md
+
+      - name: Build website
+        run: npm run build
+        working-directory: ./docs_site
+
+      - name: Check versioned docs count (max 10)
+        run: |
+          COUNT=$(node -e "const v=require('./docs_site/versions.json'); console.log(v.length)")
+          if [ "$COUNT" -gt 10 ]; then
+            echo "ERROR: versions.json has $COUNT entries (max 10). Run scripts/prune_versioned_docs.sh to prune, or investigate why deploy-docs.yml did not prune automatically." >&2
+            exit 1
+          fi
+          echo "Versioned docs count: $COUNT (OK)"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # After a successful merge to dev, create and push a vX.Y.Z git tag so that
+  # downstream workflows (release.yml, deploy-docs.yml) can fire from a tag
+  # event rather than a branch push.  Uses GH_PAT so the pushed tag triggers
+  # subsequent workflow runs (GITHUB_TOKEN pushes do not re-trigger workflows).
+  #
+  # A GitHub Tag Ruleset (pattern: v*.*.* , bypass: PAT owner only) prevents
+  # developers from pushing matching tags directly.
+  # ───────────────────────────────────────────────────────────────────────────
+  auto-tag:
+    name: Create and push version tag
+    needs: [build, docs-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Read version and create tag
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          TAG="v${VERSION}"
+          echo "Version: ${VERSION}  Tag: ${TAG}"
+
+          # Skip if the tag already exists on the remote (idempotent)
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
+            echo "Tag ${TAG} already exists — nothing to do."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          echo "Created and pushed tag ${TAG}"
       

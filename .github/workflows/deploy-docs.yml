@@ -2,22 +2,22 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ "main", "dev" ]
-    # Also build and deploy when a version tag is pushed.
-    # Both stable (v1.2.3) and beta (v1.2.3-beta.1) tags trigger a deploy so
-    # the live docs site always reflects the latest release including
-    # pre-releases.  Publishing to crates.io (not applicable here — binary
-    # crate) would be gated separately in release.yml.
+    # Only stable (vX.Y.Z) tag pushes trigger this workflow.
+    # PR and branch-push doc builds are handled by the docs-build job in pr.yaml.
+    # RC and beta tags do not trigger a deploy — they are internal checkpoints only.
     tags:
-      - "v*.*.*"
-      - "v*.*.*-beta.*"
-  pull_request:
-    branches: [ "main", "dev" ]
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
   build:
     name: Build Docusaurus
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to push the versioned-docs snapshot commit to dev
+    outputs:
+      # Set to 'true' only for major/minor releases (patch = 0) that have a
+      # matching versioned docs snapshot.  Patch releases build but skip deploy.
+      should-deploy: ${{ steps.release-check.outputs.should-deploy }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,11 +32,123 @@ jobs:
         run: npm ci
         working-directory: ./docs_site
 
+      - name: Configure git identity
+        # Required by both post_release.sh and prune_versioned_docs.sh, which
+        # each create commits.  GITHUB_TOKEN pushes do NOT trigger downstream
+        # workflows, so pr.yaml's verify-pr job is never re-triggered (which
+        # would fail because version == latest tag at this point).
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync changelog into docs
+        # Copy the full CHANGELOG into docs/ before snapshotting so the versioned
+        # copy captures it.  Also synced into any existing versioned snapshot dir
+        # so users browsing that version see the correct changelog.
+        # release-notes.md is gitignored — generated here at build time only.
+        run: |
+          cp CHANGELOG.md ./docs_site/docs/release-notes.md
+
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          VERSIONED_DIR="docs_site/versioned_docs/version-${CARGO_VERSION}"
+          if [ -d "$VERSIONED_DIR" ]; then
+            cp CHANGELOG.md "${VERSIONED_DIR}/release-notes.md"
+            echo "Synced changelog to ${VERSIONED_DIR}/release-notes.md"
+          fi
+
+      - name: Create versioned docs snapshot (major/minor releases)
+        # For major/minor releases (vX.Y.0): snapshot docs_site/docs/ as a new
+        # Docusaurus versioned set and commit the result.
+        # Idempotent — exits cleanly if the snapshot already exists.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          if [ "$PATCH" != "0" ]; then
+            echo "Patch release (v${VERSION}) — snapshot not needed."
+            exit 0
+          fi
+          if [ -d "docs_site/versioned_docs/version-${VERSION}" ]; then
+            echo "Versioned snapshot for v${VERSION} already exists — nothing to do."
+            exit 0
+          fi
+          # Sync docs_site/package.json version to match the crate version.
+          cd docs_site
+          npm pkg set version "$VERSION" || true
+          npm run docusaurus -- docs:version "$VERSION"
+          cd ..
+          git add \
+            docs_site/versioned_docs \
+            docs_site/versioned_sidebars \
+            docs_site/package.json \
+            docs_site/package-lock.json \
+            docs_site/versions.json || true
+          git diff --cached --quiet || \
+            git commit -m "chore(docs): add versioned docs snapshot for v${VERSION}"
+
+      - name: Prune versioned docs to 10-version cap
+        # Remove the oldest versioned set(s) if the total count exceeds 10 and
+        # record links to the dropped versions in versioned-docs-policy.md.
+        # Runs unconditionally; the script exits early if no pruning is needed.
+        run: |
+          chmod +x ./scripts/prune_versioned_docs.sh
+          ./scripts/prune_versioned_docs.sh
+
+      - name: Push docs changes to dev
+        # Push any commits produced by the snapshot and prune steps back to dev.
+        # GITHUB_TOKEN pushes do NOT trigger downstream workflows, so pr.yaml's
+        # verify-pr is never re-triggered (which would fail: version == latest tag).
+        # Skipped for patch releases (nothing was committed).
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          if [ "$PATCH" != "0" ]; then
+            echo "Patch release — no docs commits to push."
+            exit 0
+          fi
+          git push origin HEAD:dev
+
+      - name: Check release type and verify versioned docs integrity
+        # For major/minor releases (PATCH = 0): confirm the snapshot created by
+        # the previous step exists and that the version cap is not exceeded.
+        # Sets should-deploy=true.
+        #
+        # For patch releases (PATCH != 0): no versioned snapshot is required.
+        # The site is not redeployed since no new versioned entry was added.
+        # Sets should-deploy=false (build still runs for validation).
+        id: release-check
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          VERSIONED_DIR="docs_site/versioned_docs/version-${VERSION}"
+
+          if [ "$PATCH" != "0" ]; then
+            echo "Patch release (v${VERSION}) — versioned docs snapshot not required; skipping deploy."
+            echo "should-deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Major/minor: snapshot must have been created by the previous step.
+          if [ ! -d "$VERSIONED_DIR" ]; then
+            echo "ERROR: No versioned docs snapshot found at ${VERSIONED_DIR}." >&2
+            echo "       The 'Create versioned docs snapshot' step should have created it." >&2
+            exit 1
+          fi
+
+          COUNT=$(node -e "const v=require('./docs_site/versions.json'); console.log(v.length)")
+          if [ "$COUNT" -gt 10 ]; then
+            echo "ERROR: versions.json has $COUNT entries (max 10). Run post_release.sh to prune." >&2
+            exit 1
+          fi
+
+          echo "Versioned docs integrity check passed (v${VERSION}, ${COUNT} versioned sets)."
+          echo "should-deploy=true" >> "$GITHUB_OUTPUT"
+
       - name: Build website
         run: npm run build
         working-directory: ./docs_site
 
       - name: Upload Build Artifact
+        if: steps.release-check.outputs.should-deploy == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs_site/build
@@ -45,14 +157,15 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build
 
-    # Deploy on pushes to main OR on any version tag push (stable and beta).
-    # Pull-request builds run the build job above but never deploy.
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    # Only deploy when the build job determined this is a major/minor release
+    # with a valid versioned docs snapshot.  Patch releases set should-deploy=false
+    # so the site is left unchanged (no new versioned entry was added).
+    if: needs.build.outputs.should-deploy == 'true'
 
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
     permissions:
-      pages: write # to deploy to Pages
-      id-token: write # to verify the deployment originates from an appropriate source
+      pages: write      # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
 
     # Deploy to the github-pages environment
     environment:

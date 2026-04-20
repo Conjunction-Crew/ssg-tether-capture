@@ -3,18 +3,12 @@
 # NOTE: cargo-release v1.x uses top-level keys — do NOT wrap these in a
 # [release] section; that header is silently ignored in v1.x.
 #
-# IMPORTANT: tag and push are disabled so that maintainers control exactly
-# when a tag (and therefore the release workflow) is created and pushed.
-# Maintainers run `cargo release <level>` locally on a release branch to
-# bump Cargo.toml and version the docs, then open a PR for review.  Once
-# the PR is merged they push the annotated tag manually:
-#
-#   git tag v<version>
-#   git push origin v<version>
-#
-# That tag push is the ONLY trigger for release.yml (build + GitHub Release)
-# and deploy-docs.yml (docs-site deploy).  Nothing runs automatically until
-# that intentional push.
+# IMPORTANT: tag and push are disabled.  After `cargo release <level>` runs
+# locally (bumping Cargo.toml + snapshotting versioned docs via the
+# post-release-hook), the developer opens a PR to dev for review.  The
+# auto-tag job in pr.yaml creates and pushes the tag automatically after the
+# PR merges and all CI checks pass.  That tag push is the ONLY trigger for
+# release.yml (build + GitHub Release) and deploy-docs.yml (docs-site deploy).
 
 # Never publish to crates.io — this is a binary-only crate.
 publish = false
@@ -32,6 +26,6 @@ push = false
 # cargo-release proceeds.  Runs in the maintainer's local environment.
 pre-release-hook = ["./scripts/verify_release_pr.sh"]
 
-# NOTE: There is no post-release-hook in cargo-release. The post_release.sh
-# script (versioned docs snapshot) must be run manually after cargo-release
-# completes, before pushing the tag.
+# NOTE: cargo-release 1.x does not support a post-release-hook.
+# For major/minor releases the versioned docs snapshot is created automatically
+# by deploy-docs.yml when the release tag is pushed.
