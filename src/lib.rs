@@ -12,6 +12,7 @@ use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin
 use bevy::math::DVec3;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::state::app::StatesPlugin;
 use bevy::transform::TransformSystems;
 use bevy::ui_widgets::UiWidgetsPlugins;
 use bevy_egui::EguiPlugin;
@@ -20,12 +21,12 @@ use systems::setup::*;
 use crate::constants::{MAP_LAYER, SCENE_LAYER};
 use crate::plugins::gpu_compute::GpuComputePlugin;
 use crate::plugins::orbit_camera::OrbitCameraPlugin;
-use crate::plugins::orbital_mechanics::OrbitalMechanicsPlugin;
+use crate::plugins::orbital_mechanics::{OrbitalMechanicsPlugin, SimState};
 use crate::resources::capture_log::LogEvent;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
-    FilteredSpaceCatalogResults, SpaceCatalogUiState, SpaceObjectCatalog,
+    FilteredSpaceCatalogResults, OrbitalSelectionState, SpaceCatalogUiState, SpaceObjectCatalog,
 };
 use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
 use crate::systems::physics::FIXED_HZ;
@@ -62,7 +63,7 @@ fn resolve_asset_path() -> String {
 
 // Main entrypoint to run the desktop application.
 pub fn run() {
-    let mut app = create_app();
+    let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(AssetPlugin {
         file_path: resolve_asset_path(),
         ..default()
@@ -70,27 +71,23 @@ pub fn run() {
     .add_plugins(InputDispatchPlugin)
     .add_plugins(TabNavigationPlugin)
     .add_plugins(UiWidgetsPlugins)
-    .add_plugins(UiPlugin)
     .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
-    .add_plugins(GpuComputePlugin)
-    .add_systems(
-        OnEnter(UiScreen::Sim),
-        ((
-            setup_lighting,
-            setup_celestial,
-            setup_tether,
-            setup_entities,
+    .add_plugins(GpuComputePlugin);
+
+    configure_app(&mut app);
+
+    app.add_plugins(UiPlugin)
+        .add_systems(
+            OnEnter(UiScreen::Sim),
+            ((setup_lighting, setup_celestial, setup_camera).chain(),),
         )
-            .chain(),),
-    )
-    .run();
+        .add_systems(OnEnter(SimState::Running), setup_orbital_selection)
+        .run();
 }
 
-// Create the bevy application.
-// Shared plugins between desktop application and tests go here.
-pub fn create_app() -> App {
-    let mut app = App::new();
+// Shared initializations between desktop application and tests go here.
+fn configure_app(app: &mut App) -> &mut App {
     app.add_plugins(OrbitalMechanicsPlugin)
         .add_plugins(OrbitCameraPlugin)
         .add_systems(
@@ -135,11 +132,20 @@ pub fn create_app() -> App {
         .init_resource::<SpaceObjectCatalog>()
         .init_resource::<SpaceCatalogUiState>()
         .init_resource::<FilteredSpaceCatalogResults>()
+        .init_resource::<OrbitalSelectionState>()
         .init_resource::<Settings>();
 
     // Register LogEvent message channel so systems using `MessageWriter<LogEvent>`
     // are valid during startup/state transitions (tests rely on this).
     app.add_message::<LogEvent>();
 
+    app
+}
+
+// Create the bevy application.
+pub fn create_app() -> App {
+    let mut app = App::new();
+    app.add_plugins(StatesPlugin).init_state::<UiScreen>();
+    configure_app(&mut app);
     app
 }

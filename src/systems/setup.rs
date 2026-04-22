@@ -1,20 +1,21 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use crate::components::orbit::{Earth, Orbit, TetherNode, TetherRoot};
+use crate::components::orbit::Earth;
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::space_catalog::OrbitalSelectionState;
+use crate::systems::spawners::{spawn_debris, spawn_tether};
 use crate::ui::state::{SelectedProject, UiScreen};
 
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::Skybox;
 use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
-use bevy::math::DVec3;
 use bevy::math::cubic_splines::LinearSpline;
 use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium};
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
@@ -94,8 +95,7 @@ pub fn setup_celestial(
                 // }),
                 Mesh3d(meshes.add(earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
-                Transform::from_xyz(0.0, 0.0, 0.0)
-                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(orbit_frame_rotation()),
             ))
             .id(),
     );
@@ -113,18 +113,16 @@ pub fn setup_celestial(
                 RenderLayers::layer(MAP_LAYER),
                 Mesh3d(meshes.add(map_earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
-                Transform::from_xyz(0.0, 0.0, 0.0)
-                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(orbit_frame_rotation()),
             ))
             .id(),
     );
 }
 
-pub fn setup_entities(
+pub fn setup_camera(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
-    mut orbital_entities: ResMut<OrbitalCache>,
     asset_server: Res<AssetServer>,
     mut log_events: MessageWriter<LogEvent>,
 ) {
@@ -134,24 +132,27 @@ pub fn setup_entities(
     // Set up 3D scene camera
     commands.spawn((
         DespawnOnExit(UiScreen::Sim),
-        RenderLayers::layer(SCENE_LAYER),
+        RenderLayers::layer(MAP_LAYER),
         Camera3d::default(),
         Bloom {
             intensity: 0.01,
             ..default()
         },
         AutoExposure {
-            filter: RangeInclusive::new(0.10, 0.90),
+            filter: RangeInclusive::new(0.75, 0.99),
             speed_brighten: 3.0,
             speed_darken: 1.0,
             compensation_curve: compensation_curves.add(
                 AutoExposureCompensationCurve::from_curve(LinearSpline::new([
-                    vec2(-4.0, -1.0),
-                    vec2(0.0, 0.75),
-                    vec2(2.0, 1.0),
-                    vec2(4.0, 1.5),
+                    vec2(-4.0, -2.5),
+                    vec2(0.0, 0.25),
+                    vec2(2.0, 0.5),
+                    vec2(4.0, 1.0),
                 ]))
-                .unwrap(),
+                .unwrap_or_else(|error| {
+                    warn!("Invalid auto exposure compensation curve: {error:?}");
+                    AutoExposureCompensationCurve::default()
+                }),
             ),
             ..default()
         },
@@ -189,226 +190,48 @@ pub fn setup_entities(
         AtmosphereSettings {
             sky_view_lut_size: UVec2::new(512, 256),
             rendering_method: AtmosphereMode::Raymarched,
+            scene_units_to_m: MAP_UNITS_TO_M as f32,
             ..default()
         },
     ));
-
-    let scene: Handle<Scene> =
-        asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/broken_satellite.glb"));
-
-    orbital_entities.debris.insert(
-        "Satellite1".to_string(),
-        commands
-            .spawn((
-                DespawnOnExit(UiScreen::Sim),
-                SceneRoot(scene),
-                RigidBody::Dynamic,
-                RigidBodyDisabled,
-                Orbit::FromElements(Vector6::new(
-                    // Semi-major axis (meters)
-                    6_799_830.0,
-                    // Eccentricity (dimensionless)
-                    0.00112,
-                    // Inclination (radians)
-                    0.90114,
-                    // Right ascension of ascending node (radians)
-                    3.54993,
-                    // Argument of periapsis (radians)
-                    1.51296,
-                    // Mean anomaly (radians)
-                    4.77190,
-                )),
-                ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
-                CenterOfMass(Vec3::ZERO),
-                Mass::from(2500.0),
-                Transform::from_xyz(150.0, 0.0, 300.0),
-            ))
-            .id(),
-    );
-
-    let debris_count = orbital_entities.debris.len();
-    log_events.write(LogEvent {
-        level: LogLevel::Info,
-        source: "sim",
-        message: format!("Simulation initialized — {debris_count} debris entity loaded"),
-    });
 }
 
-pub fn setup_tether(
+pub fn setup_orbital_selection(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut orbital_entities: ResMut<OrbitalCache>,
     selected_project: Res<SelectedProject>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    mut log_events: MessageWriter<LogEvent>,
+    selection: Res<OrbitalSelectionState>,
+    mut orbital_cache: ResMut<OrbitalCache>,
+    asset_server: Res<AssetServer>,
 ) {
-    let root_tail_radius: f64 = 0.50;
-    let rope_radius: f64 = 0.25;
-
-    // Resolve tether parameters from the active capture plan's device block.
-    // Fall back to the legacy constant-derived values when unspecified.
-    const DEFAULT_TETHER_LENGTH: f64 = 20.0;
-    const DEFAULT_DIST_BETWEEN_JOINTS: f64 = 0.1;
-
-    let active_plan = selected_project
-        .project_id
-        .as_deref()
-        .and_then(|id| capture_plan_lib.plans.get(id));
-
-    let tether_name = active_plan
-        .map(|plan| plan.tether.clone())
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| "Tether1".to_string());
-
-    let device = active_plan.and_then(|plan| plan.device.as_ref());
-
-    let tether_length = device
-        .filter(|d| d.tether_length > 0.0)
-        .map(|d| d.tether_length)
-        .unwrap_or(DEFAULT_TETHER_LENGTH);
-
-    let interior_node_count: u32 = device
-        .filter(|d| d.tether_length > 0.0)
-        .map(|d| {
-            ((d.tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0)
-                as u32
-        })
-        .unwrap_or_else(|| {
-            ((tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
-        });
-
-    // Segment length is derived: distribute the interior length evenly across joints.
-    let tether_node_length = if interior_node_count > 0 {
-        (tether_length - 2.0 * root_tail_radius) / interior_node_count as f64
-    } else {
-        DEFAULT_DIST_BETWEEN_JOINTS
+    let Some(chaser) = selection.chaser.as_ref() else {
+        return;
     };
-    let tether_node_half_length = tether_node_length * 0.5;
 
-    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius as f32)));
-    let sphere_collider = Collider::sphere(root_tail_radius);
-    let sphere_material = materials.add(StandardMaterial {
-        base_color: Color::Srgba(Srgba {
-            red: 1.0,
-            green: 0.0,
-            blue: 0.0,
-            alpha: 1.0,
-        }),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-
-    let tether_node_mesh = Mesh::from(Cylinder::new(
-        (rope_radius / 8.0) as f32,
-        tether_node_length as f32,
-    ));
-    let tether_node_collider = Collider::cylinder(rope_radius / 8.0, tether_node_length);
-    let tether_node_mesh = meshes.add(tether_node_mesh);
-
-    // The root tether node
-    let tether_root = commands
-        .spawn((
-            DespawnOnExit(UiScreen::Sim),
-            CameraTarget,
-            TetherRoot,
-            RenderLayers::layer(SCENE_LAYER),
-            RigidBody::Dynamic,
-            sphere_collider.clone(),
-            Mesh3d(sphere_mesh.clone()),
-            MeshMaterial3d(sphere_material.clone()),
-            Mass::from(2.0),
-            Transform::from_xyz(0.0, 0.0, 0.0),
-            Orbit::FromElements(ISS_ORBIT),
-        ))
-        .id();
-
-    orbital_entities
-        .tethers
-        .insert(tether_name.clone(), vec![tether_root]);
-
-    let mut prev_sphere = tether_root;
-    let mut prev_half_extent = root_tail_radius;
-    let mut prev_y = 0.0;
-    let interval_count = interior_node_count + 1;
-    let surface_gap = if interval_count > 0 {
-        (tether_length - 2.0 * root_tail_radius - interior_node_count as f64 * tether_node_length)
-            / interval_count as f64
-    } else {
-        0.0
+    let Some(target) = selection.target.as_ref() else {
+        return;
     };
-    let tail_index = interior_node_count + 1;
 
-    for i in 1..=tail_index {
-        let (mesh, collider, mass, curr_half_extent) = if i == tail_index {
-            (
-                sphere_mesh.clone(),
-                sphere_collider.clone(),
-                2.0,
-                root_tail_radius,
-            )
-        } else {
-            (
-                tether_node_mesh.clone(),
-                tether_node_collider.clone(),
-                0.1,
-                tether_node_half_length,
-            )
-        };
+    if let Err(e) = spawn_tether(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut orbital_cache,
+        &selected_project,
+        &capture_plan_lib,
+        chaser.elements.to_vec6(),
+    ) {
+        error!("Error spawning tether: {}", e);
+    };
 
-        let link_spacing = prev_half_extent + curr_half_extent + surface_gap;
-        let y = prev_y + link_spacing;
-
-        let sphere = commands
-            .spawn((
-                DespawnOnExit(UiScreen::Sim),
-                RenderLayers::layer(SCENE_LAYER),
-                TetherNode { root: tether_root },
-                RigidBody::Dynamic,
-                collider,
-                Mesh3d(mesh),
-                MeshMaterial3d(sphere_material.clone()),
-                Mass::from(mass),
-                Transform::from_xyz(0.0, y as f32, 0.0),
-            ))
-            .id();
-
-        let anchor = DVec3::new(0.0, prev_y + prev_half_extent + surface_gap * 0.5, 0.0);
-
-        commands.spawn((
-            DespawnOnExit(UiScreen::Sim),
-            // SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor),
-            DistanceJoint::new(prev_sphere, sphere).with_anchor(anchor),
-            JointDamping {
-                linear: 1.0,  // Linear damping
-                angular: 1.0, // Angular damping
-            },
-            JointCollisionDisabled,
-        ));
-
-        prev_sphere = sphere;
-        prev_half_extent = curr_half_extent;
-        prev_y = y;
-    }
-
-    // Add tail node to tether entity
-    orbital_entities
-        .tethers
-        .get_mut(&tether_name)
-        .expect("Error getting tether")
-        .push(prev_sphere);
-
-    let node_count = orbital_entities
-        .tethers
-        .get(&tether_name)
-        .map(|n| n.len())
-        .unwrap_or(0);
-    log_events.write(LogEvent {
-        level: LogLevel::Info,
-        source: "sim",
-        message: format!(
-            "Tether '{}' initialized ({} nodes, {:.1} m)",
-            tether_name, node_count, tether_length,
-        ),
-    });
+    if let Err(e) = spawn_debris(
+        &mut commands,
+        &mut orbital_cache,
+        &asset_server,
+        target.elements.to_vec6(),
+    ) {
+        error!("Error spawning debris: {}", e);
+    };
 }

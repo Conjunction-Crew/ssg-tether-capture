@@ -14,6 +14,7 @@ use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::plugins::orbital_mechanics::SimState;
 use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{
     NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
@@ -24,9 +25,10 @@ use crate::resources::capture_plans::{
 };
 use crate::resources::data_collection::DataCollection;
 use crate::resources::settings::Settings;
+use crate::resources::space_catalog::OrbitalSelectionState;
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
-use crate::systems::setup::setup_entities;
+use crate::systems::setup::setup_camera;
 use crate::ui::egui::egui_plots;
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
@@ -41,11 +43,12 @@ use crate::ui::screens::home::{
 };
 use crate::ui::screens::project_detail::{
     RestartPromptModal, SimScreen, catalog_interactions, catalog_keyboard_input,
-    cleanup_project_detail_screen, collapsible_toggle_interaction, project_detail_interactions,
-    refresh_space_catalog_results, reset_space_catalog_ui_state, restart_prompt_interactions,
-    spawn_exit_confirm_modal, spawn_project_detail_screen, spawn_restart_prompt_modal,
-    sync_space_catalog_ui, update_satellite_indicator_overlay, update_selected_catalog_overlay,
-    update_sync_indicator, view_edit_plan_interactions,
+    cleanup_project_detail_screen, collapsible_toggle_interaction, orbital_selection_interactions,
+    project_detail_interactions, refresh_space_catalog_results, reset_space_catalog_ui_state,
+    restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
+    spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_space_catalog_ui,
+    update_satellite_indicator_overlay, update_selected_catalog_overlay, update_sync_indicator,
+    view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
@@ -109,10 +112,19 @@ impl Plugin for UiPlugin {
             .add_systems(
                 OnEnter(UiScreen::Sim),
                 (
-                    spawn_project_detail_screen.after(setup_entities),
+                    spawn_project_detail_screen.after(setup_camera),
                     reset_sync_state,
                     reset_terminal_log_ui_state,
                 ),
+            )
+            .add_systems(
+                OnEnter(SimState::Running),
+                (
+                    cleanup_project_detail_screen,
+                    spawn_project_detail_screen.after(setup_camera),
+                    reset_sync_state,
+                )
+                    .chain(),
             )
             .add_systems(
                 OnExit(UiScreen::Sim),
@@ -146,6 +158,8 @@ impl Plugin for UiPlugin {
                     (
                         update_sim_screen_bottom_padding,
                         project_detail_interactions,
+                        orbital_selection_interactions,
+                        sync_orbital_selection_ui,
                         collapsible_toggle_interaction,
                         catalog_interactions,
                         catalog_keyboard_input,
@@ -297,16 +311,28 @@ fn poll_restart_prompt_modal(
 fn poll_sim_restart(
     mut sync_state: ResMut<SimPlanSyncState>,
     screen: Res<State<UiScreen>>,
+    sim_state: Res<State<SimState>>,
     mut next_screen: ResMut<NextState<UiScreen>>,
+    mut next_sim_state: ResMut<NextState<SimState>>,
 ) {
-    if sync_state.restart_requested && *screen.get() == UiScreen::Home {
-        sync_state.restart_requested = false;
+    if !sync_state.restart_requested {
+        return;
+    }
+
+    if *screen.get() == UiScreen::Home {
         next_screen.set(UiScreen::Sim);
+    } else if *screen.get() == UiScreen::Sim && *sim_state.get() == SimState::Setup {
+        sync_state.restart_requested = false;
+        next_sim_state.set(SimState::Running);
     }
 }
 
 fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
-    *sync_state = SimPlanSyncState::default();
+    let restart_requested = sync_state.restart_requested;
+    *sync_state = SimPlanSyncState {
+        restart_requested,
+        ..Default::default()
+    };
 }
 
 fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
@@ -358,8 +384,9 @@ fn handle_ui_events(
     mut selected_project: ResMut<SelectedProject>,
     mut working_directory: ResMut<WorkingDirectory>,
     mut file_dialog_task: ResMut<FileDialogTask>,
-    mut form: ResMut<NewCapturePlanForm>,
+
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
+    mut orbital_selection: ResMut<OrbitalSelectionState>,
     mut world_time: Option<ResMut<WorldTime>>,
     physics_time: Res<Time<Physics>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
@@ -368,21 +395,32 @@ fn handle_ui_events(
         Without<UiCamera>,
     >,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
-    ui_runtime: (ResMut<Settings>, ResMut<DataCollection>),
+    ui_runtime: (
+        ResMut<Settings>,
+        ResMut<NextState<SimState>>,
+        ResMut<DataCollection>,
+        ResMut<NewCapturePlanForm>,
+    ),
     mut flow: UiFlowState,
     mut log: MessageWriter<LogEvent>,
 ) {
-    let (mut settings, mut data_collection) = ui_runtime;
+    let (mut settings, mut next_sim_state, mut data_collection, mut form) = ui_runtime;
 
     for event in ui_events.read() {
         match event {
             UiEvent::OpenProject(project_id) => {
                 if capture_plan_lib.plans.contains_key(project_id.as_str()) {
                     selected_project.project_id = Some(project_id.clone());
+                    *orbital_selection = OrbitalSelectionState::default();
+                    next_sim_state.set(SimState::Setup);
                     next_screen.set(UiScreen::Sim);
                 }
             }
+            UiEvent::StartSim => {
+                next_sim_state.set(SimState::Running);
+            }
             UiEvent::BackToHome => {
+                next_sim_state.set(SimState::Setup);
                 next_screen.set(UiScreen::Home);
             }
             UiEvent::ShowExitConfirm => {
@@ -498,12 +536,20 @@ fn handle_ui_events(
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
                     const MAX_TIME_WARP: u32 = 10000;
-                    const MIN_TIME_WARP: u32 = 1;
+                    const MIN_TIME_WARP: u32 = 0;
                     let prev = world_time.multiplier;
                     if *increase && world_time.multiplier * 2 <= MAX_TIME_WARP {
-                        world_time.multiplier *= 2;
+                        if world_time.multiplier == 0 {
+                            world_time.multiplier = 1;
+                        } else {
+                            world_time.multiplier *= 2;
+                        }
                     } else if !increase && world_time.multiplier / 2 >= MIN_TIME_WARP {
-                        world_time.multiplier /= 2;
+                        if world_time.multiplier == 1 {
+                            world_time.multiplier = 0;
+                        } else {
+                            world_time.multiplier /= 2;
+                        }
                     }
                     if world_time.multiplier != prev {
                         log.write(LogEvent {
