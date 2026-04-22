@@ -13,6 +13,11 @@ When preparing a release:
 
 ---
 
+## [v0.3.0-rc.2] 🔬 - 2026-04-21
+
+### Changed
+- Updates systems to support orbital selection for the chaser and target
+
 ## [v0.3.0-rc.1] 🔬 - 2026-04-14
 
 ### Changed
