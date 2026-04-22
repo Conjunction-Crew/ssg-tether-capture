@@ -318,6 +318,7 @@ jobs:
 
       - uses: ncipollo/release-action@v1
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ needs.preflight.outputs.tag_name }}
           artifacts: "artifacts/*"
           body: ${{ steps.changelog.outputs.body }}
