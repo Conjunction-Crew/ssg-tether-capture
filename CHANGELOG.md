@@ -13,7 +13,7 @@ When preparing a release:
 
 ---
 
-## [v0.3.0-beta.3] 🧪 - 2026-04-21
+## [v0.3.1-beta.1] 🧪 - 2026-04-21
 
 ### Changed
 - Updated `release.yml` to fix an issue with the release action needing a token that was not set. The action now uses `GITHUB_TOKEN` secret which is now explicitly passed to the release action.
