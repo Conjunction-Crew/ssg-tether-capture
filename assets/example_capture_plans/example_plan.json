@@ -65,6 +65,40 @@
         "max_velocity": 0.5,
         "max_force": 2.0,
         "shrink_rate": 0.005
+      },
+      "transitions": [
+        {
+          "to": "tether_tension",
+          "relative_velocity": {
+            "less_than": 0.2
+          }
+        }
+      ]
+    },
+    {
+      "id": "tether_tension",
+      "parameters": {
+        "state_type": "tether_tension",
+        "max_velocity": 0.3,
+        "max_force": 4.0,
+        "max_tension_n": 6.0
+      },
+      "transitions": [
+        {
+          "to": "tethered",
+          "tether_straightness": {
+            "less_than": 5.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "tethered",
+      "parameters": {
+        "state_type": "tether_tension",
+        "max_velocity": 0.1,
+        "max_force": 2.0,
+        "max_tension_n": 6.0
       }
     }
   ]

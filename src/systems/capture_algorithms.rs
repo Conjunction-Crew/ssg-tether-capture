@@ -64,12 +64,22 @@ pub fn capture_state_machine_update(
                     })
                 });
 
+                let tether_straightness_deg: f64 = {
+                    let rb_query = rb_forces.p0();
+                    let positions: Vec<DVec3> = nodes
+                        .iter()
+                        .filter_map(|&n| rb_query.get(n).ok().map(|rb| rb.position.0))
+                        .collect();
+                    tether_max_angular_deviation(&positions)
+                };
+
                 let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
                     resolve_root_state(
                         &mut capture_component,
                         plan,
                         r_len,
                         v_len,
+                        tether_straightness_deg,
                         &mut capture_sphere_radius,
                         &mut log_events,
                     )
@@ -78,6 +88,24 @@ pub fn capture_state_machine_update(
                 };
 
                 let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
+
+                // Pre-read root/tail positions needed for tether_tension force direction.
+                let tension_endpoints: Option<(DVec3, DVec3, DVec3, DVec3)> =
+                    if shared_state_parameters.is_tether_tension {
+                        let rb = rb_forces.p0();
+                        let root_data = nodes
+                            .first()
+                            .and_then(|&n| rb.get(n).ok().map(|rb| (rb.position.0, rb.linear_velocity.0)));
+                        let tail_data = nodes
+                            .last()
+                            .and_then(|&n| rb.get(n).ok().map(|rb| (rb.position.0, rb.linear_velocity.0)));
+                        match (root_data, tail_data) {
+                            (Some((rp, rv)), Some((tp, tv))) => Some((rp, rv, tp, tv)),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
 
                 for (idx, &node) in nodes.iter().enumerate() {
                     let (rel_r, rel_v) = {
@@ -114,44 +142,100 @@ pub fn capture_state_machine_update(
                         };
                     }
 
-                    let mut force_vec = DVec3::ZERO;
                     let max_velocity = shared_state_parameters.max_velocity;
                     let max_force = shared_state_parameters.max_force;
-                    let capture_radius = if idx == 0 {
-                        root_capture_radius
-                    } else {
-                        capture_sphere_radius.radius + 1.0
-                    };
 
-                    // If vel is high, kill vel
-                    if rel_v_len > max_velocity {
-                        force_vec += -rel_v.normalize_or_zero() * 2.0;
-                    }
-                    // If too close, force in opposite dir
-                    if rel_r_len < capture_radius * 0.8 {
-                        force_vec += -rel_r.normalize_or_zero();
-                    }
-                    // If we are outside the sphere radius, force in target dir (or slow down)
-                    else if rel_r_len > capture_radius {
-                        if rel_v.angle_between(rel_r) > PI / 2.0 {
-                            force_vec += -rel_v.normalize_or_zero();
-                        }
+                    let force_vec: DVec3 =
+                        if shared_state_parameters.is_tether_tension {
+                            let is_root = idx == 0;
+                            let is_tail = idx == nodes.len() - 1;
 
-                        force_vec += rel_r.normalize_or_zero();
-                    // Otherwise, force in tangent dir
-                    } else {
-                        let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
-                            up
+                            // Interior nodes: no force applied in tether_tension state.
+                            if !is_root && !is_tail {
+                                continue;
+                            }
+
+                            if let Some((root_pos, root_vel, tail_pos, tail_vel)) = tension_endpoints {
+                                let (outward_axis, endpoint_vel) = if is_root {
+                                    (
+                                        (root_pos - tail_pos).normalize_or(DVec3::X),
+                                        root_vel - tail_vel,
+                                    )
+                                } else {
+                                    (
+                                        (tail_pos - root_pos).normalize_or(DVec3::X),
+                                        tail_vel - root_vel,
+                                    )
+                                };
+
+                                // Damp if moving too fast; otherwise apply outward tension.
+                                let speed = endpoint_vel.dot(outward_axis);
+                                let dir = if speed.abs() > max_velocity {
+                                    -endpoint_vel.normalize_or_zero()
+                                } else {
+                                    outward_axis
+                                };
+
+                                // Log tension warning on the root node (once per evaluation).
+                                if is_root {
+                                    if let Some(max_t) = shared_state_parameters.max_tension_n {
+                                        if max_force > max_t {
+                                            log_events.write(LogEvent {
+                                                level: LogLevel::Warn,
+                                                source: "capture",
+                                                message: format!(
+                                                    "Applied tension {:.1} N exceeds max_tension_n {:.1} N",
+                                                    max_force, max_t
+                                                ),
+                                            });
+                                        }
+                                    }
+                                }
+
+                                dir
+                            } else {
+                                DVec3::ZERO
+                            }
                         } else {
-                            DVec3::X
+                            let capture_radius = if idx == 0 {
+                                root_capture_radius
+                            } else {
+                                capture_sphere_radius.radius + 1.0
+                            };
+
+                            let mut v = DVec3::ZERO;
+
+                            // If vel is high, kill vel
+                            if rel_v_len > max_velocity {
+                                v += -rel_v.normalize_or_zero() * 2.0;
+                            }
+                            // If too close, force in opposite dir
+                            if rel_r_len < capture_radius * 0.8 {
+                                v += -rel_r.normalize_or_zero();
+                            }
+                            // If we are outside the sphere radius, force in target dir (or slow down)
+                            else if rel_r_len > capture_radius {
+                                if rel_v.angle_between(rel_r) > PI / 2.0 {
+                                    v += -rel_v.normalize_or_zero();
+                                }
+                                v += rel_r.normalize_or_zero();
+                            // Otherwise, force in tangent dir
+                            } else {
+                                let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
+                                    up
+                                } else {
+                                    DVec3::X
+                                };
+
+                                if idx != 0 && capture_component.current_state == "capture" {
+                                    v -= tangent_axis.cross(rel_r).normalize_or_zero();
+                                } else {
+                                    v += tangent_axis.cross(rel_r).normalize_or_zero();
+                                }
+                            }
+
+                            v
                         };
-
-                        if idx != 0 && capture_component.current_state == "capture" {
-                            force_vec -= tangent_axis.cross(rel_r).normalize_or_zero();
-                        } else {
-                            force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
-                        }
-                    }
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
@@ -217,6 +301,7 @@ fn resolve_root_state(
     plan: &CompiledCapturePlan,
     rel_r_length: f64,
     rel_v_length: f64,
+    tether_straightness_deg: f64,
     capture_sphere_radius: &mut CaptureSphereRadius,
     log_events: &mut MessageWriter<LogEvent>,
 ) -> CompiledCaptureStateParameters {
@@ -245,6 +330,7 @@ fn resolve_root_state(
                 transition,
                 rel_r_length,
                 rel_v_length,
+                tether_straightness_deg,
                 log_events,
             );
         }
@@ -258,6 +344,7 @@ fn apply_transition(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
+    tether_straightness_deg: f64,
     log_events: &mut MessageWriter<LogEvent>,
 ) {
     if let Some(limit) = transition.distance_less_than {
@@ -303,6 +390,46 @@ fn apply_transition(
             );
         }
     }
+
+    if let Some(limit) = transition.tether_straightness_less_than {
+        if tether_straightness_deg < limit {
+            transition_to(
+                capture_component,
+                &transition.to,
+                format!(
+                    "tether deviation {:.1}° < {:.1}°",
+                    tether_straightness_deg, limit
+                ),
+                log_events,
+            );
+        }
+    }
+}
+
+/// Returns the maximum angular deviation (degrees) of any interior tether node
+/// from the straight line between the root (index 0) and tail (last index).
+/// Returns 0.0 when there are fewer than 3 nodes or the endpoints coincide.
+fn tether_max_angular_deviation(node_positions: &[DVec3]) -> f64 {
+    let n = node_positions.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let root = node_positions[0];
+    let tail = node_positions[n - 1];
+    let root_to_tail = tail - root;
+    let length = root_to_tail.length();
+    if length < 1e-6 {
+        return 0.0;
+    }
+    let axis = root_to_tail / length;
+
+    node_positions[1..n - 1].iter().fold(0.0_f64, |max_deg, &pos| {
+        let offset = pos - root;
+        let along = offset.dot(axis);
+        let lateral = (offset - along * axis).length();
+        let angle_deg = lateral.atan2(along).to_degrees();
+        max_deg.max(angle_deg)
+    })
 }
 
 fn transition_to(

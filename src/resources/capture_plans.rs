@@ -13,6 +13,7 @@ pub struct CompiledCaptureTransition {
     pub distance_greater_than: Option<f64>,
     pub relative_velocity_less_than: Option<f64>,
     pub relative_velocity_greater_than: Option<f64>,
+    pub tether_straightness_less_than: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -20,6 +21,8 @@ pub struct CompiledCaptureStateParameters {
     pub max_velocity: f64,
     pub max_force: f64,
     pub shrink_rate: Option<f64>,
+    pub is_tether_tension: bool,
+    pub max_tension_n: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -233,6 +236,9 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 max_velocity: parameter_value(&state.parameters, "max_velocity").unwrap_or(0.0),
                 max_force: parameter_value(&state.parameters, "max_force").unwrap_or(0.0),
                 shrink_rate: parameter_value(&state.parameters, "shrink_rate"),
+                is_tether_tension: parameter_str_value(&state.parameters, "state_type")
+                    == Some("tether_tension"),
+                max_tension_n: parameter_value(&state.parameters, "max_tension_n"),
             },
             transitions: state
                 .transitions
@@ -255,6 +261,11 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                             "relative_velocity",
                             "greater_than",
                         ),
+                        tether_straightness_less_than: nested_value(
+                            transition,
+                            "tether_straightness",
+                            "less_than",
+                        ),
                     })
                 })
                 .collect(),
@@ -270,6 +281,10 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
 
 pub(crate) fn parameter_value(parameters: &Option<Value>, key: &str) -> Option<f64> {
     parameters.as_ref()?.get(key)?.as_f64()
+}
+
+pub(crate) fn parameter_str_value<'a>(parameters: &'a Option<Value>, key: &str) -> Option<&'a str> {
+    parameters.as_ref()?.get(key)?.as_str()
 }
 
 pub(crate) fn nested_value(value: &Value, key: &str, nested_key: &str) -> Option<f64> {
