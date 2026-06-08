@@ -34,6 +34,20 @@ pub struct CapturePlanDevice {
     pub tether_length: f64,
 }
 
+/// Keplerian orbital elements embedded in a capture plan as optional defaults.
+/// All angles are in radians; semi-major axis is in metres.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct PlanDefaultOrbitalElements {
+    pub semi_major_axis_m: f64,
+    pub eccentricity: f64,
+    pub inclination_rad: f64,
+    pub raan_rad: f64,
+    pub arg_perigee_rad: f64,
+    pub mean_anomaly_rad: f64,
+    #[serde(default)]
+    pub epoch_offset_seconds: f64,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CapturePlan {
     /// Display name shown to the user. Not used as a lookup key.
@@ -46,4 +60,10 @@ pub struct CapturePlan {
     pub tether: String,
     #[serde(default)]
     pub device: Option<CapturePlanDevice>,
+    /// Pre-populated target (debris) orbital elements for quick-start.
+    #[serde(default)]
+    pub default_target: Option<PlanDefaultOrbitalElements>,
+    /// Pre-populated chaser (tether spacecraft) orbital elements for quick-start.
+    #[serde(default)]
+    pub default_chaser: Option<PlanDefaultOrbitalElements>,
 }

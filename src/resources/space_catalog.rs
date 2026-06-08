@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use nalgebra::Vector6;
 
+use crate::components::capture_components::PlanDefaultOrbitalElements;
+
 #[derive(Debug, Clone)]
 pub struct SpaceCatalogEntry {
     pub gpu_index: usize,
@@ -109,6 +111,18 @@ impl EditableOrbitalElements {
             self.arg_perigee_rad,
             self.mean_anomaly_rad,
         )
+    }
+
+    pub fn from_plan_defaults(d: &PlanDefaultOrbitalElements) -> Self {
+        Self {
+            semi_major_axis_m: d.semi_major_axis_m,
+            eccentricity: d.eccentricity,
+            inclination_rad: d.inclination_rad,
+            raan_rad: d.raan_rad,
+            arg_perigee_rad: d.arg_perigee_rad,
+            mean_anomaly_rad: d.mean_anomaly_rad,
+            epoch_offset_seconds: d.epoch_offset_seconds,
+        }
     }
 }
 

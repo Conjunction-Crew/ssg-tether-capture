@@ -131,6 +131,9 @@ pub struct OrbitalElementSliderValueText {
 }
 
 #[derive(Component)]
+pub struct ResetToDefaultsButton;
+
+#[derive(Component)]
 pub struct MapViewButton;
 
 #[derive(Component)]
@@ -927,6 +930,10 @@ pub fn spawn_project_detail_screen(
                         );
 
                         if *sim_state.get() == SimState::Setup {
+                            let has_plan_defaults = plan
+                                .map(|p| p.default_target.is_some() || p.default_chaser.is_some())
+                                .unwrap_or(false);
+
                             spawn_collapsible_section(
                                 sidebar,
                                 &font,
@@ -956,6 +963,33 @@ pub fn spawn_project_detail_screen(
                                         },
                                         TextColor(theme.text_primary),
                                     ));
+
+                                    if has_plan_defaults {
+                                        content
+                                            .spawn((
+                                                Button,
+                                                ResetToDefaultsButton,
+                                                Node {
+                                                    width: percent(100),
+                                                    min_height: px(32.0),
+                                                    align_items: AlignItems::Center,
+                                                    justify_content: JustifyContent::Center,
+                                                    ..default()
+                                                },
+                                                BackgroundColor(theme.panel_background_soft),
+                                            ))
+                                            .with_children(|btn| {
+                                                btn.spawn((
+                                                    Text::new("Reset to plan defaults"),
+                                                    TextFont {
+                                                        font: font.clone(),
+                                                        font_size: 12.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_primary),
+                                                ));
+                                            });
+                                    }
 
                                     spawn_orbital_selection_role_editor(
                                         content,
@@ -2790,6 +2824,7 @@ pub fn project_detail_interactions(
             Option<&ExitSimCancelButton>,
             Option<&ExitSimConfirmButton>,
             Option<&ToggleCaptureGizmosButton>,
+            Option<&ResetToDefaultsButton>,
             &mut BackgroundColor,
         ),
         (
@@ -2829,6 +2864,7 @@ pub fn project_detail_interactions(
         exit_cancel_button,
         exit_confirm_button,
         toggle_gizmos_button,
+        reset_to_defaults,
         mut background_color,
     ) in &mut interactions
     {
@@ -2873,6 +2909,8 @@ pub fn project_detail_interactions(
                     events.write(UiEvent::CycleCameraTarget);
                 } else if toggle_gizmos_button.is_some() {
                     events.write(UiEvent::ToggleCaptureGizmos);
+                } else if reset_to_defaults.is_some() {
+                    events.write(UiEvent::ResetOrbitalToDefaults);
                 }
             }
             Interaction::Hovered => {

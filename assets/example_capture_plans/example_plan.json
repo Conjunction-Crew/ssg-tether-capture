@@ -1,6 +1,24 @@
 {
   "name": "example_plan",
   "tether": "Tether1",
+  "default_target": {
+    "semi_major_axis_m": 6799130.0,
+    "eccentricity": 0.00112,
+    "inclination_rad": 0.90114,
+    "raan_rad": 3.54993,
+    "arg_perigee_rad": 1.51296,
+    "mean_anomaly_rad": 4.77190,
+    "epoch_offset_seconds": 0.0
+  },
+  "default_chaser": {
+    "semi_major_axis_m": 6799130.0,
+    "eccentricity": 0.00112,
+    "inclination_rad": 0.90114,
+    "raan_rad": 3.54993,
+    "arg_perigee_rad": 1.51296,
+    "mean_anomaly_rad": 4.77165,
+    "epoch_offset_seconds": 0.0
+  },
   "device": {
     "type": "tether",
     "tether_length": 20.0

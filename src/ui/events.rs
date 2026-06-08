@@ -33,4 +33,5 @@ pub enum UiEvent {
     },
     CycleCameraTarget,
     SetUnitSystem(UnitSystem),
+    ResetOrbitalToDefaults,
 }

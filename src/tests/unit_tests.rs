@@ -52,6 +52,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            default_target: None,
+            default_chaser: None,
         }
     }
 
@@ -140,6 +142,8 @@ mod tests {
                 },
             ],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         assert!(validate_capture_plan("two_state_plan", &plan).is_empty());
     }
@@ -167,6 +171,8 @@ mod tests {
                 },
             ],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         let errors = validate_capture_plan("bad_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("Duplicate")));
@@ -224,6 +230,8 @@ mod tests {
                 },
             ],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         assert!(compiled.state("approach").is_some());
@@ -247,6 +255,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         let state = compiled.state("terminal").unwrap();
@@ -271,6 +281,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         let transition = &compiled.state("approach").unwrap().transitions[0];
@@ -315,6 +327,8 @@ mod tests {
                 },
             ],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         let component = build_capture_component("plan", &plan, 123.0).unwrap();
         assert_eq!(component.current_state, "approach");
@@ -329,6 +343,8 @@ mod tests {
             tether: "Tether1".to_string(),
             states: vec![],
             device: None,
+            default_target: None,
+            default_chaser: None,
         };
         assert!(build_capture_component("empty", &plan, 0.0).is_none());
     }

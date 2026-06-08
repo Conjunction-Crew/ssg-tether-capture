@@ -25,7 +25,9 @@ use crate::resources::capture_plans::{
 };
 use crate::resources::data_collection::DataCollection;
 use crate::resources::settings::Settings;
-use crate::resources::space_catalog::OrbitalSelectionState;
+use crate::resources::space_catalog::{
+    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
+};
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_camera;
@@ -412,6 +414,9 @@ fn handle_ui_events(
                 if capture_plan_lib.plans.contains_key(project_id.as_str()) {
                     selected_project.project_id = Some(project_id.clone());
                     *orbital_selection = OrbitalSelectionState::default();
+                    if let Some(plan) = capture_plan_lib.plans.get(project_id.as_str()) {
+                        apply_plan_defaults(plan, &mut orbital_selection);
+                    }
                     next_sim_state.set(SimState::Setup);
                     next_screen.set(UiScreen::Sim);
                 }
@@ -889,7 +894,33 @@ fn handle_ui_events(
             UiEvent::ToggleCaptureGizmos => {
                 settings.capture_gizmos = !settings.capture_gizmos;
             }
+            UiEvent::ResetOrbitalToDefaults => {
+                if let Some(plan_id) = selected_project.project_id.as_deref() {
+                    if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
+                        apply_plan_defaults(plan, &mut orbital_selection);
+                    }
+                }
+            }
         }
+    }
+}
+
+fn apply_plan_defaults(plan: &CapturePlan, selection: &mut OrbitalSelectionState) {
+    if let Some(d) = &plan.default_target {
+        selection.target = Some(SelectedOrbitalObject {
+            source: OrbitalSelectionSource::Custom {
+                label: "Plan Default Target".to_string(),
+            },
+            elements: EditableOrbitalElements::from_plan_defaults(d),
+        });
+    }
+    if let Some(d) = &plan.default_chaser {
+        selection.chaser = Some(SelectedOrbitalObject {
+            source: OrbitalSelectionSource::Custom {
+                label: "Plan Default Chaser".to_string(),
+            },
+            elements: EditableOrbitalElements::from_plan_defaults(d),
+        });
     }
 }
 
