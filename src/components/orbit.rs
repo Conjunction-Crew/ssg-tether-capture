@@ -18,6 +18,13 @@ pub struct TetherNode {
     pub root: Entity,
 }
 
+/// Marker for a propagation-sim tether node that is simulated as an independent
+/// two-body Keplerian propagator rather than by the local physics. The physics
+/// bubble ignores these (so they are never re-enabled), and `sync_separate_bodies`
+/// drives their rendered position from their own orbit each step.
+#[derive(Component, Debug, Clone)]
+pub struct SeparateBody;
+
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone)]
 pub struct Orbital {

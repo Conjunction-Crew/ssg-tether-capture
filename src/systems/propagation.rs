@@ -1,7 +1,10 @@
 use std::f64::consts::PI;
 use std::fs;
 
-use crate::components::orbit::{Earth, JsonOrbitalData, Orbit, Orbital, TetherNode, TetherRoot};
+use crate::components::capture_components::PropagationNodeMode;
+use crate::components::orbit::{
+    Earth, JsonOrbitalData, Orbit, Orbital, SeparateBody, TetherNode, TetherRoot,
+};
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{
     MAP_LAYER, MAX_ORIGIN_OFFSET, PHYSICS_DISABLE_RADIUS, PHYSICS_ENABLE_RADIUS, eci_to_orbit_frame,
@@ -9,10 +12,12 @@ use crate::constants::{
 use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
 use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::propagation::ActivePropagation;
 use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
+use crate::systems::hill_frame::HillBasis;
 
-use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{Forces, RigidBodyDisabled, RigidBodyQuery, WriteRigidBodyForces};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::pbr::Atmosphere;
@@ -472,7 +477,10 @@ pub fn target_entity_reset_origin(
 pub fn physics_bubble_add_remove(
     mut commands: Commands,
     disabled_entities: Query<(Entity, &RigidBodyDisabled)>,
-    orbital_entities: Query<(Entity, &mut Orbital, RigidBodyQuery), Without<CameraTarget>>,
+    orbital_entities: Query<
+        (Entity, &mut Orbital, RigidBodyQuery),
+        (Without<CameraTarget>, Without<SeparateBody>),
+    >,
     target_entity: Single<Entity, With<CameraTarget>>,
     mut orbital_cache: ResMut<OrbitalCache>,
     world_time: Res<WorldTime>,
@@ -557,6 +565,132 @@ pub fn physics_bubble_add_remove(
                 entity_rv[4] - target_rv[4],
                 entity_rv[5] - target_rv[5],
             );
+        }
+    }
+}
+
+/// Propagation sim (separate-bodies mode): drive each independently-propagated
+/// tether node's rigidbody to its orbit's position/velocity relative to the
+/// reference (tether root), mirroring the disabled-body sync in
+/// [`physics_bubble_add_remove`]. These nodes are never simulated by avian, so
+/// they trace their own two-body orbits and drift apart over many orbits.
+pub fn sync_separate_bodies(
+    active: Res<ActivePropagation>,
+    orbital_cache: Res<OrbitalCache>,
+    target_entity: Single<Entity, With<CameraTarget>>,
+    mut bodies: Query<RigidBodyQuery, With<SeparateBody>>,
+    body_entities: Query<Entity, With<SeparateBody>>,
+) {
+    if !active.enabled || active.node_mode != PropagationNodeMode::SeparateBodies {
+        return;
+    }
+    let target = target_entity.into_inner();
+    let Some(target_rv) = orbital_cache.eci_states.get(&target).copied() else {
+        return;
+    };
+
+    for entity in &body_entities {
+        let Some(entity_rv) = orbital_cache.eci_states.get(&entity) else {
+            continue;
+        };
+        let Ok(mut rb) = bodies.get_mut(entity) else {
+            continue;
+        };
+        rb.position.0 = DVec3::new(
+            entity_rv[0] - target_rv[0],
+            entity_rv[1] - target_rv[1],
+            entity_rv[2] - target_rv[2],
+        );
+        rb.linear_velocity.0 = DVec3::new(
+            entity_rv[3] - target_rv[3],
+            entity_rv[4] - target_rv[4],
+            entity_rv[5] - target_rv[5],
+        );
+    }
+}
+
+/// Propagation sim (joints+tension mode): apply linearized Clohessy–Wiltshire /
+/// Hill relative-orbital accelerations to each tether node so the gravity-gradient
+/// + Coriolis dynamics evolve the tether's orientation. The reference frame is the
+/// root's current orbit; the root itself (the reference) receives no force.
+pub fn apply_hill_forces(
+    active: Res<ActivePropagation>,
+    orbital_cache: Res<OrbitalCache>,
+    mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
+    mut log_events: MessageWriter<LogEvent>,
+    mut tension_warn_counter: Local<u32>,
+) {
+    if !active.enabled || active.node_mode != PropagationNodeMode::JointsTension {
+        return;
+    }
+    let Some(nodes) = orbital_cache.tethers.get(&active.tether_name) else {
+        return;
+    };
+    let Some(&root) = nodes.first() else {
+        return;
+    };
+
+    // Hill frame is built from the root's current ECI state so it tracks the
+    // reference orbit's precession over many orbits.
+    let Some(root_rv) = orbital_cache.eci_states.get(&root).copied() else {
+        return;
+    };
+    let basis = HillBasis::from_reference(root_rv, active.reference_a_m);
+
+    let (root_pos, root_vel) = {
+        let q = rb_forces.p0();
+        let Ok(root_rb) = q.get(root) else {
+            return;
+        };
+        (root_rb.position.0, root_rb.linear_velocity.0)
+    };
+
+    // Gather forces from p0(), then apply via p1() — the ParamSet borrows are exclusive.
+    let mut forces: Vec<(Entity, DVec3)> = Vec::with_capacity(nodes.len());
+    let mut max_force_mag = 0.0_f64;
+    {
+        let q = rb_forces.p0();
+        for &node in nodes.iter() {
+            if node == root {
+                continue; // the reference body gets no CW force
+            }
+            let Ok(rb) = q.get(node) else {
+                continue;
+            };
+            let rel_pos = rb.position.0 - root_pos;
+            let rel_vel = rb.linear_velocity.0 - root_vel;
+            let accel = basis.hill_acceleration(rel_pos, rel_vel);
+            let force = accel * rb.mass.value();
+            max_force_mag = max_force_mag.max(force.length());
+            forces.push((node, force));
+        }
+    }
+
+    let mut force_q = rb_forces.p1();
+    for (node, force) in forces {
+        if let Ok(mut node_forces) = force_q.get_mut(node) {
+            node_forces.apply_force(force);
+        }
+    }
+
+    // Log-only tension monitoring: warn (throttled) when the gravity-gradient
+    // force on a node exceeds the configured max joint tension. The joints are
+    // never broken or clamped.
+    if let Some(max_t) = active.max_tension_n {
+        if max_force_mag > max_t {
+            if *tension_warn_counter == 0 {
+                log_events.write(LogEvent {
+                    level: LogLevel::Warn,
+                    source: "propagation",
+                    message: format!(
+                        "Gravity-gradient force {max_force_mag:.2} N exceeds max_tension_n {max_t:.2} N"
+                    ),
+                });
+            }
+            // Re-warn roughly every 600 physics steps while exceeded.
+            *tension_warn_counter = (*tension_warn_counter + 1) % 600;
+        } else {
+            *tension_warn_counter = 0;
         }
     }
 }

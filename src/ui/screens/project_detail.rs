@@ -13,7 +13,7 @@ use bevy::ui_widgets::{
     SliderStep, SliderThumb, SliderValue, TrackClick, ValueChange,
 };
 
-use crate::components::capture_components::CaptureComponent;
+use crate::components::capture_components::{CaptureComponent, SimType};
 use crate::components::user_interface::{
     CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
 };
@@ -297,6 +297,10 @@ pub fn spawn_project_detail_screen(
     let capture_target_entity = orbital_cache.debris.get("Satellite1").copied();
     let capture_target_label = String::from("Satellite1");
     let capture_plan_id = plan_id.to_string();
+    // Propagation sims don't run the capture state machine, so hide the Capture button.
+    let is_propagation = plan
+        .map(|p| p.sim_type == SimType::Propagation)
+        .unwrap_or(false);
 
     commands
         .spawn((
@@ -1234,7 +1238,8 @@ pub fn spawn_project_detail_screen(
                                         ));
                                     });
 
-                                // Capture button
+                                // Capture button (capture sims only)
+                                if !is_propagation {
                                 content
                                     .spawn((
                                         Button,
@@ -1262,6 +1267,7 @@ pub fn spawn_project_detail_screen(
                                             TextColor(theme.text_primary),
                                         ));
                                     });
+                                }
 
                                 // Reset Sim button
                                 content

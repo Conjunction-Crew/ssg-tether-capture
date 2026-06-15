@@ -1,16 +1,39 @@
 use avian3d::prelude::*;
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
+use brahe::utils::DOrbitStateProvider;
+use brahe::{AngleFormat, Epoch, KeplerianPropagator};
 use nalgebra::Vector6;
 
 use crate::{
     components::{
-        orbit::{Orbit, TetherNode, TetherRoot},
+        capture_components::{PropagationNodeMode, PropagationOrientation, SimType},
+        orbit::{Orbit, Orbital, SeparateBody, TetherNode, TetherRoot},
         orbit_camera::CameraTarget,
     },
     constants::{ISS_ORBIT, PHYSICS_DISABLE_RADIUS, SCENE_LAYER},
     resources::{capture_plans::CapturePlanLibrary, orbital_cache::OrbitalCache},
+    systems::hill_frame::HillBasis,
     ui::state::{SelectedProject, UiScreen},
 };
+
+/// Per-tether spawn context for a propagation sim: which orientation axis to lay
+/// the chain along (raw ECI) and the rotation that maps the existing +Y layout
+/// onto that axis, plus the Hill basis used to seed independently-propagated nodes.
+struct PropSpawnCtx {
+    node_mode: PropagationNodeMode,
+    axis_eci: DVec3,
+    layout_rot: Quat,
+    basis: HillBasis,
+    reference_rv: Vector6<f64>,
+}
+
+/// Convert Keplerian elements `[a,e,i,Ω,ω,M]` (radians) to an ECI state at `epoch`.
+fn keplerian_to_eci(elements: Vector6<f64>, epoch: Epoch) -> Vector6<f64> {
+    let propagator = KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, 1.0);
+    propagator
+        .state_eci(epoch)
+        .unwrap_or_else(|_| Vector6::zeros())
+}
 
 pub fn spawn_debris(
     commands: &mut Commands,
@@ -53,6 +76,7 @@ pub fn spawn_tether(
     selected_project: &Res<SelectedProject>,
     capture_plan_lib: &Res<CapturePlanLibrary>,
     elements: Vector6<f64>,
+    epoch: Epoch,
 ) -> Result<(), BevyError> {
     let root_tail_radius: f64 = 0.50;
     let rope_radius: f64 = 0.25;
@@ -73,6 +97,30 @@ pub fn spawn_tether(
         .unwrap_or_else(|| "Tether1".to_string());
 
     let device = active_plan.and_then(|plan| plan.device.as_ref());
+
+    // For a propagation plan, resolve the initial orientation axis (raw ECI) and
+    // the rotation that maps the default +Y node layout onto that axis. The
+    // physics frame near the tether uses ECI axes (matching how disabled debris
+    // is positioned), so the CW axis is used directly without an orbit-frame rotation.
+    let prop_ctx: Option<PropSpawnCtx> = active_plan
+        .filter(|plan| plan.sim_type == SimType::Propagation)
+        .and_then(|plan| plan.propagation)
+        .map(|config| {
+            let reference_rv = keplerian_to_eci(elements, epoch);
+            let basis = HillBasis::from_reference(reference_rv, elements[0]);
+            let radial = matches!(config.orientation, PropagationOrientation::CwRadial);
+            let axis_eci = basis.axis(radial);
+            let axis_world =
+                Vec3::new(axis_eci.x as f32, axis_eci.y as f32, axis_eci.z as f32).normalize_or(Vec3::Y);
+            let layout_rot = Quat::from_rotation_arc(Vec3::Y, axis_world);
+            PropSpawnCtx {
+                node_mode: config.node_mode,
+                axis_eci,
+                layout_rot,
+                basis,
+                reference_rv,
+            }
+        });
 
     let tether_length = device
         .filter(|d| d.tether_length > 0.0)
@@ -118,21 +166,33 @@ pub fn spawn_tether(
     let tether_node_mesh = meshes.add(tether_node_mesh);
 
     // The root tether node
-    let tether_root = commands
-        .spawn((
-            DespawnOnExit(UiScreen::Sim),
-            CameraTarget,
-            TetherRoot,
-            RenderLayers::layer(SCENE_LAYER),
-            RigidBody::Dynamic,
-            sphere_collider.clone(),
-            Mesh3d(sphere_mesh.clone()),
-            MeshMaterial3d(sphere_material.clone()),
-            Mass::from(2.0),
-            Transform::from_xyz(0.0, 0.0, 0.0),
-            Orbit::FromElements(elements),
-        ))
-        .id();
+    let mut root_cmd = commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
+        CameraTarget,
+        TetherRoot,
+        RenderLayers::layer(SCENE_LAYER),
+        RigidBody::Dynamic,
+        sphere_collider.clone(),
+        Mesh3d(sphere_mesh.clone()),
+        MeshMaterial3d(sphere_material.clone()),
+        Mass::from(2.0),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
+    match prop_ctx.as_ref() {
+        // Separate-bodies: the root is the reference orbit, propagated directly
+        // (at `epoch`) so it stays consistent with the independently-propagated nodes.
+        Some(ctx) if ctx.node_mode == PropagationNodeMode::SeparateBodies => {
+            root_cmd.insert(Orbital {
+                object_id: String::new(),
+                parent_entity: None,
+                propagator: Some(KeplerianPropagator::from_eci(epoch, ctx.reference_rv, 1.0)),
+            });
+        }
+        _ => {
+            root_cmd.insert(Orbit::FromElements(elements));
+        }
+    }
+    let tether_root = root_cmd.id();
 
     orbital_entities
         .tethers
@@ -170,32 +230,69 @@ pub fn spawn_tether(
         let link_spacing = prev_half_extent + curr_half_extent + surface_gap;
         let y = prev_y + link_spacing;
 
-        let sphere = commands
-            .spawn((
-                DespawnOnExit(UiScreen::Sim),
-                RenderLayers::layer(SCENE_LAYER),
-                TetherNode { root: tether_root },
-                RigidBody::Dynamic,
-                collider,
-                Mesh3d(mesh),
-                MeshMaterial3d(sphere_material.clone()),
-                Mass::from(mass),
-                Transform::from_xyz(0.0, y as f32, 0.0),
-            ))
-            .id();
+        // Node positions lie along +Y for capture; propagation rotates the layout
+        // onto the chosen ECI orientation axis.
+        let translation = match prop_ctx.as_ref() {
+            Some(ctx) => ctx.layout_rot * Vec3::new(0.0, y as f32, 0.0),
+            None => Vec3::new(0.0, y as f32, 0.0),
+        };
 
-        let anchor = DVec3::new(0.0, prev_y + prev_half_extent + surface_gap * 0.5, 0.0);
-
-        commands.spawn((
+        let mut node_cmd = commands.spawn((
             DespawnOnExit(UiScreen::Sim),
-            // SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor),
-            DistanceJoint::new(prev_sphere, sphere).with_anchor(anchor),
-            JointDamping {
-                linear: 1.0,  // Linear damping
-                angular: 1.0, // Angular damping
-            },
-            JointCollisionDisabled,
+            RenderLayers::layer(SCENE_LAYER),
+            TetherNode { root: tether_root },
+            RigidBody::Dynamic,
+            collider,
+            Mesh3d(mesh),
+            MeshMaterial3d(sphere_material.clone()),
+            Mass::from(mass),
+            Transform::from_translation(translation),
         ));
+
+        // Separate-bodies mode: each node is its own two-body propagator, disabled
+        // from local physics and synced from its orbit each step (no joints).
+        let separate_bodies = matches!(
+            prop_ctx.as_ref(),
+            Some(ctx) if ctx.node_mode == PropagationNodeMode::SeparateBodies
+        );
+        if let Some(ctx) = prop_ctx.as_ref() {
+            if separate_bodies {
+                let node_eci = ctx.basis.node_initial_eci(ctx.axis_eci, y);
+                node_cmd.insert((
+                    SeparateBody,
+                    RigidBodyDisabled,
+                    Orbital {
+                        object_id: String::new(),
+                        parent_entity: None,
+                        propagator: Some(KeplerianPropagator::from_eci(epoch, node_eci, 1.0)),
+                    },
+                ));
+            }
+        }
+        let sphere = node_cmd.id();
+
+        if !separate_bodies {
+            let anchor_y = prev_y + prev_half_extent + surface_gap * 0.5;
+            let anchor = match prop_ctx.as_ref() {
+                Some(ctx) => {
+                    let a = ctx.layout_rot * Vec3::new(0.0, anchor_y as f32, 0.0);
+                    DVec3::new(a.x as f64, a.y as f64, a.z as f64)
+                }
+                None => DVec3::new(0.0, anchor_y, 0.0),
+            };
+            // Propagation tethers use light joint damping so gravity-gradient
+            // libration stays visible; capture tethers keep heavier damping.
+            let damping = if prop_ctx.is_some() { 0.05 } else { 1.0 };
+            commands.spawn((
+                DespawnOnExit(UiScreen::Sim),
+                DistanceJoint::new(prev_sphere, sphere).with_anchor(anchor),
+                JointDamping {
+                    linear: damping,
+                    angular: damping,
+                },
+                JointCollisionDisabled,
+            ));
+        }
 
         prev_sphere = sphere;
         prev_half_extent = curr_half_extent;

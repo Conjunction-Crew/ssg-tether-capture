@@ -1,5 +1,6 @@
 pub mod capture_algorithms;
 pub mod gizmos;
+pub mod hill_frame;
 pub mod orbit_camera;
 pub mod physics;
 pub mod propagation;

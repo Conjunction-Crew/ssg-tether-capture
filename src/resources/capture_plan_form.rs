@@ -22,12 +22,26 @@ pub struct NewCapturePlanForm {
 
     // General
     pub plan_name: String,
+    /// "capture" or "propagation".
+    pub sim_type: String,
 
     // Tether
     pub tether_name: String,
     pub tether_type: String,
     /// Physical length of the tether in metres (stored as string for the input field).
     pub tether_length: String,
+
+    // Propagation sim
+    /// "cw_radial" or "cw_along_track".
+    pub prop_orientation: String,
+    /// "joints_tension" or "separate_bodies".
+    pub prop_node_mode: String,
+    pub prop_max_tension_n: String,
+    pub prop_speedup: String,
+    /// Preserved orbital defaults (not editable in the form) so a save round-trips
+    /// the plan's quick-start orbits. Populated when opening an existing plan.
+    pub default_target_json: Option<Value>,
+    pub default_chaser_json: Option<Value>,
 
     // Approach state
     pub approach_max_velocity: String,
@@ -66,9 +80,13 @@ pub struct NewCapturePlanForm {
 impl NewCapturePlanForm {
     pub fn reset(&mut self) {
         *self = NewCapturePlanForm {
+            sim_type: "capture".to_string(),
             tether_type: "tether".to_string(),
             tether_name: "Tether1".to_string(),
             tether_length: "20.0".to_string(),
+            prop_orientation: "cw_radial".to_string(),
+            prop_node_mode: "joints_tension".to_string(),
+            prop_speedup: "1".to_string(),
             ..Default::default()
         };
     }

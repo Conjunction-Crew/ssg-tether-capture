@@ -5,15 +5,16 @@ use brahe::Epoch;
 use crate::{
     resources::{
         capture_plans::CaptureSphereRadius, celestials::Celestials, orbital_cache::OrbitalCache,
-        world_time::WorldTime,
+        propagation::ActivePropagation, world_time::WorldTime,
     },
     systems::{
         capture_algorithms::capture_state_machine_update,
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            cache_eci_states, calculate_com_rv, floating_origin_update_visuals, init_orbitals,
-            load_dataset_entities, physics_bubble_add_remove, target_entity_reset_origin,
+            apply_hill_forces, cache_eci_states, calculate_com_rv, floating_origin_update_visuals,
+            init_orbitals, load_dataset_entities, physics_bubble_add_remove, sync_separate_bodies,
+            target_entity_reset_origin,
         },
     },
     ui::state::UiScreen,
@@ -60,6 +61,8 @@ impl Plugin for OrbitalMechanicsPlugin {
                     target_entity_reset_origin,
                     cache_eci_states,
                     physics_bubble_add_remove,
+                    sync_separate_bodies,
+                    apply_hill_forces,
                     capture_state_machine_update,
                 )
                     .chain()
@@ -73,6 +76,7 @@ fn init_sim_resources(mut commands: Commands) {
     commands.init_resource::<Celestials>();
     commands.init_resource::<OrbitalCache>();
     commands.init_resource::<WorldTime>();
+    commands.init_resource::<ActivePropagation>();
     commands.insert_resource(CaptureSphereRadius { radius: 25.0 });
 }
 
@@ -80,6 +84,7 @@ fn remove_sim_resources(mut commands: Commands) {
     commands.remove_resource::<Celestials>();
     commands.remove_resource::<OrbitalCache>();
     commands.remove_resource::<WorldTime>();
+    commands.remove_resource::<ActivePropagation>();
     commands.remove_resource::<CaptureSphereRadius>();
 }
 

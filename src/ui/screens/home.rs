@@ -1,6 +1,8 @@
 use bevy::camera::visibility::RenderLayers;
+use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
 
+use crate::components::capture_components::{CapturePlan, SimType};
 use crate::constants::UI_LAYER;
 use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_plans::{
@@ -14,6 +16,37 @@ use crate::ui::widgets::ScreenRoot;
 
 #[derive(Component)]
 pub struct HomeScreen;
+
+/// Spawns a small "Propagation" badge for propagation plans (nothing for capture).
+fn sim_type_badge<'a>(
+    parent: &mut ChildSpawnerCommands<'a>,
+    plan: &CapturePlan,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+) {
+    if plan.sim_type != SimType::Propagation {
+        return;
+    }
+    parent
+        .spawn((
+            Node {
+                padding: UiRect::axes(px(6.0), px(2.0)),
+                ..default()
+            },
+            BackgroundColor(theme.button_background),
+        ))
+        .with_children(|b| {
+            b.spawn((
+                Text::new("Propagation"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(theme.button_text),
+            ));
+        });
+}
 
 #[derive(Component)]
 pub struct HomeProjectButton {
@@ -432,15 +465,24 @@ pub fn spawn_home_screen_inner(
                                                 ..default()
                                             })
                                             .with_children(|row| {
-                                                row.spawn((
-                                                    Text::new(plan.name.clone()),
-                                                    TextFont {
-                                                        font: font.clone(),
-                                                        font_size: 18.0,
-                                                        ..default()
-                                                    },
-                                                    TextColor(theme.text_primary),
-                                                ));
+                                                row.spawn(Node {
+                                                    flex_direction: FlexDirection::Row,
+                                                    align_items: AlignItems::Center,
+                                                    column_gap: px(8.0),
+                                                    ..default()
+                                                })
+                                                .with_children(|name_row| {
+                                                    name_row.spawn((
+                                                        Text::new(plan.name.clone()),
+                                                        TextFont {
+                                                            font: font.clone(),
+                                                            font_size: 18.0,
+                                                            ..default()
+                                                        },
+                                                        TextColor(theme.text_primary),
+                                                    ));
+                                                    sim_type_badge(name_row, plan, &font, theme);
+                                                });
 
                                                 row.spawn((
                                                     Button,
@@ -542,15 +584,24 @@ pub fn spawn_home_screen_inner(
                                         BackgroundColor(theme.panel_background),
                                     ))
                                     .with_children(|button| {
-                                        button.spawn((
-                                            Text::new(plan.name.clone()),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 18.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
+                                        button.spawn(Node {
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::Center,
+                                            column_gap: px(8.0),
+                                            ..default()
+                                        })
+                                        .with_children(|name_row| {
+                                            name_row.spawn((
+                                                Text::new(plan.name.clone()),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 18.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_primary),
+                                            ));
+                                            sim_type_badge(name_row, plan, &font, theme);
+                                        });
 
                                         button.spawn((
                                             Text::new(plan_id.clone()),

@@ -14,6 +14,7 @@ use crate::{
         },
         data_collection::{self, DataCollection},
         orbital_cache::OrbitalCache,
+        propagation::ActivePropagation,
         world_time::WorldTime,
     },
     systems::physics::PHYS_DT,
@@ -28,8 +29,14 @@ pub fn capture_state_machine_update(
     orbital_cache: Res<OrbitalCache>,
     mut data_collection: ResMut<DataCollection>,
     world_time: Res<WorldTime>,
+    active_propagation: Res<ActivePropagation>,
     mut log_events: MessageWriter<LogEvent>,
 ) {
+    // Propagation sims don't run the capture state machine.
+    if active_propagation.enabled {
+        return;
+    }
+
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
 

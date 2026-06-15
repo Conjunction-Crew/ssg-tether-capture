@@ -4,7 +4,7 @@ use std::path::Path;
 use bevy::{platform::collections::HashMap, prelude::*};
 use serde_json::Value;
 
-use crate::components::capture_components::{CaptureComponent, CapturePlan};
+use crate::components::capture_components::{CaptureComponent, CapturePlan, SimType};
 
 #[derive(Debug, Clone, Default)]
 pub struct CompiledCaptureTransition {
@@ -97,6 +97,30 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             ));
         }
     }
+
+    // Propagation plans don't use the capture state machine, so they skip all
+    // state/transition validation and instead validate their propagation block.
+    if plan.sim_type == SimType::Propagation {
+        match &plan.propagation {
+            Some(config) => {
+                if config.speedup == 0 {
+                    errors.push(format!("[{plan_id}] 'propagation.speedup' must be at least 1."));
+                }
+                if let Some(max_t) = config.max_tension_n {
+                    if max_t <= 0.0 {
+                        errors.push(format!(
+                            "[{plan_id}] 'propagation.max_tension_n' must be greater than zero when set."
+                        ));
+                    }
+                }
+            }
+            None => errors.push(format!(
+                "[{plan_id}] sim_type 'propagation' requires a 'propagation' configuration block."
+            )),
+        }
+        return errors;
+    }
+
     if plan.states.is_empty() {
         errors.push(format!(
             "[{plan_id}] 'states' array is empty — at least one state is required."

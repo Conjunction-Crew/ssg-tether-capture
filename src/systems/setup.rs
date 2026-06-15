@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
+use crate::components::capture_components::SimType;
 use crate::components::orbit::Earth;
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
@@ -8,7 +9,9 @@ use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::propagation::ActivePropagation;
 use crate::resources::space_catalog::OrbitalSelectionState;
+use crate::resources::world_time::WorldTime;
 use crate::systems::spawners::{spawn_debris, spawn_tether};
 use crate::ui::state::{SelectedProject, UiScreen};
 
@@ -205,6 +208,8 @@ pub fn setup_orbital_selection(
     selection: Res<OrbitalSelectionState>,
     mut orbital_cache: ResMut<OrbitalCache>,
     asset_server: Res<AssetServer>,
+    mut world_time: ResMut<WorldTime>,
+    mut active_propagation: ResMut<ActivePropagation>,
 ) {
     let Some(chaser) = selection.chaser.as_ref() else {
         return;
@@ -214,6 +219,41 @@ pub fn setup_orbital_selection(
         return;
     };
 
+    // Configure propagation mode + speedup when the active plan is a propagation sim.
+    const MAX_TIME_WARP: u32 = 10000;
+    if let Some(plan) = selected_project
+        .project_id
+        .as_deref()
+        .and_then(|id| capture_plan_lib.plans.get(id))
+    {
+        if plan.sim_type == SimType::Propagation {
+            if let Some(config) = plan.propagation {
+                let chaser_elements = chaser.elements.to_vec6();
+                let tether_name = if plan.tether.trim().is_empty() {
+                    "Tether1".to_string()
+                } else {
+                    plan.tether.clone()
+                };
+                *active_propagation = ActivePropagation {
+                    enabled: true,
+                    tether_name,
+                    node_mode: config.node_mode,
+                    reference_a_m: chaser_elements[0],
+                    max_tension_n: config.max_tension_n,
+                };
+                if config.speedup > MAX_TIME_WARP {
+                    warn!(
+                        "Propagation speedup {} clamped to {}",
+                        config.speedup, MAX_TIME_WARP
+                    );
+                }
+                world_time.multiplier = config.speedup.clamp(1, MAX_TIME_WARP);
+            }
+        }
+    }
+
+    let epoch = world_time.epoch;
+
     if let Err(e) = spawn_tether(
         &mut commands,
         &mut meshes,
@@ -222,6 +262,7 @@ pub fn setup_orbital_selection(
         &selected_project,
         &capture_plan_lib,
         chaser.elements.to_vec6(),
+        epoch,
     ) {
         error!("Error spawning tether: {}", e);
     };

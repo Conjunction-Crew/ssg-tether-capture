@@ -102,10 +102,21 @@ pub enum FormFieldId {
     CaptureMaxVelocity,
     CaptureMaxForce,
     CaptureShrinkRate,
+    PropMaxTension,
+    PropSpeedup,
 }
 
 #[derive(Component, Debug, Clone)]
 pub struct TetherTypeRadioButton(pub String);
+
+#[derive(Component, Debug, Clone)]
+pub struct SimTypeRadioButton(pub String);
+
+#[derive(Component, Debug, Clone)]
+pub struct PropOrientationRadioButton(pub String);
+
+#[derive(Component, Debug, Clone)]
+pub struct PropNodeModeRadioButton(pub String);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -217,6 +228,80 @@ fn field_row<'a>(
                     },
                     TextColor(text_color),
                 ));
+            });
+        });
+}
+
+/// A labelled row of mutually-exclusive radio buttons. Each option carries a
+/// marker component built from its value via `make_marker`, mirroring the
+/// tether-type radio pattern but reusable for the sim-type/propagation selectors.
+fn radio_group<'a, M: Component>(
+    parent: &mut ChildSpawnerCommands<'a>,
+    label: &str,
+    options: &[(&str, &str)],
+    selected_value: &str,
+    make_marker: impl Fn(String) -> M,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            ..default()
+        })
+        .with_children(|col| {
+            col.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(theme.text_muted),
+            ));
+            col.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(6.0),
+                row_gap: Val::Px(6.0),
+                flex_wrap: FlexWrap::Wrap,
+                ..default()
+            })
+            .with_children(|row| {
+                for (display, value) in options {
+                    let selected = *value == selected_value;
+                    let bg = if selected {
+                        theme.button_background
+                    } else {
+                        theme.panel_background_soft
+                    };
+                    let text = if selected {
+                        theme.button_text
+                    } else {
+                        theme.text_muted
+                    };
+                    row.spawn((
+                        Button,
+                        make_marker(value.to_string()),
+                        Node {
+                            padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                            ..default()
+                        },
+                        BackgroundColor(bg),
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new(*display),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(text),
+                        ));
+                    });
+                }
             });
         });
 }
@@ -806,6 +891,26 @@ pub fn spawn_capture_plan_modal(
                                 field_row(sec, "Plan Name *", FormFieldId::PlanName, "My Capture Plan", &form.plan_name, false, false, &font, theme);
                             });
 
+                            // ── SIMULATION TYPE ──────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "Simulation", &font, theme);
+                                radio_group(
+                                    sec,
+                                    "Simulation Type *",
+                                    &[("Capture", "capture"), ("Propagation", "propagation")],
+                                    &form.sim_type,
+                                    SimTypeRadioButton,
+                                    &font,
+                                    theme,
+                                );
+                            });
+
                             // ── TETHER ───────────────────────────────────
                             body.spawn(Node {
                                 width: Val::Percent(100.0),
@@ -886,6 +991,47 @@ pub fn spawn_capture_plan_modal(
 
                                 field_row(sec, "Tether Length * (m)", FormFieldId::TetherLength, "20.0", &form.tether_length, true, false, &font, theme);
                             });
+
+                            // Capture sims use the approach/terminal/capture state
+                            // machine; propagation sims configure the propagation block.
+                            if form.sim_type == "propagation" {
+                            // ── PROPAGATION ──────────────────────────────
+                            body.spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            })
+                            .with_children(|sec| {
+                                section_header(sec, "Propagation", &font, theme);
+                                radio_group(
+                                    sec,
+                                    "Initial Orientation *",
+                                    &[
+                                        ("CW X — Nadir (toward Earth)", "cw_radial"),
+                                        ("CW Y — Along-track", "cw_along_track"),
+                                    ],
+                                    &form.prop_orientation,
+                                    PropOrientationRadioButton,
+                                    &font,
+                                    theme,
+                                );
+                                radio_group(
+                                    sec,
+                                    "Node Mode *",
+                                    &[
+                                        ("Joints + tension", "joints_tension"),
+                                        ("Separate bodies", "separate_bodies"),
+                                    ],
+                                    &form.prop_node_mode,
+                                    PropNodeModeRadioButton,
+                                    &font,
+                                    theme,
+                                );
+                                field_row(sec, "Max Tension (N)", FormFieldId::PropMaxTension, "6.0", &form.prop_max_tension_n, true, false, &font, theme);
+                                field_row(sec, "Speedup *", FormFieldId::PropSpeedup, "1", &form.prop_speedup, true, false, &font, theme);
+                            });
+                            } else {
 
                             // ── APPROACH STATE ───────────────────────────
                             body.spawn(Node {
@@ -977,6 +1123,8 @@ pub fn spawn_capture_plan_modal(
                                 field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::CaptureMaxForce, "2.0", &form.capture_max_force, true, false, &font, theme);
                                 field_row(sec, &format!("Shrink Rate * ({vel_unit})"), FormFieldId::CaptureShrinkRate, "0.025", &form.capture_shrink_rate, true, false, &font, theme);
                             });
+
+                            } // close else (capture-only sections)
 
                                 }); // close with_children(|body|
                                 }) // close with_children(|scroll_viewport|
@@ -1119,6 +1267,8 @@ pub fn sync_form_fields(
             FormFieldId::CaptureMaxVelocity => form.capture_max_velocity = field.value.clone(),
             FormFieldId::CaptureMaxForce => form.capture_max_force = field.value.clone(),
             FormFieldId::CaptureShrinkRate => form.capture_shrink_rate = field.value.clone(),
+            FormFieldId::PropMaxTension => form.prop_max_tension_n = field.value.clone(),
+            FormFieldId::PropSpeedup => form.prop_speedup = field.value.clone(),
             FormFieldId::ApproachTransitionDistanceValue(i) => {
                 if let Some(t) = form.approach_transitions.get_mut(*i) {
                     t.distance_value = field.value.clone();
@@ -1421,6 +1571,61 @@ pub fn tether_type_radio_interactions(
     }
 }
 
+/// Handles the sim-type and propagation orientation/node-mode radio selectors.
+pub fn propagation_radio_interactions(
+    mut buttons: Query<
+        (
+            &Interaction,
+            Option<&SimTypeRadioButton>,
+            Option<&PropOrientationRadioButton>,
+            Option<&PropNodeModeRadioButton>,
+            &mut BackgroundColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut form: ResMut<NewCapturePlanForm>,
+    theme: Res<UiTheme>,
+) {
+    if !form.open {
+        return;
+    }
+    for (interaction, sim_type, orientation, node_mode, mut bg) in &mut buttons {
+        // (current selected value, this button's value) — cloned to avoid holding
+        // a borrow of `form` across the mutation below.
+        let Some((current, value)) = (if let Some(b) = sim_type {
+            Some((form.sim_type.clone(), b.0.clone()))
+        } else if let Some(b) = orientation {
+            Some((form.prop_orientation.clone(), b.0.clone()))
+        } else if let Some(b) = node_mode {
+            Some((form.prop_node_mode.clone(), b.0.clone()))
+        } else {
+            None
+        }) else {
+            continue;
+        };
+
+        match *interaction {
+            Interaction::Pressed => {
+                if sim_type.is_some() {
+                    form.sim_type = value;
+                } else if orientation.is_some() {
+                    form.prop_orientation = value;
+                } else if node_mode.is_some() {
+                    form.prop_node_mode = value;
+                }
+            }
+            Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
+            Interaction::None => {
+                *bg = if current == value {
+                    BackgroundColor(theme.button_background)
+                } else {
+                    BackgroundColor(theme.panel_background_soft)
+                };
+            }
+        }
+    }
+}
+
 // ── Validation and serialization helpers ─────────────────────────────────
 
 pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
@@ -1450,6 +1655,27 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
             Ok(_) => errors.push("Tether Length must be greater than zero".to_string()),
             Err(_) => errors.push("Tether Length must be a number".to_string()),
         }
+    }
+
+    // Propagation plans validate their own block and skip the capture-state checks.
+    if form.sim_type == "propagation" {
+        if form.prop_speedup.trim().is_empty() {
+            errors.push("Speedup is required".to_string());
+        } else {
+            match form.prop_speedup.trim().parse::<u32>() {
+                Ok(v) if v >= 1 => {}
+                Ok(_) => errors.push("Speedup must be at least 1".to_string()),
+                Err(_) => errors.push("Speedup must be a whole number".to_string()),
+            }
+        }
+        if !form.prop_max_tension_n.trim().is_empty() {
+            match form.prop_max_tension_n.trim().parse::<f64>() {
+                Ok(v) if v > 0.0 => {}
+                Ok(_) => errors.push("Max Tension must be greater than zero".to_string()),
+                Err(_) => errors.push("Max Tension must be a number".to_string()),
+            }
+        }
+        return errors;
     }
 
     require_number(
@@ -1577,54 +1803,94 @@ pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
     use serde_json::{Value, json};
 
     let unit = form.unit_system;
-    let make_transitions = |transitions: &[TransitionForm]| -> Value {
-        let arr: Vec<Value> = transitions
-            .iter()
-            .map(|t| {
-                let distance_val = unit_conv_linear(&t.distance_value, unit);
-                let dist = json!({ t.distance_kind.clone(): distance_val });
-                json!({ "to": t.to.trim(), "distance": dist })
-            })
-            .collect();
-        Value::Array(arr)
+
+    let mut root = if form.sim_type == "propagation" {
+        let mut prop = serde_json::Map::new();
+        prop.insert("orientation".to_string(), json!(form.prop_orientation));
+        prop.insert("node_mode".to_string(), json!(form.prop_node_mode));
+        if !form.prop_max_tension_n.trim().is_empty() {
+            if let Ok(v) = form.prop_max_tension_n.trim().parse::<f64>() {
+                prop.insert("max_tension_n".to_string(), json!(v));
+            }
+        }
+        prop.insert(
+            "speedup".to_string(),
+            json!(form.prop_speedup.trim().parse::<u32>().unwrap_or(1).max(1)),
+        );
+
+        json!({
+            "name": form.plan_name.trim(),
+            "sim_type": "propagation",
+            "tether": form.tether_name.trim(),
+            "device": {
+                "type": form.tether_type.trim(),
+                "tether_length": form.tether_length.parse::<f64>().unwrap_or(20.0)
+            },
+            "propagation": Value::Object(prop),
+            "states": []
+        })
+    } else {
+        let make_transitions = |transitions: &[TransitionForm]| -> Value {
+            let arr: Vec<Value> = transitions
+                .iter()
+                .map(|t| {
+                    let distance_val = unit_conv_linear(&t.distance_value, unit);
+                    let dist = json!({ t.distance_kind.clone(): distance_val });
+                    json!({ "to": t.to.trim(), "distance": dist })
+                })
+                .collect();
+            Value::Array(arr)
+        };
+
+        let approach_transitions = make_transitions(&form.approach_transitions);
+        let terminal_transitions = make_transitions(&form.terminal_transitions);
+
+        json!({
+            "name": form.plan_name.trim(),
+            "tether": form.tether_name.trim(),
+            "device": {
+                "type": form.tether_type.trim(),
+                "tether_length": form.tether_length.parse::<f64>().unwrap_or(20.0)
+            },
+            "states": [
+                {
+                    "id": "approach",
+                    "parameters": {
+                        "max_velocity": unit_conv_linear(&form.approach_max_velocity, unit),
+                        "max_force": unit_conv_force(&form.approach_max_force, unit)
+                    },
+                    "transitions": approach_transitions
+                },
+                {
+                    "id": "terminal",
+                    "parameters": {
+                        "max_velocity": unit_conv_linear(&form.terminal_max_velocity, unit),
+                        "max_force": unit_conv_force(&form.terminal_max_force, unit),
+                        "shrink_rate": unit_conv_linear(&form.terminal_shrink_rate, unit)
+                    },
+                    "transitions": terminal_transitions
+                },
+                {
+                    "id": "capture",
+                    "parameters": {
+                        "max_velocity": unit_conv_linear(&form.capture_max_velocity, unit),
+                        "max_force": unit_conv_force(&form.capture_max_force, unit),
+                        "shrink_rate": unit_conv_linear(&form.capture_shrink_rate, unit)
+                    }
+                }
+            ]
+        })
     };
 
-    let approach_transitions = make_transitions(&form.approach_transitions);
-    let terminal_transitions = make_transitions(&form.terminal_transitions);
+    // Preserve quick-start orbital defaults across edits (the form doesn't expose them).
+    if let Value::Object(map) = &mut root {
+        if let Some(v) = &form.default_target_json {
+            map.insert("default_target".to_string(), v.clone());
+        }
+        if let Some(v) = &form.default_chaser_json {
+            map.insert("default_chaser".to_string(), v.clone());
+        }
+    }
 
-    json!({
-        "name": form.plan_name.trim(),
-        "tether": form.tether_name.trim(),
-        "device": {
-            "type": form.tether_type.trim(),
-            "tether_length": form.tether_length.parse::<f64>().unwrap_or(20.0)
-        },
-        "states": [
-            {
-                "id": "approach",
-                "parameters": {
-                    "max_velocity": unit_conv_linear(&form.approach_max_velocity, unit),
-                    "max_force": unit_conv_force(&form.approach_max_force, unit)
-                },
-                "transitions": approach_transitions
-            },
-            {
-                "id": "terminal",
-                "parameters": {
-                    "max_velocity": unit_conv_linear(&form.terminal_max_velocity, unit),
-                    "max_force": unit_conv_force(&form.terminal_max_force, unit),
-                    "shrink_rate": unit_conv_linear(&form.terminal_shrink_rate, unit)
-                },
-                "transitions": terminal_transitions
-            },
-            {
-                "id": "capture",
-                "parameters": {
-                    "max_velocity": unit_conv_linear(&form.capture_max_velocity, unit),
-                    "max_force": unit_conv_force(&form.capture_max_force, unit),
-                    "shrink_rate": unit_conv_linear(&form.capture_shrink_rate, unit)
-                }
-            }
-        ]
-    })
+    root
 }

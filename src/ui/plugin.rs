@@ -10,7 +10,9 @@ use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_egui::EguiPrimaryContextPass;
 
-use crate::components::capture_components::{CaptureComponent, CapturePlan};
+use crate::components::capture_components::{
+    CaptureComponent, CapturePlan, PropagationNodeMode, PropagationOrientation, SimType,
+};
 use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
@@ -36,8 +38,9 @@ use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
-    dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
-    sync_form_fields, tether_type_radio_interactions, validate_form,
+    dropdown_interactions, generate_filename, propagation_radio_interactions,
+    spawn_capture_plan_modal, sync_dropdown_labels, sync_form_fields, tether_type_radio_interactions,
+    validate_form,
 };
 use crate::ui::screens::home::{
     HomeScreen, cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
@@ -149,6 +152,7 @@ impl Plugin for UiPlugin {
                         sync_form_fields,
                         capture_plan_interactions,
                         tether_type_radio_interactions,
+                        propagation_radio_interactions,
                         (dropdown_interactions, sync_dropdown_labels).chain(),
                     ),
                     poll_new_plan_modal,
@@ -231,8 +235,8 @@ fn poll_new_plan_modal(
     theme: Res<UiTheme>,
     modals: Query<Entity, With<CapturePlanModal>>,
     scroll_body: Query<&ScrollPosition, With<CapturePlanScrollBody>>,
-    // (approach_count, terminal_count, has_overwrite, error_count, scroll_y, unit_system)
-    mut last: Local<(usize, usize, bool, usize, f32, UnitSystem)>,
+    // (approach_count, terminal_count, has_overwrite, error_count, scroll_y, unit_system, sim_type)
+    mut last: Local<(usize, usize, bool, usize, f32, UnitSystem, String)>,
 ) {
     if !form.is_changed() {
         return;
@@ -247,6 +251,7 @@ fn poll_new_plan_modal(
             form.validation_errors.len(),
             0.0,
             form.unit_system,
+            form.sim_type.clone(),
         );
     } else if !form.open && modal_exists {
         for e in &modals {
@@ -257,7 +262,8 @@ fn poll_new_plan_modal(
             || form.terminal_transitions.len() != last.1
             || form.overwrite_conflict_path.is_some() != last.2
             || form.validation_errors.len() != last.3
-            || form.unit_system != last.5;
+            || form.unit_system != last.5
+            || form.sim_type != last.6;
         if needs_rerender {
             let scroll_y = scroll_body.single().map(|sp| sp.0.y).unwrap_or(last.4);
             for e in &modals {
@@ -278,6 +284,7 @@ fn poll_new_plan_modal(
                 form.validation_errors.len(),
                 scroll_y,
                 form.unit_system,
+                form.sim_type.clone(),
             );
         }
     }
@@ -800,6 +807,30 @@ fn handle_ui_events(
                             form.tether_length = device.tether_length.to_string();
                         }
                     }
+                    form.sim_type = match plan.sim_type {
+                        SimType::Propagation => "propagation".to_string(),
+                        SimType::Capture => "capture".to_string(),
+                    };
+                    if let Some(config) = &plan.propagation {
+                        form.prop_orientation = match config.orientation {
+                            PropagationOrientation::CwRadial => "cw_radial",
+                            PropagationOrientation::CwAlongTrack => "cw_along_track",
+                        }
+                        .to_string();
+                        form.prop_node_mode = match config.node_mode {
+                            PropagationNodeMode::JointsTension => "joints_tension",
+                            PropagationNodeMode::SeparateBodies => "separate_bodies",
+                        }
+                        .to_string();
+                        form.prop_max_tension_n =
+                            config.max_tension_n.map(|v| v.to_string()).unwrap_or_default();
+                        form.prop_speedup = config.speedup.to_string();
+                    }
+                    // Preserve quick-start orbital defaults so a save round-trips them.
+                    form.default_target_json =
+                        plan.default_target.and_then(|d| serde_json::to_value(d).ok());
+                    form.default_chaser_json =
+                        plan.default_chaser.and_then(|d| serde_json::to_value(d).ok());
                     for state in &plan.states {
                         let transitions: Vec<TransitionForm> = state
                             .transitions

@@ -54,6 +54,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         }
     }
 
@@ -144,6 +146,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         assert!(validate_capture_plan("two_state_plan", &plan).is_empty());
     }
@@ -173,6 +177,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         let errors = validate_capture_plan("bad_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("Duplicate")));
@@ -232,6 +238,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         let compiled = compile_capture_plan(&plan);
         assert!(compiled.state("approach").is_some());
@@ -257,6 +265,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         let compiled = compile_capture_plan(&plan);
         let state = compiled.state("terminal").unwrap();
@@ -283,6 +293,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         let compiled = compile_capture_plan(&plan);
         let transition = &compiled.state("approach").unwrap().transitions[0];
@@ -329,6 +341,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         let component = build_capture_component("plan", &plan, 123.0).unwrap();
         assert_eq!(component.current_state, "approach");
@@ -345,6 +359,8 @@ mod tests {
             device: None,
             default_target: None,
             default_chaser: None,
+            sim_type: Default::default(),
+            propagation: None,
         };
         assert!(build_capture_component("empty", &plan, 0.0).is_none());
     }
@@ -832,5 +848,102 @@ mod tests {
         assert_eq!(state.active_filters.len(), 3);
         assert!(!state.active_filters.contains(&LogLevel::Debug));
         assert!(state.active_filters.contains(&LogLevel::Info));
+    }
+
+    // -------------------------------------------------------------------------
+    // Propagation sim type
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn legacy_plan_without_sim_type_defaults_to_capture() {
+        use crate::components::capture_components::SimType;
+        // Plans written before the propagation feature omit `sim_type`/`propagation`.
+        let json = r#"{
+            "name": "Legacy",
+            "tether": "Tether1",
+            "states": [{ "id": "approach", "parameters": { "max_velocity": 1.0, "max_force": 2.0 } }]
+        }"#;
+        let plan: CapturePlan = serde_json::from_str(json).expect("legacy plan should deserialize");
+        assert_eq!(plan.sim_type, SimType::Capture);
+        assert!(plan.propagation.is_none());
+        assert!(validate_capture_plan("legacy", &plan).is_empty());
+    }
+
+    #[test]
+    fn propagation_plan_deserializes_and_validates() {
+        use crate::components::capture_components::{
+            PropagationNodeMode, PropagationOrientation, SimType,
+        };
+        let json = r#"{
+            "name": "Prop",
+            "sim_type": "propagation",
+            "tether": "Tether1",
+            "device": { "type": "tether", "tether_length": 30.0 },
+            "propagation": {
+                "orientation": "cw_along_track",
+                "node_mode": "separate_bodies",
+                "speedup": 128
+            },
+            "states": []
+        }"#;
+        let plan: CapturePlan = serde_json::from_str(json).expect("propagation plan deserializes");
+        assert_eq!(plan.sim_type, SimType::Propagation);
+        let config = plan.propagation.expect("propagation block present");
+        assert_eq!(config.orientation, PropagationOrientation::CwAlongTrack);
+        assert_eq!(config.node_mode, PropagationNodeMode::SeparateBodies);
+        assert_eq!(config.speedup, 128);
+        assert!(config.max_tension_n.is_none());
+        // Empty states must NOT fail validation for a propagation plan.
+        assert!(validate_capture_plan("prop", &plan).is_empty());
+    }
+
+    #[test]
+    fn propagation_plan_without_block_fails_validation() {
+        let json = r#"{ "name": "Bad", "sim_type": "propagation", "tether": "Tether1", "states": [] }"#;
+        let plan: CapturePlan = serde_json::from_str(json).unwrap();
+        let errors = validate_capture_plan("bad", &plan);
+        assert!(
+            errors.iter().any(|e| e.contains("propagation")),
+            "expected a missing-propagation-block error, got {errors:?}"
+        );
+    }
+
+    #[test]
+    fn shipped_example_propagation_plans_load_without_errors() {
+        // Guards the bundled example assets against schema drift.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/example_capture_plans");
+        let (plans, errors) = load_plans_from_dir_with_errors(&dir);
+        for stem in [
+            "example_propagation_radial_joints",
+            "example_propagation_alongtrack_separate",
+        ] {
+            assert!(
+                plans.contains_key(stem),
+                "{stem} failed to load; errors: {:?}",
+                errors.get(stem)
+            );
+        }
+    }
+
+    #[test]
+    fn build_capture_plan_json_emits_propagation_block() {
+        let mut form = NewCapturePlanForm::default();
+        form.reset();
+        form.sim_type = "propagation".to_string();
+        form.plan_name = "P".to_string();
+        form.prop_orientation = "cw_radial".to_string();
+        form.prop_node_mode = "joints_tension".to_string();
+        form.prop_max_tension_n = "6.0".to_string();
+        form.prop_speedup = "64".to_string();
+        let json = build_capture_plan_json(&form);
+        assert_eq!(json["sim_type"], "propagation");
+        assert_eq!(json["propagation"]["orientation"], "cw_radial");
+        assert_eq!(json["propagation"]["node_mode"], "joints_tension");
+        assert_eq!(json["propagation"]["speedup"], 64);
+        assert_eq!(json["propagation"]["max_tension_n"], 6.0);
+        // Round-trips back into a valid propagation plan.
+        let plan: CapturePlan = serde_json::from_value(json).expect("round-trips to CapturePlan");
+        assert!(validate_capture_plan("p", &plan).is_empty());
     }
 }
