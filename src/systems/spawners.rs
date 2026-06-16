@@ -267,6 +267,18 @@ pub fn spawn_tether(
                         propagator: Some(KeplerianPropagator::from_eci(epoch, node_eci, 1.0)),
                     },
                 ));
+            } else {
+                // JointsTension: seed each node with the co-rotation velocity so it
+                // starts at Hill-frame rest (zero relative velocity in the rotating
+                // frame). Without this the CW Coriolis terms immediately generate
+                // spurious radial forces from zero inertial velocity.
+                let offset_eci = DVec3::new(
+                    translation.x as f64,
+                    translation.y as f64,
+                    translation.z as f64,
+                );
+                let v = ctx.basis.omega.cross(offset_eci);
+                node_cmd.insert(LinearVelocity(v));
             }
         }
         let sphere = node_cmd.id();

@@ -9,6 +9,7 @@ use crate::{
     components::capture_components::CaptureComponent,
     resources::{
         capture_plans::CapturePlanLibrary, data_collection::DataCollection,
+        propagation::ActivePropagation, propagation_viz::PropagationVizData, settings::Settings,
         working_directory::WorkingDirectory,
     },
     ui::state::SelectedProject,
@@ -171,4 +172,93 @@ pub fn egui_plots(
     data_collection.settings.selecting_csv_dir = export_clicked;
     data_collection.settings.csv_export_filename = selected_filename;
     data_collection.settings.num_exports_completed = num_exports;
+}
+
+/// Clohessy-Wiltshire / Hill-frame plots for the propagation sim: an X-Y
+/// ellipse trace (along-track vs. radial) and per-axis time-series, driven by
+/// [`PropagationVizData`]'s ring buffers. Toggled via the "Visualization"
+/// buttons in the propagation sim's Simulation Controls panel.
+pub fn propagation_cw_plots(
+    active: Res<ActivePropagation>,
+    settings: Res<Settings>,
+    viz: Res<PropagationVizData>,
+    mut contexts: EguiContexts,
+) {
+    let viz_settings = &settings.prop_viz;
+    if !active.enabled || (!viz_settings.show_cw_ellipse && !viz_settings.show_cw_time_series) {
+        return;
+    }
+    if viz.nodes.is_empty() {
+        return;
+    }
+
+    let Some(ctx) = contexts.ctx_mut().ok() else {
+        return;
+    };
+    let available_rect = ctx.available_rect();
+
+    egui::Window::new("Propagation CW Data")
+        .default_pos(Pos2::new(0.0, 0.0))
+        .constrain_to(available_rect)
+        .show(ctx, |ui| {
+            if viz_settings.show_cw_ellipse {
+                Plot::new("CW Ellipse")
+                    .view_aspect(1.0)
+                    .legend(Legend::default().title("CW Ellipse (along-track vs radial, m)"))
+                    .show(ui, |plot_ui| {
+                        for (index, history) in viz.nodes.values().enumerate() {
+                            let points: PlotPoints = history
+                                .samples
+                                .iter()
+                                .map(|(_, radial, along, _, _)| [*along, *radial])
+                                .collect();
+                            plot_ui.line(Line::new(format!("node {index}"), points));
+                        }
+                    });
+            }
+
+            if viz_settings.show_cw_time_series {
+                Plot::new("CW Radial vs Time")
+                    .view_aspect(2.0)
+                    .legend(Legend::default().title("Radial (m)"))
+                    .show(ui, |plot_ui| {
+                        for (index, history) in viz.nodes.values().enumerate() {
+                            let points: PlotPoints = history
+                                .samples
+                                .iter()
+                                .map(|(t, radial, _, _, _)| [*t, *radial])
+                                .collect();
+                            plot_ui.line(Line::new(format!("node {index}"), points));
+                        }
+                    });
+
+                Plot::new("CW Along-track vs Time")
+                    .view_aspect(2.0)
+                    .legend(Legend::default().title("Along-track (m)"))
+                    .show(ui, |plot_ui| {
+                        for (index, history) in viz.nodes.values().enumerate() {
+                            let points: PlotPoints = history
+                                .samples
+                                .iter()
+                                .map(|(t, _, along, _, _)| [*t, *along])
+                                .collect();
+                            plot_ui.line(Line::new(format!("node {index}"), points));
+                        }
+                    });
+
+                Plot::new("CW Cross-track vs Time")
+                    .view_aspect(2.0)
+                    .legend(Legend::default().title("Cross-track (m)"))
+                    .show(ui, |plot_ui| {
+                        for (index, history) in viz.nodes.values().enumerate() {
+                            let points: PlotPoints = history
+                                .samples
+                                .iter()
+                                .map(|(t, _, _, cross, _)| [*t, *cross])
+                                .collect();
+                            plot_ui.line(Line::new(format!("node {index}"), points));
+                        }
+                    });
+            }
+        });
 }

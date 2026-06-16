@@ -5,6 +5,7 @@ pub mod celestials;
 pub mod data_collection;
 pub mod orbital_cache;
 pub mod propagation;
+pub mod propagation_viz;
 pub mod settings;
 pub mod space_catalog;
 pub mod working_directory;

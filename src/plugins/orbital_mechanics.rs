@@ -5,16 +5,17 @@ use brahe::Epoch;
 use crate::{
     resources::{
         capture_plans::CaptureSphereRadius, celestials::Celestials, orbital_cache::OrbitalCache,
-        propagation::ActivePropagation, world_time::WorldTime,
+        propagation::ActivePropagation, propagation_viz::PropagationVizData, world_time::WorldTime,
     },
     systems::{
         capture_algorithms::capture_state_machine_update,
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            apply_hill_forces, cache_eci_states, calculate_com_rv, floating_origin_update_visuals,
-            init_orbitals, load_dataset_entities, physics_bubble_add_remove, sync_separate_bodies,
-            target_entity_reset_origin,
+            apply_hill_forces, apply_performance_mode, cache_eci_states, calculate_com_rv,
+            collect_propagation_cw_data, floating_origin_update_visuals, init_orbitals,
+            load_dataset_entities, physics_bubble_add_remove, propagation_viz_gizmos,
+            sync_separate_bodies, target_entity_reset_origin,
         },
     },
     ui::state::UiScreen,
@@ -41,6 +42,7 @@ impl Plugin for OrbitalMechanicsPlugin {
                 (init_sim_resources, load_dataset_entities, setup_time).chain(),
             )
             .add_systems(OnExit(UiScreen::Sim), remove_sim_resources)
+            .add_systems(OnEnter(SimState::Setup), reset_propagation_viz)
             .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
             .add_systems(
                 FixedUpdate,
@@ -50,7 +52,13 @@ impl Plugin for OrbitalMechanicsPlugin {
             )
             .add_systems(
                 Update,
-                (dev_gizmos, capture_gizmos, floating_origin_update_visuals)
+                (
+                    dev_gizmos,
+                    capture_gizmos,
+                    floating_origin_update_visuals,
+                    apply_performance_mode,
+                    propagation_viz_gizmos,
+                )
                     .run_if(in_state(UiScreen::Sim))
                     .run_if(in_state(SimState::Running)),
             )
@@ -63,6 +71,7 @@ impl Plugin for OrbitalMechanicsPlugin {
                     physics_bubble_add_remove,
                     sync_separate_bodies,
                     apply_hill_forces,
+                    collect_propagation_cw_data,
                     capture_state_machine_update,
                 )
                     .chain()
@@ -77,6 +86,7 @@ fn init_sim_resources(mut commands: Commands) {
     commands.init_resource::<OrbitalCache>();
     commands.init_resource::<WorldTime>();
     commands.init_resource::<ActivePropagation>();
+    commands.init_resource::<PropagationVizData>();
     commands.insert_resource(CaptureSphereRadius { radius: 25.0 });
 }
 
@@ -85,7 +95,18 @@ fn remove_sim_resources(mut commands: Commands) {
     commands.remove_resource::<OrbitalCache>();
     commands.remove_resource::<WorldTime>();
     commands.remove_resource::<ActivePropagation>();
+    commands.remove_resource::<PropagationVizData>();
     commands.remove_resource::<CaptureSphereRadius>();
+}
+
+/// Clears the CW history ring buffers on every (re)entry to `SimState::Setup`,
+/// including in-session restarts, so stale data from a previous run doesn't
+/// leak into the plots/gizmos. Tolerates the resource not existing yet (e.g.
+/// the initial `Setup` state on app startup, before `UiScreen::Sim` is entered).
+fn reset_propagation_viz(viz: Option<ResMut<PropagationVizData>>) {
+    if let Some(mut viz) = viz {
+        viz.clear();
+    }
 }
 
 pub fn setup_time(mut world_time: ResMut<WorldTime>) {

@@ -28,6 +28,11 @@ pub enum UiEvent {
     },
     ToggleMapView,
     ToggleCaptureGizmos,
+    TogglePerformanceMode,
+    ToggleCwEllipsePlot,
+    ToggleCwTimeSeries,
+    ToggleHillGizmos,
+    ToggleNodeTrails,
     ChangeTimeWarp {
         increase: bool,
     },

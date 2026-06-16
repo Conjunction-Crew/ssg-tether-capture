@@ -13,14 +13,16 @@ use crate::plugins::gpu_compute::{GpuComputeEpochOrigin, GpuElements, GpuOrbital
 use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::propagation::ActivePropagation;
-use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
+use crate::resources::propagation_viz::PropagationVizData;
+use crate::resources::settings::Settings;
+use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceCatalogUiState, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
 use crate::systems::hill_frame::HillBasis;
 
 use avian3d::prelude::{Forces, RigidBodyDisabled, RigidBodyQuery, WriteRigidBodyForces};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
-use bevy::pbr::Atmosphere;
+use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, GM_EARTH, KeplerianPropagator, TimeSystem};
@@ -691,6 +693,155 @@ pub fn apply_hill_forces(
             *tension_warn_counter = (*tension_warn_counter + 1) % 600;
         } else {
             *tension_warn_counter = 0;
+        }
+    }
+}
+
+/// Applies or removes performance-mode rendering suppressions when the setting changes.
+/// Disables atmosphere and catalog dot rendering during propagation to allow higher time warp.
+pub fn apply_performance_mode(
+    settings: Res<Settings>,
+    mut catalog_ui: ResMut<SpaceCatalogUiState>,
+    mut atmosphere_q: Query<&mut AtmosphereSettings, With<Camera3d>>,
+    mut prev_mode: Local<bool>,
+) {
+    if settings.performance_mode == *prev_mode {
+        return;
+    }
+    *prev_mode = settings.performance_mode;
+
+    if settings.performance_mode {
+        catalog_ui.show_points = false;
+        for mut atm in &mut atmosphere_q {
+            // Effectively invisible at space scale — atmosphere renders nothing
+            // when scene_units_to_m is enormous (ray lengths far exceed atmosphere height).
+            atm.scene_units_to_m = f32::MAX;
+        }
+    } else {
+        for mut atm in &mut atmosphere_q {
+            atm.scene_units_to_m = 1.0;
+        }
+    }
+}
+
+/// Records each tether node's position relative to the tether root in the
+/// reference orbit's Hill/CW frame, for the visualization plots and gizmos.
+/// Works for both `JointsTension` (physics-relative positions) and
+/// `SeparateBodies` (ECI-relative positions) node modes.
+pub fn collect_propagation_cw_data(
+    active: Res<ActivePropagation>,
+    orbital_cache: Res<OrbitalCache>,
+    world_time: Res<WorldTime>,
+    rigidbodies: Query<RigidBodyQuery>,
+    mut viz: ResMut<PropagationVizData>,
+) {
+    if !active.enabled {
+        return;
+    }
+    let Some(nodes) = orbital_cache.tethers.get(&active.tether_name) else {
+        return;
+    };
+    let Some(&root) = nodes.first() else {
+        return;
+    };
+    let Some(root_rv) = orbital_cache.eci_states.get(&root).copied() else {
+        return;
+    };
+    let basis = HillBasis::from_reference(root_rv, active.reference_a_m);
+    let root_pos_eci = DVec3::new(root_rv[0], root_rv[1], root_rv[2]);
+    let root_pos_phys = rigidbodies.get(root).ok().map(|rb| rb.position.0);
+    let epoch_s = world_time.epoch - world_time.start_epoch;
+
+    for &node in nodes.iter() {
+        if node == root {
+            continue;
+        }
+
+        let sample = match active.node_mode {
+            PropagationNodeMode::JointsTension => {
+                let Some(root_pos) = root_pos_phys else {
+                    continue;
+                };
+                let Ok(rb) = rigidbodies.get(node) else {
+                    continue;
+                };
+                (rb.position.0 - root_pos, rb.position.0.as_vec3())
+            }
+            PropagationNodeMode::SeparateBodies => {
+                let Some(node_rv) = orbital_cache.eci_states.get(&node) else {
+                    continue;
+                };
+                let node_pos_eci = DVec3::new(node_rv[0], node_rv[1], node_rv[2]);
+                let world_pos = rigidbodies
+                    .get(node)
+                    .map(|rb| rb.position.0.as_vec3())
+                    .unwrap_or((node_pos_eci - root_pos_eci).as_vec3());
+                (node_pos_eci - root_pos_eci, world_pos)
+            }
+        };
+        let (rel_pos, world_pos) = sample;
+
+        let cw_radial = rel_pos.dot(basis.cw_x);
+        let cw_along = rel_pos.dot(basis.cw_y);
+        let cw_cross = rel_pos.dot(basis.cw_z);
+
+        viz.nodes
+            .entry(node)
+            .or_default()
+            .push((epoch_s, cw_radial, cw_along, cw_cross, world_pos));
+    }
+
+    viz.root_world_pos = root_pos_phys.map(|p| p.as_vec3()).unwrap_or(Vec3::ZERO);
+    viz.current_basis = Some(basis);
+}
+
+/// Draws the Hill-frame axes and per-node trails when the corresponding
+/// `Settings::prop_viz` toggles are enabled.
+pub fn propagation_viz_gizmos(
+    active: Res<ActivePropagation>,
+    settings: Res<Settings>,
+    viz: Res<PropagationVizData>,
+    mut gizmos: Gizmos,
+) {
+    if !active.enabled {
+        return;
+    }
+    let viz_settings = &settings.prop_viz;
+    if !viz_settings.show_hill_gizmos && !viz_settings.show_node_trails {
+        return;
+    }
+
+    if viz_settings.show_hill_gizmos {
+        if let Some(basis) = viz.current_basis {
+            let origin = viz.root_world_pos;
+            let axis_len = 50.0;
+            gizmos.arrow(
+                origin,
+                origin + basis.cw_x.as_vec3() * axis_len,
+                Color::srgb(1.0, 0.2, 0.2),
+            );
+            gizmos.arrow(
+                origin,
+                origin + basis.cw_y.as_vec3() * axis_len,
+                Color::srgb(0.2, 1.0, 0.2),
+            );
+            gizmos.arrow(
+                origin,
+                origin + basis.cw_z.as_vec3() * axis_len,
+                Color::srgb(0.2, 0.4, 1.0),
+            );
+        }
+    }
+
+    if viz_settings.show_node_trails {
+        for (index, (_, history)) in viz.nodes.iter().enumerate() {
+            if history.samples.len() < 2 {
+                continue;
+            }
+            let hue = (index as f32 * 47.0) % 360.0;
+            let color = Color::hsl(hue, 1.0, 0.6);
+            let points = history.samples.iter().map(|(_, _, _, _, pos)| *pos);
+            gizmos.linestrip(points, color);
         }
     }
 }

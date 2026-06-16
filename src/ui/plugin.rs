@@ -33,7 +33,7 @@ use crate::resources::space_catalog::{
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_camera;
-use crate::ui::egui::egui_plots;
+use crate::ui::egui::{egui_plots, propagation_cw_plots};
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
 use crate::ui::screens::capture_plan::{
@@ -51,9 +51,9 @@ use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, orbital_selection_interactions,
     project_detail_interactions, refresh_space_catalog_results, reset_space_catalog_ui_state,
     restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
-    spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_space_catalog_ui,
-    update_satellite_indicator_overlay, update_selected_catalog_overlay, update_sync_indicator,
-    view_edit_plan_interactions,
+    spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_performance_mode_button,
+    sync_space_catalog_ui, update_satellite_indicator_overlay, update_selected_catalog_overlay,
+    update_sync_indicator, view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
@@ -173,6 +173,7 @@ impl Plugin for UiPlugin {
                         sync_space_catalog_ui,
                         update_selected_catalog_overlay,
                         update_satellite_indicator_overlay,
+                        sync_performance_mode_button,
                     )
                         .chain()
                         .run_if(in_state(UiScreen::Sim)),
@@ -181,7 +182,7 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                (egui_terminal_panel, egui_plots)
+                (egui_terminal_panel, egui_plots, propagation_cw_plots)
                     .chain()
                     .run_if(in_state(UiScreen::Sim)),
             );
@@ -924,6 +925,21 @@ fn handle_ui_events(
             }
             UiEvent::ToggleCaptureGizmos => {
                 settings.capture_gizmos = !settings.capture_gizmos;
+            }
+            UiEvent::TogglePerformanceMode => {
+                settings.performance_mode = !settings.performance_mode;
+            }
+            UiEvent::ToggleCwEllipsePlot => {
+                settings.prop_viz.show_cw_ellipse = !settings.prop_viz.show_cw_ellipse;
+            }
+            UiEvent::ToggleCwTimeSeries => {
+                settings.prop_viz.show_cw_time_series = !settings.prop_viz.show_cw_time_series;
+            }
+            UiEvent::ToggleHillGizmos => {
+                settings.prop_viz.show_hill_gizmos = !settings.prop_viz.show_hill_gizmos;
+            }
+            UiEvent::ToggleNodeTrails => {
+                settings.prop_viz.show_node_trails = !settings.prop_viz.show_node_trails;
             }
             UiEvent::ResetOrbitalToDefaults => {
                 if let Some(plan_id) = selected_project.project_id.as_deref() {

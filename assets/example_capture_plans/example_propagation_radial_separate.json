@@ -1,5 +1,5 @@
 {
-  "name": "Propagation — Radial (Joints+Tension)",
+  "name": "Propagation — Radial (Separate Bodies)",
   "sim_type": "propagation",
   "tether": "Tether1",
   "default_target": {
@@ -26,8 +26,7 @@
   },
   "propagation": {
     "orientation": "cw_radial",
-    "node_mode": "joints_tension",
-    "max_tension_n": 6.0,
+    "node_mode": "separate_bodies",
     "speedup": 32
   },
   "states": []

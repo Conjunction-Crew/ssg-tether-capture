@@ -212,6 +212,21 @@ pub struct CatalogPointsToggleButton;
 pub struct SatelliteIndicatorToggleButton;
 
 #[derive(Component)]
+pub struct TogglePerformanceModeButton;
+
+#[derive(Component)]
+pub struct ToggleCwEllipseButton;
+
+#[derive(Component)]
+pub struct ToggleCwTimeSeriesButton;
+
+#[derive(Component)]
+pub struct ToggleHillGizmosButton;
+
+#[derive(Component)]
+pub struct ToggleNodeTrailsButton;
+
+#[derive(Component)]
 pub struct CatalogResultButton {
     pub slot: usize,
     pub entry_index: Option<usize>,
@@ -1237,6 +1252,138 @@ pub fn spawn_project_detail_screen(
                                             TextColor(theme.text_primary),
                                         ));
                                     });
+
+                                // Performance mode (propagation only)
+                                if is_propagation {
+                                content
+                                    .spawn((
+                                        Button,
+                                        TogglePerformanceModeButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Performance Mode: Off"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // CW ellipse plot toggle (propagation only)
+                                content
+                                    .spawn((
+                                        Button,
+                                        ToggleCwEllipseButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("CW Ellipse Plot: Off"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // CW time-series plots toggle (propagation only)
+                                content
+                                    .spawn((
+                                        Button,
+                                        ToggleCwTimeSeriesButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("CW Time Series: Off"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Hill frame gizmos toggle (propagation only)
+                                content
+                                    .spawn((
+                                        Button,
+                                        ToggleHillGizmosButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Hill Frame Gizmos: Off"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Node trails toggle (propagation only)
+                                content
+                                    .spawn((
+                                        Button,
+                                        ToggleNodeTrailsButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Node Trails: Off"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+                                }
 
                                 // Capture button (capture sims only)
                                 if !is_propagation {
@@ -2831,6 +2978,13 @@ pub fn project_detail_interactions(
             Option<&ExitSimConfirmButton>,
             Option<&ToggleCaptureGizmosButton>,
             Option<&ResetToDefaultsButton>,
+            Option<&TogglePerformanceModeButton>,
+            (
+                Option<&ToggleCwEllipseButton>,
+                Option<&ToggleCwTimeSeriesButton>,
+                Option<&ToggleHillGizmosButton>,
+                Option<&ToggleNodeTrailsButton>,
+            ),
             &mut BackgroundColor,
         ),
         (
@@ -2871,6 +3025,8 @@ pub fn project_detail_interactions(
         exit_confirm_button,
         toggle_gizmos_button,
         reset_to_defaults,
+        toggle_performance_mode,
+        (toggle_cw_ellipse, toggle_cw_time_series, toggle_hill_gizmos, toggle_node_trails),
         mut background_color,
     ) in &mut interactions
     {
@@ -2917,6 +3073,16 @@ pub fn project_detail_interactions(
                     events.write(UiEvent::ToggleCaptureGizmos);
                 } else if reset_to_defaults.is_some() {
                     events.write(UiEvent::ResetOrbitalToDefaults);
+                } else if toggle_performance_mode.is_some() {
+                    events.write(UiEvent::TogglePerformanceMode);
+                } else if toggle_cw_ellipse.is_some() {
+                    events.write(UiEvent::ToggleCwEllipsePlot);
+                } else if toggle_cw_time_series.is_some() {
+                    events.write(UiEvent::ToggleCwTimeSeries);
+                } else if toggle_hill_gizmos.is_some() {
+                    events.write(UiEvent::ToggleHillGizmos);
+                } else if toggle_node_trails.is_some() {
+                    events.write(UiEvent::ToggleNodeTrails);
                 }
             }
             Interaction::Hovered => {
@@ -2947,6 +3113,80 @@ pub fn project_detail_interactions(
             }
         }
     }
+}
+
+fn sync_toggle_button_label<M: Component>(
+    buttons: &Query<&Children, With<M>>,
+    texts: &mut Query<&mut Text>,
+    label: &str,
+) {
+    for children in buttons {
+        for child in children.iter() {
+            if let Ok(mut text) = texts.get_mut(child) {
+                text.0 = label.to_string();
+            }
+        }
+    }
+}
+
+pub fn sync_performance_mode_button(
+    settings: Res<crate::resources::settings::Settings>,
+    performance_buttons: Query<&Children, With<TogglePerformanceModeButton>>,
+    cw_ellipse_buttons: Query<&Children, With<ToggleCwEllipseButton>>,
+    cw_time_series_buttons: Query<&Children, With<ToggleCwTimeSeriesButton>>,
+    hill_gizmos_buttons: Query<&Children, With<ToggleHillGizmosButton>>,
+    node_trails_buttons: Query<&Children, With<ToggleNodeTrailsButton>>,
+    mut texts: Query<&mut Text>,
+) {
+    if !settings.is_changed() {
+        return;
+    }
+
+    sync_toggle_button_label(
+        &performance_buttons,
+        &mut texts,
+        if settings.performance_mode {
+            "Performance Mode: On"
+        } else {
+            "Performance Mode: Off"
+        },
+    );
+    sync_toggle_button_label(
+        &cw_ellipse_buttons,
+        &mut texts,
+        if settings.prop_viz.show_cw_ellipse {
+            "CW Ellipse Plot: On"
+        } else {
+            "CW Ellipse Plot: Off"
+        },
+    );
+    sync_toggle_button_label(
+        &cw_time_series_buttons,
+        &mut texts,
+        if settings.prop_viz.show_cw_time_series {
+            "CW Time Series: On"
+        } else {
+            "CW Time Series: Off"
+        },
+    );
+    sync_toggle_button_label(
+        &hill_gizmos_buttons,
+        &mut texts,
+        if settings.prop_viz.show_hill_gizmos {
+            "Hill Frame Gizmos: On"
+        } else {
+            "Hill Frame Gizmos: Off"
+        },
+    );
+    sync_toggle_button_label(
+        &node_trails_buttons,
+        &mut texts,
+        if settings.prop_viz.show_node_trails {
+            "Node Trails: On"
+        } else {
+            "Node Trails: Off"
+        },
+    );
 }
 
 pub fn view_edit_plan_interactions(

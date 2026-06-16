@@ -96,21 +96,27 @@ impl HillBasis {
 
     /// Linearized Clohessy–Wiltshire relative acceleration (m/s²) for a node whose
     /// position/velocity *relative to the reference* are `rel_pos`/`rel_vel`
-    /// (ECI/local-frame vectors). Returned as an ECI vector.
+    /// (ECI/local-frame vectors, as read from Avian3D `LinearVelocity`). Returned
+    /// as an ECI vector.
     ///
     /// In standard Hill axes (x = radial-out, y = along-track, z = cross-track):
     /// `ẍ = 3n²x + 2n·ẏ`, `ÿ = −2n·ẋ`, `z̈ = −n²z`.
+    ///
+    /// The CW equations are written in the *rotating* Hill frame, so `rel_vel`
+    /// (an inertial-frame vector) is converted to the rotating frame by subtracting
+    /// the frame-drag term `ω × rel_pos` before projecting onto the Hill axes.
     pub fn hill_acceleration(&self, rel_pos: DVec3, rel_vel: DVec3) -> DVec3 {
         let radial_out = -self.cw_x;
         let along = self.cw_y;
         let cross = self.h_hat;
 
         let x = rel_pos.dot(radial_out);
-        let y = rel_pos.dot(along);
         let z = rel_pos.dot(cross);
-        let xd = rel_vel.dot(radial_out);
-        let yd = rel_vel.dot(along);
-        let _ = y; // along-track position does not enter the acceleration
+
+        // Convert inertial relative velocity to rotating-frame (Hill) velocity.
+        let rel_vel_hill = rel_vel - self.omega.cross(rel_pos);
+        let xd = rel_vel_hill.dot(radial_out);
+        let yd = rel_vel_hill.dot(along);
 
         let n = self.n;
         let ax = 3.0 * n * n * x + 2.0 * n * yd;
@@ -157,12 +163,14 @@ mod tests {
         let radial_out = -b.cw_x; // +x
         let cross = b.h_hat; // +z
 
-        // 1 m radially out, at rest: ẍ = 3n²x.
-        let a_radial = b.hill_acceleration(radial_out, DVec3::ZERO);
+        // 1 m radially out, at Hill-frame rest (v_inertial = ω × offset): ẍ = 3n²x.
+        let v_hill_rest_radial = b.omega.cross(radial_out);
+        let a_radial = b.hill_acceleration(radial_out, v_hill_rest_radial);
         assert!((a_radial - radial_out * (3.0 * n * n)).length() < 1e-12);
 
-        // 1 m cross-track, at rest: z̈ = −n²z.
-        let a_cross = b.hill_acceleration(cross, DVec3::ZERO);
+        // 1 m cross-track, at Hill-frame rest: z̈ = −n²z.
+        let v_hill_rest_cross = b.omega.cross(cross);
+        let a_cross = b.hill_acceleration(cross, v_hill_rest_cross);
         assert!((a_cross - cross * (-(n * n))).length() < 1e-12);
     }
 }

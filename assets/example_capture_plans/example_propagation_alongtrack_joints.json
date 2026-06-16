@@ -1,5 +1,5 @@
 {
-  "name": "Propagation — Radial (Joints+Tension)",
+  "name": "Propagation — Along-track (Joints+Tension)",
   "sim_type": "propagation",
   "tether": "Tether1",
   "default_target": {
@@ -25,7 +25,7 @@
     "tether_length": 30.0
   },
   "propagation": {
-    "orientation": "cw_radial",
+    "orientation": "cw_along_track",
     "node_mode": "joints_tension",
     "max_tension_n": 6.0,
     "speedup": 32
