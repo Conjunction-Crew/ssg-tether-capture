@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use avian3d::prelude::{Physics, RigidBody};
+use avian3d::prelude::Physics;
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::system::SystemParam;
@@ -13,7 +13,6 @@ use bevy_egui::EguiPrimaryContextPass;
 use crate::components::capture_components::{
     CaptureComponent, CapturePlan, PropagationNodeMode, PropagationOrientation, SimType,
 };
-use crate::components::orbit::Orbital;
 use crate::components::orbit_camera::CameraTarget;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::plugins::orbital_mechanics::SimState;
@@ -26,12 +25,14 @@ use crate::resources::capture_plans::{
     load_plans_from_dir_with_errors,
 };
 use crate::resources::data_collection::DataCollection;
+use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
+use crate::systems::orbit_camera::camera_cycle_candidates;
 use crate::systems::setup::setup_camera;
 use crate::ui::egui::{egui_plots, propagation_cw_plots};
 use crate::ui::egui_terminal::egui_terminal_panel;
@@ -51,8 +52,8 @@ use crate::ui::screens::project_detail::{
     cleanup_project_detail_screen, collapsible_toggle_interaction, orbital_selection_interactions,
     project_detail_interactions, refresh_space_catalog_results, reset_space_catalog_ui_state,
     restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
-    spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_performance_mode_button,
-    sync_space_catalog_ui, update_satellite_indicator_overlay, update_selected_catalog_overlay,
+    spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_space_catalog_ui,
+    sync_toggle_switches, update_satellite_indicator_overlay, update_selected_catalog_overlay,
     update_sync_indicator, view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
@@ -127,7 +128,7 @@ impl Plugin for UiPlugin {
                 (
                     cleanup_project_detail_screen,
                     spawn_project_detail_screen.after(setup_camera),
-                    reset_sync_state,
+                    reset_sync_state_after_restart,
                 )
                     .chain(),
             )
@@ -173,7 +174,7 @@ impl Plugin for UiPlugin {
                         sync_space_catalog_ui,
                         update_selected_catalog_overlay,
                         update_satellite_indicator_overlay,
-                        sync_performance_mode_button,
+                        sync_toggle_switches,
                     )
                         .chain()
                         .run_if(in_state(UiScreen::Sim)),
@@ -337,7 +338,23 @@ fn poll_sim_restart(
     }
 }
 
+/// Resets sync state on entering the Sim screen, but preserves
+/// `restart_to_detail_view` so `setup_camera` (running in the same
+/// `OnEnter(UiScreen::Sim)` schedule) can still read it.
 fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
+    let restart_requested = sync_state.restart_requested;
+    let restart_to_detail_view = sync_state.restart_to_detail_view;
+    *sync_state = SimPlanSyncState {
+        restart_requested,
+        restart_to_detail_view,
+        ..Default::default()
+    };
+}
+
+/// Resets sync state once the sim is actually running, clearing
+/// `restart_to_detail_view` now that `setup_camera` has already consumed it
+/// — otherwise it would leak into the next unrelated Sim-screen entry.
+fn reset_sync_state_after_restart(mut sync_state: ResMut<SimPlanSyncState>) {
     let restart_requested = sync_state.restart_requested;
     *sync_state = SimPlanSyncState {
         restart_requested,
@@ -401,10 +418,14 @@ fn handle_ui_events(
     physics_time: Res<Time<Physics>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut scene_camera: Query<
-        (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
-        Without<UiCamera>,
+        (
+            &mut RenderLayers,
+            Option<&mut Atmosphere>,
+            Option<&mut AtmosphereSettings>,
+        ),
+        With<Camera3d>,
     >,
-    bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    camera_cycle: (Option<Res<OrbitalCache>>, Query<(), With<CameraTarget>>),
     ui_runtime: (
         ResMut<Settings>,
         ResMut<NextState<SimState>>,
@@ -414,6 +435,7 @@ fn handle_ui_events(
     mut flow: UiFlowState,
     mut log: MessageWriter<LogEvent>,
 ) {
+    let (orbital_cache, camera_targets) = camera_cycle;
     let (mut settings, mut next_sim_state, mut data_collection, mut form) = ui_runtime;
 
     for event in ui_events.read() {
@@ -431,6 +453,14 @@ fn handle_ui_events(
             }
             UiEvent::StartSim => {
                 next_sim_state.set(SimState::Running);
+                if let Ok((mut render_layers, _atmosphere, atmosphere_settings)) =
+                    scene_camera.single_mut()
+                {
+                    *render_layers = RenderLayers::layer(SCENE_LAYER);
+                    if let Some(mut atmosphere_settings) = atmosphere_settings {
+                        atmosphere_settings.scene_units_to_m = 1.0;
+                    }
+                }
             }
             UiEvent::BackToHome => {
                 next_sim_state.set(SimState::Setup);
@@ -533,16 +563,22 @@ fn handle_ui_events(
                 }
             }
             UiEvent::ToggleMapView => {
-                if let Ok((mut render_layers, mut atmosphere, mut atmosphere_settings)) =
+                if let Ok((mut render_layers, atmosphere, atmosphere_settings)) =
                     scene_camera.single_mut()
                 {
                     if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
                         *render_layers = RenderLayers::layer(MAP_LAYER);
-                        atmosphere.world_position = Vec3::ZERO;
-                        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
+                        if let Some(mut atmosphere) = atmosphere {
+                            atmosphere.world_position = Vec3::ZERO;
+                        }
+                        if let Some(mut atmosphere_settings) = atmosphere_settings {
+                            atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
+                        }
                     } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
                         *render_layers = RenderLayers::layer(SCENE_LAYER);
-                        atmosphere_settings.scene_units_to_m = 1.0;
+                        if let Some(mut atmosphere_settings) = atmosphere_settings {
+                            atmosphere_settings.scene_units_to_m = 1.0;
+                        }
                     }
                 }
             }
@@ -574,17 +610,20 @@ fn handle_ui_events(
                 }
             }
             UiEvent::CycleCameraTarget => {
-                let mut entities: Vec<(Entity, bool)> = bodies.iter().collect();
-                if !entities.is_empty() {
-                    entities.sort_by_key(|(entity, _)| entity.index());
-                    let current_index = entities
+                let Some(orbital_cache) = orbital_cache.as_ref() else {
+                    continue;
+                };
+                let candidates = camera_cycle_candidates(orbital_cache);
+
+                if !candidates.is_empty() {
+                    let current_index = candidates
                         .iter()
-                        .position(|(_, is_target)| *is_target)
+                        .position(|&e| camera_targets.contains(e))
                         .unwrap_or(0);
-                    let next_target = entities[(current_index + 1) % entities.len()].0;
-                    for (entity, is_target) in &entities {
-                        if *is_target {
-                            commands.entity(*entity).remove::<CameraTarget>();
+                    let next_target = candidates[(current_index + 1) % candidates.len()];
+                    for &entity in &candidates {
+                        if camera_targets.contains(entity) {
+                            commands.entity(entity).remove::<CameraTarget>();
                         }
                     }
                     commands.entity(next_target).insert(CameraTarget);
@@ -940,6 +979,18 @@ fn handle_ui_events(
             }
             UiEvent::ToggleNodeTrails => {
                 settings.prop_viz.show_node_trails = !settings.prop_viz.show_node_trails;
+            }
+            UiEvent::ToggleTetherIllumination => {
+                settings.tether_always_lit = !settings.tether_always_lit;
+            }
+            UiEvent::ToggleTargetOrbit => {
+                settings.prop_viz.show_target_orbit = !settings.prop_viz.show_target_orbit;
+            }
+            UiEvent::ToggleRootOrbit => {
+                settings.prop_viz.show_root_orbit = !settings.prop_viz.show_root_orbit;
+            }
+            UiEvent::ToggleMeanOrbit => {
+                settings.prop_viz.show_mean_orbit = !settings.prop_viz.show_mean_orbit;
             }
             UiEvent::ResetOrbitalToDefaults => {
                 if let Some(plan_id) = selected_project.project_id.as_deref() {

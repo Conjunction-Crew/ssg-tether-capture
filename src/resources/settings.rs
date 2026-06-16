@@ -7,6 +7,8 @@ pub struct Settings {
     pub start_sim: bool,
     /// Disables atmosphere and catalog dot rendering for propagation sims.
     pub performance_mode: bool,
+    /// Keeps the tether fully emissive instead of relying on simulated sunlight.
+    pub tether_always_lit: bool,
     pub prop_viz: PropVizSettings,
 }
 
@@ -17,6 +19,7 @@ impl Default for Settings {
             capture_gizmos: false,
             start_sim: false,
             performance_mode: false,
+            tether_always_lit: false,
             prop_viz: PropVizSettings::default(),
         }
     }
@@ -30,4 +33,8 @@ pub struct PropVizSettings {
     pub show_cw_time_series: bool,
     pub show_hill_gizmos: bool,
     pub show_node_trails: bool,
+    /// Detail-view orbit path gizmos (real-scale, floating-origin-aware).
+    pub show_target_orbit: bool,
+    pub show_root_orbit: bool,
+    pub show_mean_orbit: bool,
 }

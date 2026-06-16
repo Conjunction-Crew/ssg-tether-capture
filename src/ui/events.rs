@@ -33,6 +33,10 @@ pub enum UiEvent {
     ToggleCwTimeSeries,
     ToggleHillGizmos,
     ToggleNodeTrails,
+    ToggleTetherIllumination,
+    ToggleTargetOrbit,
+    ToggleRootOrbit,
+    ToggleMeanOrbit,
     ChangeTimeWarp {
         increase: bool,
     },

@@ -6,6 +6,7 @@ use crate::components::orbit::Earth;
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
 use crate::resources::capture_log::{LogEvent, LogLevel};
+use crate::resources::capture_plan_form::SimPlanSyncState;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_cache::OrbitalCache;
@@ -24,6 +25,7 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use brahe::Epoch;
 use nalgebra::Vector6;
 
 pub fn setup_lighting(mut commands: Commands) {
@@ -128,14 +130,24 @@ pub fn setup_camera(
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
     asset_server: Res<AssetServer>,
     mut log_events: MessageWriter<LogEvent>,
+    sync_state: Res<SimPlanSyncState>,
 ) {
     // Skybox
     let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
 
+    let (atmosphere, mut atmosphere_settings) = default_atmosphere_bundle(&mut scattering_mediums);
+
+    let render_layers = if sync_state.restart_to_detail_view {
+        atmosphere_settings.scene_units_to_m = 1.0;
+        RenderLayers::layer(SCENE_LAYER)
+    } else {
+        RenderLayers::layer(MAP_LAYER)
+    };
+
     // Set up 3D scene camera
     commands.spawn((
         DespawnOnExit(UiScreen::Sim),
-        RenderLayers::layer(MAP_LAYER),
+        render_layers,
         Camera3d::default(),
         Bloom {
             intensity: 0.01,
@@ -183,6 +195,15 @@ pub fn setup_camera(
             brightness: 1.0,
             ..default()
         },
+        atmosphere,
+        atmosphere_settings,
+    ));
+}
+
+pub fn default_atmosphere_bundle(
+    scattering_mediums: &mut ResMut<Assets<ScatteringMedium>>,
+) -> (Atmosphere, AtmosphereSettings) {
+    (
         Atmosphere {
             world_position: Vec3::new(0.0, 0.0, 0.0),
             bottom_radius: EARTH_RADIUS,
@@ -196,7 +217,7 @@ pub fn setup_camera(
             scene_units_to_m: MAP_UNITS_TO_M as f32,
             ..default()
         },
-    ));
+    )
 }
 
 pub fn setup_orbital_selection(
@@ -252,6 +273,8 @@ pub fn setup_orbital_selection(
         }
     }
 
+    world_time.start_epoch = Epoch::now();
+    world_time.epoch = Epoch::now();
     let epoch = world_time.epoch;
 
     if let Err(e) = spawn_tether(

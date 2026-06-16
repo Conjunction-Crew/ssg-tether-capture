@@ -28,7 +28,7 @@ use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
     FilteredSpaceCatalogResults, OrbitalSelectionState, SpaceCatalogUiState, SpaceObjectCatalog,
 };
-use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
+use crate::systems::gizmos::{CaptureGizmoConfigGroup, detail_orbit_path_gizmos, orbital_gizmos};
 use crate::systems::physics::FIXED_HZ;
 use crate::systems::user_input::{
     change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
@@ -109,7 +109,10 @@ fn configure_app(app: &mut App) -> &mut App {
                 .after(TransformSystems::Propagate)
                 .run_if(in_state(UiScreen::Sim)),
         )
-        .add_systems(Last, orbital_gizmos.run_if(in_state(UiScreen::Sim)))
+        .add_systems(
+            Last,
+            (orbital_gizmos, detail_orbit_path_gizmos).run_if(in_state(UiScreen::Sim)),
+        )
         .insert_gizmo_config(
             DefaultGizmoConfigGroup,
             GizmoConfig {

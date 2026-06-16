@@ -109,7 +109,11 @@ pub fn spawn_tether(
             let reference_rv = keplerian_to_eci(elements, epoch);
             let basis = HillBasis::from_reference(reference_rv, elements[0]);
             let radial = matches!(config.orientation, PropagationOrientation::CwRadial);
-            let axis_eci = basis.axis(radial);
+            let axis_eci = if radial {
+                basis.axis(true)
+            } else {
+                -basis.axis(false)
+            };
             let axis_world =
                 Vec3::new(axis_eci.x as f32, axis_eci.y as f32, axis_eci.z as f32).normalize_or(Vec3::Y);
             let layout_rot = Quat::from_rotation_arc(Vec3::Y, axis_world);

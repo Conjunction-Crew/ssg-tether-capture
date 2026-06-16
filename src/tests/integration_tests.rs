@@ -340,3 +340,79 @@ fn collect_log_events_respects_ring_buffer_limit() {
     );
     assert_eq!(log.entries[4].message, "msg 9");
 }
+
+// ─── Map View toggle diagnostic ──────────────────────────────────────────────
+
+use crate::constants::{EARTH_ATMOSPHERE_RADIUS, EARTH_RADIUS, MAP_LAYER, SCENE_LAYER};
+use crate::ui::events::UiEvent;
+use crate::ui::plugin::UiPlugin;
+use bevy::camera::visibility::RenderLayers;
+use bevy::pbr::{Atmosphere, AtmosphereSettings, ScatteringMedium};
+
+#[test]
+fn toggle_map_view_switches_render_layers() {
+    let mut app = test_app();
+    app.add_plugins(UiPlugin);
+    app.init_asset::<ScatteringMedium>();
+    app.init_asset::<bevy::text::Font>();
+    app.update(); // run Startup once so UiPlugin's resources/camera exist.
+
+    let medium = app
+        .world_mut()
+        .resource_mut::<Assets<ScatteringMedium>>()
+        .add(ScatteringMedium::default());
+
+    let camera = app
+        .world_mut()
+        .spawn((
+            Camera3d::default(),
+            RenderLayers::layer(SCENE_LAYER),
+            Atmosphere {
+                world_position: Vec3::ZERO,
+                bottom_radius: EARTH_RADIUS,
+                top_radius: EARTH_ATMOSPHERE_RADIUS,
+                ground_albedo: Vec3::splat(0.3),
+                medium,
+            },
+            AtmosphereSettings {
+                scene_units_to_m: 1.0,
+                ..default()
+            },
+        ))
+        .id();
+
+    app.world_mut().write_message(UiEvent::ToggleMapView);
+    app.update();
+
+    let render_layers = app.world().get::<RenderLayers>(camera).unwrap();
+    assert!(
+        render_layers.intersects(&RenderLayers::layer(MAP_LAYER)),
+        "expected camera to switch to MAP_LAYER after ToggleMapView, got {render_layers:?}"
+    );
+}
+
+/// Regression test: under Performance Mode, `apply_performance_mode` removes
+/// `Atmosphere`/`AtmosphereSettings` from the camera entirely. The map-view
+/// toggle must still flip `RenderLayers` even when those components are gone.
+#[test]
+fn toggle_map_view_switches_render_layers_without_atmosphere() {
+    let mut app = test_app();
+    app.add_plugins(UiPlugin);
+    app.init_asset::<ScatteringMedium>();
+    app.init_asset::<bevy::text::Font>();
+    app.update();
+
+    let camera = app
+        .world_mut()
+        .spawn((Camera3d::default(), RenderLayers::layer(SCENE_LAYER)))
+        .id();
+
+    app.world_mut().write_message(UiEvent::ToggleMapView);
+    app.update();
+
+    let render_layers = app.world().get::<RenderLayers>(camera).unwrap();
+    assert!(
+        render_layers.intersects(&RenderLayers::layer(MAP_LAYER)),
+        "expected camera to switch to MAP_LAYER after ToggleMapView even without atmosphere components, got {render_layers:?}"
+    );
+}

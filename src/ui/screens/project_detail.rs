@@ -26,6 +26,7 @@ use crate::resources::capture_log::{LogEvent, LogLevel};
 use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_cache::OrbitalCache;
+use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{
     EditableOrbitalElements, FilteredSpaceCatalogResults, OrbitalSelectionRole,
     OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject, SpaceCatalogUiState,
@@ -56,6 +57,9 @@ pub enum CollapsibleSection {
     OrbitalSelection,
     TimeWarp,
     SimulationControls,
+    Gizmos,
+    Graphs,
+    PerformanceLighting,
     SimulationHud,
     Reference,
 }
@@ -227,6 +231,24 @@ pub struct ToggleHillGizmosButton;
 pub struct ToggleNodeTrailsButton;
 
 #[derive(Component)]
+pub struct ToggleTetherIlluminationButton;
+
+#[derive(Component)]
+pub struct ToggleTargetOrbitButton;
+
+#[derive(Component)]
+pub struct ToggleRootOrbitButton;
+
+#[derive(Component)]
+pub struct ToggleMeanOrbitButton;
+
+#[derive(Component)]
+pub struct ToggleSwitchTrack;
+
+#[derive(Component)]
+pub struct ToggleSwitchThumb;
+
+#[derive(Component)]
 pub struct CatalogResultButton {
     pub slot: usize,
     pub entry_index: Option<usize>,
@@ -283,6 +305,7 @@ pub fn spawn_project_detail_screen(
     capture_plan_lib: Res<CapturePlanLibrary>,
     working_directory: Res<WorkingDirectory>,
     sim_state: Res<State<SimState>>,
+    settings: Res<Settings>,
 ) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
@@ -948,6 +971,324 @@ pub fn spawn_project_detail_screen(
                             },
                         );
 
+                        // === Simulation Controls (collapsible) ===
+                        spawn_collapsible_section(
+                            sidebar,
+                            &font,
+                            &theme,
+                            "Simulation Controls",
+                            CollapsibleSection::SimulationControls,
+                            |content| {
+                                if *sim_state.get() == SimState::Setup {
+                                // Start Sim button
+                                content
+                                    .spawn((
+                                        Button,
+                                        StartSimButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Start Simulation"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+                                }
+
+                                if *sim_state.get() == SimState::Running {
+                                // Map View button
+                                content
+                                    .spawn((
+                                        Button,
+                                        MapViewButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Map View (M)"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Cycle Camera Target button
+                                content
+                                    .spawn((
+                                        Button,
+                                        CycleCameraButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Cycle Target (Tab)"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Capture button (capture sims only)
+                                if !is_propagation {
+                                content
+                                    .spawn((
+                                        Button,
+                                        CaptureButton {
+                                            entity: capture_target_entity,
+                                            plan_id: capture_plan_id.clone(),
+                                        },
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(42.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Capture"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+                                }
+
+                                // Reset Sim button
+                                content
+                                    .spawn((
+                                        Button,
+                                        RestartSimButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.button_background),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Reset Sim"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.button_text),
+                                        ));
+                                    });
+                                }
+                            },
+                        );
+
+                        if *sim_state.get() == SimState::Running {
+                            // === Gizmos (collapsible) ===
+                            spawn_collapsible_section(
+                                sidebar,
+                                &font,
+                                &theme,
+                                "Gizmos",
+                                CollapsibleSection::Gizmos,
+                                |content| {
+                                    content
+                                        .spawn((
+                                            Button,
+                                            SatelliteIndicatorToggleButton,
+                                            Node {
+                                                width: percent(100),
+                                                min_height: px(40.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_children(|btn| {
+                                            btn.spawn((
+                                                Text::new("Hide Satellite Indicator"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_primary),
+                                            ));
+                                        });
+
+                                    content
+                                        .spawn((
+                                            Button,
+                                            ToggleCaptureGizmosButton,
+                                            Node {
+                                                width: percent(100),
+                                                min_height: px(40.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme.panel_background_soft),
+                                        ))
+                                        .with_children(|btn| {
+                                            btn.spawn((
+                                                Text::new("Toggle Capture Gizmos (C)"),
+                                                TextFont {
+                                                    font: font.clone(),
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(theme.text_primary),
+                                            ));
+                                        });
+
+                                    if is_propagation {
+                                        spawn_toggle_switch_row(
+                                            content,
+                                            &font,
+                                            &theme,
+                                            "Hill Frame Gizmos",
+                                            ToggleHillGizmosButton,
+                                            settings.prop_viz.show_hill_gizmos,
+                                        );
+
+                                        spawn_toggle_switch_row(
+                                            content,
+                                            &font,
+                                            &theme,
+                                            "Node Trails",
+                                            ToggleNodeTrailsButton,
+                                            settings.prop_viz.show_node_trails,
+                                        );
+                                    }
+
+                                    spawn_toggle_switch_row(
+                                        content,
+                                        &font,
+                                        &theme,
+                                        "Target Orbit",
+                                        ToggleTargetOrbitButton,
+                                        settings.prop_viz.show_target_orbit,
+                                    );
+
+                                    spawn_toggle_switch_row(
+                                        content,
+                                        &font,
+                                        &theme,
+                                        "Tether Root Orbit",
+                                        ToggleRootOrbitButton,
+                                        settings.prop_viz.show_root_orbit,
+                                    );
+
+                                    spawn_toggle_switch_row(
+                                        content,
+                                        &font,
+                                        &theme,
+                                        "Mean Tether Orbit",
+                                        ToggleMeanOrbitButton,
+                                        settings.prop_viz.show_mean_orbit,
+                                    );
+                                },
+                            );
+
+                            // === Graphs (collapsible) ===
+                            if is_propagation {
+                                spawn_collapsible_section(
+                                    sidebar,
+                                    &font,
+                                    &theme,
+                                    "Graphs",
+                                    CollapsibleSection::Graphs,
+                                    |content| {
+                                        spawn_toggle_switch_row(
+                                            content,
+                                            &font,
+                                            &theme,
+                                            "CW Ellipse Plot",
+                                            ToggleCwEllipseButton,
+                                            settings.prop_viz.show_cw_ellipse,
+                                        );
+
+                                        spawn_toggle_switch_row(
+                                            content,
+                                            &font,
+                                            &theme,
+                                            "CW Time Series",
+                                            ToggleCwTimeSeriesButton,
+                                            settings.prop_viz.show_cw_time_series,
+                                        );
+                                    },
+                                );
+                            }
+
+                            // === Performance & Lighting (collapsible) ===
+                            spawn_collapsible_section(
+                                sidebar,
+                                &font,
+                                &theme,
+                                "Performance & Lighting",
+                                CollapsibleSection::PerformanceLighting,
+                                |content| {
+                                    spawn_toggle_switch_row(
+                                        content,
+                                        &font,
+                                        &theme,
+                                        "Always-Lit Tether",
+                                        ToggleTetherIlluminationButton,
+                                        settings.tether_always_lit,
+                                    );
+
+                                    if is_propagation {
+                                        spawn_toggle_switch_row(
+                                            content,
+                                            &font,
+                                            &theme,
+                                            "Performance Mode",
+                                            TogglePerformanceModeButton,
+                                            settings.performance_mode,
+                                        );
+                                    }
+                                },
+                            );
+                        }
+
                         if *sim_state.get() == SimState::Setup {
                             let has_plan_defaults = plan
                                 .map(|p| p.default_target.is_some() || p.default_chaser.is_some())
@@ -1112,338 +1453,6 @@ pub fn spawn_project_detail_screen(
                             },
                         );
                     }
-
-                        // === Simulation Controls (collapsible) ===
-                        spawn_collapsible_section(
-                            sidebar,
-                            &font,
-                            &theme,
-                            "Simulation Controls",
-                            CollapsibleSection::SimulationControls,
-                            |content| {
-                                if *sim_state.get() == SimState::Setup {
-                                // Start Sim button
-                                content
-                                    .spawn((
-                                        Button,
-                                        StartSimButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Start Simulation"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-                                }
-
-                                if *sim_state.get() == SimState::Running {
-                                // Map View button
-                                content
-                                    .spawn((
-                                        Button,
-                                        MapViewButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Map View (M)"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                content
-                                    .spawn((
-                                        Button,
-                                        SatelliteIndicatorToggleButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Hide Satellite Indicator"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // Toggle Capture Gizmos button
-                                content
-                                    .spawn((
-                                        Button,
-                                        ToggleCaptureGizmosButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Toggle Capture Gizmos (C)"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // Cycle Camera Target button
-                                content
-                                    .spawn((
-                                        Button,
-                                        CycleCameraButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Cycle Target (Tab)"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // Performance mode (propagation only)
-                                if is_propagation {
-                                content
-                                    .spawn((
-                                        Button,
-                                        TogglePerformanceModeButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Performance Mode: Off"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // CW ellipse plot toggle (propagation only)
-                                content
-                                    .spawn((
-                                        Button,
-                                        ToggleCwEllipseButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("CW Ellipse Plot: Off"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // CW time-series plots toggle (propagation only)
-                                content
-                                    .spawn((
-                                        Button,
-                                        ToggleCwTimeSeriesButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("CW Time Series: Off"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // Hill frame gizmos toggle (propagation only)
-                                content
-                                    .spawn((
-                                        Button,
-                                        ToggleHillGizmosButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Hill Frame Gizmos: Off"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-
-                                // Node trails toggle (propagation only)
-                                content
-                                    .spawn((
-                                        Button,
-                                        ToggleNodeTrailsButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Node Trails: Off"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-                                }
-
-                                // Capture button (capture sims only)
-                                if !is_propagation {
-                                content
-                                    .spawn((
-                                        Button,
-                                        CaptureButton {
-                                            entity: capture_target_entity,
-                                            plan_id: capture_plan_id.clone(),
-                                        },
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(42.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background_soft),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Capture"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-                                    });
-                                }
-
-                                // Reset Sim button
-                                content
-                                    .spawn((
-                                        Button,
-                                        RestartSimButton,
-                                        Node {
-                                            width: percent(100),
-                                            min_height: px(40.0),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.button_background),
-                                    ))
-                                    .with_children(|btn| {
-                                        btn.spawn((
-                                            Text::new("Reset Sim"),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 14.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.button_text),
-                                        ));
-                                    });
-                                }
-                            },
-                        );
 
                         // === Simulation HUD (collapsible) ===
                         spawn_collapsible_section(
@@ -1739,6 +1748,72 @@ fn spawn_collapsible_section(
                     },
                 ))
                 .with_children(content_builder);
+        });
+}
+
+/// Spawns a label + pill-shaped on/off switch row, following the same
+/// absolute-positioned-thumb convention as the orbital element sliders.
+fn spawn_toggle_switch_row<M: Component>(
+    parent: &mut ChildSpawnerCommands,
+    font: &Handle<Font>,
+    theme: &UiTheme,
+    label: &str,
+    marker: M,
+    initial_on: bool,
+) {
+    parent
+        .spawn(Node {
+            width: percent(100),
+            min_height: px(32.0),
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            column_gap: px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label.to_string()),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(theme.text_primary),
+            ));
+
+            row.spawn((
+                Button,
+                marker,
+                ToggleSwitchTrack,
+                Node {
+                    width: px(44.0),
+                    height: px(24.0),
+                    border_radius: BorderRadius::MAX,
+                    ..default()
+                },
+                BackgroundColor(if initial_on {
+                    theme.button_background
+                } else {
+                    theme.panel_background
+                }),
+            ))
+            .with_children(|track| {
+                track.spawn((
+                    ToggleSwitchThumb,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(if initial_on { 23.0 } else { 3.0 }),
+                        top: px(3.0),
+                        width: px(18.0),
+                        height: px(18.0),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(theme.text_primary),
+                    Pickable::IGNORE,
+                ));
+            });
         });
 }
 
@@ -2978,12 +3053,19 @@ pub fn project_detail_interactions(
             Option<&ExitSimConfirmButton>,
             Option<&ToggleCaptureGizmosButton>,
             Option<&ResetToDefaultsButton>,
-            Option<&TogglePerformanceModeButton>,
             (
+                Option<&TogglePerformanceModeButton>,
                 Option<&ToggleCwEllipseButton>,
                 Option<&ToggleCwTimeSeriesButton>,
                 Option<&ToggleHillGizmosButton>,
                 Option<&ToggleNodeTrailsButton>,
+                Option<&ToggleTetherIlluminationButton>,
+                Has<ToggleSwitchTrack>,
+            ),
+            (
+                Option<&ToggleTargetOrbitButton>,
+                Option<&ToggleRootOrbitButton>,
+                Option<&ToggleMeanOrbitButton>,
             ),
             &mut BackgroundColor,
         ),
@@ -3025,8 +3107,16 @@ pub fn project_detail_interactions(
         exit_confirm_button,
         toggle_gizmos_button,
         reset_to_defaults,
-        toggle_performance_mode,
-        (toggle_cw_ellipse, toggle_cw_time_series, toggle_hill_gizmos, toggle_node_trails),
+        (
+            toggle_performance_mode,
+            toggle_cw_ellipse,
+            toggle_cw_time_series,
+            toggle_hill_gizmos,
+            toggle_node_trails,
+            toggle_tether_illumination,
+            is_toggle_switch,
+        ),
+        (toggle_target_orbit, toggle_root_orbit, toggle_mean_orbit),
         mut background_color,
     ) in &mut interactions
     {
@@ -3041,7 +3131,12 @@ pub fn project_detail_interactions(
                     *background_color = BackgroundColor(theme.panel_background);
                     continue;
                 }
-                *background_color = BackgroundColor(theme.button_background_hover);
+                // Toggle switches paint their own on/off tint via
+                // sync_toggle_switches — don't fight it with the generic
+                // press-highlight color here.
+                if !is_toggle_switch {
+                    *background_color = BackgroundColor(theme.button_background_hover);
+                }
                 // Exit modal buttons are always allowed
                 if start_sim.is_some() {
                     events.write(UiEvent::StartSim);
@@ -3083,10 +3178,20 @@ pub fn project_detail_interactions(
                     events.write(UiEvent::ToggleHillGizmos);
                 } else if toggle_node_trails.is_some() {
                     events.write(UiEvent::ToggleNodeTrails);
+                } else if toggle_tether_illumination.is_some() {
+                    events.write(UiEvent::ToggleTetherIllumination);
+                } else if toggle_target_orbit.is_some() {
+                    events.write(UiEvent::ToggleTargetOrbit);
+                } else if toggle_root_orbit.is_some() {
+                    events.write(UiEvent::ToggleRootOrbit);
+                } else if toggle_mean_orbit.is_some() {
+                    events.write(UiEvent::ToggleMeanOrbit);
                 }
             }
             Interaction::Hovered => {
-                if is_capture && capture_active {
+                if is_toggle_switch {
+                    // No hover feedback for toggle switches — only on/off tint.
+                } else if is_capture && capture_active {
                     // Keep dimmed appearance — don't show hover highlight
                 } else if start_sim.is_some() && !can_start_sim {
                     // Keep dimmed appearance until both target and chaser orbits are selected
@@ -3100,7 +3205,9 @@ pub fn project_detail_interactions(
                 }
             }
             Interaction::None => {
-                if is_capture && capture_active {
+                if is_toggle_switch {
+                    // No reset-to-default-background here — sync_toggle_switches owns it.
+                } else if is_capture && capture_active {
                     *background_color = BackgroundColor(theme.panel_background);
                 } else if start_sim.is_some() && !can_start_sim {
                     *background_color = BackgroundColor(theme.panel_background);
@@ -3115,78 +3222,88 @@ pub fn project_detail_interactions(
     }
 }
 
-fn sync_toggle_button_label<M: Component>(
-    buttons: &Query<&Children, With<M>>,
-    texts: &mut Query<&mut Text>,
-    label: &str,
+fn sync_toggle_switch_visual(
+    background_color: &mut BackgroundColor,
+    children: &Children,
+    thumbs: &mut Query<&mut Node, With<ToggleSwitchThumb>>,
+    theme: &UiTheme,
+    is_on: bool,
 ) {
-    for children in buttons {
-        for child in children.iter() {
-            if let Ok(mut text) = texts.get_mut(child) {
-                text.0 = label.to_string();
-            }
+    *background_color = BackgroundColor(if is_on {
+        theme.button_background
+    } else {
+        theme.panel_background
+    });
+    for child in children.iter() {
+        if let Ok(mut node) = thumbs.get_mut(child) {
+            node.left = px(if is_on { 23.0 } else { 3.0 });
         }
     }
 }
 
-pub fn sync_performance_mode_button(
-    settings: Res<crate::resources::settings::Settings>,
-    performance_buttons: Query<&Children, With<TogglePerformanceModeButton>>,
-    cw_ellipse_buttons: Query<&Children, With<ToggleCwEllipseButton>>,
-    cw_time_series_buttons: Query<&Children, With<ToggleCwTimeSeriesButton>>,
-    hill_gizmos_buttons: Query<&Children, With<ToggleHillGizmosButton>>,
-    node_trails_buttons: Query<&Children, With<ToggleNodeTrailsButton>>,
-    mut texts: Query<&mut Text>,
+pub fn sync_toggle_switches(
+    settings: Res<Settings>,
+    theme: Res<UiTheme>,
+    mut tracks: Query<
+        (
+            Option<&TogglePerformanceModeButton>,
+            Option<&ToggleCwEllipseButton>,
+            Option<&ToggleCwTimeSeriesButton>,
+            Option<&ToggleHillGizmosButton>,
+            Option<&ToggleNodeTrailsButton>,
+            Option<&ToggleTetherIlluminationButton>,
+            Option<&ToggleTargetOrbitButton>,
+            Option<&ToggleRootOrbitButton>,
+            Option<&ToggleMeanOrbitButton>,
+            &Children,
+            &mut BackgroundColor,
+        ),
+        With<ToggleSwitchTrack>,
+    >,
+    mut thumbs: Query<&mut Node, With<ToggleSwitchThumb>>,
 ) {
     if !settings.is_changed() {
         return;
     }
 
-    sync_toggle_button_label(
-        &performance_buttons,
-        &mut texts,
-        if settings.performance_mode {
-            "Performance Mode: On"
+    for (
+        performance,
+        cw_ellipse,
+        cw_time_series,
+        hill_gizmos,
+        node_trails,
+        tether_illumination,
+        target_orbit,
+        root_orbit,
+        mean_orbit,
+        children,
+        mut background_color,
+    ) in &mut tracks
+    {
+        let is_on = if performance.is_some() {
+            settings.performance_mode
+        } else if cw_ellipse.is_some() {
+            settings.prop_viz.show_cw_ellipse
+        } else if cw_time_series.is_some() {
+            settings.prop_viz.show_cw_time_series
+        } else if hill_gizmos.is_some() {
+            settings.prop_viz.show_hill_gizmos
+        } else if node_trails.is_some() {
+            settings.prop_viz.show_node_trails
+        } else if tether_illumination.is_some() {
+            settings.tether_always_lit
+        } else if target_orbit.is_some() {
+            settings.prop_viz.show_target_orbit
+        } else if root_orbit.is_some() {
+            settings.prop_viz.show_root_orbit
+        } else if mean_orbit.is_some() {
+            settings.prop_viz.show_mean_orbit
         } else {
-            "Performance Mode: Off"
-        },
-    );
-    sync_toggle_button_label(
-        &cw_ellipse_buttons,
-        &mut texts,
-        if settings.prop_viz.show_cw_ellipse {
-            "CW Ellipse Plot: On"
-        } else {
-            "CW Ellipse Plot: Off"
-        },
-    );
-    sync_toggle_button_label(
-        &cw_time_series_buttons,
-        &mut texts,
-        if settings.prop_viz.show_cw_time_series {
-            "CW Time Series: On"
-        } else {
-            "CW Time Series: Off"
-        },
-    );
-    sync_toggle_button_label(
-        &hill_gizmos_buttons,
-        &mut texts,
-        if settings.prop_viz.show_hill_gizmos {
-            "Hill Frame Gizmos: On"
-        } else {
-            "Hill Frame Gizmos: Off"
-        },
-    );
-    sync_toggle_button_label(
-        &node_trails_buttons,
-        &mut texts,
-        if settings.prop_viz.show_node_trails {
-            "Node Trails: On"
-        } else {
-            "Node Trails: Off"
-        },
-    );
+            continue;
+        };
+
+        sync_toggle_switch_visual(&mut background_color, children, &mut thumbs, &theme, is_on);
+    }
 }
 
 pub fn view_edit_plan_interactions(
@@ -3237,6 +3354,8 @@ pub fn restart_prompt_interactions(
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     theme: Res<UiTheme>,
     mut log: MessageWriter<LogEvent>,
+    mut settings: ResMut<Settings>,
+    camera_q: Query<&RenderLayers, With<Camera3d>>,
 ) {
     for (interaction, restart_btn, dismiss_btn, recompile_btn, mut bg) in &mut buttons {
         if restart_btn.is_none() && dismiss_btn.is_none() && recompile_btn.is_none() {
@@ -3251,6 +3370,10 @@ pub fn restart_prompt_interactions(
                 if restart_btn.is_some() {
                     sync_state.in_sync = true;
                     sync_state.restart_requested = true;
+                    sync_state.restart_to_detail_view = camera_q
+                        .single()
+                        .is_ok_and(|layers| layers.intersects(&RenderLayers::layer(SCENE_LAYER)));
+                    *settings = Settings::default();
                     log.write(LogEvent {
                         level: LogLevel::Info,
                         source: "ui",

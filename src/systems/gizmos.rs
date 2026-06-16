@@ -7,10 +7,15 @@ use bevy::{
     math::{DQuat, DVec3},
     prelude::*,
 };
-use brahe::{AngleFormat, utils::DOrbitStateProvider};
+use brahe::{AngleFormat, Epoch, KeplerianPropagator, utils::DOrbitStateProvider};
+use nalgebra::Vector6;
 
 use crate::{
-    components::{capture_components::CaptureComponent, orbit::Orbital},
+    components::{
+        capture_components::CaptureComponent,
+        orbit::{Earth, Orbital},
+        orbit_camera::CameraTarget,
+    },
     constants::{
         MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER,
         orbit_frame_rotation,
@@ -206,6 +211,166 @@ pub fn orbital_gizmos(
                 Srgba::new(1.0, 0.72, 0.15, 0.22),
                 &mut gizmos,
             );
+        }
+    }
+}
+
+/// Real-scale sibling of `draw_orbital_from_elements` for detail view: instead
+/// of dividing by `MAP_UNITS_TO_M` and assuming the ellipse's frame origin is
+/// render-space origin, it adds a constant render-space `origin_offset`
+/// (Earth's current floating-origin `Transform.translation`, since
+/// `render_position(P_eci) = earth_transform.translation + eci_to_orbit_frame(P_eci)`
+/// for any ECI point in detail view).
+fn draw_detail_orbital_from_elements(
+    semi_major: f32,
+    eccentricity: f32,
+    inclination: f32,
+    raan: f32,
+    arg_of_perigee: f32,
+    origin_offset: Vec3,
+    color: Srgba,
+    gizmos: &mut Gizmos,
+) {
+    if semi_major <= 0.0 || !(0.0..1.0).contains(&eccentricity) {
+        return;
+    }
+
+    let semi_minor = semi_major * (1.0 - eccentricity * eccentricity).sqrt();
+
+    let rotation = orbit_frame_rotation()
+        * Quat::from_axis_angle(Vec3::Z, raan)
+        * Quat::from_axis_angle(Vec3::X, inclination)
+        * Quat::from_axis_angle(Vec3::Z, arg_of_perigee);
+
+    let center_offset = origin_offset + rotation * Vec3::new(-semi_major * eccentricity, 0.0, 0.0);
+
+    gizmos
+        .ellipse(
+            Isometry3d::new(center_offset, rotation),
+            Vec2::new(semi_major, semi_minor),
+            color,
+        )
+        .resolution(512);
+}
+
+fn draw_entity_orbit(
+    entity: Entity,
+    orbitals: &Query<&Orbital>,
+    epoch: Epoch,
+    origin_offset: Vec3,
+    color: Srgba,
+    gizmos: &mut Gizmos,
+) {
+    let Ok(orbital) = orbitals.get(entity) else {
+        return;
+    };
+    let Some(propagator) = orbital.propagator.clone() else {
+        return;
+    };
+    let Ok(elements) = propagator.state_koe_osc(epoch, AngleFormat::Radians) else {
+        return;
+    };
+    if elements.y >= 1.0 {
+        return;
+    }
+
+    draw_detail_orbital_from_elements(
+        elements.x as f32,
+        elements.y as f32,
+        elements.z as f32,
+        elements.w as f32,
+        elements.a as f32,
+        origin_offset,
+        color,
+        gizmos,
+    );
+}
+
+/// Detail-view counterpart to `orbital_gizmos`: draws real-scale, floating
+/// origin-aware orbit ellipses for the debris/target, the tether root, and
+/// the tether's mean/center-of-mass orbit, gated by the `PropVizSettings`
+/// toggles in the new "Gizmos" controls section.
+pub fn detail_orbit_path_gizmos(
+    camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
+    earth: Single<&Transform, (With<Earth>, Without<Orbital>)>,
+    orbitals: Query<&Orbital>,
+    camera_target: Query<Entity, With<CameraTarget>>,
+    orbital_cache: Res<OrbitalCache>,
+    world_time: Res<WorldTime>,
+    settings: Res<Settings>,
+    mut gizmos: Gizmos,
+) {
+    let render_layers = camera_s.into_inner();
+    if !render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        return;
+    }
+
+    if !(settings.prop_viz.show_target_orbit
+        || settings.prop_viz.show_root_orbit
+        || settings.prop_viz.show_mean_orbit)
+    {
+        return;
+    }
+
+    let origin_offset = earth.into_inner().translation;
+    let epoch = world_time.epoch;
+    let root_entity = orbital_cache
+        .tethers
+        .values()
+        .next()
+        .and_then(|nodes| nodes.first().copied());
+
+    if settings.prop_viz.show_target_orbit {
+        if let Some(entity) = orbital_cache.debris.values().next().copied() {
+            draw_entity_orbit(
+                entity,
+                &orbitals,
+                epoch,
+                origin_offset,
+                Srgba::new(0.2, 1.0, 0.45, 0.5),
+                &mut gizmos,
+            );
+        }
+    }
+
+    if settings.prop_viz.show_root_orbit {
+        if let Some(entity) = root_entity {
+            draw_entity_orbit(
+                entity,
+                &orbitals,
+                epoch,
+                origin_offset,
+                Srgba::new(1.0, 0.72, 0.15, 0.5),
+                &mut gizmos,
+            );
+        }
+    }
+
+    if settings.prop_viz.show_mean_orbit {
+        if let (Ok(camera_target_entity), Some(root_entity)) = (camera_target.single(), root_entity)
+        {
+            if let (Some(target_rv), Some((com_r, com_v))) = (
+                orbital_cache.eci_states.get(&camera_target_entity),
+                orbital_cache.com_rv.get(&root_entity),
+            ) {
+                let mean_rv =
+                    target_rv + Vector6::new(com_r.x, com_r.y, com_r.z, com_v.x, com_v.y, com_v.z);
+                let mean_propagator = KeplerianPropagator::from_eci(epoch, mean_rv, 1.0);
+                if let Ok(elements) = mean_propagator.state_koe_osc(epoch, AngleFormat::Radians) {
+                    if elements.y < 1.0 {
+                        draw_detail_orbital_from_elements(
+                            elements.x as f32,
+                            elements.y as f32,
+                            elements.z as f32,
+                            elements.w as f32,
+                            elements.a as f32,
+                            origin_offset,
+                            Srgba::new(0.6, 0.4, 1.0, 0.5),
+                            &mut gizmos,
+                        );
+                    }
+                }
+            }
         }
     }
 }

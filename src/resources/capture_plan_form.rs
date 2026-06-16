@@ -96,6 +96,10 @@ impl NewCapturePlanForm {
 pub struct SimPlanSyncState {
     pub in_sync: bool,
     pub restart_requested: bool,
+    /// When a restart is requested, remembers whether the camera was in
+    /// detail view so `setup_camera` can restore it instead of defaulting
+    /// to map view.
+    pub restart_to_detail_view: bool,
 }
 
 impl Default for SimPlanSyncState {
@@ -103,6 +107,7 @@ impl Default for SimPlanSyncState {
         Self {
             in_sync: true,
             restart_requested: false,
+            restart_to_detail_view: false,
         }
     }
 }

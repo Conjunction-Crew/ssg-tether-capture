@@ -18,11 +18,12 @@ use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{SpaceCatalogEntry, SpaceCatalogUiState, SpaceObjectCatalog};
 use crate::resources::world_time::WorldTime;
 use crate::systems::hill_frame::HillBasis;
+use crate::systems::setup::default_atmosphere_bundle;
 
 use avian3d::prelude::{Forces, RigidBodyDisabled, RigidBodyQuery, WriteRigidBodyForces};
 use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
-use bevy::pbr::{Atmosphere, AtmosphereSettings};
+use bevy::pbr::{Atmosphere, AtmosphereSettings, ScatteringMedium};
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, GM_EARTH, KeplerianPropagator, TimeSystem};
@@ -700,26 +701,61 @@ pub fn apply_hill_forces(
 /// Applies or removes performance-mode rendering suppressions when the setting changes.
 /// Disables atmosphere and catalog dot rendering during propagation to allow higher time warp.
 pub fn apply_performance_mode(
+    mut commands: Commands,
     settings: Res<Settings>,
     mut catalog_ui: ResMut<SpaceCatalogUiState>,
-    mut atmosphere_q: Query<&mut AtmosphereSettings, With<Camera3d>>,
+    camera_q: Query<(Entity, Has<Atmosphere>), With<Camera3d>>,
+    mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+) {
+    let Ok((camera, has_atmosphere)) = camera_q.single() else {
+        return;
+    };
+
+    // Reconciles against the camera's actual components rather than an
+    // edge-triggered `Local<bool>`, so this self-heals after the camera
+    // entity is replaced (e.g. on Reset Sim) even if `settings` didn't change.
+    if settings.performance_mode && has_atmosphere {
+        catalog_ui.show_points = false;
+        // Remove the atmosphere components entirely rather than degenerating
+        // scene_units_to_m — an enormous value there corrupts the directional
+        // light attenuation term and blacks out the whole scene. Removing the
+        // components also skips the raymarched atmosphere pass outright.
+        commands
+            .entity(camera)
+            .remove::<Atmosphere>()
+            .remove::<AtmosphereSettings>();
+    } else if !settings.performance_mode && !has_atmosphere {
+        let (atmosphere, atmosphere_settings) = default_atmosphere_bundle(&mut scattering_mediums);
+        commands.entity(camera).insert((atmosphere, atmosphere_settings));
+    }
+}
+
+/// Applies or removes the "always lit" tether mode when the setting changes.
+/// Sets every tether material's emissive color so the tether stays visible
+/// through eclipses instead of relying on the simulated Sun/Moon lighting.
+pub fn apply_tether_illumination_mode(
+    settings: Res<Settings>,
+    materials_q: Query<&MeshMaterial3d<StandardMaterial>, Or<(With<TetherRoot>, With<TetherNode>)>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut prev_mode: Local<bool>,
 ) {
-    if settings.performance_mode == *prev_mode {
+    if settings.tether_always_lit == *prev_mode {
         return;
     }
-    *prev_mode = settings.performance_mode;
+    *prev_mode = settings.tether_always_lit;
 
-    if settings.performance_mode {
-        catalog_ui.show_points = false;
-        for mut atm in &mut atmosphere_q {
-            // Effectively invisible at space scale — atmosphere renders nothing
-            // when scene_units_to_m is enormous (ray lengths far exceed atmosphere height).
-            atm.scene_units_to_m = f32::MAX;
-        }
+    let emissive = if settings.tether_always_lit {
+        LinearRgba::rgb(1.0, 0.0, 0.0)
     } else {
-        for mut atm in &mut atmosphere_q {
-            atm.scene_units_to_m = 1.0;
+        LinearRgba::BLACK
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    for handle in &materials_q {
+        if seen.insert(handle.0.id()) {
+            if let Some(material) = materials.get_mut(&handle.0) {
+                material.emissive = emissive;
+            }
         }
     }
 }

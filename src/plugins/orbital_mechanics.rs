@@ -12,10 +12,11 @@ use crate::{
         gizmos::{capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
-            apply_hill_forces, apply_performance_mode, cache_eci_states, calculate_com_rv,
-            collect_propagation_cw_data, floating_origin_update_visuals, init_orbitals,
-            load_dataset_entities, physics_bubble_add_remove, propagation_viz_gizmos,
-            sync_separate_bodies, target_entity_reset_origin,
+            apply_hill_forces, apply_performance_mode, apply_tether_illumination_mode,
+            cache_eci_states, calculate_com_rv, collect_propagation_cw_data,
+            floating_origin_update_visuals, init_orbitals, load_dataset_entities,
+            physics_bubble_add_remove, propagation_viz_gizmos, sync_separate_bodies,
+            target_entity_reset_origin,
         },
     },
     ui::state::UiScreen,
@@ -57,6 +58,7 @@ impl Plugin for OrbitalMechanicsPlugin {
                     capture_gizmos,
                     floating_origin_update_visuals,
                     apply_performance_mode,
+                    apply_tether_illumination_mode,
                     propagation_viz_gizmos,
                 )
                     .run_if(in_state(UiScreen::Sim))

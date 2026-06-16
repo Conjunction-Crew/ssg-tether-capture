@@ -17,7 +17,14 @@ use bevy::{
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     catalog_ui: Res<SpaceCatalogUiState>,
-    scene_camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings)>,
+    scene_camera: Single<
+        (
+            &mut RenderLayers,
+            Option<&mut Atmosphere>,
+            Option<&mut AtmosphereSettings>,
+        ),
+        With<Camera3d>,
+    >,
     mut log: MessageWriter<LogEvent>,
 ) {
     if catalog_ui.search_focused {
@@ -25,15 +32,18 @@ pub fn toggle_map_view(
     }
 
     if keyboard_input.just_pressed(KeyCode::KeyM) {
-        let (mut render_layers, mut atmosphere, mut atmosphere_settings) =
-            scene_camera.into_inner();
+        let (mut render_layers, atmosphere, atmosphere_settings) = scene_camera.into_inner();
 
         if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
             *render_layers = RenderLayers::layer(MAP_LAYER);
 
-            // Adjust atmosphere
-            atmosphere.world_position = Vec3::ZERO;
-            atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
+            // Adjust atmosphere (absent entirely under Performance Mode).
+            if let Some(mut atmosphere) = atmosphere {
+                atmosphere.world_position = Vec3::ZERO;
+            }
+            if let Some(mut atmosphere_settings) = atmosphere_settings {
+                atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
+            }
             log.write(LogEvent {
                 level: LogLevel::Debug,
                 source: "ui",
@@ -42,8 +52,10 @@ pub fn toggle_map_view(
         } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
             *render_layers = RenderLayers::layer(SCENE_LAYER);
 
-            // Adjust atmosphere
-            atmosphere_settings.scene_units_to_m = 1.0;
+            // Adjust atmosphere (absent entirely under Performance Mode).
+            if let Some(mut atmosphere_settings) = atmosphere_settings {
+                atmosphere_settings.scene_units_to_m = 1.0;
+            }
             log.write(LogEvent {
                 level: LogLevel::Debug,
                 source: "ui",
