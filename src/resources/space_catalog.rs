@@ -72,7 +72,7 @@ pub struct FilteredSpaceCatalogResults(pub Vec<usize>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrbitalSelectionRole {
-    Target,
+    Rso,
     Chaser,
 }
 
@@ -120,6 +120,6 @@ pub struct SelectedOrbitalObject {
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct OrbitalSelectionState {
-    pub target: Option<SelectedOrbitalObject>,
+    pub rso: Option<SelectedOrbitalObject>,
     pub chaser: Option<SelectedOrbitalObject>,
 }

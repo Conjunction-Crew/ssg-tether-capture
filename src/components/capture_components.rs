@@ -1,3 +1,4 @@
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -7,13 +8,13 @@ use serde_json::Value;
 #[derive(Component, Debug, Clone)]
 pub struct CaptureComponent {
     pub plan_id: String,
-    pub current_state: String,
-    pub state_enter_time_s: f64,
-    pub state_elapsed_time_s: f64,
+    pub current_phase: String,
+    pub phase_enter_time_s: f64,
+    pub phase_elapsed_time_s: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct State {
+pub struct Phase {
     pub id: String,
     #[serde(default)]
     pub next: Option<String>,
@@ -23,6 +24,25 @@ pub struct State {
     pub transitions: Option<Vec<Value>>,
     #[serde(default)]
     pub next_conditions: Option<Value>,
+}
+
+/// Direction in the RSO body frame the tether wraps about during capture.
+/// Static for now; a future algorithm will select this dynamically.
+#[derive(Component, Debug, Clone)]
+pub struct CaptureAxis {
+    /// Unit direction in the RSO body frame.
+    pub axis: DVec3,
+    /// Radius (metres) of the contact ring on the RSO where the tether first coils.
+    pub contact_radius: f64,
+}
+
+impl Default for CaptureAxis {
+    fn default() -> Self {
+        Self {
+            axis: DVec3::Z,
+            contact_radius: 2.0,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -42,7 +62,7 @@ pub struct CapturePlan {
     /// Not serialized to JSON — populated by the loader and [`CapturePlanLibrary::insert_plan`].
     #[serde(skip)]
     pub id: String,
-    pub states: Vec<State>,
+    pub phases: Vec<Phase>,
     pub tether: String,
     #[serde(default)]
     pub device: Option<CapturePlanDevice>,

@@ -4,6 +4,7 @@ use nalgebra::Vector6;
 
 use crate::{
     components::{
+        capture_components::CaptureAxis,
         orbit::{Orbit, TetherNode, TetherRoot},
         orbit_camera::CameraTarget,
     },
@@ -33,6 +34,9 @@ pub fn spawn_debris(
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
+                // Static capture axis in the RSO body frame. A future algorithm will
+                // choose this dynamically based on the RSO geometry/spin.
+                CaptureAxis::default(),
                 Transform::from_xyz(
                     PHYSICS_DISABLE_RADIUS as f32 + 10.0,
                     PHYSICS_DISABLE_RADIUS as f32 + 10.0,

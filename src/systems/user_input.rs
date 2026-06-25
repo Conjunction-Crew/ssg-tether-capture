@@ -118,3 +118,17 @@ pub fn toggle_capture_gizmos(
         settings.capture_gizmos = !settings.capture_gizmos;
     }
 }
+
+pub fn toggle_capture_axis_gizmos(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    catalog_ui: Res<SpaceCatalogUiState>,
+    mut settings: ResMut<Settings>,
+) {
+    if catalog_ui.search_focused {
+        return;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyX) {
+        settings.capture_axis_gizmos = !settings.capture_axis_gizmos;
+    }
+}

@@ -11,7 +11,7 @@ use crate::{
     plugins::gpu_compute::eci_position_to_map,
     resources::{
         capture_log::{LogEvent, LogLevel},
-        capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCaptureState},
+        capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePhase},
         orbital_cache::OrbitalCache,
         world_time::WorldTime,
     },
@@ -25,8 +25,8 @@ struct CaptureMetrics {
     range_m: f64,
     relative_speed_m_s: f64,
     closing_speed_m_s: f64,
-    target_speed_m_s: f64,
-    target_altitude_m: f64,
+    rso_speed_m_s: f64,
+    rso_altitude_m: f64,
 }
 
 const MAP_LABEL_BOX_SIZE_PX: f32 = 30.0;
@@ -51,7 +51,7 @@ pub fn update_time_warp_readout(
 
 pub fn update_capture_telemetry(
     bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
-    capture_targets: Query<&CaptureComponent>,
+    captures: Query<&CaptureComponent>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureTelemetryReadout)>,
     orbitals: Res<OrbitalCache>,
@@ -61,22 +61,22 @@ pub fn update_capture_telemetry(
     for (mut text, readout) in &mut readouts {
         let Some(metrics) = capture_metrics(
             &bodies,
-            readout.target_entity,
+            readout.rso_entity,
             readout.reference_entity,
             &orbitals,
         ) else {
             text.0 = format!(
                 "{}\nWaiting for live capture telemetry...",
-                readout.target_label
+                readout.rso_label
             );
             continue;
         };
 
         let capture_status = match readout
-            .target_entity
-            .and_then(|entity| capture_targets.get(entity).ok())
+            .rso_entity
+            .and_then(|entity| captures.get(entity).ok())
         {
-            Some(capture) => format!("Engaged ({})", capture.current_state),
+            Some(capture) => format!("Engaged ({})", capture.current_phase),
             None => "Idle".to_string(),
         };
 
@@ -97,32 +97,32 @@ pub fn update_capture_telemetry(
 
         text.0 = format!(
             concat!(
-                "Target: {}\n",
+                "RSO: {}\n",
                 "Capture status: {}\n",
                 "Range to tether root: {:.2} m\n",
                 "Relative speed: {:.2} m/s\n",
                 "Closing rate: {:.2} m/s\n",
                 "Inside capture sphere: {}\n",
                 "Capture sphere radius: {:.2} m\n",
-                "Target altitude: {:.1} m\n",
-                "Target speed: {:.2} m/s"
+                "RSO altitude: {:.1} m\n",
+                "RSO speed: {:.2} m/s"
             ),
-            readout.target_label,
+            readout.rso_label,
             capture_status,
             metrics.range_m,
             metrics.relative_speed_m_s,
             metrics.closing_speed_m_s,
             inside_capture_sphere,
             capture_sphere_radius.radius,
-            metrics.target_altitude_m,
-            metrics.target_speed_m_s,
+            metrics.rso_altitude_m,
+            metrics.rso_speed_m_s,
         );
     }
 }
 
 pub fn update_capture_guidance(
     bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
-    capture_targets: Query<&CaptureComponent>,
+    captures: Query<&CaptureComponent>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
     mut readouts: Query<(&mut Text, &CaptureGuidanceReadout)>,
@@ -131,7 +131,7 @@ pub fn update_capture_guidance(
     for (mut text, readout) in &mut readouts {
         let current_metrics = capture_metrics(
             &bodies,
-            readout.target_entity,
+            readout.rso_entity,
             readout.reference_entity,
             &orbitals,
         );
@@ -141,34 +141,34 @@ pub fn update_capture_guidance(
             .map(|metrics| metrics.relative_speed_m_s);
 
         if let Some(capture) = readout
-            .target_entity
-            .and_then(|entity| capture_targets.get(entity).ok())
+            .rso_entity
+            .and_then(|entity| captures.get(entity).ok())
         {
             let Some(plan) = capture_plans.compiled_plans.get(&capture.plan_id) else {
                 text.0 = format!("Active capture plan `{}` is not loaded.", capture.plan_id);
                 continue;
             };
 
-            let Some(state) = plan.state(&capture.current_state) else {
+            let Some(phase) = plan.phase(&capture.current_phase) else {
                 text.0 = format!(
-                    "Current state `{}` was not found in plan `{}`.",
-                    capture.current_state, capture.plan_id
+                    "Current phase `{}` was not found in plan `{}`.",
+                    capture.current_phase, capture.plan_id
                 );
                 continue;
             };
 
             let mut body = String::new();
-            let time_in_state = capture.state_elapsed_time_s.max(0.0);
+            let time_in_phase = capture.phase_elapsed_time_s.max(0.0);
             let plan_display_name = capture_plans
                 .plans
                 .get(&capture.plan_id)
                 .map(|p| p.name.as_str())
                 .unwrap_or(capture.plan_id.as_str());
 
-            writeln!(body, "Target: {}", readout.target_label).unwrap();
+            writeln!(body, "RSO: {}", readout.rso_label).unwrap();
             writeln!(body, "Plan: {}", plan_display_name).unwrap();
-            writeln!(body, "Current state: {}", capture.current_state).unwrap();
-            writeln!(body, "Time in state: {:.1} s", time_in_state).unwrap();
+            writeln!(body, "Current phase: {}", capture.current_phase).unwrap();
+            writeln!(body, "Time in phase: {:.1} s", time_in_phase).unwrap();
             writeln!(
                 body,
                 "Capture sphere radius: {:.2} m",
@@ -177,10 +177,10 @@ pub fn update_capture_guidance(
             .unwrap();
             writeln!(body).unwrap();
 
-            append_state_parameters(&mut body, state);
+            append_phase_parameters(&mut body, phase);
             writeln!(body).unwrap();
 
-            append_transitions(&mut body, state, current_range, current_rel_speed, true);
+            append_transitions(&mut body, phase, current_range, current_rel_speed, true);
 
             text.0 = body.trim_end().to_string();
             continue;
@@ -191,9 +191,9 @@ pub fn update_capture_guidance(
             continue;
         };
 
-        let Some(initial_state) = plan.states.first() else {
+        let Some(initial_phase) = plan.phases.first() else {
             text.0 = format!(
-                "Capture plan `{}` does not define any states.",
+                "Capture plan `{}` does not define any phases.",
                 readout.plan_id
             );
             continue;
@@ -205,10 +205,10 @@ pub fn update_capture_guidance(
             .get(&readout.plan_id)
             .map(|p| p.name.as_str())
             .unwrap_or(readout.plan_id.as_str());
-        writeln!(body, "Target: {}", readout.target_label).unwrap();
+        writeln!(body, "RSO: {}", readout.rso_label).unwrap();
         writeln!(body, "Status: Idle").unwrap();
         writeln!(body, "Plan: {}", plan_display_name).unwrap();
-        writeln!(body, "Initial state: {}", initial_state.id).unwrap();
+        writeln!(body, "Initial phase: {}", initial_phase.id).unwrap();
         writeln!(
             body,
             "Capture sphere radius: {:.2} m",
@@ -221,7 +221,7 @@ pub fn update_capture_guidance(
 
         append_transitions(
             &mut body,
-            initial_state,
+            initial_phase,
             current_range,
             current_rel_speed,
             false,
@@ -273,40 +273,39 @@ pub fn map_orbitals(
 
 fn capture_metrics(
     bodies: &Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
-    target_entity: Option<Entity>,
+    rso_entity: Option<Entity>,
     reference_entity: Option<Entity>,
     orbital_cache: &Res<OrbitalCache>,
 ) -> Option<CaptureMetrics> {
-    let target_entity = target_entity?;
+    let rso_entity = rso_entity?;
     let reference_entity = reference_entity?;
 
-    let Ok((target_rb, target_disabled)) = bodies.get(target_entity) else {
+    let Ok((rso_rb, rso_disabled)) = bodies.get(rso_entity) else {
         return None;
     };
     let Ok((reference_rb, reference_disabled)) = bodies.get(reference_entity) else {
         return None;
     };
 
-    let Some(target_true) = orbital_cache.eci_states.get(&target_entity) else {
+    let Some(rso_true) = orbital_cache.eci_states.get(&rso_entity) else {
         return None;
     };
     let Some(reference_true) = orbital_cache.eci_states.get(&reference_entity) else {
         return None;
     };
 
-    let target_position = world_position(&target_true, target_rb.position.0, target_disabled);
+    let rso_position = world_position(&rso_true, rso_rb.position.0, rso_disabled);
     let reference_position =
         world_position(&reference_true, reference_rb.position.0, reference_disabled);
-    let relative_position = target_position - reference_position;
+    let relative_position = rso_position - reference_position;
 
-    let target_velocity =
-        world_velocity(&target_true, target_rb.linear_velocity.0, target_disabled);
+    let rso_velocity = world_velocity(&rso_true, rso_rb.linear_velocity.0, rso_disabled);
     let reference_velocity = world_velocity(
         &reference_true,
         reference_rb.linear_velocity.0,
         reference_disabled,
     );
-    let relative_velocity = target_velocity - reference_velocity;
+    let relative_velocity = rso_velocity - reference_velocity;
 
     let range_m = relative_position.length();
     let closing_speed_m_s = if range_m > 1e-6 {
@@ -319,8 +318,8 @@ fn capture_metrics(
         range_m,
         relative_speed_m_s: relative_velocity.length(),
         closing_speed_m_s,
-        target_speed_m_s: target_velocity.length(),
-        target_altitude_m: target_position.length() - EARTH_RADIUS as f64,
+        rso_speed_m_s: rso_velocity.length(),
+        rso_altitude_m: rso_position.length() - EARTH_RADIUS as f64,
     })
 }
 
@@ -338,9 +337,9 @@ fn world_velocity(true_params: &Vector6<f64>, linear_velocity: DVec3, disabled: 
     }
 }
 
-fn append_state_parameters(body: &mut String, state: &CompiledCaptureState) {
-    writeln!(body, "State parameters").unwrap();
-    let p = &state.parameters;
+fn append_phase_parameters(body: &mut String, phase: &CompiledCapturePhase) {
+    writeln!(body, "Phase parameters").unwrap();
+    let p = &phase.parameters;
     writeln!(body, "- max_velocity: {:.4}", p.max_velocity).unwrap();
     writeln!(body, "- max_force: {:.4}", p.max_force).unwrap();
     if let Some(sr) = p.shrink_rate {
@@ -350,7 +349,7 @@ fn append_state_parameters(body: &mut String, state: &CompiledCaptureState) {
 
 fn append_transitions(
     body: &mut String,
-    state: &CompiledCaptureState,
+    phase: &CompiledCapturePhase,
     current_range: Option<f64>,
     current_rel_speed: Option<f64>,
     active_capture: bool,
@@ -361,12 +360,12 @@ fn append_transitions(
         writeln!(body, "Upcoming transitions").unwrap();
     }
 
-    if state.transitions.is_empty() {
+    if phase.transitions.is_empty() {
         writeln!(body, "- none").unwrap();
         return;
     }
 
-    for t in &state.transitions {
+    for t in &phase.transitions {
         let mut conditions = Vec::new();
         if let Some(limit) = t.distance_less_than {
             conditions.push(format_condition("distance", "<", limit, "m", current_range));
@@ -391,6 +390,9 @@ fn append_transitions(
                 "m/s",
                 current_rel_speed,
             ));
+        }
+        if let Some(limit) = t.straightness_less_than {
+            conditions.push(format_condition("straightness", "<", limit, "", None));
         }
         if conditions.is_empty() {
             writeln!(body, "- {} when conditions are met", t.to).unwrap();

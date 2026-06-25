@@ -10,7 +10,10 @@ use bevy::{
 use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::{
-    components::{capture_components::CaptureComponent, orbit::Orbital},
+    components::{
+        capture_components::{CaptureAxis, CaptureComponent},
+        orbit::Orbital,
+    },
     constants::{
         MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER,
         orbit_frame_rotation,
@@ -114,7 +117,7 @@ fn selected_orbital_gpu_index(selected: &SelectedOrbitalObject) -> Option<usize>
 }
 
 fn selection_contains_gpu_index(selection: &OrbitalSelectionState, gpu_index: usize) -> bool {
-    [&selection.target, &selection.chaser]
+    [&selection.rso, &selection.chaser]
         .into_iter()
         .flatten()
         .any(|selected| selected_orbital_gpu_index(selected) == Some(gpu_index))
@@ -192,9 +195,9 @@ pub fn orbital_gizmos(
     }
 
     if let Some(orbital_selection) = orbital_selection {
-        if let Some(target) = orbital_selection.target.as_ref() {
+        if let Some(rso) = orbital_selection.rso.as_ref() {
             draw_orbital_selection_from_elements(
-                &target.elements,
+                &rso.elements,
                 Srgba::new(0.2, 1.0, 0.45, 0.22),
                 &mut gizmos,
             );
@@ -269,10 +272,10 @@ pub fn capture_gizmos(
         let Some(plan) = capture_plan_lib.plans.get(&capture_component.plan_id) else {
             continue;
         };
-        let Some(state) = plan
-            .states
+        let Some(phase) = plan
+            .phases
             .iter()
-            .find(|state| state.id == capture_component.current_state)
+            .find(|phase| phase.id == capture_component.current_phase)
         else {
             continue;
         };
@@ -297,14 +300,14 @@ pub fn capture_gizmos(
             Srgba::new(0.0, 0.8, 0.4, 0.2),
         );
 
-        let (base_max_velocity, capture_state) = if let Some(parameters) = &state.parameters {
+        let (base_max_velocity, in_capture_phase) = if let Some(parameters) = &phase.parameters {
             let max_velocity = parameters
                 .get("max_velocity")
                 .and_then(|value| value.as_f64())
                 .unwrap_or(0.0) as f64;
-            (max_velocity, capture_component.current_state == "capture")
+            (max_velocity, capture_component.current_phase == "capture")
         } else {
-            (0.0, capture_component.current_state == "capture")
+            (0.0, capture_component.current_phase == "capture")
         };
 
         for (idx, &node) in nodes.iter().enumerate() {
@@ -322,7 +325,7 @@ pub fn capture_gizmos(
                 capture_radius += 1.0;
             }
 
-            let tangent_sign = if idx != 0 && capture_state { -1.0 } else { 1.0 };
+            let tangent_sign = if idx != 0 && in_capture_phase { -1.0 } else { 1.0 };
             let force_vec = capture_force_direction(
                 rel_r,
                 rel_v,
@@ -403,5 +406,68 @@ pub fn dev_gizmos(
             transform.translation,
             Color::srgb(0.0, 1.0, 0.5),
         );
+    }
+}
+
+/// Visualizes the static capture axis on each RSO: the axis line through the body, the
+/// plane perpendicular to it, and the contact ring where the tether is expected to first
+/// coil. The axis is stored in the RSO body frame and rotated into world space here.
+pub fn capture_axis_gizmos(
+    rsos: Query<(RigidBodyQuery, &CaptureAxis)>,
+    settings: Res<Settings>,
+    mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
+    camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
+) {
+    let render_layers = camera_s.into_inner();
+
+    if !settings.capture_axis_gizmos || render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        return;
+    }
+
+    for (rb, capture_axis) in &rsos {
+        let center = rb.position.as_vec3();
+        let axis_world = (rb.rotation.0 * capture_axis.axis)
+            .normalize_or(DVec3::Z)
+            .as_vec3();
+        let contact_radius = capture_axis.contact_radius.max(0.01) as f32;
+
+        // Capture-axis line through the RSO (extends past the body in both directions).
+        let half_len = contact_radius * 2.5;
+        gizmos.line(
+            center - axis_world * half_len,
+            center + axis_world * half_len,
+            Srgba::new(1.0, 0.85, 0.1, 0.9),
+        );
+
+        // Rotation mapping +Z onto the capture axis, so a circle drawn in the local XY
+        // plane lies in the plane perpendicular to the axis.
+        let plane_rotation = Quat::from_rotation_arc(Vec3::Z, axis_world);
+        let plane_iso = Isometry3d::new(center, plane_rotation);
+
+        // Contact ring on the RSO where the tether first makes contact.
+        gizmos
+            .circle(plane_iso, contact_radius, Srgba::new(0.1, 0.9, 1.0, 0.9))
+            .resolution(64);
+
+        // Capture plane: a fainter outer ring plus spokes to make the plane readable.
+        gizmos
+            .circle(
+                plane_iso,
+                contact_radius * 1.6,
+                Srgba::new(0.1, 0.9, 1.0, 0.25),
+            )
+            .resolution(64);
+
+        let in_plane_x = plane_rotation * Vec3::X;
+        let in_plane_y = plane_rotation * Vec3::Y;
+        for k in 0..4 {
+            let angle = std::f32::consts::FRAC_PI_2 * k as f32;
+            let dir = in_plane_x * angle.cos() + in_plane_y * angle.sin();
+            gizmos.line(
+                center,
+                center + dir * contact_radius * 1.6,
+                Srgba::new(0.1, 0.9, 1.0, 0.2),
+            );
+        }
     }
 }

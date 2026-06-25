@@ -291,8 +291,8 @@ pub fn spawn_project_detail_screen(
         .tethers
         .get(tether_name)
         .and_then(|v| v.first().copied());
-    let capture_target_entity = orbital_cache.debris.get("Satellite1").copied();
-    let capture_target_label = String::from("Satellite1");
+    let capture_rso_entity = orbital_cache.debris.get("Satellite1").copied();
+    let capture_rso_label = String::from("Satellite1");
     let capture_plan_id = plan_id.to_string();
 
     commands
@@ -936,7 +936,7 @@ pub fn spawn_project_detail_screen(
                                 |content| {
                                     content.spawn((
                                         Text::new(
-                                            "Pick a catalog object on the map, assign it to target or chaser, or create a custom orbit.",
+                                            "Pick a catalog object on the map, assign it to RSO or chaser, or create a custom orbit.",
                                         ),
                                         TextFont {
                                             font: font.clone(),
@@ -961,7 +961,7 @@ pub fn spawn_project_detail_screen(
                                         content,
                                         &font,
                                         &theme,
-                                        OrbitalSelectionRole::Target,
+                                        OrbitalSelectionRole::Rso,
                                     );
                                     spawn_orbital_selection_role_editor(
                                         content,
@@ -1205,7 +1205,7 @@ pub fn spawn_project_detail_screen(
                                     .spawn((
                                         Button,
                                         CaptureButton {
-                                            entity: capture_target_entity,
+                                            entity: capture_rso_entity,
                                             plan_id: capture_plan_id.clone(),
                                         },
                                         Node {
@@ -1268,9 +1268,9 @@ pub fn spawn_project_detail_screen(
                             |content| {
                                 content.spawn((
                                     CaptureTelemetryReadout {
-                                        target_entity: capture_target_entity,
+                                        rso_entity: capture_rso_entity,
                                         reference_entity: tether_root_entity,
-                                        target_label: capture_target_label.clone(),
+                                        rso_label: capture_rso_label.clone(),
                                     },
                                     Text::new("Waiting for live capture telemetry..."),
                                     TextFont {
@@ -1306,9 +1306,9 @@ pub fn spawn_project_detail_screen(
 
                                         guidance.spawn((
                                             CaptureGuidanceReadout {
-                                                target_entity: capture_target_entity,
+                                                rso_entity: capture_rso_entity,
                                                 reference_entity: tether_root_entity,
-                                                target_label: capture_target_label.clone(),
+                                                rso_label: capture_rso_label.clone(),
                                                 plan_id: capture_plan_id.clone(),
                                             },
                                             Text::new("Waiting for capture plan telemetry..."),
@@ -1333,7 +1333,7 @@ pub fn spawn_project_detail_screen(
                             |content| {
                                 content.spawn((
                                     Text::new(
-                                        "Target telemetry is measured against the tether root. Guidance shows the currently active state and the transitions available from it.",
+                                        "RSO telemetry is measured against the tether root. Guidance shows the currently active phase and the transitions available from it.",
                                     ),
                                     TextFont {
                                         font: font.clone(),
@@ -1440,8 +1440,8 @@ pub fn spawn_project_detail_screen(
 
             root.spawn((
                 SatelliteIndicatorOverlay {
-                    entity: capture_target_entity,
-                    label: capture_target_label,
+                    entity: capture_rso_entity,
+                    label: capture_rso_label,
                 },
                 Node {
                     position_type: PositionType::Absolute,
@@ -1884,7 +1884,7 @@ fn selected_orbital_object(
     role: OrbitalSelectionRole,
 ) -> Option<&SelectedOrbitalObject> {
     match role {
-        OrbitalSelectionRole::Target => selection.and_then(|selection| selection.target.as_ref()),
+        OrbitalSelectionRole::Rso => selection.and_then(|selection| selection.rso.as_ref()),
         OrbitalSelectionRole::Chaser => selection.and_then(|selection| selection.chaser.as_ref()),
     }
 }
@@ -1894,14 +1894,14 @@ fn selected_orbital_object_mut(
     role: OrbitalSelectionRole,
 ) -> Option<&mut SelectedOrbitalObject> {
     match role {
-        OrbitalSelectionRole::Target => selection.target.as_mut(),
+        OrbitalSelectionRole::Rso => selection.rso.as_mut(),
         OrbitalSelectionRole::Chaser => selection.chaser.as_mut(),
     }
 }
 
 fn orbital_selection_role_label(role: OrbitalSelectionRole) -> &'static str {
     match role {
-        OrbitalSelectionRole::Target => "Target",
+        OrbitalSelectionRole::Rso => "RSO",
         OrbitalSelectionRole::Chaser => "Chaser",
     }
 }
@@ -2815,7 +2815,7 @@ pub fn project_detail_interactions(
     let any_modal_open =
         form.open || !exit_modal_query.is_empty() || !restart_modal_query.is_empty();
     let capture_active = !capture_entities.is_empty();
-    let can_start_sim = selection.target.is_some() && selection.chaser.is_some();
+    let can_start_sim = selection.rso.is_some() && selection.chaser.is_some();
 
     for (
         interaction,
@@ -3222,12 +3222,12 @@ pub fn orbital_selection_interactions(
                     };
 
                     match button.role {
-                        OrbitalSelectionRole::Target => selection.target = Some(selected),
+                        OrbitalSelectionRole::Rso => selection.rso = Some(selected),
                         OrbitalSelectionRole::Chaser => selection.chaser = Some(selected),
                     }
                 } else if let Some(button) = custom_orbit {
                     let label = match button.role {
-                        OrbitalSelectionRole::Target => "Custom Target",
+                        OrbitalSelectionRole::Rso => "Custom RSO",
                         OrbitalSelectionRole::Chaser => "Custom Chaser",
                     };
                     let selected = SelectedOrbitalObject {
@@ -3246,7 +3246,7 @@ pub fn orbital_selection_interactions(
                     };
 
                     match button.role {
-                        OrbitalSelectionRole::Target => selection.target = Some(selected),
+                        OrbitalSelectionRole::Rso => selection.rso = Some(selected),
                         OrbitalSelectionRole::Chaser => selection.chaser = Some(selected),
                     }
                 }

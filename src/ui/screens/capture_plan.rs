@@ -232,7 +232,7 @@ fn spawn_dropdown<'a>(
     theme: &UiTheme,
 ) {
     let label = match field {
-        DropdownField::To => "To State",
+        DropdownField::To => "To Phase",
         DropdownField::Condition => "Condition",
     };
     parent
@@ -895,7 +895,7 @@ pub fn spawn_capture_plan_modal(
                                 ..default()
                             })
                             .with_children(|sec| {
-                                section_header(sec, "Approach State", &font, theme);
+                                section_header(sec, "Approach Phase", &font, theme);
                                 field_row(sec, &format!("Max Velocity * ({vel_unit})"), FormFieldId::ApproachMaxVelocity, "1.0", &form.approach_max_velocity, true, false, &font, theme);
                                 field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::ApproachMaxForce, "2.0", &form.approach_max_force, true, false, &font, theme);
 
@@ -933,7 +933,7 @@ pub fn spawn_capture_plan_modal(
                                 ..default()
                             })
                             .with_children(|sec| {
-                                section_header(sec, "Terminal State", &font, theme);
+                                section_header(sec, "Terminal Phase", &font, theme);
                                 field_row(sec, &format!("Max Velocity * ({vel_unit})"), FormFieldId::TerminalMaxVelocity, "0.2", &form.terminal_max_velocity, true, false, &font, theme);
                                 field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::TerminalMaxForce, "2.0", &form.terminal_max_force, true, false, &font, theme);
                                 field_row(sec, &format!("Shrink Rate * ({vel_unit})"), FormFieldId::TerminalShrinkRate, "0.125", &form.terminal_shrink_rate, true, false, &font, theme);
@@ -972,7 +972,7 @@ pub fn spawn_capture_plan_modal(
                                 ..default()
                             })
                             .with_children(|sec| {
-                                section_header(sec, "Capture State", &font, theme);
+                                section_header(sec, "Capture Phase", &font, theme);
                                 field_row(sec, &format!("Max Velocity * ({vel_unit})"), FormFieldId::CaptureMaxVelocity, "0.1", &form.capture_max_velocity, true, false, &font, theme);
                                 field_row(sec, &format!("Max Force * ({force_unit})"), FormFieldId::CaptureMaxForce, "2.0", &form.capture_max_force, true, false, &font, theme);
                                 field_row(sec, &format!("Shrink Rate * ({vel_unit})"), FormFieldId::CaptureShrinkRate, "0.025", &form.capture_shrink_rate, true, false, &font, theme);
@@ -1484,7 +1484,7 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
     for (i, t) in form.approach_transitions.iter().enumerate() {
         if t.to.trim().is_empty() {
             errors.push(format!(
-                "Approach Transition {} 'To State' is required",
+                "Approach Transition {} 'To Phase' is required",
                 i + 1
             ));
         }
@@ -1510,7 +1510,7 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
     for (i, t) in form.terminal_transitions.iter().enumerate() {
         if t.to.trim().is_empty() {
             errors.push(format!(
-                "Terminal Transition {} 'To State' is required",
+                "Terminal Transition {} 'To Phase' is required",
                 i + 1
             ));
         }
@@ -1599,7 +1599,7 @@ pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
             "type": form.tether_type.trim(),
             "tether_length": form.tether_length.parse::<f64>().unwrap_or(20.0)
         },
-        "states": [
+        "phases": [
             {
                 "id": "approach",
                 "parameters": {

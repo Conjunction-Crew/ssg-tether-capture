@@ -13,34 +13,38 @@ pub struct CompiledCaptureTransition {
     pub distance_greater_than: Option<f64>,
     pub relative_velocity_less_than: Option<f64>,
     pub relative_velocity_greater_than: Option<f64>,
+    /// Maximum normalized tether straightness (0 = perfectly straight) below which
+    /// this transition fires. Used by the `terminal` phase to wait until the tether
+    /// is straight before advancing to `capture`.
+    pub straightness_less_than: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct CompiledCaptureStateParameters {
+pub struct CompiledCapturePhaseParameters {
     pub max_velocity: f64,
     pub max_force: f64,
     pub shrink_rate: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CompiledCaptureState {
+pub struct CompiledCapturePhase {
     pub id: String,
-    pub parameters: CompiledCaptureStateParameters,
+    pub parameters: CompiledCapturePhaseParameters,
     pub transitions: Vec<CompiledCaptureTransition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CompiledCapturePlan {
     pub tether: String,
-    pub states: Vec<CompiledCaptureState>,
-    pub state_indices: HashMap<String, usize>,
+    pub phases: Vec<CompiledCapturePhase>,
+    pub phase_indices: HashMap<String, usize>,
 }
 
 impl CompiledCapturePlan {
-    pub fn state(&self, state_id: &str) -> Option<&CompiledCaptureState> {
-        self.state_indices
-            .get(state_id)
-            .and_then(|&index| self.states.get(index))
+    pub fn phase(&self, phase_id: &str) -> Option<&CompiledCapturePhase> {
+        self.phase_indices
+            .get(phase_id)
+            .and_then(|&index| self.phases.get(index))
     }
 }
 
@@ -94,49 +98,49 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             ));
         }
     }
-    if plan.states.is_empty() {
+    if plan.phases.is_empty() {
         errors.push(format!(
-            "[{plan_id}] 'states' array is empty — at least one state is required."
+            "[{plan_id}] 'phases' array is empty — at least one phase is required."
         ));
         return errors;
     }
 
-    // Detect duplicate state IDs
+    // Detect duplicate phase IDs
     let mut seen_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    for state in &plan.states {
-        if state.id.trim().is_empty() {
-            errors.push(format!("[{plan_id}] A state has an empty 'id' field."));
-        } else if !seen_ids.insert(state.id.as_str()) {
-            errors.push(format!("[{plan_id}] Duplicate state id '{}'.", state.id));
+    for phase in &plan.phases {
+        if phase.id.trim().is_empty() {
+            errors.push(format!("[{plan_id}] A phase has an empty 'id' field."));
+        } else if !seen_ids.insert(phase.id.as_str()) {
+            errors.push(format!("[{plan_id}] Duplicate phase id '{}'.", phase.id));
         }
     }
 
-    let state_ids: std::collections::HashSet<&str> =
-        plan.states.iter().map(|s| s.id.as_str()).collect();
+    let phase_ids: std::collections::HashSet<&str> =
+        plan.phases.iter().map(|p| p.id.as_str()).collect();
 
-    for state in &plan.states {
-        if parameter_value(&state.parameters, "max_velocity").is_none() {
+    for phase in &plan.phases {
+        if parameter_value(&phase.parameters, "max_velocity").is_none() {
             errors.push(format!(
-                "[{plan_id}] State '{}' is missing required 'max_velocity' parameter.",
-                state.id
+                "[{plan_id}] Phase '{}' is missing required 'max_velocity' parameter.",
+                phase.id
             ));
         }
-        if parameter_value(&state.parameters, "max_force").is_none() {
+        if parameter_value(&phase.parameters, "max_force").is_none() {
             errors.push(format!(
-                "[{plan_id}] State '{}' is missing required 'max_force' parameter.",
-                state.id
+                "[{plan_id}] Phase '{}' is missing required 'max_force' parameter.",
+                phase.id
             ));
         }
-        if let Some(transitions) = &state.transitions {
+        if let Some(transitions) = &phase.transitions {
             for transition in transitions {
                 match transition.get("to").and_then(Value::as_str) {
                     None => errors.push(format!(
-                        "[{plan_id}] State '{}' has a transition missing a 'to' field.",
-                        state.id
+                        "[{plan_id}] Phase '{}' has a transition missing a 'to' field.",
+                        phase.id
                     )),
-                    Some(to) if !state_ids.contains(to) => errors.push(format!(
-                        "[{plan_id}] State '{}' has a transition to unknown state '{to}'.",
-                        state.id
+                    Some(to) if !phase_ids.contains(to) => errors.push(format!(
+                        "[{plan_id}] Phase '{}' has a transition to unknown phase '{to}'.",
+                        phase.id
                     )),
                     _ => {}
                 }
@@ -148,18 +152,18 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
 }
 
 /// Builds a [`CaptureComponent`] from a plan and the current physics clock. Returns
-/// `None` if the plan has no states (should have been caught by validation).
+/// `None` if the plan has no phases (should have been caught by validation).
 pub fn build_capture_component(
     plan_id: &str,
     plan: &CapturePlan,
     physics_time_secs: f64,
 ) -> Option<CaptureComponent> {
-    let first_state = plan.states.first()?;
+    let first_phase = plan.phases.first()?;
     Some(CaptureComponent {
         plan_id: plan_id.to_string(),
-        current_state: first_state.id.clone(),
-        state_enter_time_s: physics_time_secs,
-        state_elapsed_time_s: 0.0,
+        current_phase: first_phase.id.clone(),
+        phase_enter_time_s: physics_time_secs,
+        phase_elapsed_time_s: 0.0,
     })
 }
 
@@ -222,19 +226,19 @@ pub fn load_plans_from_dir_with_errors(
 }
 
 pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
-    let mut state_indices = HashMap::default();
-    let mut states = Vec::with_capacity(plan.states.len());
+    let mut phase_indices = HashMap::default();
+    let mut phases = Vec::with_capacity(plan.phases.len());
 
-    for (index, state) in plan.states.iter().enumerate() {
-        state_indices.insert(state.id.clone(), index);
-        states.push(CompiledCaptureState {
-            id: state.id.clone(),
-            parameters: CompiledCaptureStateParameters {
-                max_velocity: parameter_value(&state.parameters, "max_velocity").unwrap_or(0.0),
-                max_force: parameter_value(&state.parameters, "max_force").unwrap_or(0.0),
-                shrink_rate: parameter_value(&state.parameters, "shrink_rate"),
+    for (index, phase) in plan.phases.iter().enumerate() {
+        phase_indices.insert(phase.id.clone(), index);
+        phases.push(CompiledCapturePhase {
+            id: phase.id.clone(),
+            parameters: CompiledCapturePhaseParameters {
+                max_velocity: parameter_value(&phase.parameters, "max_velocity").unwrap_or(0.0),
+                max_force: parameter_value(&phase.parameters, "max_force").unwrap_or(0.0),
+                shrink_rate: parameter_value(&phase.parameters, "shrink_rate"),
             },
-            transitions: state
+            transitions: phase
                 .transitions
                 .as_ref()
                 .into_iter()
@@ -255,6 +259,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                             "relative_velocity",
                             "greater_than",
                         ),
+                        straightness_less_than: nested_value(transition, "straightness", "less_than"),
                     })
                 })
                 .collect(),
@@ -263,8 +268,8 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
 
     CompiledCapturePlan {
         tether: plan.tether.clone(),
-        states,
-        state_indices,
+        phases,
+        phase_indices,
     }
 }
 

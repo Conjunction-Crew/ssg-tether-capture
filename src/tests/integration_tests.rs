@@ -146,14 +146,14 @@ fn apply_force_to_target() {
         .entity_mut(capture_body)
         .insert(CaptureComponent {
             plan_id: plan.id.clone(),
-            current_state: plan
-                .states
+            current_phase: plan
+                .phases
                 .get(0)
-                .expect("No states in the desired plan!")
+                .expect("No phases in the desired plan!")
                 .id
                 .clone(),
-            state_enter_time_s: 0.0,
-            state_elapsed_time_s: 0.0,
+            phase_enter_time_s: 0.0,
+            phase_elapsed_time_s: 0.0,
         });
 
     // Need a few updates to actually alter the velocity

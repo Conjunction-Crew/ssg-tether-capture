@@ -8,8 +8,8 @@ use crate::{
         world_time::WorldTime,
     },
     systems::{
-        capture_algorithms::capture_state_machine_update,
-        gizmos::{capture_gizmos, dev_gizmos},
+        capture_algorithms::capture_phase_machine_update,
+        gizmos::{capture_axis_gizmos, capture_gizmos, dev_gizmos},
         physics::fixed_physics_step,
         propagation::{
             cache_eci_states, calculate_com_rv, floating_origin_update_visuals, init_orbitals,
@@ -49,7 +49,12 @@ impl Plugin for OrbitalMechanicsPlugin {
             )
             .add_systems(
                 Update,
-                (dev_gizmos, capture_gizmos, floating_origin_update_visuals)
+                (
+                    dev_gizmos,
+                    capture_gizmos,
+                    capture_axis_gizmos,
+                    floating_origin_update_visuals,
+                )
                     .run_if(in_state(UiScreen::Sim))
                     .run_if(in_state(SimState::Running)),
             )
@@ -60,7 +65,7 @@ impl Plugin for OrbitalMechanicsPlugin {
                     target_entity_reset_origin,
                     cache_eci_states,
                     physics_bubble_add_remove,
-                    capture_state_machine_update,
+                    capture_phase_machine_update,
                 )
                     .chain()
                     .in_set(PhysicsSystems::Last),)

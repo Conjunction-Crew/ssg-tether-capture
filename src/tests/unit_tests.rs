@@ -2,7 +2,7 @@
 mod tests {
     use serde_json::json;
 
-    use crate::components::capture_components::{CapturePlan, State};
+    use crate::components::capture_components::{CapturePlan, Phase};
     use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
     use crate::resources::capture_plans::{
         CapturePlanLibrary, build_capture_component, compile_capture_plan,
@@ -44,7 +44,7 @@ mod tests {
             name: "Test Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![State {
+            phases: vec![Phase {
                 id: "approach".to_string(),
                 next: None,
                 parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
@@ -80,15 +80,15 @@ mod tests {
     #[test]
     fn validate_plan_errors_on_empty_states() {
         let mut plan = minimal_valid_plan();
-        plan.states.clear();
+        plan.phases.clear();
         let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("'states'")));
+        assert!(errors.iter().any(|e| e.contains("'phases'")));
     }
 
     #[test]
     fn validate_plan_errors_on_missing_max_velocity() {
         let mut plan = minimal_valid_plan();
-        plan.states[0].parameters = Some(json!({ "max_force": 2.0 }));
+        plan.phases[0].parameters = Some(json!({ "max_force": 2.0 }));
         let errors = validate_capture_plan("test_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("max_velocity")));
     }
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn validate_plan_errors_on_missing_max_force() {
         let mut plan = minimal_valid_plan();
-        plan.states[0].parameters = Some(json!({ "max_velocity": 1.0 }));
+        plan.phases[0].parameters = Some(json!({ "max_velocity": 1.0 }));
         let errors = validate_capture_plan("test_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("max_force")));
     }
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn validate_plan_errors_on_transition_to_unknown_state() {
         let mut plan = minimal_valid_plan();
-        plan.states[0].transitions = Some(vec![json!({ "to": "nonexistent" })]);
+        plan.phases[0].transitions = Some(vec![json!({ "to": "nonexistent" })]);
         let errors = validate_capture_plan("test_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("nonexistent")));
     }
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn validate_plan_errors_on_transition_missing_to_field() {
         let mut plan = minimal_valid_plan();
-        plan.states[0].transitions = Some(vec![json!({ "distance": { "less_than": 10.0 } })]);
+        plan.phases[0].transitions = Some(vec![json!({ "distance": { "less_than": 10.0 } })]);
         let errors = validate_capture_plan("test_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("'to' field")));
     }
@@ -123,15 +123,15 @@ mod tests {
             name: "Two State Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![
-                State {
+            phases: vec![
+                Phase {
                     id: "approach".to_string(),
                     next: None,
                     parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
                     transitions: Some(vec![json!({ "to": "capture" })]),
                     next_conditions: None,
                 },
-                State {
+                Phase {
                     id: "capture".to_string(),
                     next: None,
                     parameters: Some(json!({ "max_velocity": 0.5, "max_force": 2.0 })),
@@ -150,15 +150,15 @@ mod tests {
             name: "Bad Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![
-                State {
+            phases: vec![
+                Phase {
                     id: "approach".to_string(),
                     next: None,
                     parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
                     transitions: None,
                     next_conditions: None,
                 },
-                State {
+                Phase {
                     id: "approach".to_string(), // duplicate
                     next: None,
                     parameters: Some(json!({ "max_velocity": 0.5, "max_force": 2.0 })),
@@ -205,15 +205,15 @@ mod tests {
             name: "Compiled Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![
-                State {
+            phases: vec![
+                Phase {
                     id: "approach".to_string(),
                     next: None,
                     parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
                     transitions: None,
                     next_conditions: None,
                 },
-                State {
+                Phase {
                     id: "capture".to_string(),
                     next: None,
                     parameters: Some(
@@ -226,9 +226,9 @@ mod tests {
             device: None,
         };
         let compiled = compile_capture_plan(&plan);
-        assert!(compiled.state("approach").is_some());
-        assert!(compiled.state("capture").is_some());
-        assert!(compiled.state("nonexistent").is_none());
+        assert!(compiled.phase("approach").is_some());
+        assert!(compiled.phase("capture").is_some());
+        assert!(compiled.phase("nonexistent").is_none());
     }
 
     #[test]
@@ -237,7 +237,7 @@ mod tests {
             name: "Param Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![State {
+            phases: vec![Phase {
                 id: "terminal".to_string(),
                 next: None,
                 parameters: Some(
@@ -249,7 +249,7 @@ mod tests {
             device: None,
         };
         let compiled = compile_capture_plan(&plan);
-        let state = compiled.state("terminal").unwrap();
+        let state = compiled.phase("terminal").unwrap();
         assert!((state.parameters.max_velocity - 0.3).abs() < f64::EPSILON);
         assert!((state.parameters.max_force - 1.5).abs() < f64::EPSILON);
         assert!((state.parameters.shrink_rate.unwrap() - 0.005).abs() < f64::EPSILON);
@@ -261,7 +261,7 @@ mod tests {
             name: "Transition Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![State {
+            phases: vec![Phase {
                 id: "approach".to_string(),
                 next: None,
                 parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
@@ -273,10 +273,67 @@ mod tests {
             device: None,
         };
         let compiled = compile_capture_plan(&plan);
-        let transition = &compiled.state("approach").unwrap().transitions[0];
+        let transition = &compiled.phase("approach").unwrap().transitions[0];
         assert_eq!(transition.to, "approach");
         assert_eq!(transition.distance_less_than, Some(50.0));
         assert_eq!(transition.distance_greater_than, None);
+    }
+
+    #[test]
+    fn compile_plan_parses_straightness_transition_condition() {
+        let plan = CapturePlan {
+            name: "Straighten Plan".to_string(),
+            id: String::new(),
+            tether: "Tether1".to_string(),
+            phases: vec![Phase {
+                id: "terminal".to_string(),
+                next: None,
+                parameters: Some(json!({ "max_velocity": 0.5, "max_force": 2.0 })),
+                transitions: Some(vec![json!({
+                    "to": "capture",
+                    "distance": { "less_than": 5.0 },
+                    "straightness": { "less_than": 0.15 }
+                })]),
+                next_conditions: None,
+            }],
+            device: None,
+        };
+        let compiled = compile_capture_plan(&plan);
+        let transition = &compiled.phase("terminal").unwrap().transitions[0];
+        assert_eq!(transition.to, "capture");
+        assert_eq!(transition.distance_less_than, Some(5.0));
+        assert_eq!(transition.straightness_less_than, Some(0.15));
+    }
+
+    #[test]
+    fn tether_straightness_zero_for_collinear_nodes() {
+        use crate::systems::capture_algorithms::tether_straightness;
+        use bevy::math::DVec3;
+
+        // Root at origin, RSO at +Y 10 m, interior nodes exactly on the line.
+        let rso = DVec3::new(0.0, 10.0, 0.0);
+        let nodes = [
+            DVec3::ZERO,
+            DVec3::new(0.0, 3.0, 0.0),
+            DVec3::new(0.0, 7.0, 0.0),
+        ];
+        assert!(tether_straightness(&nodes, rso) < 1e-9);
+    }
+
+    #[test]
+    fn tether_straightness_grows_with_deviation() {
+        use crate::systems::capture_algorithms::tether_straightness;
+        use bevy::math::DVec3;
+
+        let rso = DVec3::new(0.0, 10.0, 0.0);
+        // Middle node bows 2 m off the 10 m line → normalized straightness ~0.2.
+        let nodes = [
+            DVec3::ZERO,
+            DVec3::new(2.0, 5.0, 0.0),
+            DVec3::new(0.0, 8.0, 0.0),
+        ];
+        let s = tether_straightness(&nodes, rso);
+        assert!((s - 0.2).abs() < 1e-9, "straightness was {s}");
     }
 
     // -------------------------------------------------------------------------
@@ -298,15 +355,15 @@ mod tests {
             name: "Plan".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![
-                State {
+            phases: vec![
+                Phase {
                     id: "approach".to_string(),
                     next: None,
                     parameters: None,
                     transitions: None,
                     next_conditions: None,
                 },
-                State {
+                Phase {
                     id: "capture".to_string(),
                     next: None,
                     parameters: None,
@@ -317,8 +374,8 @@ mod tests {
             device: None,
         };
         let component = build_capture_component("plan", &plan, 123.0).unwrap();
-        assert_eq!(component.current_state, "approach");
-        assert!((component.state_enter_time_s - 123.0).abs() < f64::EPSILON);
+        assert_eq!(component.current_phase, "approach");
+        assert!((component.phase_enter_time_s - 123.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -327,7 +384,7 @@ mod tests {
             name: "Empty".to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![],
+            phases: vec![],
             device: None,
         };
         assert!(build_capture_component("empty", &plan, 0.0).is_none());
@@ -470,7 +527,7 @@ mod tests {
         assert!(
             errors
                 .iter()
-                .any(|e| e.contains("Approach Transition 1") && e.contains("To State"))
+                .any(|e| e.contains("Approach Transition 1") && e.contains("To Phase"))
         );
     }
 
@@ -528,15 +585,15 @@ mod tests {
         let json = build_capture_plan_json(&form);
         assert_eq!(json["name"], "My Plan");
         assert_eq!(json["tether"], "Tether1");
-        assert!(json["states"].is_array());
-        assert_eq!(json["states"].as_array().unwrap().len(), 3);
+        assert!(json["phases"].is_array());
+        assert_eq!(json["phases"].as_array().unwrap().len(), 3);
     }
 
     #[test]
     fn build_plan_json_state_ids_are_ordered() {
         let form = valid_form();
         let json = build_capture_plan_json(&form);
-        let states = json["states"].as_array().unwrap();
+        let states = json["phases"].as_array().unwrap();
         assert_eq!(states[0]["id"], "approach");
         assert_eq!(states[1]["id"], "terminal");
         assert_eq!(states[2]["id"], "capture");
@@ -547,7 +604,7 @@ mod tests {
         let form = valid_form(); // no transitions by default
         let json = build_capture_plan_json(&form);
         assert_eq!(
-            json["states"][0]["transitions"].as_array().unwrap().len(),
+            json["phases"][0]["transitions"].as_array().unwrap().len(),
             0
         );
     }
@@ -561,7 +618,7 @@ mod tests {
             distance_value: "50.0".to_string(),
         });
         let json = build_capture_plan_json(&form);
-        let transition = &json["states"][0]["transitions"][0];
+        let transition = &json["phases"][0]["transitions"][0];
         assert_eq!(transition["to"], "terminal");
         // The condition key should be "less_than", not hardcoded
         assert!(!transition["distance"]["less_than"].is_null());
@@ -644,7 +701,7 @@ mod tests {
         let json = json!({
             "name": "Test Plan",
             "tether": "Tether1",
-            "states": [{
+            "phases": [{
                 "id": "approach",
                 "parameters": { "max_velocity": 1.0, "max_force": 2.0 }
             }]
@@ -662,7 +719,7 @@ mod tests {
             distance_value: "100.0".to_string(),
         });
         let json = build_capture_plan_json(&form);
-        let dist = &json["states"][0]["transitions"][0]["distance"];
+        let dist = &json["phases"][0]["transitions"][0]["distance"];
         assert!(!dist["greater_than"].is_null());
         assert!(dist["less_than"].is_null());
     }
@@ -673,7 +730,7 @@ mod tests {
         form.unit_system = UnitSystem::Metric;
         form.approach_max_velocity = "2.0".to_string();
         let json = build_capture_plan_json(&form);
-        let v = json["states"][0]["parameters"]["max_velocity"]
+        let v = json["phases"][0]["parameters"]["max_velocity"]
             .as_f64()
             .unwrap();
         assert!((v - 2.0).abs() < 1e-9);
@@ -685,7 +742,7 @@ mod tests {
         form.unit_system = UnitSystem::Imperial;
         form.approach_max_velocity = "1.0".to_string(); // 1 ft/s
         let json = build_capture_plan_json(&form);
-        let v = json["states"][0]["parameters"]["max_velocity"]
+        let v = json["phases"][0]["parameters"]["max_velocity"]
             .as_f64()
             .unwrap();
         // 1 ft/s = 0.3048 m/s
@@ -698,7 +755,7 @@ mod tests {
         form.unit_system = UnitSystem::Imperial;
         form.approach_max_force = "1.0".to_string(); // 1 lbf
         let json = build_capture_plan_json(&form);
-        let f = json["states"][0]["parameters"]["max_force"]
+        let f = json["phases"][0]["parameters"]["max_force"]
             .as_f64()
             .unwrap();
         // 1 lbf = 4.44822 N

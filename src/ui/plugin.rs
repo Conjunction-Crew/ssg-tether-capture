@@ -795,8 +795,8 @@ fn handle_ui_events(
                             form.tether_length = device.tether_length.to_string();
                         }
                     }
-                    for state in &plan.states {
-                        let transitions: Vec<TransitionForm> = state
+                    for phase in &plan.phases {
+                        let transitions: Vec<TransitionForm> = phase
                             .transitions
                             .as_ref()
                             .map(|trans| {
@@ -822,9 +822,9 @@ fn handle_ui_events(
                             })
                             .unwrap_or_default();
 
-                        match state.id.as_str() {
+                        match phase.id.as_str() {
                             "approach" => {
-                                if let Some(params) = &state.parameters {
+                                if let Some(params) = &phase.parameters {
                                     form.approach_max_velocity = params
                                         .get("max_velocity")
                                         .map(|v| v.to_string())
@@ -837,7 +837,7 @@ fn handle_ui_events(
                                 form.approach_transitions = transitions;
                             }
                             "terminal" => {
-                                if let Some(params) = &state.parameters {
+                                if let Some(params) = &phase.parameters {
                                     form.terminal_max_velocity = params
                                         .get("max_velocity")
                                         .map(|v| v.to_string())
@@ -854,7 +854,7 @@ fn handle_ui_events(
                                 form.terminal_transitions = transitions;
                             }
                             "capture" => {
-                                if let Some(params) = &state.parameters {
+                                if let Some(params) = &phase.parameters {
                                     form.capture_max_velocity = params
                                         .get("max_velocity")
                                         .map(|v| v.to_string())

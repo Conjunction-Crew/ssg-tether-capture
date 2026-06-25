@@ -210,7 +210,7 @@ pub fn setup_orbital_selection(
         return;
     };
 
-    let Some(target) = selection.target.as_ref() else {
+    let Some(rso) = selection.rso.as_ref() else {
         return;
     };
 
@@ -230,7 +230,7 @@ pub fn setup_orbital_selection(
         &mut commands,
         &mut orbital_cache,
         &asset_server,
-        target.elements.to_vec6(),
+        rso.elements.to_vec6(),
     ) {
         error!("Error spawning debris: {}", e);
     };

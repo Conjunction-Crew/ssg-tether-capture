@@ -31,7 +31,8 @@ use crate::resources::space_catalog::{
 use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
 use crate::systems::physics::FIXED_HZ;
 use crate::systems::user_input::{
-    change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
+    change_time_warp, toggle_capture_axis_gizmos, toggle_capture_gizmos, toggle_map_view,
+    toggle_origin,
 };
 use crate::systems::user_interface::{
     map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
@@ -96,6 +97,7 @@ fn configure_app(app: &mut App) -> &mut App {
                 toggle_map_view,
                 toggle_origin,
                 toggle_capture_gizmos,
+                toggle_capture_axis_gizmos,
                 change_time_warp,
                 update_time_warp_readout,
                 update_capture_telemetry,
