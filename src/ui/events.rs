@@ -19,6 +19,7 @@ pub enum UiEvent {
     AddTerminalTransition,
     RemoveTerminalTransition(usize),
     SaveCapturePlan,
+    SaveOrbitsToPlan,
     ConfirmOverwriteCapturePlan,
     CancelOverwriteCapturePlan,
     EditCapturePlan(String),

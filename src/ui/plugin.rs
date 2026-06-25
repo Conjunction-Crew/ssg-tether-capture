@@ -25,7 +25,7 @@ use crate::resources::capture_plans::{
 };
 use crate::resources::data_collection::DataCollection;
 use crate::resources::settings::Settings;
-use crate::resources::space_catalog::OrbitalSelectionState;
+use crate::resources::space_catalog::{OrbitSpec, OrbitalSelectionState};
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
 use crate::systems::setup::setup_camera;
@@ -409,9 +409,14 @@ fn handle_ui_events(
     for event in ui_events.read() {
         match event {
             UiEvent::OpenProject(project_id) => {
-                if capture_plan_lib.plans.contains_key(project_id.as_str()) {
+                if let Some(plan) = capture_plan_lib.plans.get(project_id.as_str()) {
                     selected_project.project_id = Some(project_id.clone());
-                    *orbital_selection = OrbitalSelectionState::default();
+                    // Pre-populate the orbit selection from the plan if it specifies the
+                    // RSO/chaser orbits; otherwise leave it empty for manual selection.
+                    *orbital_selection = OrbitalSelectionState {
+                        rso: plan.rso.as_ref().map(|o| o.to_selected("RSO")),
+                        chaser: plan.chaser.as_ref().map(|o| o.to_selected("Chaser")),
+                    };
                     next_sim_state.set(SimState::Setup);
                     next_screen.set(UiScreen::Sim);
                 }
@@ -723,6 +728,93 @@ fn handle_ui_events(
                         }
                     }
                 } // end else (form was changed)
+            }
+            UiEvent::SaveOrbitsToPlan => {
+                let Some(plan_id) = selected_project.project_id.clone() else {
+                    continue;
+                };
+                // Only user plans are writable; example plans are bundled/read-only.
+                if !capture_plan_lib.user_plans.contains_key(&plan_id) {
+                    log.write(LogEvent {
+                        level: LogLevel::Warn,
+                        source: "ui",
+                        message: format!("Cannot save orbits: '{plan_id}' is not a user plan"),
+                    });
+                    continue;
+                }
+                let (Some(rso), Some(chaser)) =
+                    (orbital_selection.rso.as_ref(), orbital_selection.chaser.as_ref())
+                else {
+                    log.write(LogEvent {
+                        level: LogLevel::Warn,
+                        source: "ui",
+                        message: "Cannot save orbits: select both an RSO and a chaser first"
+                            .to_string(),
+                    });
+                    continue;
+                };
+
+                let dest =
+                    std::path::Path::new(&working_directory.path).join(generate_filename(&plan_id));
+                // Surgically set the rso/chaser keys on the existing plan JSON so the rest
+                // of the file (phases, formatting) is preserved.
+                let mut value: serde_json::Value = std::fs::read_to_string(&dest)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                if let Some(obj) = value.as_object_mut() {
+                    let rso_spec = OrbitSpec::from_elements(&rso.elements, "RSO");
+                    let chaser_spec = OrbitSpec::from_elements(&chaser.elements, "Chaser");
+                    obj.insert("rso".to_string(), serde_json::to_value(&rso_spec).unwrap());
+                    obj.insert(
+                        "chaser".to_string(),
+                        serde_json::to_value(&chaser_spec).unwrap(),
+                    );
+                }
+
+                match serde_json::to_string_pretty(&value) {
+                    Ok(content) => {
+                        if let Err(e) = std::fs::write(&dest, content) {
+                            log.write(LogEvent {
+                                level: LogLevel::Error,
+                                source: "ui",
+                                message: format!("Failed to write orbits to '{plan_id}': {e}"),
+                            });
+                        } else {
+                            // Reload + recompile user plans so the in-memory copy matches.
+                            capture_plan_lib.user_plans = load_plans_from_dir(
+                                std::path::Path::new(&working_directory.path),
+                            );
+                            capture_plan_lib.plans = capture_plan_lib
+                                .example_plans
+                                .iter()
+                                .chain(capture_plan_lib.user_plans.iter())
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+                            let refreshed: Vec<(String, CapturePlan)> = capture_plan_lib
+                                .plans
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+                            for (id, plan) in refreshed {
+                                capture_plan_lib.insert_plan(id, plan);
+                            }
+                            flow.plans_dirty.0 = true;
+                            log.write(LogEvent {
+                                level: LogLevel::Info,
+                                source: "ui",
+                                message: format!("Saved RSO/chaser orbits to plan '{plan_id}'"),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        log.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "ui",
+                            message: format!("Failed to serialize orbits for '{plan_id}': {e}"),
+                        });
+                    }
+                }
             }
             UiEvent::ConfirmOverwriteCapturePlan => {
                 let filename = generate_filename(&form.plan_name);

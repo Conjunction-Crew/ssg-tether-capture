@@ -52,6 +52,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            rso: None,
+            chaser: None,
         }
     }
 
@@ -140,6 +142,8 @@ mod tests {
                 },
             ],
             device: None,
+            rso: None,
+            chaser: None,
         };
         assert!(validate_capture_plan("two_state_plan", &plan).is_empty());
     }
@@ -167,6 +171,8 @@ mod tests {
                 },
             ],
             device: None,
+            rso: None,
+            chaser: None,
         };
         let errors = validate_capture_plan("bad_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("Duplicate")));
@@ -224,6 +230,8 @@ mod tests {
                 },
             ],
             device: None,
+            rso: None,
+            chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         assert!(compiled.phase("approach").is_some());
@@ -247,6 +255,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            rso: None,
+            chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         let state = compiled.phase("terminal").unwrap();
@@ -271,6 +281,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            rso: None,
+            chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         let transition = &compiled.phase("approach").unwrap().transitions[0];
@@ -297,6 +309,8 @@ mod tests {
                 next_conditions: None,
             }],
             device: None,
+            rso: None,
+            chaser: None,
         };
         let compiled = compile_capture_plan(&plan);
         let transition = &compiled.phase("terminal").unwrap().transitions[0];
@@ -337,6 +351,72 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // Plan-specified RSO / chaser orbits
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn plan_deserializes_rso_and_chaser_orbits() {
+        use crate::resources::space_catalog::EditableOrbitalElements;
+
+        let raw = r#"{
+            "name": "Orbit Plan",
+            "tether": "Tether1",
+            "rso": {
+                "label": "RSO",
+                "semi_major_axis_m": 6799130.0,
+                "eccentricity": 0.00112,
+                "inclination_rad": 0.90114,
+                "raan_rad": 3.54993,
+                "arg_perigee_rad": 1.51296,
+                "mean_anomaly_rad": 4.77234123
+            },
+            "chaser": {
+                "semi_major_axis_m": 6799130.0,
+                "eccentricity": 0.00112,
+                "inclination_rad": 0.90114,
+                "raan_rad": 3.54993,
+                "arg_perigee_rad": 1.51296,
+                "mean_anomaly_rad": 4.77190
+            },
+            "phases": [
+                { "id": "capture", "parameters": { "max_velocity": 0.5, "max_force": 2.0 } }
+            ]
+        }"#;
+
+        let plan: CapturePlan = serde_json::from_str(raw).expect("plan should parse");
+        let rso = plan.rso.as_ref().expect("rso present");
+        let chaser = plan.chaser.as_ref().expect("chaser present");
+
+        // Label defaults to None when omitted (chaser), present when given (rso).
+        assert_eq!(rso.label.as_deref(), Some("RSO"));
+        assert_eq!(chaser.label, None);
+        // epoch_offset_seconds defaults to 0.0 when omitted.
+        assert!((rso.epoch_offset_seconds - 0.0).abs() < f64::EPSILON);
+
+        // RSO is ahead of the chaser (larger mean anomaly on the same orbit).
+        assert!(rso.mean_anomaly_rad > chaser.mean_anomaly_rad);
+
+        // Conversion to EditableOrbitalElements copies fields/units exactly.
+        let elements = EditableOrbitalElements::from(rso);
+        assert_eq!(elements.semi_major_axis_m, rso.semi_major_axis_m);
+        assert_eq!(elements.mean_anomaly_rad, rso.mean_anomaly_rad);
+        assert_eq!(elements.eccentricity, rso.eccentricity);
+    }
+
+    #[test]
+    fn plan_without_orbits_deserializes_to_none() {
+        let plan = minimal_valid_plan();
+        let json = serde_json::to_value(&plan).unwrap();
+        // minimal_valid_plan has no orbits configured.
+        assert!(plan.rso.is_none());
+        assert!(plan.chaser.is_none());
+        // Round-trip through JSON keeps them absent/None.
+        let reparsed: CapturePlan = serde_json::from_value(json).unwrap();
+        assert!(reparsed.rso.is_none());
+        assert!(reparsed.chaser.is_none());
+    }
+
+    // -------------------------------------------------------------------------
     // build_capture_component
     // -------------------------------------------------------------------------
 
@@ -372,6 +452,8 @@ mod tests {
                 },
             ],
             device: None,
+            rso: None,
+            chaser: None,
         };
         let component = build_capture_component("plan", &plan, 123.0).unwrap();
         assert_eq!(component.current_phase, "approach");
@@ -386,6 +468,8 @@ mod tests {
             tether: "Tether1".to_string(),
             phases: vec![],
             device: None,
+            rso: None,
+            chaser: None,
         };
         assert!(build_capture_component("empty", &plan, 0.0).is_none());
     }

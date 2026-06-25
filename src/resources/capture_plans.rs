@@ -98,6 +98,20 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             ));
         }
     }
+    for (field, orbit) in [("rso", &plan.rso), ("chaser", &plan.chaser)] {
+        if let Some(orbit) = orbit {
+            if orbit.semi_major_axis_m <= 0.0 {
+                errors.push(format!(
+                    "[{plan_id}] '{field}.semi_major_axis_m' must be greater than zero."
+                ));
+            }
+            if !(0.0..1.0).contains(&orbit.eccentricity) {
+                errors.push(format!(
+                    "[{plan_id}] '{field}.eccentricity' must be in the range [0.0, 1.0)."
+                ));
+            }
+        }
+    }
     if plan.phases.is_empty() {
         errors.push(format!(
             "[{plan_id}] 'phases' array is empty — at least one phase is required."

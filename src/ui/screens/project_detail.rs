@@ -74,6 +74,9 @@ pub struct CollapsibleContent {
 pub struct StartSimButton;
 
 #[derive(Component)]
+pub struct SaveOrbitsButton;
+
+#[derive(Component)]
 pub struct UseCatalogSelectionButton {
     pub role: OrbitalSelectionRole,
 }
@@ -1086,6 +1089,33 @@ pub fn spawn_project_detail_screen(
                                     .with_children(|btn| {
                                         btn.spawn((
                                             Text::new("Start Simulation"),
+                                            TextFont {
+                                                font: font.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(theme.text_primary),
+                                        ));
+                                    });
+
+                                // Save the current RSO/chaser orbit selection into the
+                                // active (user) plan's JSON file.
+                                content
+                                    .spawn((
+                                        Button,
+                                        SaveOrbitsButton,
+                                        Node {
+                                            width: percent(100),
+                                            min_height: px(40.0),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme.panel_background_soft),
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new("Save Orbits to Plan"),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 14.0,
@@ -2790,6 +2820,7 @@ pub fn project_detail_interactions(
             Option<&ExitSimCancelButton>,
             Option<&ExitSimConfirmButton>,
             Option<&ToggleCaptureGizmosButton>,
+            Option<&SaveOrbitsButton>,
             &mut BackgroundColor,
         ),
         (
@@ -2829,6 +2860,7 @@ pub fn project_detail_interactions(
         exit_cancel_button,
         exit_confirm_button,
         toggle_gizmos_button,
+        save_orbits_button,
         mut background_color,
     ) in &mut interactions
     {
@@ -2839,7 +2871,7 @@ pub fn project_detail_interactions(
                 // Capture button is disabled once capture is active
                 if is_capture && capture_active {
                     continue;
-                } else if start_sim.is_some() && !can_start_sim {
+                } else if (start_sim.is_some() || save_orbits_button.is_some()) && !can_start_sim {
                     *background_color = BackgroundColor(theme.panel_background);
                     continue;
                 }
@@ -2873,13 +2905,15 @@ pub fn project_detail_interactions(
                     events.write(UiEvent::CycleCameraTarget);
                 } else if toggle_gizmos_button.is_some() {
                     events.write(UiEvent::ToggleCaptureGizmos);
+                } else if save_orbits_button.is_some() {
+                    events.write(UiEvent::SaveOrbitsToPlan);
                 }
             }
             Interaction::Hovered => {
                 if is_capture && capture_active {
                     // Keep dimmed appearance — don't show hover highlight
-                } else if start_sim.is_some() && !can_start_sim {
-                    // Keep dimmed appearance until both target and chaser orbits are selected
+                } else if (start_sim.is_some() || save_orbits_button.is_some()) && !can_start_sim {
+                    // Keep dimmed appearance until both RSO and chaser orbits are selected
                 } else if any_modal_open
                     && exit_cancel_button.is_none()
                     && exit_confirm_button.is_none()
@@ -2892,7 +2926,7 @@ pub fn project_detail_interactions(
             Interaction::None => {
                 if is_capture && capture_active {
                     *background_color = BackgroundColor(theme.panel_background);
-                } else if start_sim.is_some() && !can_start_sim {
+                } else if (start_sim.is_some() || save_orbits_button.is_some()) && !can_start_sim {
                     *background_color = BackgroundColor(theme.panel_background);
                 } else if is_exit_confirm {
                     // Preserve blue spawn color; avoid blink to soft on first frame

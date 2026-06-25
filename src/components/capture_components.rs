@@ -3,6 +3,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::resources::space_catalog::OrbitSpec;
+
 // Component to add to an entity to attempt a capture.
 // There should only ever be 0 or 1 entity with this component at a time.
 #[derive(Component, Debug, Clone)]
@@ -66,4 +68,11 @@ pub struct CapturePlan {
     pub tether: String,
     #[serde(default)]
     pub device: Option<CapturePlanDevice>,
+    /// Optional pre-specified RSO orbit. When present, opening the plan pre-populates the
+    /// RSO selection so it is placed and drawn without manual catalog/custom selection.
+    #[serde(default)]
+    pub rso: Option<OrbitSpec>,
+    /// Optional pre-specified chaser orbit. See [`CapturePlan::rso`].
+    #[serde(default)]
+    pub chaser: Option<OrbitSpec>,
 }
