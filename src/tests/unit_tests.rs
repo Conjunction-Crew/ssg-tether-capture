@@ -324,14 +324,11 @@ mod tests {
         use crate::systems::capture_algorithms::tether_straightness;
         use bevy::math::DVec3;
 
-        // Root at origin, RSO at +Y 10 m, interior nodes exactly on the line.
-        let rso = DVec3::new(0.0, 10.0, 0.0);
-        let nodes = [
-            DVec3::ZERO,
-            DVec3::new(0.0, 3.0, 0.0),
-            DVec3::new(0.0, 7.0, 0.0),
-        ];
-        assert!(tether_straightness(&nodes, rso) < 1e-9);
+        // Root at origin, tail at +Y 7 m, interior node exactly on the root→tail line.
+        let root = DVec3::ZERO;
+        let tail = DVec3::new(0.0, 7.0, 0.0);
+        let nodes = [root, tail, DVec3::new(0.0, 3.0, 0.0)];
+        assert!(tether_straightness(&nodes, root, tail) < 1e-9);
     }
 
     #[test]
@@ -339,15 +336,13 @@ mod tests {
         use crate::systems::capture_algorithms::tether_straightness;
         use bevy::math::DVec3;
 
-        let rso = DVec3::new(0.0, 10.0, 0.0);
-        // Middle node bows 2 m off the 10 m line → normalized straightness ~0.2.
-        let nodes = [
-            DVec3::ZERO,
-            DVec3::new(2.0, 5.0, 0.0),
-            DVec3::new(0.0, 8.0, 0.0),
-        ];
-        let s = tether_straightness(&nodes, rso);
-        assert!((s - 0.2).abs() < 1e-9, "straightness was {s}");
+        // Root at origin, tail at +Y 8 m; a node bows 2 m off the 8 m root→tail line
+        // → normalized straightness 2 / 8 = 0.25.
+        let root = DVec3::ZERO;
+        let tail = DVec3::new(0.0, 8.0, 0.0);
+        let nodes = [root, tail, DVec3::new(2.0, 5.0, 0.0)];
+        let s = tether_straightness(&nodes, root, tail);
+        assert!((s - 0.25).abs() < 1e-9, "straightness was {s}");
     }
 
     // -------------------------------------------------------------------------

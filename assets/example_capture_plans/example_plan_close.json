@@ -37,7 +37,7 @@
         {
           "to": "capture",
           "distance": {
-            "less_than": 5.0,
+            "less_than": 50.0,
             "units": "m"
           },
           "straightness": {
