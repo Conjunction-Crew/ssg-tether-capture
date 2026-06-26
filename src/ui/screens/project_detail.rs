@@ -1,6 +1,7 @@
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
+use bevy::pbr::Atmosphere;
 use bevy::ecs::observer::On;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::KeyboardInput;
@@ -1143,7 +1144,7 @@ pub fn spawn_project_detail_screen(
                                     ))
                                     .with_children(|btn| {
                                         btn.spawn((
-                                            Text::new("Map View (M)"),
+                                            Text::new("Detail View (M)"),
                                             TextFont {
                                                 font: font.clone(),
                                                 font_size: 14.0,
@@ -2802,6 +2803,33 @@ pub fn update_satellite_indicator_overlay(
     for child in overlay_children.iter() {
         if let Ok(mut text) = label_texts.get_mut(child) {
             text.0 = overlay_state.label.clone();
+        }
+    }
+}
+
+/// Keep the Map View button's label reflecting its destination: it reads
+/// "Map View (M)" while in detail view and "Detail View (M)" while in map view.
+/// The scene camera is uniquely identified by its `Atmosphere` component.
+pub fn update_map_view_button_label(
+    scene_camera: Query<&RenderLayers, With<Atmosphere>>,
+    buttons: Query<&Children, With<MapViewButton>>,
+    mut texts: Query<&mut Text>,
+) {
+    let Ok(render_layers) = scene_camera.single() else {
+        return;
+    };
+    let label = if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        "Detail View (M)"
+    } else {
+        "Map View (M)"
+    };
+    for children in &buttons {
+        for &child in children {
+            if let Ok(mut text) = texts.get_mut(child)
+                && text.as_str() != label
+            {
+                **text = label.to_string();
+            }
         }
     }
 }

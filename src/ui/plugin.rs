@@ -47,8 +47,8 @@ use crate::ui::screens::project_detail::{
     project_detail_interactions, refresh_space_catalog_results, reset_space_catalog_ui_state,
     restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
     spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_space_catalog_ui,
-    update_satellite_indicator_overlay, update_selected_catalog_overlay, update_sync_indicator,
-    view_edit_plan_interactions,
+    update_map_view_button_label, update_satellite_indicator_overlay,
+    update_selected_catalog_overlay, update_sync_indicator, view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
@@ -167,6 +167,7 @@ impl Plugin for UiPlugin {
                         sync_space_catalog_ui,
                         update_selected_catalog_overlay,
                         update_satellite_indicator_overlay,
+                        update_map_view_button_label,
                     )
                         .chain()
                         .run_if(in_state(UiScreen::Sim)),
@@ -423,6 +424,14 @@ fn handle_ui_events(
             }
             UiEvent::StartSim => {
                 next_sim_state.set(SimState::Running);
+                // Switch from the orbital map view to the close-up detail view so the
+                // user sees the chaser/tether/RSO as soon as the sim starts.
+                if let Ok((mut render_layers, _atmosphere, mut atmosphere_settings)) =
+                    scene_camera.single_mut()
+                {
+                    *render_layers = RenderLayers::layer(SCENE_LAYER);
+                    atmosphere_settings.scene_units_to_m = 1.0;
+                }
             }
             UiEvent::BackToHome => {
                 next_sim_state.set(SimState::Setup);
