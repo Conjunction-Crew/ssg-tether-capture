@@ -1,6 +1,9 @@
 use avian3d::{
     math::PI,
-    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
+    prelude::{
+        CollidingEntities, Forces, LinearVelocity, Position, RigidBodyQuery, Rotation,
+        WriteRigidBodyForces,
+    },
 };
 use bevy::{math::DVec3, prelude::*, state::commands};
 
@@ -26,6 +29,8 @@ pub fn capture_phase_machine_update(
     mut commands: Commands,
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
     capture_axes: Query<&CaptureAxis>,
+    // Entities currently touching each RSO; used to detect first tether↔RSO contact.
+    colliding_entities: Query<&CollidingEntities>,
     // Index of interior tether nodes (no Position access, to avoid conflicting with the
     // rb_forces ParamSet); used to measure straightness of the real rope.
     tether_node_index: Query<(Entity, &TetherNode)>,
@@ -193,6 +198,61 @@ pub fn capture_phase_machine_update(
                     capture_component.capture_orbit_initialized = true;
                 }
 
+                // Capture completion: once the tether first touches the RSO (logged) and then
+                // sweeps one full revolution about the capture axis, the capture is complete —
+                // the sphere stops shrinking and the controller brakes the tether to hold it
+                // wrapped (handled in the force branch / resolve_root_phase).
+                if orbiting && !capture_component.capture_complete {
+                    // First contact: any tether node (ends or interior) touching the RSO body.
+                    if !capture_component.first_contact_made {
+                        if let Ok(colliding) = colliding_entities.get(capture_entity) {
+                            let touched = nodes
+                                .iter()
+                                .chain(interior_entities.iter())
+                                .any(|n| colliding.contains(n));
+                            if touched {
+                                capture_component.first_contact_made = true;
+                                log_events.write(LogEvent {
+                                    level: LogLevel::Info,
+                                    source: "capture",
+                                    message: "First contact between tether and RSO".to_string(),
+                                });
+                            }
+                        }
+                    }
+
+                    // Accumulate the signed angle the midpoint sweeps about the capture axis,
+                    // frame-independently (incremental rotation of the in-plane radial). Only
+                    // count wraps once contact has been made.
+                    if let (Some(root_pos), Some(tail_pos)) = (root_position, tail_position) {
+                        let center_rel = (root_pos + tail_pos) * 0.5 - capture_entity_position.0;
+                        if let Some(radial_hat) =
+                            (center_rel - center_rel.dot(up) * up).try_normalize()
+                        {
+                            if capture_component.first_contact_made {
+                                if let Some(last) = capture_component.last_wrap_radial {
+                                    let sin = last.cross(radial_hat).dot(up);
+                                    let cos = last.dot(radial_hat);
+                                    capture_component.wrap_angle_rad += sin.atan2(cos);
+                                }
+                            }
+                            capture_component.last_wrap_radial = Some(radial_hat);
+                        }
+                    }
+
+                    if capture_component.first_contact_made
+                        && capture_component.wrap_angle_rad.abs() >= std::f64::consts::TAU
+                    {
+                        capture_component.capture_complete = true;
+                        log_events.write(LogEvent {
+                            level: LogLevel::Info,
+                            source: "capture",
+                            message: "Capture complete — tether wrapped around the capture axis"
+                                .to_string(),
+                        });
+                    }
+                }
+
                 // Natural (unstretched) rope length, used by the terminal phase to know how
                 // far to tension the two ends apart before the rope is taut.
                 let natural_len = capture_plan_lib
@@ -257,7 +317,12 @@ pub fn capture_phase_machine_update(
                         } else {
                             root_position
                         };
-                        if orbiting {
+                        if orbiting && capture_component.capture_complete {
+                            // Capture complete: brake this end to rest relative to the RSO so
+                            // the tether holds its wrapped pose against the body.
+                            let kv = max_force / max_velocity.max(1e-3);
+                            (-rel_v * kv).clamp_length_max(max_force)
+                        } else if orbiting {
                             // Capture phase: hold the straight, tensioned, tangent pose and
                             // revolve the rope about the capture axis while contracting toward
                             // the (shrinking) containment-sphere radius.
@@ -551,10 +616,6 @@ fn capture_orbit_force(
     const RADIAL_GAIN: f64 = 1.0;
     // Angular rate (rad/s) at which the straight tether revolves about the capture axis.
     const ORBIT_RATE: f64 = 0.1;
-    // Fraction of max_velocity the orbit (tangential) term may consume. The remainder is
-    // reserved for radial contraction so the rope actually closes instead of orbiting at full
-    // speed with no budget left to shrink the radius.
-    const ORBIT_FRACTION: f64 = 0.6;
 
     let kv = max_force / max_velocity.max(1e-3);
 
@@ -602,22 +663,25 @@ fn capture_orbit_force(
     // Hold the center on the capture plane (both ends translate together).
     v_des += -center_axial * axis * PLANE_GAIN;
 
-    // Revolve the center about the capture axis along the tangent direction. Capped at a
-    // fraction of max_velocity so it can't consume the whole budget and starve contraction.
-    let orbit_speed = (ORBIT_RATE * center_radius).min(max_velocity * ORBIT_FRACTION);
+    // Revolve the center about the capture axis along the tangent direction. This motion is
+    // perpendicular to the closing direction, so it is intentionally NOT bounded by
+    // max_velocity — that budget is reserved for closing (below). The angular rate is fixed,
+    // so the linear orbit speed shrinks as the radius does.
+    let orbit_speed = ORBIT_RATE * center_radius;
     v_des += tangent_hat * orbit_speed;
 
-    // Contract toward the (shrinking) orbit radius using the radial budget the orbit term
-    // left behind, so the midpoint range tracks orbit_radius (which shrinks at shrink_rate)
-    // instead of being scaled away by the final velocity clamp. The snap on capture entry
-    // keeps orbit_radius ≤ the current radius, so this is effectively inward-only.
-    let radial_budget = (max_velocity - orbit_speed).max(0.0);
+    // Contract toward the (shrinking) orbit radius. max_velocity is the maximum *closing*
+    // speed of the midpoint toward the RSO center — capping the radial component (rather than
+    // the total) keeps the orbital tangential motion from saturating the budget and stalling
+    // the close. The snap on capture entry keeps orbit_radius ≤ the current radius, so this is
+    // effectively inward-only.
     let radial_speed =
-        ((center_radius - orbit_radius) * RADIAL_GAIN).clamp(-radial_budget, radial_budget);
+        ((center_radius - orbit_radius) * RADIAL_GAIN).clamp(-max_velocity, max_velocity);
     v_des += -radial_hat * radial_speed;
 
-    // Rate-limit the desired speed, then servo the actual velocity toward it.
-    let v_des = v_des.clamp_length_max(max_velocity);
+    // Servo the actual velocity toward the desired velocity. The closing component is already
+    // capped at max_velocity and the orbit is intentionally outside that cap, so there is no
+    // global velocity clamp here; the force itself is bounded by max_force.
     ((v_des - rel_v) * kv).clamp_length_max(max_force)
 }
 
@@ -666,34 +730,36 @@ fn resolve_root_phase(
     capture_sphere_radius: &mut CaptureSphereRadius,
     log_events: &mut MessageWriter<LogEvent>,
 ) -> CompiledCapturePhaseParameters {
-    let Some(&start_index) = plan.phase_indices.get(&capture_component.current_phase) else {
+    // Only ever resolve the single phase we are currently in. Looking the phase up directly
+    // (rather than scanning `phases[start_index..]`) keeps phase changes atomic: when a
+    // transition fires we must not also run the just-entered phase's shrink, parameters, or
+    // transitions in the same tick.
+    let Some(phase) = plan.phase(&capture_component.current_phase) else {
         return CompiledCapturePhaseParameters::default();
     };
 
-    let mut parameters = CompiledCapturePhaseParameters::default();
+    let parameters = phase.parameters;
 
-    for phase in &plan.phases[start_index..] {
-        if phase.id != capture_component.current_phase {
-            continue;
+    if let Some(shrink_rate) = phase.parameters.shrink_rate {
+        // Once the capture is complete the containment sphere holds at its current radius.
+        if capture_sphere_radius.radius > 0.1 && !capture_component.capture_complete {
+            capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
         }
+    }
 
-        parameters = phase.parameters;
-
-        if let Some(shrink_rate) = phase.parameters.shrink_rate {
-            if capture_sphere_radius.radius > 0.1 {
-                capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
-            }
-        }
-
-        for transition in &phase.transitions {
-            apply_transition(
-                capture_component,
-                transition,
-                rel_r_length,
-                rel_v_length,
-                straightness,
-                log_events,
-            );
+    // Evaluate transitions in order and stop at the first that fires — at most one phase
+    // change per tick, so a sibling transition (e.g. a distance-based fallback) can't undo the
+    // transition that just fired (e.g. the straightness-gated terminal→capture).
+    for transition in &phase.transitions {
+        if apply_transition(
+            capture_component,
+            transition,
+            rel_r_length,
+            rel_v_length,
+            straightness,
+            log_events,
+        ) {
+            break;
         }
     }
 
@@ -703,7 +769,8 @@ fn resolve_root_phase(
 /// Evaluates a transition with AND semantics: a transition fires only when *every*
 /// condition it specifies is satisfied. Existing single-condition transitions behave
 /// exactly as before; multi-condition transitions (e.g. `terminal`→`capture` requiring
-/// both proximity and straightness) now require all conditions together.
+/// both proximity and straightness) require all conditions together. Returns `true` if the
+/// transition fired (so the caller can stop evaluating further transitions this tick).
 fn apply_transition(
     capture_component: &mut CaptureComponent,
     transition: &CompiledCaptureTransition,
@@ -711,7 +778,7 @@ fn apply_transition(
     rel_v_length: f64,
     straightness: f64,
     log_events: &mut MessageWriter<LogEvent>,
-) {
+) -> bool {
     // (satisfied, reason) for every condition the transition specifies.
     let mut conditions: Vec<(bool, String)> = Vec::new();
 
@@ -753,6 +820,9 @@ fn apply_transition(
             .collect::<Vec<_>>()
             .join(", ");
         transition_to(capture_component, &transition.to, reason, log_events);
+        true
+    } else {
+        false
     }
 }
 

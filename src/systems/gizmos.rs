@@ -300,6 +300,36 @@ pub fn capture_gizmos(
             Srgba::new(0.0, 0.8, 0.4, 0.2),
         );
 
+        // Straightening call-outs: the straight reference line between the two tether ends
+        // (how close the rendered rope is to it shows how straight it is) and, during the
+        // terminal phase, a point at that line's midpoint.
+        if matches!(
+            capture_component.current_phase.as_str(),
+            "terminal" | "capture"
+        ) {
+            if let (Some(&root), Some(&tail)) = (nodes.first(), nodes.last()) {
+                if root != tail {
+                    if let (Ok(root_rb), Ok(tail_rb)) =
+                        (rigidbodies.get(root), rigidbodies.get(tail))
+                    {
+                        let root_pos = root_rb.position.as_vec3();
+                        let tail_pos = tail_rb.position.as_vec3();
+
+                        // Straight reference line between the two ends.
+                        gizmos.line(root_pos, tail_pos, Srgba::new(1.0, 1.0, 1.0, 0.8));
+
+                        // Midpoint of that line (shown in both terminal and capture phases).
+                        let midpoint = (root_pos + tail_pos) * 0.5;
+                        gizmos.sphere(
+                            Isometry3d::new(midpoint, Quat::IDENTITY),
+                            0.4,
+                            Srgba::new(1.0, 0.0, 1.0, 0.9),
+                        );
+                    }
+                }
+            }
+        }
+
         let (base_max_velocity, in_capture_phase) = if let Some(parameters) = &phase.parameters {
             let max_velocity = parameters
                 .get("max_velocity")
@@ -435,8 +465,10 @@ pub fn capture_axis_gizmos(
             .as_vec3();
         let contact_radius = capture_axis.contact_radius.max(0.01) as f32;
 
-        // Capture-axis line through the RSO (extends past the body in both directions).
-        let half_len = contact_radius * 2.5;
+        // Capture-axis line through the RSO (extends well past the body in both directions so
+        // it stays visible outside the model rather than buried inside it).
+        const AXIS_HALF_LEN: f32 = 25.0;
+        let half_len = AXIS_HALF_LEN;
         gizmos.line(
             center - axis_world * half_len,
             center + axis_world * half_len,

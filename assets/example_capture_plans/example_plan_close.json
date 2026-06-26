@@ -72,7 +72,7 @@
       "parameters": {
         "max_velocity": 0.5,
         "max_force": 2.0,
-        "shrink_rate": 0.005
+        "shrink_rate": 0.02
       }
     }
   ]

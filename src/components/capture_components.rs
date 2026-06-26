@@ -16,6 +16,17 @@ pub struct CaptureComponent {
     /// Set once when the `capture` phase first runs, after the containment sphere radius has
     /// been snapped to the tether's current orbit radius (see `capture_phase_machine_update`).
     pub capture_orbit_initialized: bool,
+    /// Set once a tether node first touches the RSO body during the capture phase (logged).
+    pub first_contact_made: bool,
+    /// Signed angle (rad) the tether midpoint has swept about the capture axis since first
+    /// contact. One full wrap (±2π) completes the capture.
+    pub wrap_angle_rad: f64,
+    /// Previous in-plane radial direction of the tether midpoint, used to accumulate the swept
+    /// wrap angle frame-independently.
+    pub last_wrap_radial: Option<DVec3>,
+    /// Set once the capture is complete (contact made and at least one full wrap). The sphere
+    /// stops shrinking and the controller brakes the tether to hold it wrapped.
+    pub capture_complete: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -44,7 +55,9 @@ pub struct CaptureAxis {
 impl Default for CaptureAxis {
     fn default() -> Self {
         Self {
-            axis: DVec3::Z,
+            // Body-frame +X: a 90° rotation of the capture plane from the original +Z, chosen to
+            // match this RSO's geometry.
+            axis: DVec3::X,
             contact_radius: 2.0,
         }
     }

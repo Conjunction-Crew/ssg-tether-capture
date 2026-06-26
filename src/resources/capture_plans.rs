@@ -188,6 +188,10 @@ pub fn build_capture_component(
         phase_enter_time_s: physics_time_secs,
         phase_elapsed_time_s: 0.0,
         capture_orbit_initialized: false,
+        first_contact_made: false,
+        wrap_angle_rad: 0.0,
+        last_wrap_radial: None,
+        capture_complete: false,
     })
 }
 

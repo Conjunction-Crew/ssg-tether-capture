@@ -40,6 +40,9 @@ pub fn spawn_debris(
                 // Static capture axis in the RSO body frame. A future algorithm will
                 // choose this dynamically based on the RSO geometry/spin.
                 CaptureAxis::default(),
+                // Tracks which entities are touching the RSO so the capture phase can detect
+                // first contact between the tether and the body.
+                CollidingEntities::default(),
                 Transform::from_xyz(
                     PHYSICS_DISABLE_RADIUS as f32 + 10.0,
                     PHYSICS_DISABLE_RADIUS as f32 + 10.0,
