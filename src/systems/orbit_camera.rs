@@ -1,7 +1,7 @@
 use crate::{
     components::{
         orbit::{Earth, Orbital},
-        orbit_camera::{CameraTarget, OrbitCamera},
+        orbit_camera::{CameraFocus, OrbitCamera},
     },
     constants::{EARTH_TEXTURE_NORTH_AXIS, SCENE_LAYER},
     plugins::gpu_compute::eci_position_to_map,
@@ -62,7 +62,7 @@ pub fn orbit_camera_input(
 }
 
 pub fn orbit_camera_track(
-    targets: Query<(&Transform, Entity), (With<CameraTarget>, Without<Camera3d>, Without<Earth>)>,
+    targets: Query<(&Transform, Entity), (With<CameraFocus>, Without<Camera3d>, Without<Earth>)>,
     cam_q: Single<
         (&mut OrbitCamera, &mut Transform, &RenderLayers),
         (With<Camera3d>, Without<Earth>),
@@ -118,7 +118,7 @@ pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     catalog_ui: Res<SpaceCatalogUiState>,
     mut commands: Commands,
-    bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    bodies: Query<(Entity, Has<CameraFocus>), (With<RigidBody>, With<Orbital>)>,
 ) {
     if catalog_ui.search_focused {
         return;
@@ -137,14 +137,14 @@ pub fn orbit_camera_switch_target(
 
     let current_index = entities
         .iter()
-        .position(|(_, is_target)| *is_target)
+        .position(|(_, is_focus)| *is_focus)
         .unwrap_or(0);
-    let next_target = entities[(current_index + 1) % entities.len()].0;
+    let next_focus = entities[(current_index + 1) % entities.len()].0;
 
-    for (entity, is_target) in &entities {
-        if *is_target {
-            commands.entity(*entity).remove::<CameraTarget>();
+    for (entity, is_focus) in &entities {
+        if *is_focus {
+            commands.entity(*entity).remove::<CameraFocus>();
         }
     }
-    commands.entity(next_target).insert(CameraTarget);
+    commands.entity(next_focus).insert(CameraFocus);
 }

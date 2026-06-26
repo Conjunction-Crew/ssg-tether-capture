@@ -6,7 +6,7 @@ use crate::{
     components::{
         capture_components::CaptureAxis,
         orbit::{Orbit, TetherNode, TetherRoot},
-        orbit_camera::CameraTarget,
+        orbit_camera::{CameraFocus, CameraTarget},
     },
     constants::{ISS_ORBIT, PHYSICS_DISABLE_RADIUS, SCENE_LAYER},
     resources::{capture_plans::CapturePlanLibrary, orbital_cache::OrbitalCache},
@@ -30,6 +30,9 @@ pub fn spawn_debris(
                 SceneRoot(scene),
                 RigidBody::Dynamic,
                 RigidBodyDisabled,
+                // Camera looks at the RSO by default (focus is decoupled from the
+                // floating-origin anchor, which stays on the chaser/tether root).
+                CameraFocus,
                 Orbit::FromElements(elements),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),

@@ -1,8 +1,15 @@
 use bevy::prelude::{Component, Vec3};
 
-// Component to query the camera target
+// Marks the floating-origin / physics-bubble anchor body (the chaser). The world is kept
+// centered on this entity; it must stay an enabled, non-disabled rigid body.
 #[derive(Component, Debug, Clone)]
 pub struct CameraTarget;
+
+// Marks the body the camera looks at. Decoupled from `CameraTarget` so the camera can focus
+// on the RSO while the floating-origin anchor stays on the chaser. Exactly one entity should
+// have this at a time; it is what the "Cycle Target" control / Tab cycles.
+#[derive(Component, Debug, Clone)]
+pub struct CameraFocus;
 
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]

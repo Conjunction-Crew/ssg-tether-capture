@@ -12,7 +12,7 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use crate::components::capture_components::{CaptureComponent, CapturePlan};
 use crate::components::orbit::Orbital;
-use crate::components::orbit_camera::CameraTarget;
+use crate::components::orbit_camera::CameraFocus;
 use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
 use crate::plugins::orbital_mechanics::SimState;
 use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
@@ -128,6 +128,9 @@ impl Plugin for UiPlugin {
                         .after(setup_camera)
                         .after(setup_orbital_selection),
                     reset_sync_state,
+                    // Land in the detail view whenever the sim starts/resets (the camera is
+                    // re-spawned in map view on reset).
+                    enter_detail_view_on_run,
                 )
                     .chain(),
             )
@@ -333,6 +336,18 @@ fn poll_sim_restart(
     }
 }
 
+/// On (re)entering the running sim, switch the scene camera to the close-up detail view so
+/// the user sees the chaser/tether/RSO. Covers both the Start button and a sim reset (which
+/// re-spawns the camera in map view via the Home→Sim transition).
+fn enter_detail_view_on_run(
+    mut scene_camera: Query<(&mut RenderLayers, &mut AtmosphereSettings), With<Camera3d>>,
+) {
+    if let Ok((mut render_layers, mut atmosphere_settings)) = scene_camera.single_mut() {
+        *render_layers = RenderLayers::layer(SCENE_LAYER);
+        atmosphere_settings.scene_units_to_m = 1.0;
+    }
+}
+
 fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
     let restart_requested = sync_state.restart_requested;
     *sync_state = SimPlanSyncState {
@@ -400,7 +415,7 @@ fn handle_ui_events(
         (&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings),
         Without<UiCamera>,
     >,
-    bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    bodies: Query<(Entity, Has<CameraFocus>), (With<RigidBody>, With<Orbital>)>,
     ui_runtime: (
         ResMut<Settings>,
         ResMut<NextState<SimState>>,
@@ -429,14 +444,6 @@ fn handle_ui_events(
             }
             UiEvent::StartSim => {
                 next_sim_state.set(SimState::Running);
-                // Switch from the orbital map view to the close-up detail view so the
-                // user sees the chaser/tether/RSO as soon as the sim starts.
-                if let Ok((mut render_layers, _atmosphere, mut atmosphere_settings)) =
-                    scene_camera.single_mut()
-                {
-                    *render_layers = RenderLayers::layer(SCENE_LAYER);
-                    atmosphere_settings.scene_units_to_m = 1.0;
-                }
             }
             UiEvent::BackToHome => {
                 next_sim_state.set(SimState::Setup);
@@ -585,19 +592,19 @@ fn handle_ui_events(
                     entities.sort_by_key(|(entity, _)| entity.index());
                     let current_index = entities
                         .iter()
-                        .position(|(_, is_target)| *is_target)
+                        .position(|(_, is_focus)| *is_focus)
                         .unwrap_or(0);
-                    let next_target = entities[(current_index + 1) % entities.len()].0;
-                    for (entity, is_target) in &entities {
-                        if *is_target {
-                            commands.entity(*entity).remove::<CameraTarget>();
+                    let next_focus = entities[(current_index + 1) % entities.len()].0;
+                    for (entity, is_focus) in &entities {
+                        if *is_focus {
+                            commands.entity(*entity).remove::<CameraFocus>();
                         }
                     }
-                    commands.entity(next_target).insert(CameraTarget);
+                    commands.entity(next_focus).insert(CameraFocus);
                     log.write(LogEvent {
                         level: LogLevel::Info,
                         source: "ui",
-                        message: format!("Camera target → entity {next_target:?}"),
+                        message: format!("Camera focus → entity {next_focus:?}"),
                     });
                 }
             }
