@@ -154,6 +154,7 @@ fn apply_force_to_target() {
                 .clone(),
             phase_enter_time_s: 0.0,
             phase_elapsed_time_s: 0.0,
+            capture_orbit_initialized: false,
         });
 
     // Need a few updates to actually alter the velocity

@@ -27,6 +27,21 @@
   },
   "phases": [
     {
+      "id": "approach",
+      "parameters": {
+        "max_velocity": 2.0,
+        "max_force": 3.0
+      },
+      "transitions": [
+        {
+          "to": "terminal",
+          "distance": {
+            "less_than": 50.0
+          }
+        }
+      ]
+    },
+    {
       "id": "terminal",
       "parameters": {
         "max_velocity": 0.5,
@@ -37,11 +52,17 @@
         {
           "to": "capture",
           "distance": {
-            "less_than": 50.0,
+            "less_than": 15.0,
             "units": "m"
           },
           "straightness": {
             "less_than": 0.15
+          }
+        },
+        {
+          "to": "approach",
+          "distance": {
+            "greater_than": 50.0
           }
         }
       ]

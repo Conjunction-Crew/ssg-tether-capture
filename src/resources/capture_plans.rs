@@ -80,6 +80,15 @@ pub struct CaptureSphereRadius {
     pub radius: f64,
 }
 
+/// Latest range (metres) from the RSO center to the tether's straight-line midpoint, written
+/// by the capture system each physics tick and read by the telemetry UI. Using the midpoint
+/// (rather than a single tether end) gives a range that is stable as the tether sweeps about
+/// the capture axis and that contracts monotonically with the containment sphere.
+#[derive(Resource, Debug, Default)]
+pub struct CaptureRange {
+    pub midpoint_range_m: f64,
+}
+
 /// Validates a deserialized [`CapturePlan`], returning a list of human-readable error
 /// messages. An empty vec means the plan is valid.
 pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
@@ -178,6 +187,7 @@ pub fn build_capture_component(
         current_phase: first_phase.id.clone(),
         phase_enter_time_s: physics_time_secs,
         phase_elapsed_time_s: 0.0,
+        capture_orbit_initialized: false,
     })
 }
 

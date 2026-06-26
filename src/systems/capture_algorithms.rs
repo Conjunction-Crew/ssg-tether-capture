@@ -12,7 +12,7 @@ use crate::{
     resources::{
         capture_log::{LogEvent, LogLevel},
         capture_plans::{
-            CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePhaseParameters,
+            CapturePlanLibrary, CaptureRange, CaptureSphereRadius, CompiledCapturePhaseParameters,
             CompiledCapturePlan, CompiledCaptureTransition,
         },
         data_collection::{self, DataCollection},
@@ -32,6 +32,7 @@ pub fn capture_phase_machine_update(
     capture_plan_lib: Res<CapturePlanLibrary>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
+    mut capture_range: ResMut<CaptureRange>,
     orbital_cache: Res<OrbitalCache>,
     mut data_collection: ResMut<DataCollection>,
     world_time: Res<WorldTime>,
@@ -128,11 +129,32 @@ pub fn capture_phase_machine_update(
                     .map(|p| (*p - capture_entity_position.0).length())
                     .fold(f64::INFINITY, f64::min);
 
+                // Distance from the RSO center to the tether's straight-line midpoint. For a
+                // straight rope this is the orbit radius and, unlike a single end, stays stable
+                // as the tether sweeps about the capture axis — so it contracts monotonically
+                // with the containment sphere. Published for the telemetry readout.
+                let midpoint_range = match (root_position, tail_position) {
+                    (Some(root_pos), Some(tail_pos)) => {
+                        ((root_pos + tail_pos) * 0.5 - capture_entity_position.0).length()
+                    }
+                    _ => closest_approach,
+                };
+                capture_range.midpoint_range_m = midpoint_range;
+
+                // The capture phase closes by contracting the whole orbiting rope, so its
+                // readiness is the midpoint range; the terminal phase closes its tip inward,
+                // so it keeps using closest approach (its root stays ~half a length out).
+                let transition_distance = if capture_component.current_phase == "capture" {
+                    midpoint_range
+                } else {
+                    closest_approach
+                };
+
                 let shared_phase_parameters = if let Some((_r_len, v_len)) = root_rv {
                     resolve_root_phase(
                         &mut capture_component,
                         plan,
-                        closest_approach,
+                        transition_distance,
                         v_len,
                         straightness,
                         &mut capture_sphere_radius,
@@ -150,7 +172,26 @@ pub fn capture_phase_machine_update(
                     .map(|ca| ca.axis)
                     .unwrap_or(DVec3::Z);
                 let up = (capture_entity_rotation * axis_body).normalize_or(DVec3::Z);
-                let straightening = capture_component.current_phase == "terminal";
+                // Both the terminal and capture phases use the center-based velocity servo
+                // (straighten/tension/tangent) plus interior jump-rope damping. They differ
+                // only in how the rope closes: terminal translates radially inward; capture
+                // revolves about the axis while contracting (see capture_orbit_force).
+                let straightening = capture_component.current_phase == "terminal"
+                    || capture_component.current_phase == "capture";
+                let orbiting = capture_component.current_phase == "capture";
+
+                // On the first tick of the capture phase, snap the containment sphere radius to
+                // the tether's current in-plane orbit radius so the visual sphere and the actual
+                // orbit coincide, then both contract together at the phase's shrink_rate.
+                if orbiting && !capture_component.capture_orbit_initialized {
+                    if let (Some(root_pos), Some(tail_pos)) = (root_position, tail_position) {
+                        let center = (root_pos + tail_pos) * 0.5;
+                        let center_rel = center - capture_entity_position.0;
+                        let center_radius = (center_rel - center_rel.dot(up) * up).length();
+                        capture_sphere_radius.radius = center_radius;
+                    }
+                    capture_component.capture_orbit_initialized = true;
+                }
 
                 // Natural (unstretched) rope length, used by the terminal phase to know how
                 // far to tension the two ends apart before the rope is taut.
@@ -216,18 +257,36 @@ pub fn capture_phase_machine_update(
                         } else {
                             root_position
                         };
-                        terminal_end_force(
-                            node_pos,
-                            capture_entity_position.0,
-                            up,
-                            rel_v,
-                            other_pos,
-                            idx == 0,
-                            natural_len,
-                            straightness,
-                            max_velocity,
-                            max_force,
-                        )
+                        if orbiting {
+                            // Capture phase: hold the straight, tensioned, tangent pose and
+                            // revolve the rope about the capture axis while contracting toward
+                            // the (shrinking) containment-sphere radius.
+                            capture_orbit_force(
+                                node_pos,
+                                capture_entity_position.0,
+                                up,
+                                rel_v,
+                                other_pos,
+                                idx == 0,
+                                natural_len,
+                                capture_sphere_radius.radius,
+                                max_velocity,
+                                max_force,
+                            )
+                        } else {
+                            terminal_end_force(
+                                node_pos,
+                                capture_entity_position.0,
+                                up,
+                                rel_v,
+                                other_pos,
+                                idx == 0,
+                                natural_len,
+                                straightness,
+                                max_velocity,
+                                max_force,
+                            )
+                        }
                     } else {
                         let mut force_vec = DVec3::ZERO;
                         // If vel is high, kill vel
@@ -463,6 +522,102 @@ fn terminal_end_force(
     // a full max_velocity error at max_force.
     let v_des = v_des.clamp_length_max(max_velocity);
     let kv = max_force / max_velocity.max(1e-3);
+    ((v_des - rel_v) * kv).clamp_length_max(max_force)
+}
+
+/// Force applied to a tether *end* (root or tail) during the **capture** phase. Reuses the
+/// terminal phase's center-based velocity servo to *maintain* the straight, tensioned, tangent
+/// pose, but replaces the radial close with two terms: a tangential **orbit** velocity that
+/// revolves the rope about the capture axis (in the capture plane) at a fixed angular rate, and
+/// a **radial-contraction** velocity that tracks the (shrinking) containment-sphere radius. The
+/// rope is held along `tangent_hat = axis × radial_hat`, which rotates with the azimuth, so the
+/// rope stays tangent automatically as it sweeps inward — wrapping about the axis.
+#[allow(clippy::too_many_arguments)]
+fn capture_orbit_force(
+    node_pos: DVec3,
+    rso_pos: DVec3,
+    axis: DVec3,
+    rel_v: DVec3,
+    other_pos: Option<DVec3>,
+    is_root: bool,
+    natural_len: f64,
+    orbit_radius: f64,
+    max_velocity: f64,
+    max_force: f64,
+) -> DVec3 {
+    const ORIENT_GAIN: f64 = 1.0;
+    const PLANE_GAIN: f64 = 1.0;
+    // Desired-velocity gain (m/s per metre of radial error) for contracting onto orbit_radius.
+    const RADIAL_GAIN: f64 = 1.0;
+    // Angular rate (rad/s) at which the straight tether revolves about the capture axis.
+    const ORBIT_RATE: f64 = 0.1;
+    // Fraction of max_velocity the orbit (tangential) term may consume. The remainder is
+    // reserved for radial contraction so the rope actually closes instead of orbiting at full
+    // speed with no budget left to shrink the radius.
+    const ORBIT_FRACTION: f64 = 0.6;
+
+    let kv = max_force / max_velocity.max(1e-3);
+
+    // Without the other end we can't define the tether line / center; fall back to pulling
+    // this end onto the capture plane.
+    let Some(other) = other_pos else {
+        let axial = (node_pos - rso_pos).dot(axis);
+        let v_des = (-axial * axis * PLANE_GAIN).clamp_length_max(max_velocity);
+        return ((v_des - rel_v) * kv).clamp_length_max(max_force);
+    };
+
+    // Geometry built around the tether center (midpoint of the two ends), as in the terminal
+    // phase: radial direction in the capture plane and the tangent (orbit) direction.
+    let center = (node_pos + other) * 0.5;
+    let center_rel = center - rso_pos;
+    let center_axial = center_rel.dot(axis);
+    let center_inplane = center_rel - center_axial * axis;
+    let center_radius = center_inplane.length();
+    let radial_hat = center_inplane
+        .try_normalize()
+        .unwrap_or_else(|| axis.any_orthonormal_vector());
+    let tangent_hat = axis
+        .cross(radial_hat)
+        .try_normalize()
+        .unwrap_or_else(|| axis.any_orthonormal_vector());
+
+    // This end's tangent-aligned, length-L/2 target offset from the center (keeps the rope
+    // straight and tangent as the azimuth rotates).
+    let this_offset = node_pos - center;
+    let side = this_offset.dot(tangent_hat);
+    let sign = if side.abs() > 1e-3 {
+        side.signum()
+    } else if is_root {
+        1.0
+    } else {
+        -1.0
+    };
+    let target_offset = sign * (natural_len * 0.5) * tangent_hat;
+
+    let mut v_des = DVec3::ZERO;
+
+    // Orient + straighten: hold this end at its tangent-aligned offset.
+    v_des += (target_offset - this_offset) * ORIENT_GAIN;
+
+    // Hold the center on the capture plane (both ends translate together).
+    v_des += -center_axial * axis * PLANE_GAIN;
+
+    // Revolve the center about the capture axis along the tangent direction. Capped at a
+    // fraction of max_velocity so it can't consume the whole budget and starve contraction.
+    let orbit_speed = (ORBIT_RATE * center_radius).min(max_velocity * ORBIT_FRACTION);
+    v_des += tangent_hat * orbit_speed;
+
+    // Contract toward the (shrinking) orbit radius using the radial budget the orbit term
+    // left behind, so the midpoint range tracks orbit_radius (which shrinks at shrink_rate)
+    // instead of being scaled away by the final velocity clamp. The snap on capture entry
+    // keeps orbit_radius ≤ the current radius, so this is effectively inward-only.
+    let radial_budget = (max_velocity - orbit_speed).max(0.0);
+    let radial_speed =
+        ((center_radius - orbit_radius) * RADIAL_GAIN).clamp(-radial_budget, radial_budget);
+    v_des += -radial_hat * radial_speed;
+
+    // Rate-limit the desired speed, then servo the actual velocity toward it.
+    let v_des = v_des.clamp_length_max(max_velocity);
     ((v_des - rel_v) * kv).clamp_length_max(max_force)
 }
 

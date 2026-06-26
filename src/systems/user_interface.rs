@@ -11,7 +11,9 @@ use crate::{
     plugins::gpu_compute::eci_position_to_map,
     resources::{
         capture_log::{LogEvent, LogLevel},
-        capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePhase},
+        capture_plans::{
+            CapturePlanLibrary, CaptureRange, CaptureSphereRadius, CompiledCapturePhase,
+        },
         orbital_cache::OrbitalCache,
         world_time::WorldTime,
     },
@@ -53,6 +55,7 @@ pub fn update_capture_telemetry(
     bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
     captures: Query<&CaptureComponent>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
+    capture_range: Res<CaptureRange>,
     mut readouts: Query<(&mut Text, &CaptureTelemetryReadout)>,
     orbitals: Res<OrbitalCache>,
     mut log: MessageWriter<LogEvent>,
@@ -72,10 +75,10 @@ pub fn update_capture_telemetry(
             continue;
         };
 
-        let capture_status = match readout
+        let active_capture = readout
             .rso_entity
-            .and_then(|entity| captures.get(entity).ok())
-        {
+            .and_then(|entity| captures.get(entity).ok());
+        let capture_status = match active_capture {
             Some(capture) => format!("Engaged ({})", capture.current_phase),
             None => "Idle".to_string(),
         };
@@ -89,7 +92,15 @@ pub fn update_capture_telemetry(
             *prev_status = capture_status.clone();
         }
 
-        let inside_capture_sphere = if metrics.range_m <= capture_sphere_radius.radius as f64 {
+        // While a capture is engaged, report the stable midpoint range the controller acts on;
+        // when idle (no live midpoint), fall back to the RSO→tether-root distance.
+        let (range_label, range_value) = if active_capture.is_some() {
+            ("Range to tether (midpoint)", capture_range.midpoint_range_m)
+        } else {
+            ("Range to tether root", metrics.range_m)
+        };
+
+        let inside_capture_sphere = if range_value <= capture_sphere_radius.radius as f64 {
             "Yes"
         } else {
             "No"
@@ -99,7 +110,7 @@ pub fn update_capture_telemetry(
             concat!(
                 "RSO: {}\n",
                 "Capture status: {}\n",
-                "Range to tether root: {:.2} m\n",
+                "{}: {:.2} m\n",
                 "Relative speed: {:.2} m/s\n",
                 "Closing rate: {:.2} m/s\n",
                 "Inside capture sphere: {}\n",
@@ -109,7 +120,8 @@ pub fn update_capture_telemetry(
             ),
             readout.rso_label,
             capture_status,
-            metrics.range_m,
+            range_label,
+            range_value,
             metrics.relative_speed_m_s,
             metrics.closing_speed_m_s,
             inside_capture_sphere,

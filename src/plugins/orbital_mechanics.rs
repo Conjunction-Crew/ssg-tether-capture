@@ -4,7 +4,9 @@ use brahe::Epoch;
 
 use crate::{
     resources::{
-        capture_plans::CaptureSphereRadius, celestials::Celestials, orbital_cache::OrbitalCache,
+        capture_plans::{CaptureRange, CaptureSphereRadius},
+        celestials::Celestials,
+        orbital_cache::OrbitalCache,
         world_time::WorldTime,
     },
     systems::{
@@ -79,6 +81,7 @@ fn init_sim_resources(mut commands: Commands) {
     commands.init_resource::<OrbitalCache>();
     commands.init_resource::<WorldTime>();
     commands.insert_resource(CaptureSphereRadius { radius: 25.0 });
+    commands.init_resource::<CaptureRange>();
 }
 
 fn remove_sim_resources(mut commands: Commands) {
@@ -86,6 +89,7 @@ fn remove_sim_resources(mut commands: Commands) {
     commands.remove_resource::<OrbitalCache>();
     commands.remove_resource::<WorldTime>();
     commands.remove_resource::<CaptureSphereRadius>();
+    commands.remove_resource::<CaptureRange>();
 }
 
 pub fn setup_time(mut world_time: ResMut<WorldTime>) {

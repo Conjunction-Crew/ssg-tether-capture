@@ -13,6 +13,9 @@ pub struct CaptureComponent {
     pub current_phase: String,
     pub phase_enter_time_s: f64,
     pub phase_elapsed_time_s: f64,
+    /// Set once when the `capture` phase first runs, after the containment sphere radius has
+    /// been snapped to the tether's current orbit radius (see `capture_phase_machine_update`).
+    pub capture_orbit_initialized: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
