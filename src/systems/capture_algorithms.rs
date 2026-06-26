@@ -5,7 +5,7 @@ use avian3d::{
 use bevy::{math::DVec3, prelude::*, state::commands};
 
 use crate::{
-    components::capture_components::CaptureComponent,
+    components::capture_components::{CaptureAxis, CaptureComponent},
     resources::{
         capture_log::{LogEvent, LogLevel},
         capture_plans::{
@@ -22,6 +22,7 @@ use crate::{
 pub fn capture_phase_machine_update(
     mut commands: Commands,
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
+    capture_axes: Query<&CaptureAxis>,
     capture_plan_lib: Res<CapturePlanLibrary>,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
@@ -81,8 +82,7 @@ pub fn capture_phase_machine_update(
                 // How far the tether deviates from the straight root→RSO line, normalized
                 // by that line's length (0 = perfectly straight). Used by the `terminal`
                 // phase to decide when the tether is straight enough to capture.
-                let straightness =
-                    tether_straightness(&node_positions, capture_entity_position.0);
+                let straightness = tether_straightness(&node_positions, capture_entity_position.0);
 
                 let shared_phase_parameters = if let Some((r_len, v_len)) = root_rv {
                     resolve_root_phase(
@@ -98,7 +98,14 @@ pub fn capture_phase_machine_update(
                     current_phase_parameters(plan, &capture_component.current_phase)
                 };
 
-                let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
+                // Circulate the tether around the RSO's defined capture axis (body-frame
+                // axis rotated into world space, matching capture_axis_gizmos) so the
+                // `capture` phase wraps the tether in the plane perpendicular to it.
+                let axis_body = capture_axes
+                    .get(capture_entity)
+                    .map(|ca| ca.axis)
+                    .unwrap_or(DVec3::Z);
+                let up = (capture_entity_rotation * axis_body).normalize_or(DVec3::Z);
                 let straightening = capture_component.current_phase == "terminal";
 
                 for (idx, &node) in nodes.iter().enumerate() {
@@ -162,10 +169,13 @@ pub fn capture_phase_machine_update(
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
+                        // When the radial direction is (anti)parallel to the capture
+                        // axis the cross product degenerates; fall back to any vector
+                        // perpendicular to the axis so circulation stays around it.
                         let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
                             up
                         } else {
-                            DVec3::X
+                            up.any_orthonormal_vector()
                         };
 
                         if idx != 0 && capture_component.current_phase == "capture" {

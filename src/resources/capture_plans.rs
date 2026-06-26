@@ -273,7 +273,11 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                             "relative_velocity",
                             "greater_than",
                         ),
-                        straightness_less_than: nested_value(transition, "straightness", "less_than"),
+                        straightness_less_than: nested_value(
+                            transition,
+                            "straightness",
+                            "less_than",
+                        ),
                     })
                 })
                 .collect(),

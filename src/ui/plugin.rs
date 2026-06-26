@@ -28,7 +28,7 @@ use crate::resources::settings::Settings;
 use crate::resources::space_catalog::{OrbitSpec, OrbitalSelectionState};
 use crate::resources::working_directory::{WorkingDirectory, save_to_config};
 use crate::resources::world_time::WorldTime;
-use crate::systems::setup::setup_camera;
+use crate::systems::setup::{setup_camera, setup_orbital_selection};
 use crate::ui::egui::egui_plots;
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
@@ -121,7 +121,12 @@ impl Plugin for UiPlugin {
                 OnEnter(SimState::Running),
                 (
                     cleanup_project_detail_screen,
-                    spawn_project_detail_screen.after(setup_camera),
+                    // Spawn the detail screen after the debris is registered in
+                    // orbital_cache so the Capture button is always built with a valid
+                    // RSO entity (never entity = None).
+                    spawn_project_detail_screen
+                        .after(setup_camera)
+                        .after(setup_orbital_selection),
                     reset_sync_state,
                 )
                     .chain(),
@@ -751,9 +756,10 @@ fn handle_ui_events(
                     });
                     continue;
                 }
-                let (Some(rso), Some(chaser)) =
-                    (orbital_selection.rso.as_ref(), orbital_selection.chaser.as_ref())
-                else {
+                let (Some(rso), Some(chaser)) = (
+                    orbital_selection.rso.as_ref(),
+                    orbital_selection.chaser.as_ref(),
+                ) else {
                     log.write(LogEvent {
                         level: LogLevel::Warn,
                         source: "ui",
@@ -791,9 +797,8 @@ fn handle_ui_events(
                             });
                         } else {
                             // Reload + recompile user plans so the in-memory copy matches.
-                            capture_plan_lib.user_plans = load_plans_from_dir(
-                                std::path::Path::new(&working_directory.path),
-                            );
+                            capture_plan_lib.user_plans =
+                                load_plans_from_dir(std::path::Path::new(&working_directory.path));
                             capture_plan_lib.plans = capture_plan_lib
                                 .example_plans
                                 .iter()

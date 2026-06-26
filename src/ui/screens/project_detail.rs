@@ -1,11 +1,11 @@
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
-use bevy::pbr::Atmosphere;
 use bevy::ecs::observer::On;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseScrollUnit;
+use bevy::pbr::Atmosphere;
 use bevy::picking::Pickable;
 use bevy::picking::events::{Pointer, Scroll};
 use bevy::prelude::*;
@@ -2741,7 +2741,8 @@ pub fn update_satellite_indicator_overlay(
         };
         let world_position = eci_position_to_map(position_eci);
 
-        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, world_position) else {
+        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, world_position)
+        else {
             overlay_node.display = Display::None;
             return;
         };

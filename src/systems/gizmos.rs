@@ -325,7 +325,11 @@ pub fn capture_gizmos(
                 capture_radius += 1.0;
             }
 
-            let tangent_sign = if idx != 0 && in_capture_phase { -1.0 } else { 1.0 };
+            let tangent_sign = if idx != 0 && in_capture_phase {
+                -1.0
+            } else {
+                1.0
+            };
             let force_vec = capture_force_direction(
                 rel_r,
                 rel_v,
