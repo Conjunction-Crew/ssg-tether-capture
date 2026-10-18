@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 3
 ---
 
 import useBaseUrl from '@docusaurus/useBaseUrl';
@@ -25,7 +25,7 @@ This guide walks through installing SSG Tether Capture on macOS.
 </div>
 
 2. Download the macOS version of the app, which will be a `.dmg`
-  - The file will be named something like `ssg-tether-capture-x.y.z-macos.dmg`, where `x.y.z` is the version number.
+  - The file will be named something like `ssg-tether-capture-vx.y.z-macos-arm64.dmg`, where `x.y.z` is the version number.
 
 ## Installation
 
@@ -48,7 +48,7 @@ The screenshots in this section were taken on a Mac running macOS Tahoe version 
   <img src={useBaseUrl('/img/getting-started/install-macos/macos-install-guide-screenshot-2.png')} alt="Drag app to Applications folder" className="screenshot" />
 </div>
 
-  - Depending on how your machine is configured, ytou may be prompted to enter your administrator password to allow the app to be copied to the Applications folder. Enter your password and click "OK" to proceed.
+  - Depending on how your machine is configured, you may be prompted to enter your administrator password to allow the app to be copied to the Applications folder. Enter your password and click "OK" to proceed.
 
   <img src={useBaseUrl('/img/getting-started/install-macos/macos-install-guide-screenshot-3.png')} alt="Password prompt during installation" className="screenshot--small" />
 
@@ -63,14 +63,14 @@ The screenshots in this section were taken on a Mac running macOS Tahoe version 
 <img src={useBaseUrl('/img/getting-started/install-macos/macos-install-guide-screenshot-4.png')} alt="Security warning on first launch" className="screenshot--small" />
 
 4. To bypass this, click "Done" on the warning dialog. Do not click "Move to Trash" from this dialog.
-5. Next, you need to allow the app to run from the Security & Privacy settings:
-6. Open System Preferences and go to "Security & Privacy" and scroll all the way down to the bottom of the menu.
+5. Next, you need to allow the app to run from the Privacy & Security settings:
+6. Open **System Settings** and go to **Privacy & Security**, then scroll all the way down to the **Security** section.
 
 <div className="screenshot-frame">
   <img src={useBaseUrl('/img/getting-started/install-macos/macos-install-guide-screenshot-5.png')} alt="View Warning in Security & Privacy settings" className="screenshot" />
 </div>
 
-7. Under the "Security" section, you should see a message "SSG Tether Capture.app was blocked to protect your Mac". Click "Open Anyway".
+7. Under the **Security** section, you should see a message "SSG Tether Capture.app was blocked to protect your Mac". Click "Open Anyway".
 8. Confirm that you want to open the app in the next dialog by entering your administrator username and password.
 
 <img src={useBaseUrl('/img/getting-started/install-macos/macos-install-guide-screenshot-6.png')} alt="Enter your admin credentials to allow the app to run" className="screenshot--small" />

@@ -235,7 +235,7 @@ cargo run          # always run from the repo root so assets/ resolves
 **Verify:**
 
 - `cargo test` passes.
-- `cargo run` opens the app window and shows the Working Directory Setup screen. Rendering uses Metal through wgpu, so there are no GPU drivers to install.
+- `cargo run` opens the app window and shows the Select Working Directory screen. Rendering uses Metal through wgpu, so there are no GPU drivers to install.
 - macOS may ask for permission the first time the app opens a file dialog (from `rfd`) or uses the clipboard (from `arboard`). Allow it.
 
 Before opening a PR, also run:
