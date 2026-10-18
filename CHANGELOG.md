@@ -13,16 +13,23 @@ When preparing a release:
 
 ---
 
-## [v0.3.0-beta.3] 🧪
+## [v0.3.0-rc.3] 🔬 - 2026-10-18
+
+### Fixed
+- Fixes `cargo build` failing on Rust 1.99+ with `E0512: cannot transmute between types of different sizes` by updating the transitive `ethnum` dependency (via `brahe` → `polars`) from 1.5.2 to 1.5.3 in `Cargo.lock`
 
 ### Changed
 - Updated guides in the contributing section to link to new install guides
 - Removed `base_url` from `tsconfig.json`
 - Updated `docusaurus.config.js` to show the versions dropdown in the upper right corner and to allow for the latest unreleased docs to be viewed
 - Updates `custom.css` to add styling for screenshots in the install guides
+- Updates `prerequisites.md` and `development.md` to link to the new macOS development setup guide
+- Updates `pr.yaml` and `deploy-docs.yml` to build the docs site with the latest Node.js LTS (`node-version: lts/*`) instead of Node 20
+- Updates the docs site npm dependencies and adds an `allowScripts` allowlist to `docs_site/package.json` for the `@swc/core`, `core-js`, and `fsevents` install scripts
 
 ### Added
 - Install guides for Linux, Windows, and macOS in the docs site with detailed installation steps and screenshots for each platform.
+- Adds `macos-dev-setup.md` to the contributing docs with a from-scratch Apple Silicon setup guide (Xcode Command Line Tools, Homebrew, Rust, VS Code, Node.js, release tooling, and Tracy)
 
 ### Removed
 - Deleted old assets from initial Docusaurus setup that are no longer used in the current docs site design

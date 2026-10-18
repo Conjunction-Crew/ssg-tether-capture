@@ -26,6 +26,8 @@ Bevy has a few platform-level dependencies depending on your OS.
 xcode-select --install
 ```
 
+For a full step-by-step setup on Apple Silicon (Homebrew, Rust, VS Code, Node, release tooling, and Tracy), see [macOS Development Setup](../contributing/macos-dev-setup.md).
+
 ### Linux (Debian/Ubuntu)
 
 ```bash
