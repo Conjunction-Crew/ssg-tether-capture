@@ -26,6 +26,17 @@ sidebar_position: 1
 
 ## Where to go next
 
-- [Prerequisites](./prerequisites) — what you need installed before running the app
+### Install the app
+
+- [Installing on Windows](./install-windows)
+- [Installing on macOS](./install-macos)
+- [Installing on Linux](./install-linux)
+
+### Run and build from source
+
+- [Prerequisites](./prerequisites) — what you need installed before building the app from source
 - [Running the App](./running-the-app) — how to build and launch
+
+### Learn how it works
+
 - [Architecture Overview](../architecture/overview) — how the major systems fit together

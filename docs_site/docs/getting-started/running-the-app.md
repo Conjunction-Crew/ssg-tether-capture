@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 6
 ---
 
 # Running the App
@@ -28,7 +28,7 @@ The app resolves asset paths relative to the working directory. Always run from 
 
 ## First launch
 
-On first launch the app shows the **Working Directory Setup** screen. Enter a folder path or click **Browse** to choose a directory where your capture plan JSON files will be stored. Press **Confirm** to proceed to the home screen. You can change this directory at any time via the **Change Directory** button on the home screen.
+On first launch the app shows the **Select Working Directory** screen. Enter a folder path or click **Browse** to choose a directory where your capture plan JSON files will be stored. Click **Select** to proceed to the home screen. You can change this directory at any time via the **Change Directory** button on the home screen.
 
 ## Capture plans
 

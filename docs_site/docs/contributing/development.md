@@ -4,6 +4,8 @@ sidebar_position: 1
 
 # Development Setup
 
+On a Mac? Start with [macOS Development Setup (Apple Silicon)](./macos-dev-setup.md) to install the toolchain.
+
 ## Clone and build
 
 ```bash

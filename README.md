@@ -1,7 +1,7 @@
 # SSG Tether Capture
 
 A Bevy-powered real-time simulation for modelling space tether capture of orbital debris.
-Developed as a CIS4914 Senior Project by [Conjunction Crew](https://github.com/conjunction-crew), in collaboration with the UF MAE Small Satellite Group.
+Developed by [Conjunction Crew](https://github.com/conjunction-crew), in collaboration with the UF MAE Space Systems Group.
 
 📖 **[Full documentation →](https://conjunction-crew.github.io/ssg-tether-capture/)**
 

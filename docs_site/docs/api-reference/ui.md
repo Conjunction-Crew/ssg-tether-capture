@@ -88,7 +88,7 @@ The first screen shown on launch (`UiScreen::WorkingDirectorySetup`). Prompts th
 
 - The path field updates `WorkingDirectory::pending_path` as the user types.
 - "Browse" opens a native OS folder picker (via `rfd::AsyncFileDialog`); the result is polled each frame by `poll_file_dialog_task`.
-- "Confirm" sends `UiEvent::WorkingDirectorySelected(path)`, sets `WorkingDirectory::path`, and transitions to `Home`.
+- "Select" sends `UiEvent::WorkingDirectorySelected(path)`, sets `WorkingDirectory::path`, and transitions to `Home`.
 
 Key components: `DirectoryPathText` — marks the label that displays the current pending path.
 
