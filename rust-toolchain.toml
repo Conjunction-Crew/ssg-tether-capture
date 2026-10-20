@@ -1,0 +1,6 @@
+# Tracks the stable toolchain (the 2024 edition needs Rust 1.85+) and makes sure
+# rustfmt and clippy are installed for both contributors and CI.  Pin an exact
+# version here (e.g. channel = "1.99.1") if reproducible toolchains are needed.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

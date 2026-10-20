@@ -59,4 +59,16 @@ commands.spawn((
 - **Resources in `resources/`** — global mutable state goes in a `Resource`, not a `static` or thread-local.
 - **Constants in `constants.rs`** — no magic numbers inline in systems or setup code.
 
-For guidance on cutting a release, see [Release Workflow](./release-workflow.md).
+## Before opening a pull request
+
+Branch from `main` and open the PR against `main`. CI runs the same checks you can run locally:
+
+```bash
+cargo fmt --all --check   # run `cargo fmt` to fix
+cargo clippy --all-targets
+cargo test
+```
+
+Also add a bullet under `## [Unreleased]` in `CHANGELOG.md` describing your change (docs-only PRs are exempt). Don't bump the version; releases do that. Windows and macOS only get a quick `cargo check` on PRs; add the `full-ci` label if your change affects platform-specific code or the build setup.
+
+For guidance on cutting a release, see [Release Workflow](./release-workflow.md). For what each CI job does, see [CI/CD Workflows](./cicd-workflows.md).

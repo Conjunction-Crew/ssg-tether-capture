@@ -43,9 +43,8 @@ pub fn spawn_home_screen(
     working_directory: Res<WorkingDirectory>,
     sync_state: Res<SimPlanSyncState>,
 ) {
-    let (example_plans, mut load_errors) = load_plans_from_dir_with_errors(
-        &crate::resolve_assets_dir().join("example_capture_plans"),
-    );
+    let (example_plans, mut load_errors) =
+        load_plans_from_dir_with_errors(&crate::resolve_assets_dir().join("example_capture_plans"));
     let (user_plans, user_load_errors) =
         load_plans_from_dir_with_errors(&std::path::PathBuf::from(&working_directory.path));
     load_errors.extend(user_load_errors);

@@ -5,8 +5,8 @@
 # set(s) from docs_site/ whenever the count exceeds MAX_VERSIONS.  Also
 # records links to the dropped versions in versioned-docs-policy.md.
 #
-# Called from deploy-docs.yml after post_release.sh has created the new
-# snapshot.  Can also be run manually if needed (safe to run at any time).
+# Called from release.yml after the new versioned docs snapshot has been
+# created.  Can also be run manually if needed (safe to run at any time).
 #
 # Run from the repo root.
 
@@ -62,16 +62,17 @@ done
 # ---------------------------------------------------------------------------
 if [ -f "$POLICY_FILE" ]; then
   for DROPPED_VER in $DROPPED_VERSIONS; do
-    BRANCH="release/v$DROPPED_VER"
-    BRANCH_URL="https://github.com/$GITHUB_REPO/tree/$BRANCH/docs_site/docs"
+    # Releases are tagged vX.Y.Z; the docs for that release live in the tag.
+    TAG="v$DROPPED_VER"
+    TAG_URL="https://github.com/$GITHUB_REPO/tree/$TAG/docs_site/docs"
 
-    # Check whether the remote branch exists
-    if git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null 2>&1; then
-      ENTRY="- [v${DROPPED_VER} docs](${BRANCH_URL})"
-      echo "prune_versioned_docs.sh: adding link for v$DROPPED_VER (branch found)"
+    # Check whether the remote tag exists
+    if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null 2>&1; then
+      ENTRY="- [v${DROPPED_VER} docs](${TAG_URL})"
+      echo "prune_versioned_docs.sh: adding link for v$DROPPED_VER (tag found)"
     else
-      ENTRY="- v${DROPPED_VER} *(branch \`${BRANCH}\` not found on remote)*"
-      echo "prune_versioned_docs.sh: noting v$DROPPED_VER without link (branch not found)"
+      ENTRY="- v${DROPPED_VER} *(tag \`${TAG}\` not found on remote)*"
+      echo "prune_versioned_docs.sh: noting v$DROPPED_VER without link (tag not found)"
     fi
 
     # Insert the new entry just before the closing OLDER_RELEASES_END marker.

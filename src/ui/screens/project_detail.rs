@@ -2710,7 +2710,8 @@ pub fn update_satellite_indicator_overlay(
         };
         let world_position = eci_position_to_map(position_eci);
 
-        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, world_position) else {
+        let Ok(viewport_position) = camera.world_to_viewport(camera_transform, world_position)
+        else {
             overlay_node.display = Display::None;
             return;
         };

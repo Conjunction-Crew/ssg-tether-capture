@@ -11,7 +11,7 @@
       - Rust toolchain (rustup)               — required for cargo build
       - VS 2022 Build Tools + VCTools         — required MSVC linker for Rust
       - .NET 8 SDK                            — required for WiX MSI packaging
-      - Git                                   — required for source control + cargo-release
+      - Git                                   — required for source control
       - Node.js LTS                           — required for Docusaurus docs site
       - Windows 10/11 SDK (optional)          — required for signtool code signing
 

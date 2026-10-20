@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  # Workflow action versions.  Actions are pinned to commit SHAs; Dependabot
+  # keeps the SHA and the trailing "# vX.Y.Z" comment up to date.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Rust dependencies.  Bevy and the crates versioned in lock-step with it are
+  # held back: bevy is patched to the Conjunction-Crew/ssg-bevy fork, and these
+  # 0.x crates treat minor bumps as breaking, so upgrade them by hand together.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      rust-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "bevy*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "avian3d"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "egui_plot"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # Docusaurus site.
+  - package-ecosystem: npm
+    directory: /docs_site
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docs-minor-and-patch:
+        update-types: ["minor", "patch"]
