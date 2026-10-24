@@ -10,68 +10,97 @@ step-by-step process of cutting a release, see [Release Workflow](./release-work
 ## Overview
 
 ```
-PR / push to dev
+Pull request / push to main / weekday schedule / manual
       │
-      ├─ verify-pr        ← version bump + CHANGELOG entry check (all PRs)
-      ├─ build            ← cargo build + test (Linux / Windows / macOS)
-      ├─ docs-build       ← Docusaurus build + versioned-docs count check
+      └─ ci.yml
+           ├─ Detect changes
+           ├─ Lint and test (Linux)       ← fmt + clippy + cargo test   (the merge gate)
+           ├─ Check (Windows, macOS)      ← cargo check on PRs; full build + test with `full-ci`
+           ├─ Build docs site             ← only when docs/changelog change
+           ├─ Changelog entry             ← PRs only
+           └─ ci-success                  ← the one required status check
+
+Release (manual: Actions → Release → Run workflow)
       │
-      └─ auto-tag (post-merge only)
-               │
-               └─ pushes vX.Y.Z tag via GH_PAT
-                        │
-                        ├─ release.yml    ← stable or RC tags only
-                        └─ deploy-docs.yml ← stable major/minor tags only
+      └─ release.yml
+           ├─ Verify (fmt, test)  ┐
+           ├─ Prepare release commit   → pushes release-staging/vX.Y.Z
+           ├─ Build packages ──── build-packages.yml (Linux / Windows / macOS)
+           ├─ Publish GitHub Release   → fast-forwards main, pushes tag, creates release
+           └─ Deploy docs ─────── deploy-docs.yml (stable major/minor only)
+
+Packaging Test (manual) ──── build-packages.yml
 ```
+
+Merging to `main` never creates a tag or a release. Only the Release workflow does.
 
 ## Workflow reference
 
-### `pr.yaml` — PR checks and auto-tagging
+### `ci.yml` — pull-request checks
 
-**Triggers**: push to `dev`, pull request targeting `dev`
+**Triggers**: pull request (any base branch; re-runs when labels change), push to `main`, weekday schedule (07:00 UTC) and `workflow_dispatch`.
 
 | Job | Runs on | Purpose |
 |---|---|---|
-| `verify-pr` | ubuntu-latest | Checks `Cargo.toml` version > latest tag; checks `CHANGELOG.md` has a matching entry |
-| `build` | ubuntu / windows / macos | `cargo build` + `cargo test` full matrix; needs `verify-pr` |
-| `docs-build` | ubuntu-latest | `npm run build` of the Docusaurus site; syncs `CHANGELOG.md` → `docs/release-notes.md`; fails if `versions.json` has > 10 entries; needs `verify-pr` |
-| `auto-tag` | ubuntu-latest | Fires only on post-merge pushes to `dev`; reads version from `Cargo.toml`, skips if tag already exists, pushes `v{version}` using `GH_PAT`; needs `build` + `docs-build` |
+| `changes` | ubuntu-latest | Decides which of the jobs below are relevant, based on the files a PR touches and on the `full-ci` label |
+| `rust-linux` | ubuntu-latest | `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`. Runs when `src/`, `assets/`, `wix/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` or the CI/packaging workflows change. Clippy errors fail the job; clippy *warnings* are reported but do not (yet) |
+| `cross-platform` | windows-latest, macos-latest | PRs: `cargo check --all-targets` only. With the `full-ci` label, on the weekday schedule and on manual runs: `cargo build` + `cargo test` |
+| `docs-build` | ubuntu-latest | Docusaurus build, plus a check that `versions.json` has at most 10 entries. Runs when `docs_site/**` or `CHANGELOG.md` change |
+| `changelog` | ubuntu-latest | PRs only: fails unless the `## [Unreleased]` section of `CHANGELOG.md` was changed. Exempt: docs-only PRs (`docs_site/**` and `*.md`), PRs labelled `no-changelog`, and Dependabot |
+| `ci-success` | ubuntu-latest | Passes when every job above passed or was skipped. **This is the only status check branch protection needs to require**, so skipped jobs never block a merge |
 
-The `verify-pr` check runs unconditionally on **all** PRs to `dev` — there is no special branch-name convention required to trigger version or changelog validation.
+Why Windows and macOS only run `cargo check` on PRs: the full cross-platform build was the slowest part of every PR (Windows especially). `cargo check` still catches compile errors in platform-specific code. Linking and packaging problems are caught by the weekday run and, definitively, by the release build. Add the **`full-ci`** label to a PR when you change platform-specific code or build configuration and want the full run before merging.
+
+The workflow sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_DEV_DEBUG=0`. The `dev` profile enables debug info, which makes Windows link times and cache sizes balloon and which CI never needs. Caches use [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) and are saved only from `main`, so PR runs cannot evict the shared cache.
 
 ---
 
-### `release.yml` — Cross-platform builds and GitHub Release
+### `release.yml` — manual release
 
-**Triggers**: push of tags matching `v[0-9]+.[0-9]+.[0-9]+` or `v[0-9]+.[0-9]+.[0-9]+-rc*`
+**Triggers**: `workflow_dispatch` only. See [Release Workflow](./release-workflow.md) for how to run it.
 
-Beta tags (`-beta.N`) do **not** trigger this workflow.
-
-| Job | Runs on | Purpose |
+| Input | Values | Purpose |
 |---|---|---|
-| `preflight` | ubuntu-latest | Reads `github.ref_name`, sets `is_prerelease` (`-rc.*` → true) and `make_latest` (stable → true) |
-| `build-linux` | ubuntu-latest | `cargo build --release` → `.tar.gz` (binary + `assets/`) |
-| `build-windows` | windows-latest | `cargo build --release` → WiX MSI (pre-release suffix stripped from MSI `PackageVersion`) |
-| `build-macos` | macos-latest | `cargo bundle --release` → ad-hoc signed `.app` → `.dmg` |
-| `release` | ubuntu-latest | Downloads all artifacts; extracts matching `CHANGELOG.md` section as release body; publishes GitHub Release via `ncipollo/release-action` |
+| `bump` | `patch`, `minor`, `major` | Which component to bump. Ignored when the current version is an `-rc` |
+| `channel` | `stable`, `rc` | `rc` publishes a pre-release candidate; `stable` a full release |
+| `dry_run` | `true` / `false` | Computes the version, changelog and docs changes and shows them in the run summary, but pushes and publishes nothing |
 
-The GitHub Release is marked as **pre-release** for RC tags and **latest** for stable tags.
+| Job | Purpose |
+|---|---|
+| `verify` | `cargo fmt --check` and `cargo test` on the commit being released |
+| `prepare` | Computes the next version (`scripts/next_version.sh`), bumps `Cargo.toml` and `Cargo.lock`, promotes `## [Unreleased]` in `CHANGELOG.md` (`scripts/prepare_changelog.sh`), snapshots the versioned docs for stable major/minor releases, and pushes the single result to a scratch branch `release-staging/vX.Y.Z`. `main` is **not** modified |
+| `build` | Calls `build-packages.yml` on the staged commit |
+| `publish` | Only if everything above succeeded: fast-forwards `main` to the staged commit, pushes the `vX.Y.Z` tag, creates the GitHub Release (using the changelog section as its description) and deletes the staging branch. Safe to re-run after a partial failure |
+| `docs` | Calls `deploy-docs.yml` for stable major/minor releases |
+
+Because `main` only moves after all platform builds are green, a failed build leaves no half-released state behind. If `main` moved while the release was building, `publish` refuses to continue; run the workflow again.
+
+---
+
+### `build-packages.yml` — reusable packaging
+
+**Triggers**: `workflow_call` only (from `release.yml` and `packaging-test.yml`).
+
+| Job | Runs on | Output |
+|---|---|---|
+| `build-linux` | ubuntu-latest | `.tar.gz` (binary + `assets/`) |
+| `build-windows` | windows-latest | WiX `.msi` (pre-release suffix stripped from the MSI `PackageVersion`) |
+| `build-macos` | macos-latest | ad-hoc signed `.app` in a `.dmg` |
+
+Artifacts are uploaded as `linux`, `windows` and `macos`.
 
 ---
 
 ### `deploy-docs.yml` — Docusaurus deployment to GitHub Pages
 
-**Triggers**: push of tags matching `v[0-9]+.[0-9]+.[0-9]+` (stable only — no RC or beta)
+**Triggers**: `workflow_call` (from `release.yml`, stable major/minor releases only) and `workflow_dispatch` (re-deploy an existing release by giving its tag as `ref`).
 
-| Job | Runs on | Purpose |
-|---|---|---|
-| `build` | ubuntu-latest | Installs deps, syncs `CHANGELOG.md` into `docs/release-notes.md` and the matching versioned snapshot dir, runs the release-type check, builds the site, conditionally uploads the pages artifact |
-| `deploy` | ubuntu-latest | Deploys the artifact to GitHub Pages; only runs when `build` outputs `should-deploy=true` |
+| Job | Purpose |
+|---|---|
+| `build` | Builds the site from the release tag, syncs `CHANGELOG.md` into `docs/release-notes.md` and the matching versioned snapshot, and verifies that the snapshot exists and `versions.json` has at most 10 entries |
+| `deploy` | Deploys the artifact to the `github-pages` environment |
 
-**Release-type logic** in the `build` job:
-
-- **Major/minor** (`PATCH = 0`): requires a `versioned_docs/version-{VERSION}/` snapshot; verifies it matches `docs/` exactly (excluding `release-notes.md`); verifies `versions.json` count ≤ 10; sets `should-deploy=true`.
-- **Patch** (`PATCH ≠ 0`): no snapshot required; builds the site for validation but sets `should-deploy=false` — the live site is left unchanged since no new versioned entry was added.
+Patch releases and release candidates do not add a versioned docs set, so the live site is left unchanged for them. The versioned docs snapshot itself is created by `release.yml` as part of the release commit, so the tag always contains it.
 
 ---
 
@@ -79,38 +108,49 @@ The GitHub Release is marked as **pre-release** for RC tags and **latest** for s
 
 **Triggers**: `workflow_dispatch` only (manual)
 
-Runs all three platform release builds (Linux tar.gz, Windows MSI, macOS DMG) without publishing a GitHub Release. Use this to validate packaging changes before a real release.
+Runs `build-packages.yml` (the same packaging jobs as a real release) on any branch without publishing anything. Use this to validate packaging changes before a release.
 
 ---
 
-## Branch and tag protection
+### Dependabot
 
-Both protections are configured as GitHub **Rulesets** (Settings → Rules → Rulesets) and must be set up manually — they are not defined in workflow files.
+`.github/dependabot.yml` opens weekly grouped PRs for GitHub Actions versions (actions are pinned to commit SHAs), Cargo dependencies and the docs-site npm packages. Bevy and the crates that move in lock-step with it (`bevy*`, `avian3d`, `egui_plot`) are excluded from major/minor updates because Bevy is patched to the project's fork. Upgrade those by hand.
 
-### Branch Ruleset — `dev`
+---
+
+## Repository setup
+
+These settings live in GitHub, not in workflow files, and must be configured by a repository admin.
+
+### Branch ruleset — `main`
 
 | Setting | Value |
 |---|---|
-| Pattern | `dev` |
+| Pattern | `main` (the default branch) |
 | Require a pull request before merging | ✅ |
-| Required status checks | `verify-pr`, `build (ubuntu-latest)`, `build (windows-latest)`, `build (macos-latest)`, `Build docs site` |
+| Required status checks | `ci-success` only |
 | Prevent force pushes | ✅ |
 | Prevent deletion | ✅ |
+| Bypass list | The release GitHub App (so the Release workflow can fast-forward `main`) |
 
-### Tag Ruleset — version tags
+Also enable **Automatically delete head branches** under Settings → General.
+
+### Tag ruleset — version tags
 
 | Setting | Value |
 |---|---|
 | Pattern | `v*.*.*` |
-| Bypass list | Service account that owns `GH_PAT` only |
+| Bypass list | The release GitHub App only |
 | Enforcement | Active |
 
-This blocks all developers from pushing version tags directly. The only source of a `v*.*.*` tag is the `auto-tag` job, ensuring the full PR + CI pipeline is always exercised before a tag exists.
+This blocks developers from pushing version tags directly. The only source of a `v*.*.*` tag is the Release workflow.
 
-## Secrets
+### Release GitHub App
 
-| Secret | Used by | Purpose |
+| Item | Used by | Purpose |
 |---|---|---|
-| `GH_PAT` | `pr.yaml` `auto-tag` job | A Personal Access Token (contents: write) belonging to the service account in the Tag Ruleset bypass list. Using a PAT (rather than `GITHUB_TOKEN`) allows the pushed tag to trigger downstream workflow runs. |
+| GitHub App with **Contents: read & write** installed on this repository | `release.yml` | Pushes the staging branch, fast-forwards `main` and pushes the tag. Add it to the bypass list of both rulesets above. Unlike a personal access token it is not tied to one person's account |
+| Repository variable `RELEASE_APP_ID` | `release.yml` | The App's ID |
+| Repository secret `RELEASE_APP_PRIVATE_KEY` | `release.yml` | The App's private key (PEM) |
 
-Add this secret under repo **Settings → Secrets and variables → Actions**.
+Add the variable and secret under **Settings → Secrets and variables → Actions**.

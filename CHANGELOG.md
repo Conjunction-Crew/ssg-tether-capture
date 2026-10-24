@@ -5,11 +5,42 @@ All notable changes to **ssg-tether-capture** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-When preparing a release:
-1. Add a new `## [X.Y.Z]` section below `## [Unreleased]` with your release notes.
-2. Move items from `[Unreleased]` into the new section as appropriate.
-3. The CI `verify-release-pr` job will fail if the CHANGELOG does not contain
-   an entry matching the version in `Cargo.toml`.
+**Contributors:** add a bullet for your change under `## [Unreleased]` in every
+PR, grouped under `### Added`, `### Changed`, `### Fixed` or `### Removed`. The CI
+`Changelog entry` check fails PRs that do not change that section (docs-only PRs
+and PRs labelled `no-changelog` are exempt). Do not bump the version or add
+version headings by hand.
+
+**Releases:** maintainers run the **Release** workflow in GitHub Actions. It
+renames `## [Unreleased]` to `## [vX.Y.Z] - date`, leaves a fresh empty
+`## [Unreleased]` above it, bumps `Cargo.toml`, and uses that section as the
+GitHub Release description.
+
+---
+
+## [Unreleased]
+
+### Added
+- `ci.yml` pull-request workflow: Linux `cargo fmt --check`, `cargo clippy` and `cargo test` as the merge gate, a cheaper `cargo check` on Windows and macOS (only when Rust, `Cargo.*`, `wix/` or `assets/` change), a docs build when docs change, and a single `ci-success` job to use as the required status check. Windows/macOS get the full build and test via the `full-ci` PR label, a weekday schedule, or a manual run
+- PRs must now add an entry under `## [Unreleased]` in `CHANGELOG.md` (`Changelog entry` check; docs-only PRs, Dependabot and the `no-changelog` label are exempt)
+- Reusable `build-packages.yml` workflow shared by the release and the manual packaging test, so the packaging steps no longer drift
+- `rust-toolchain.toml` (stable, with rustfmt and clippy) and `.github/dependabot.yml` for GitHub Actions, Cargo and npm updates (Bevy and its lock-step crates are excluded from major/minor updates)
+- Helper scripts `next_version.sh`, `prepare_changelog.sh`, `extract_release_notes.sh` and `check_changelog.sh` under `scripts/`
+
+### Changed
+- Releases are now cut by manually running the **Release** workflow (`workflow_dispatch`) with a `bump` (patch/minor/major), `channel` (stable/rc) and optional `dry_run`. The workflow bumps `Cargo.toml`/`Cargo.lock`, promotes the changelog, snapshots versioned docs for stable major/minor releases, builds all platforms from a staging branch and only then fast-forwards `main`, tags and publishes. Merging to `main` no longer creates a tag or release
+- `deploy-docs.yml` is now called by the release workflow (and can be run by hand with a `ref`) instead of firing on tag pushes, and no longer pushes a commit back to the repository
+- GitHub Actions are pinned to commit SHAs and CI uses `Swatinem/rust-cache`, concurrency groups and job timeouts; CI sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_DEV_DEBUG=0` to speed up Windows builds
+- `prune_versioned_docs.sh` links retired docs to the release tag instead of a `release/vX.Y.Z` branch
+
+### Removed
+- `pr.yaml`, `release.toml`, `scripts/verify_release_pr.sh` and the `auto-tag` job: version bumps, changelog headings and tags are no longer managed by hand
+- `-beta.N` pre-release tags; release candidates (`-rc.N`) are the only pre-release channel
+- Unused `lfs: true` checkout options (the repository does not use Git LFS)
+
+### Fixed
+- `cargo fmt` drift and two deny-by-default `clippy::absurd_extreme_comparisons` errors (always-true `u32 / 2 >= 0` time-warp checks) so the new fmt/clippy gate starts green
+- GitHub Release descriptions were empty because the changelog headings (`## [v0.3.0-rc.3]`) did not match what the release job searched for (`## [0.3.0-rc.3]`); extraction now accepts both forms
 
 ---
 

@@ -17,12 +17,12 @@ If you're coming back to the project after a break, skip the installs. Run the *
 | 1 | System checks | Everything |
 | 2 | Xcode Command Line Tools | Everything (compiler, linker, `git`, `codesign`, `hdiutil`) |
 | 3 | Homebrew | Installing the tools below |
-| 4 | Git identity | Committing, `cargo release` |
+| 4 | Git identity | Committing |
 | 5 | Rust toolchain (rustup) | Building and running the app |
 | 6 | VS Code + extensions | Editing and debugging |
 | 7 | First build and test | Confirming the toolchain works |
 | 8 | Node.js | Docs site (`docs_site/`) |
-| 9 | Release tooling | `cargo release`, `cargo bundle`, `.dmg` packaging |
+| 9 | Release tooling | `cargo bundle`, `.dmg` packaging |
 | 10 | Tracy profiler | `--features bevy/trace_tracy` |
 
 ---
@@ -113,7 +113,7 @@ git config --global user.name  "Your Name"
 git config --global user.email "you@example.com"
 ```
 
-Optional, but useful for a shared `dev` branch:
+Optional, but useful for a shared `main` branch:
 
 ```bash
 git config --global pull.rebase true
@@ -125,7 +125,7 @@ git config --global fetch.prune true
 ```bash
 git config --global user.name
 git config --global user.email
-git -C /path/to/ssg-tether-capture fetch --tags   # confirms remote access; cargo-release needs tags
+git -C /path/to/ssg-tether-capture fetch --tags   # confirms remote access
 ```
 
 :::info Git LFS is not required
@@ -181,7 +181,7 @@ The project targets **latest stable** and has no `rust-toolchain.toml`. Bevy 0.1
 ```bash
 code --install-extension rust-lang.rust-analyzer      # language server (bundles its own rust-analyzer binary)
 code --install-extension vadimcn.vscode-lldb          # CodeLLDB — native debugger for Rust on macOS
-code --install-extension tamasfe.even-better-toml     # Cargo.toml / release.toml support
+code --install-extension tamasfe.even-better-toml     # Cargo.toml support
 code --install-extension fill-labs.dependi            # inline crate version hints for Cargo.toml
 ```
 
@@ -309,22 +309,20 @@ npm run build
 
 ## 9 — Release tooling
 
-See [Release Workflow](./release-workflow.md) for the full process. Locally you need two cargo subcommands:
+Releases are cut from GitHub Actions, so you don't need any release tooling to contribute. See [Release Workflow](./release-workflow.md) for the full process. The only extra tool you need locally is `cargo bundle`, and only if you want to reproduce the macOS package:
 
 ```bash
-cargo install cargo-release
-cargo install cargo-bundle --version 0.6.1 --locked   # pinned to match release.yml / packaging-test.yml
+cargo install cargo-bundle --version 0.6.1 --locked   # pinned to match build-packages.yml
 ```
 
 **Verify:**
 
 ```bash
-cargo release --version
-cargo bundle --version          # must report 0.6.1
-./scripts/verify_release_pr.sh  # version-bump + CHANGELOG check that CI runs on every PR
+cargo bundle --version                         # must report 0.6.1
+sh scripts/next_version.sh 0.3.0 minor stable  # prints 0.4.0: the helper the Release workflow uses
 ```
 
-To reproduce the macOS release artifact locally, follow the same steps as `release.yml`:
+To reproduce the macOS release artifact locally, follow the same steps as `build-packages.yml`:
 
 ```bash
 cargo bundle --release
@@ -382,8 +380,7 @@ Coming back after time away? Run these from the repo root:
 softwareupdate --list                 # OS / Command Line Tools updates
 brew update && brew upgrade           # Homebrew packages (fnm, tracy, …)
 rustup self update && rustup update   # newest stable Rust
-cargo install cargo-release           # reinstalls only if a newer version exists
-git checkout dev && git pull --tags   # latest code + tags (needed by verify_release_pr.sh)
+git checkout main && git pull --tags  # latest code + tags
 cargo clean                           # optional: drop stale artifacts built with an old toolchain
 cargo build && cargo test
 (cd docs_site && npm ci && npm run build)
@@ -402,4 +399,5 @@ cargo build && cargo test
 | `Blocking waiting for file lock` | rust-analyzer is building. Wait, or set `rust-analyzer.cargo.targetDir` (see Step 6). |
 | App window opens but assets are missing | You ran from the wrong directory. Run from the repo root. |
 | Tracy GUI won't connect | GUI and `tracy-client` protocol versions differ. See Step 10. |
-| `verify_release_pr.sh` says version not greater than tag | Run `git fetch --tags` and bump the version in `Cargo.toml`. See [Release Workflow](./release-workflow.md). |
+| The `Changelog entry` CI check fails | Add a bullet under `## [Unreleased]` in `CHANGELOG.md`, or add the `no-changelog` label. Don't bump the version by hand. See [Release Workflow](./release-workflow.md). |
+| The `cargo fmt` CI check fails | Run `cargo fmt` and commit the result. |

@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Release Workflow
 
-Releases are managed with [cargo-release](https://github.com/crate-ci/cargo-release) and a set of GitHub Actions workflows. The key principle is that **merging to `dev` is the only manual step** — the version tag is created automatically by CI after each successful merge, and all downstream workflows (builds, GitHub Release, docs deploy) fire from that tag. For a full reference on how each workflow is structured and what triggers it, see [CI/CD Workflows](./cicd-workflows.md).
+Releases are cut by **running the Release workflow in GitHub Actions**. Merging a PR to `main` never creates a release, and nobody bumps versions or writes version headings by hand: the workflow does it. For how each workflow is structured, see [CI/CD Workflows](./cicd-workflows.md).
 
 ## Version scheme
 
@@ -16,99 +16,58 @@ The project follows [Semantic Versioning](https://semver.org/):
 | **MINOR** (`0.x.0`) | New features, backwards compatible |
 | **PATCH** (`0.0.x`) | Bug fixes only |
 
-Pre-releases use a two-suffix convention:
+Release candidates use an `-rc.N` suffix:
 
-| Suffix | Purpose | Builds triggered? | Docs deployed? |
+| Version | Purpose | Builds? | Docs deployed? |
 |---|---|---|---|
-| `-beta.N` | In-progress checkpoint — lightweight tag only | ❌ No | ❌ No |
-| `-rc.N` | Release candidate — ready for final validation | ✅ Yes (pre-release) | ❌ No |
-| *(none)* | Stable release | ✅ Yes (latest) | ✅ Major/minor only |
+| `X.Y.Z-rc.N` | Release candidate, ready for final validation | ✅ Yes (marked pre-release) | ❌ No |
+| `X.Y.Z` | Stable release | ✅ Yes (marked latest) | ✅ Major/minor only |
 
-## PR requirements
+`Cargo.toml` always holds the version of the **last release**. It only changes when the Release workflow runs.
 
-Every PR to `dev` — regardless of branch name — must satisfy two checks enforced by the `verify-pr` CI job:
+## What contributors do
 
-1. **Version bump**: `Cargo.toml` version must be strictly greater than the latest git tag.
-2. **Changelog entry**: `CHANGELOG.md` must contain a `## [X.Y.Z]` (or `## vX.Y.Z`) section matching the new version.
+For every PR:
 
-These same checks re-run on the post-merge push to `dev` to catch any regressions introduced during merge.
+1. Branch from `main`.
+2. Add a bullet for your change under `## [Unreleased]` in `CHANGELOG.md`, in the matching `### Added`, `### Changed`, `### Fixed` or `### Removed` group.
+3. Open a PR to `main`. The `ci-success` check must pass before merging.
 
-## Cutting a release (developer steps)
+Do **not** change the version in `Cargo.toml` or add `## [X.Y.Z]` headings.
 
-### Prerequisites
+The `Changelog entry` check fails a PR that does not change the `[Unreleased]` section. Docs-only PRs (only `docs_site/**` or `*.md` files) and Dependabot PRs are exempt. A maintainer can add the `no-changelog` label to exempt any other PR that genuinely needs no entry.
 
-```bash
-cargo install cargo-release   # install once
-```
+## Cutting a release (maintainers)
 
-### 1 — Create a branch from dev
+Go to **Actions → Release → Run workflow**, select `main`, and choose the inputs:
 
-```bash
-git checkout dev
-git pull
-git checkout -b feature/my-feature   # or fix/my-fix, chore/my-chore, etc.
-```
+| Input | Values | Meaning |
+|---|---|---|
+| `bump` | `patch` / `minor` / `major` | Which component to bump. Ignored when the current version is already an RC |
+| `channel` | `stable` / `rc` | `stable` = full release, `rc` = release candidate |
+| `dry_run` | checkbox | Compute and validate everything, publish nothing |
 
-### 2 — Update CHANGELOG.md
+What the next version will be (`scripts/next_version.sh`):
 
-Add a `## [X.Y.Z]` section above `## [Unreleased]` with notes for this version. This is **required** — the `verify-pr` CI job will reject the PR if the entry is missing or does not match the version in `Cargo.toml`.
+| Current version | `bump` | `channel` | Next version |
+|---|---|---|---|
+| `0.3.0` | `patch` | `stable` | `0.3.1` |
+| `0.3.0` | `minor` | `stable` | `0.4.0` |
+| `0.3.0` | `minor` | `rc` | `0.4.0-rc.1` |
+| `0.4.0-rc.1` | any | `rc` | `0.4.0-rc.2` |
+| `0.4.0-rc.2` | any | `stable` | `0.4.0` (promotes the RC) |
 
-### 3 — Bump the version with cargo-release
+Tip: do a **`dry_run`** first. The run summary shows the next version, the release notes that would be published and the commits that would land on `main`.
 
-Use the level that matches the change:
+The workflow then:
 
-```bash
-# Beta checkpoint (lightweight — no builds or docs deploy will be triggered)
-cargo release beta --execute --no-confirm
+1. **Verifies** `cargo fmt` and `cargo test` on `main`.
+2. **Prepares one release commit** on a scratch branch `release-staging/vX.Y.Z`: bumps `Cargo.toml` and `Cargo.lock`, renames `## [Unreleased]` to `## [vX.Y.Z] - date` (leaving a new empty `[Unreleased]`), and, for stable major/minor releases, snapshots the versioned docs. The release fails here if `[Unreleased]` is empty.
+3. **Builds** the Linux, Windows and macOS packages from that commit.
+4. **Publishes**, only if everything above is green: fast-forwards `main` to the release commit, pushes the `vX.Y.Z` tag and creates the GitHub Release. The release description is the changelog section.
+5. **Deploys the docs** for stable major/minor releases.
 
-# Patch fix
-cargo release patch --execute --no-confirm
-
-# New feature
-cargo release minor --execute --no-confirm
-
-# Breaking change
-cargo release major --execute --no-confirm
-```
-
-`cargo-release` will:
-
-1. Run `scripts/verify_release_pr.sh` (pre-release hook) — fails fast if the CHANGELOG entry is missing or the version is not greater than the latest tag.
-2. Bump the version in `Cargo.toml` and commit it.
-
-Because `release.toml` sets `tag = false` and `push = false`, **no tag is created or pushed by cargo-release**. The tag is created automatically by CI after the PR merges.
-
-> **The versioned docs snapshot is created automatically after the tag is pushed.**
-> For major/minor releases, `deploy-docs.yml` snapshots `docs_site/docs/` as a
-> new versioned set and pushes the resulting commit to `dev`. No manual step is
-> required.
-
-### 4 — Open a PR to dev
-
-```bash
-git push origin feature/my-feature
-# Open a PR targeting dev
-```
-
-CI runs three jobs in parallel: `verify-pr`, `build` (Linux / Windows / macOS matrix), and `docs-build`. All must be green before merging.
-
-### 5 — Merge the PR
-
-After review and CI is green, merge. The `auto-tag` job fires automatically and pushes `v{version}`. See [CI/CD Workflows — what each tag triggers](./cicd-workflows.md#workflow-reference) for the full breakdown of which workflows fire for each tag type.
-
-## Upgrading a beta to an RC
-
-When a beta is ready for final validation, promote it to an RC:
-
-```bash
-cargo release rc --execute --no-confirm
-```
-
-This bumps `v0.3.0-beta.2` → `v0.3.0-rc.1`. Open a PR, merge, and the `auto-tag` job will push the RC tag — triggering `release.yml` to build pre-release artifacts.
-
-## GitHub Release description
-
-The `release.yml` workflow automatically extracts the `## [X.Y.Z]` section from `CHANGELOG.md` and uses it as the GitHub Release description. No separate release notes file is needed.
+If any step fails before step 4, `main` is untouched. Fix the problem and run the workflow again. If step 4 or 5 fails part-way, use **Re-run failed jobs**; the publish step is safe to repeat.
 
 ## Artifacts produced
 
@@ -119,3 +78,13 @@ The `release.yml` workflow automatically extracts the `## [X.Y.Z]` section from 
 | macOS ARM64 | `.dmg` — `.app` bundle | Mount DMG, drag to Applications |
 
 > **macOS Gatekeeper**: The `.app` is ad-hoc signed (no Apple Developer account required). Users must right-click → Open on first launch to bypass the unidentified developer warning. Apple Developer ID signing can be added to the workflow once a certificate is provisioned.
+
+To test packaging without releasing anything, run **Actions → Packaging Test** on any branch.
+
+## One-time repository setup
+
+See [CI/CD Workflows → Repository setup](./cicd-workflows.md#repository-setup) for the `main` and tag rulesets, and for the release GitHub App (`RELEASE_APP_ID` variable and `RELEASE_APP_PRIVATE_KEY` secret) that lets the workflow push to protected `main` and create `v*.*.*` tags.
+
+## Hotfixes
+
+Fix on `main` like any other change, then run the Release workflow with `bump: patch`. There are no long-lived release branches.

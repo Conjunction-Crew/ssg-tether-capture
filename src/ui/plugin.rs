@@ -536,7 +536,6 @@ fn handle_ui_events(
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
                     const MAX_TIME_WARP: u32 = 10000;
-                    const MIN_TIME_WARP: u32 = 0;
                     let prev = world_time.multiplier;
                     if *increase && world_time.multiplier * 2 <= MAX_TIME_WARP {
                         if world_time.multiplier == 0 {
@@ -544,7 +543,7 @@ fn handle_ui_events(
                         } else {
                             world_time.multiplier *= 2;
                         }
-                    } else if !increase && world_time.multiplier / 2 >= MIN_TIME_WARP {
+                    } else if !increase {
                         if world_time.multiplier == 1 {
                             world_time.multiplier = 0;
                         } else {

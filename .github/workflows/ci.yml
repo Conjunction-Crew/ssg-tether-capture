@@ -1,0 +1,254 @@
+name: CI
+
+# Fast pull-request gate.
+#
+#   PR / push to main : Linux fmt + clippy + tests (the real gate), plus a cheap
+#                       `cargo check` on Windows and macOS.  Jobs are skipped
+#                       when the PR does not touch the files they care about.
+#   `full-ci` label   : also runs the full cargo build + test on Windows/macOS.
+#   Weekday schedule  : the same full run, against main.
+#   workflow_dispatch : the same full run, on demand.
+#
+# Branch protection should require ONLY the `ci-success` job.  Jobs skipped by
+# the change detection below would otherwise leave required checks "pending".
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` so adding `full-ci` or `no-changelog` re-runs CI.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Incremental artifacts are useless in CI and bloat the cache.
+  CARGO_INCREMENTAL: "0"
+  # The dev profile sets `debug = true`.  Debug info makes Windows link times
+  # and cache sizes balloon (huge PDBs) and CI never needs it.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Decide which jobs are relevant for this event.
+  # ───────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.detect.outputs.rust }}
+      docs: ${{ steps.detect.outputs.docs }}
+      full: ${{ steps.detect.outputs.full }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HAS_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(git diff --name-only "$BASE_SHA"...HEAD)
+            rust=false
+            docs=false
+            if printf '%s\n' "$files" | grep -Eq '^(src/|assets/|wix/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/(ci|build-packages)\.yml$)'; then
+              rust=true
+            fi
+            if printf '%s\n' "$files" | grep -Eq '^(docs_site/|CHANGELOG\.md$|\.github/workflows/ci\.yml$)'; then
+              docs=true
+            fi
+            full=$HAS_FULL_LABEL
+            if [ "$full" = "true" ]; then rust=true; fi
+          else
+            rust=true
+            docs=true
+            # push to main is a cheap warm-up/validation run; schedule and manual
+            # runs get the full cross-platform build.
+            if [ "$EVENT" = "push" ]; then full=false; else full=true; fi
+          fi
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+          echo "docs=$docs" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust docs=$docs full=$full"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Linux: formatting, lints and the unit/integration tests.  This is the job
+  # that actually gates a merge.
+  # ───────────────────────────────────────────────────────────────────────────
+  rust-linux:
+    name: Lint and test (Linux)
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libasound2-dev libudev-dev
+
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          # PR caches are not shared between PRs and would evict the main-branch
+          # cache (repo cache quota is 10 GB), so only main saves.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        # Deny-by-default clippy lints fail the build.  The existing warning
+        # backlog is reported but not blocking; tighten to `-- -D warnings`
+        # once it has been burned down.
+        run: cargo clippy --all-targets --locked
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Build (full runs only)
+        if: needs.changes.outputs.full == 'true'
+        run: cargo build --locked
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Windows / macOS.  PRs only run `cargo check` (compile errors, platform-
+  # specific cfg code).  A `full-ci` label, the weekday schedule and manual
+  # runs do the full build + test.  Release builds always cover both.
+  # ───────────────────────────────────────────────────────────────────────────
+  cross-platform:
+    name: ${{ needs.changes.outputs.full == 'true' && 'Build and test' || 'Check' }} (${{ matrix.name }})
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo check
+        if: needs.changes.outputs.full != 'true'
+        run: cargo check --all-targets --locked
+
+      - name: cargo build
+        if: needs.changes.outputs.full == 'true'
+        run: cargo build --locked
+
+      - name: cargo test
+        if: needs.changes.outputs.full == 'true'
+        run: cargo test --locked
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Docusaurus build — catches broken links / build errors, and enforces the
+  # 10-versioned-docs cap (see scripts/prune_versioned_docs.sh).
+  # ───────────────────────────────────────────────────────────────────────────
+  docs-build:
+    name: Build docs site
+    needs: [changes]
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: ./docs_site/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./docs_site
+
+      - name: Sync changelog into docs
+        run: cp CHANGELOG.md ./docs_site/docs/release-notes.md
+
+      - name: Build website
+        run: npm run build
+        working-directory: ./docs_site
+
+      - name: Check versioned docs count (max 10)
+        run: |
+          COUNT=$(node -e "const v=require('./docs_site/versions.json'); console.log(v.length)")
+          if [ "$COUNT" -gt 10 ]; then
+            echo "ERROR: versions.json has $COUNT entries (max 10). Run scripts/prune_versioned_docs.sh to prune." >&2
+            exit 1
+          fi
+          echo "Versioned docs count: $COUNT (OK)"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Every PR must add a note under `## [Unreleased]` in CHANGELOG.md, unless it
+  # only touches docs, carries the `no-changelog` label, or comes from Dependabot.
+  # ───────────────────────────────────────────────────────────────────────────
+  changelog:
+    name: Changelog entry
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG.md [Unreleased] section
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SKIP_CHANGELOG_CHECK: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') || github.actor == 'dependabot[bot]' }}
+        run: sh ./scripts/check_changelog.sh "$BASE_SHA"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Single required status check.  Skipped jobs count as passing; failed or
+  # cancelled ones do not.
+  # ───────────────────────────────────────────────────────────────────────────
+  ci-success:
+    name: ci-success
+    if: always()
+    needs: [changes, rust-linux, cross-platform, docs-build, changelog]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "* | *" cancelled "*)
+              echo "::error::One or more CI jobs failed or were cancelled."
+              exit 1
+              ;;
+          esac
