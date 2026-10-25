@@ -18,7 +18,7 @@ csv = { version = "1.4.0" }
 chrono = { version = "0.4.41" }
 serde_json = { version = "1.0.149" }
 brahe = { version = "1.1.4" }
-nalgebra = { version = "0.34.1" }
+nalgebra = { version = "0.35.0" }
 rfd = { version = "0.17" }
 arboard = { version = "3" }
 dirs = { version = "6" }
