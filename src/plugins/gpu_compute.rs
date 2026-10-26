@@ -108,7 +108,7 @@ impl Plugin for GpuComputePlugin {
             );
 
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
-        render_graph.add_node(GpuComputeLabel, GpuComputeNode::default());
+        render_graph.add_node(GpuComputeLabel, GpuComputeNode);
         render_graph.add_node_edge(GpuComputeLabel, bevy::render::graph::CameraDriverLabel);
     }
 }

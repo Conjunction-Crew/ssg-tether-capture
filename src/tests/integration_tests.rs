@@ -148,7 +148,7 @@ fn apply_force_to_target() {
             plan_id: plan.id.clone(),
             current_state: plan
                 .states
-                .get(0)
+                .first()
                 .expect("No states in the desired plan!")
                 .id
                 .clone(),
@@ -244,13 +244,13 @@ fn floating_origin_resets() {
 
     let current_transform_o = app.world().get::<Position>(sphere_body);
     assert!(current_transform_o.is_some());
-    let current_transform = current_transform_o.unwrap().clone();
+    let current_transform = *current_transform_o.unwrap();
 
     fixed_physics_step(app.world_mut());
 
     let new_transform_o = app.world().get::<Position>(sphere_body);
     assert!(new_transform_o.is_some());
-    let new_transform = new_transform_o.unwrap().clone();
+    let new_transform = *new_transform_o.unwrap();
 
     // Expect position to not have updated
     assert_eq!(current_transform, new_transform);
@@ -264,7 +264,7 @@ fn floating_origin_resets() {
 
     let reset_transform_o = app.world().get::<Position>(sphere_body);
     assert!(reset_transform_o.is_some());
-    let reset_transform = reset_transform_o.unwrap().clone();
+    let reset_transform = *reset_transform_o.unwrap();
 
     // Expect position to have been reset
     assert!(reset_transform.length() < 1.0);
