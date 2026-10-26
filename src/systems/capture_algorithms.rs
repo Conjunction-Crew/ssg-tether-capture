@@ -2,7 +2,7 @@ use avian3d::{
     math::PI,
     prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
 };
-use bevy::{math::DVec3, prelude::*, state::commands};
+use bevy::{math::DVec3, prelude::*};
 
 use crate::{
     components::capture_components::CaptureComponent,
@@ -12,7 +12,7 @@ use crate::{
             CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePlan,
             CompiledCaptureStateParameters, CompiledCaptureTransition,
         },
-        data_collection::{self, DataCollection},
+        data_collection::DataCollection,
         orbital_cache::OrbitalCache,
         world_time::WorldTime,
     },
@@ -38,9 +38,9 @@ pub fn capture_state_machine_update(
         let capture_entity_linvel: LinearVelocity;
         let capture_entity_rotation: Rotation;
         if let Ok(capture_entity_rb) = rb_forces.p0().get(capture_entity) {
-            capture_entity_position = capture_entity_rb.position.clone();
-            capture_entity_linvel = capture_entity_rb.linear_velocity.clone();
-            capture_entity_rotation = capture_entity_rb.rotation.clone();
+            capture_entity_position = *capture_entity_rb.position;
+            capture_entity_linvel = *capture_entity_rb.linear_velocity;
+            capture_entity_rotation = *capture_entity_rb.rotation;
         } else {
             return;
         }
@@ -233,10 +233,10 @@ fn resolve_root_state(
 
         parameters = state.parameters;
 
-        if let Some(shrink_rate) = state.parameters.shrink_rate {
-            if capture_sphere_radius.radius > 0.1 {
-                capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
-            }
+        if let Some(shrink_rate) = state.parameters.shrink_rate
+            && capture_sphere_radius.radius > 0.1
+        {
+            capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
         }
 
         for transition in &state.transitions {
@@ -260,48 +260,48 @@ fn apply_transition(
     rel_v_length: f64,
     log_events: &mut MessageWriter<LogEvent>,
 ) {
-    if let Some(limit) = transition.distance_less_than {
-        if rel_r_length < limit {
-            transition_to(
-                capture_component,
-                &transition.to,
-                format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
-                log_events,
-            );
-        }
+    if let Some(limit) = transition.distance_less_than
+        && rel_r_length < limit
+    {
+        transition_to(
+            capture_component,
+            &transition.to,
+            format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
+            log_events,
+        );
     }
 
-    if let Some(limit) = transition.distance_greater_than {
-        if rel_r_length > limit {
-            transition_to(
-                capture_component,
-                &transition.to,
-                format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
-                log_events,
-            );
-        }
+    if let Some(limit) = transition.distance_greater_than
+        && rel_r_length > limit
+    {
+        transition_to(
+            capture_component,
+            &transition.to,
+            format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
+            log_events,
+        );
     }
 
-    if let Some(limit) = transition.relative_velocity_less_than {
-        if rel_v_length < limit {
-            transition_to(
-                capture_component,
-                &transition.to,
-                format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
-                log_events,
-            );
-        }
+    if let Some(limit) = transition.relative_velocity_less_than
+        && rel_v_length < limit
+    {
+        transition_to(
+            capture_component,
+            &transition.to,
+            format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
+            log_events,
+        );
     }
 
-    if let Some(limit) = transition.relative_velocity_greater_than {
-        if rel_v_length > limit {
-            transition_to(
-                capture_component,
-                &transition.to,
-                format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
-                log_events,
-            );
-        }
+    if let Some(limit) = transition.relative_velocity_greater_than
+        && rel_v_length > limit
+    {
+        transition_to(
+            capture_component,
+            &transition.to,
+            format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
+            log_events,
+        );
     }
 }
 

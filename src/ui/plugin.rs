@@ -189,7 +189,7 @@ fn setup_ui_camera(mut commands: Commands, camera_query: Query<Entity, With<UiCa
 
     commands.spawn((
         UiCamera,
-        Camera2d::default(),
+        Camera2d,
         RenderLayers::layer(UI_LAYER),
         Camera {
             order: 1,
@@ -208,17 +208,17 @@ fn poll_file_dialog_task(
     mut working_directory: ResMut<WorkingDirectory>,
     mut path_text: Query<&mut Text, With<DirectoryPathText>>,
 ) {
-    if let Some(ref mut task) = file_dialog_task.0 {
-        if let Some(result) = block_on(future::poll_once(task)) {
-            if let Some(path) = result {
-                let path_str = path.to_string_lossy().to_string();
-                working_directory.pending_path = path_str.clone();
-                for mut text in &mut path_text {
-                    text.0 = path_str.clone();
-                }
+    if let Some(ref mut task) = file_dialog_task.0
+        && let Some(result) = block_on(future::poll_once(task))
+    {
+        if let Some(path) = result {
+            let path_str = path.to_string_lossy().to_string();
+            working_directory.pending_path = path_str.clone();
+            for mut text in &mut path_text {
+                text.0 = path_str.clone();
             }
-            file_dialog_task.0 = None;
         }
+        file_dialog_task.0 = None;
     }
 }
 
@@ -431,7 +431,7 @@ fn handle_ui_events(
             }
             UiEvent::WorkingDirectorySelected(path) => {
                 working_directory.path = path.clone();
-                save_to_config(&path);
+                save_to_config(path);
                 if let Err(e) = std::fs::create_dir_all(path) {
                     eprintln!("Failed to create working directory: {e}");
                 }
@@ -806,10 +806,9 @@ fn handle_ui_events(
                                         let dist = t.get("distance")?;
                                         let (kind, val) = if let Some(v) = dist.get("less_than") {
                                             ("less_than".to_string(), v.to_string())
-                                        } else if let Some(v) = dist.get("greater_than") {
-                                            ("greater_than".to_string(), v.to_string())
                                         } else {
-                                            return None;
+                                            let v = dist.get("greater_than")?;
+                                            ("greater_than".to_string(), v.to_string())
                                         };
                                         Some(TransitionForm {
                                             to,

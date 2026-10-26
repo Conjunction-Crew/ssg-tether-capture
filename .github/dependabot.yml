@@ -29,6 +29,13 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "egui_plot"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # brahe and nalgebra share types across the sim (`Vector6`). brahe < 1.6
+      # requires nalgebra 0.34, so a lone bump of either puts two nalgebra
+      # versions in the build and fails. Upgrade both together by hand.
+      - dependency-name: "brahe"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "nalgebra"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Docusaurus site.
   - package-ecosystem: npm

@@ -46,13 +46,13 @@ impl InputField {
 
     /// Delete any active selection. Returns `true` if text was deleted.
     fn delete_selection(&mut self) -> bool {
-        if let Some((lo, hi)) = self.selection_range() {
-            if lo < hi {
-                self.value.drain(lo..hi);
-                self.cursor_pos = lo;
-                self.selection_anchor = None;
-                return true;
-            }
+        if let Some((lo, hi)) = self.selection_range()
+            && lo < hi
+        {
+            self.value.drain(lo..hi);
+            self.cursor_pos = lo;
+            self.selection_anchor = None;
+            return true;
         }
         self.selection_anchor = None;
         false

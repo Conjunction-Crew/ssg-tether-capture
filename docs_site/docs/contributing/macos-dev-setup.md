@@ -167,7 +167,7 @@ cargo fmt --version
 ```
 
 :::note Toolchain version
-The project targets **latest stable** and has no `rust-toolchain.toml`. Bevy 0.18 and its dependencies regularly raise their minimum Rust version, so keep stable current with `rustup update`. If a build fails with an error like `package X requires rustc 1.NN`, an outdated toolchain is almost always the cause.
+`rust-toolchain.toml` pins the exact Rust version the project builds and lints with. rustup installs it automatically the first time you run `cargo` in the repository, so you do not need `rustup update` for this repo. The pin is raised by hand when Bevy or another dependency needs a newer compiler; if a build fails with an error like `package X requires rustc 1.NN`, check whether the pin has moved and run `cargo` again to pick it up.
 :::
 
 ---

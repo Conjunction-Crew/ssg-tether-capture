@@ -26,12 +26,17 @@ GitHub Release description.
 - Reusable `build-packages.yml` workflow shared by the release and the manual packaging test, so the packaging steps no longer drift
 - `rust-toolchain.toml` (stable, with rustfmt and clippy) and `.github/dependabot.yml` for GitHub Actions, Cargo and npm updates (Bevy and its lock-step crates are excluded from major/minor updates)
 - Helper scripts `next_version.sh`, `prepare_changelog.sh`, `extract_release_notes.sh` and `check_changelog.sh` under `scripts/`
+- Release workflow `preflight` job: fails in seconds, on dry runs too, if `RELEASE_APP_ID` or the `RELEASE_APP_PRIVATE_KEY` secret is missing, or if the key was stored as a variable. Dry runs now also mint the App token, so a bad key fails the dry run instead of the real release.
 
 ### Changed
+- First stable release of the 0.3 line; promotes v0.3.0-rc.3. App changes in this line are listed under v0.3.0-rc.1 – rc.3 below.
+- `rust-toolchain.toml` pins Rust 1.99.1 instead of tracking `stable`, so CI and contributors build and lint with the same compiler
 - Releases are now cut by manually running the **Release** workflow (`workflow_dispatch`) with a `bump` (patch/minor/major), `channel` (stable/rc) and optional `dry_run`. The workflow bumps `Cargo.toml`/`Cargo.lock`, promotes the changelog, snapshots versioned docs for stable major/minor releases, builds all platforms from a staging branch and only then fast-forwards `main`, tags and publishes. Merging to `main` no longer creates a tag or release
 - `deploy-docs.yml` is now called by the release workflow (and can be run by hand with a `ref`) instead of firing on tag pushes, and no longer pushes a commit back to the repository
 - GitHub Actions are pinned to commit SHAs and CI uses `Swatinem/rust-cache`, concurrency groups and job timeouts; CI sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_DEV_DEBUG=0` to speed up Windows builds
 - `prune_versioned_docs.sh` links retired docs to the release tag instead of a `release/vX.Y.Z` branch
+- GitHub Actions bumped (checkout 7.0.1, upload-artifact 7.0.2, download-artifact 8.0.2, setup-node 7.1.0, setup-dotnet 6.0.0, upload-pages-artifact 5.0.0, deploy-pages 5.0.1, create-github-app-token 3.3.0, rust-cache), ported from Dependabot #46
+- CI fails on any clippy warning except `type_complexity` and `too_many_arguments`; those 42 Bevy-signature warnings are listed in the CI job summary until the files are restructured. The rest of the 121-warning backlog is cleared
 
 ### Removed
 - `pr.yaml`, `release.toml`, `scripts/verify_release_pr.sh` and the `auto-tag` job: version bumps, changelog headings and tags are no longer managed by hand
@@ -39,8 +44,13 @@ GitHub Release description.
 - Unused `lfs: true` checkout options (the repository does not use Git LFS)
 
 ### Fixed
+- Clippy warnings fixed in `src/systems/` (no behaviour change)
 - `cargo fmt` drift and two deny-by-default `clippy::absurd_extreme_comparisons` errors (always-true `u32 / 2 >= 0` time-warp checks) so the new fmt/clippy gate starts green
+- Clippy warnings fixed in `src/components/`, `src/resources/`, `src/plugins/` and `src/tests/` (no behaviour change)
 - GitHub Release descriptions were empty because the changelog headings (`## [v0.3.0-rc.3]`) did not match what the release job searched for (`## [0.3.0-rc.3]`); extraction now accepts both forms
+- Clippy warnings fixed in `src/ui/` (no behaviour change)
+- Dependency updates from Dependabot #48 (serde 1.0.229, serde_json 1.0.154, arboard 3.7.0). brahe stays at 1.3.2: brahe 1.6 pulls nalgebra 0.35 next to our 0.34 and the build fails on mismatched `Vector6` types. Dependabot no longer proposes brahe/nalgebra minor bumps on their own.
+- Release workflow: the versioned-docs snapshot step failed on current npm (`npm pkg set version "$VERSION"` → `npm pkg set version="$VERSION"`), which would have broken the first stable major/minor release
 
 ---
 

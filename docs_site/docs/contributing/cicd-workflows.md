@@ -43,7 +43,7 @@ Merging to `main` never creates a tag or a release. Only the Release workflow do
 | Job | Runs on | Purpose |
 |---|---|---|
 | `changes` | ubuntu-latest | Decides which of the jobs below are relevant, based on the files a PR touches and on the `full-ci` label |
-| `rust-linux` | ubuntu-latest | `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`. Runs when `src/`, `assets/`, `wix/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` or the CI/packaging workflows change. Clippy errors fail the job; clippy *warnings* are reported but do not (yet) |
+| `rust-linux` | ubuntu-latest | `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`. Runs when `src/`, `assets/`, `wix/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` or the CI/packaging workflows change. Clippy fails the job on any warning except `clippy::type_complexity` and `clippy::too_many_arguments` (Bevy system signatures that are tracked, not yet fixed). A non-failing step lists those in the job summary ("Tracked clippy warnings: N") |
 | `cross-platform` | windows-latest, macos-latest | PRs: `cargo check --all-targets` only. With the `full-ci` label, on the weekday schedule and on manual runs: `cargo build` + `cargo test` |
 | `docs-build` | ubuntu-latest | Docusaurus build, plus a check that `versions.json` has at most 10 entries. Runs when `docs_site/**` or `CHANGELOG.md` change |
 | `changelog` | ubuntu-latest | PRs only: fails unless the `## [Unreleased]` section of `CHANGELOG.md` was changed. Exempt: docs-only PRs (`docs_site/**` and `*.md`), PRs labelled `no-changelog`, and Dependabot |
@@ -153,4 +153,6 @@ This blocks developers from pushing version tags directly. The only source of a 
 | Repository variable `RELEASE_APP_ID` | `release.yml` | The App's ID |
 | Repository secret `RELEASE_APP_PRIVATE_KEY` | `release.yml` | The App's private key (PEM) |
 
-Add the variable and secret under **Settings → Secrets and variables → Actions**.
+Add the variable and secret under **Settings → Secrets and variables → Actions**. The private key goes in the **Secrets** tab, never in **Variables** (variables are stored and shown in plaintext).
+
+The Release workflow's `preflight` job enforces this. It runs first, on dry runs too, and fails within seconds if `RELEASE_APP_ID` or the `RELEASE_APP_PRIVATE_KEY` secret is empty or missing, or if a repository *variable* named `RELEASE_APP_PRIVATE_KEY` exists. If it reports a variable, delete it, rotate the App's private key and store the new key as a secret.

@@ -12,6 +12,8 @@ pub struct DataCollectionSettings {
 pub struct DataCollection {
     pub velocity: HashMap<Entity, Vec<(f64, f64)>>,
     pub position: HashMap<Entity, Vec<(f64, f64)>>,
+    // unused today; the P3 component/resource audit decides
+    #[allow(dead_code)]
     pub forces: HashMap<Entity, Vec<(f64, f64)>>,
     pub settings: DataCollectionSettings,
 }

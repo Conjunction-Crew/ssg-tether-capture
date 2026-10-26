@@ -51,7 +51,7 @@ jobs:
       docs: ${{ steps.detect.outputs.docs }}
       full: ${{ steps.detect.outputs.full }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Linux system dependencies
         run: |
@@ -108,7 +108,7 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # PR caches are not shared between PRs and would evict the main-branch
           # cache (repo cache quota is 10 GB), so only main saves.
@@ -117,11 +117,41 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
-      - name: Clippy
-        # Deny-by-default clippy lints fail the build.  The existing warning
-        # backlog is reported but not blocking; tighten to `-- -D warnings`
-        # once it has been burned down.
-        run: cargo clippy --all-targets --locked
+      - name: Clippy (gate)
+        # Every clippy warning fails the job except these two Bevy-signature
+        # lints, which the next step tracks until P3/P8 restructure the systems
+        # and UI code that triggers them.  Never silence them with #[allow].
+        run: cargo clippy --all-targets --locked -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments
+
+      - name: Clippy (tracked warnings report)
+        # Lists the two allowed lints in the job summary.  Never fails.  The
+        # short message format has no lint names, so match on the message text,
+        # and `--color never` is needed because CARGO_TERM_COLOR=always would put
+        # escape codes inside the `: warning:` marker.  It reuses the gate's build
+        # artifacts.
+        if: always()
+        run: |
+          cargo clippy --all-targets --locked --color never --message-format=short 2>&1 \
+            | grep ': warning:' \
+            | grep -E 'very complex type used|too many arguments' \
+            | sed -E 's/^([^ ]+): warning: (.*)$/\1 \2/' \
+            | sort -u > "$RUNNER_TEMP/tracked-clippy.txt" || true
+          COUNT=$(wc -l < "$RUNNER_TEMP/tracked-clippy.txt" | tr -d ' ')
+          echo "Tracked clippy warnings: ${COUNT}"
+          {
+            echo "### Tracked clippy warnings"
+            echo ""
+            echo "Tracked clippy warnings: ${COUNT}"
+            echo ""
+            echo "\`clippy::type_complexity\` and \`clippy::too_many_arguments\` are allowed by the gate and listed here until the files are restructured."
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/tracked-clippy.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          sed -E 's/^([^:]+):([0-9]+):([0-9]+) (.*)$/::warning file=\1,line=\2,col=\3::\4/' \
+            "$RUNNER_TEMP/tracked-clippy.txt" || true
+          exit 0
 
       - name: Run tests
         run: cargo test --locked
@@ -150,12 +180,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -182,9 +212,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
           cache: npm
@@ -220,7 +250,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 

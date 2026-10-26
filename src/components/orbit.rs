@@ -19,9 +19,13 @@ pub struct TetherNode {
 }
 
 // Orbital parameters and state for a body approaching another object.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, Default)]
 pub struct Orbital {
+    // unused today; the P3 component/resource audit decides
+    #[allow(dead_code)]
     pub object_id: String,
+    // unused today; the P3 component/resource audit decides
+    #[allow(dead_code)]
     pub parent_entity: Option<Entity>,
     pub propagator: Option<KeplerianPropagator>,
 }
@@ -30,20 +34,14 @@ pub struct Orbital {
 #[derive(Component, Debug, Clone)]
 #[require(Orbital)]
 pub enum Orbit {
+    // F-10: constructed when P4 implements SGP4
+    #[allow(dead_code)]
     FromTle(String),
     FromElements(Vector6<f64>),
 }
 
-impl Default for Orbital {
-    fn default() -> Self {
-        Self {
-            object_id: String::new(),
-            parent_entity: None,
-            propagator: None,
-        }
-    }
-}
-
+// unused today; the P3 component/resource audit decides
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct JsonOrbital {
     #[serde(default)]
@@ -102,6 +100,8 @@ pub struct JsonOrbital {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(from = "JsonOrbitalDataSource")]
 pub struct JsonOrbitalData {
+    // unused today; the P3 component/resource audit decides
+    #[allow(dead_code)]
     pub name: String,
     pub data: Vec<JsonOrbital>,
 }
