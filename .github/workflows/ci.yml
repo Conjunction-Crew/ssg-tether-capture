@@ -137,6 +137,7 @@ jobs:
             | sed -E 's/^([^ ]+): warning: (.*)$/\1 \2/' \
             | sort -u > "$RUNNER_TEMP/tracked-clippy.txt" || true
           COUNT=$(wc -l < "$RUNNER_TEMP/tracked-clippy.txt" | tr -d ' ')
+          echo "Tracked clippy warnings: ${COUNT}"
           {
             echo "### Tracked clippy warnings"
             echo ""
