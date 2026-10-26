@@ -4,3 +4,5 @@ pub mod char_floating_origin;
 pub mod char_orbit;
 pub mod char_physics_bubble;
 pub mod char_time_warp;
+pub mod char_capture;
+pub mod char_plans;
