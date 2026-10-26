@@ -56,7 +56,7 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
     }
 
     // ── Panel ────────────────────────────────────────────────────────────────
-    let screen_height = ctx.screen_rect().height();
+    let screen_height = ctx.content_rect().height();
     let min_h = if p.log_ui.is_open {
         screen_height * 0.25
     } else {
@@ -164,31 +164,33 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
             // Keyboard shortcuts: Ctrl+A (select all), Ctrl+C (copy selection)
             let ctrl_held =
                 ctx.input(|i: &egui::InputState| i.modifiers.ctrl || i.modifiers.mac_cmd);
-            if ctrl_held && ctx.input(|i: &egui::InputState| i.key_pressed(egui::Key::A)) {
-                if !filtered.is_empty() {
-                    p.log_ui.selection_anchor = Some(0);
-                    p.log_ui.selected_rows = Some((0, filtered.len() - 1));
-                }
+            if ctrl_held
+                && ctx.input(|i: &egui::InputState| i.key_pressed(egui::Key::A))
+                && !filtered.is_empty()
+            {
+                p.log_ui.selection_anchor = Some(0);
+                p.log_ui.selected_rows = Some((0, filtered.len() - 1));
             }
-            if ctrl_held && ctx.input(|i: &egui::InputState| i.key_pressed(egui::Key::C)) {
-                if let Some((sel_lo, sel_hi)) = p.log_ui.selected_rows {
-                    let lo = sel_lo.min(sel_hi);
-                    let hi = sel_lo.max(sel_hi);
-                    let mut text = String::new();
-                    for idx in lo..=hi {
-                        if let Some(entry) = filtered.get(idx) {
-                            text.push_str(&format!(
-                                "[{}] [{:>4}] {}: {}\n",
-                                entry.timestamp,
-                                entry.level.label(),
-                                entry.source,
-                                entry.message,
-                            ));
-                        }
+            if ctrl_held
+                && ctx.input(|i: &egui::InputState| i.key_pressed(egui::Key::C))
+                && let Some((sel_lo, sel_hi)) = p.log_ui.selected_rows
+            {
+                let lo = sel_lo.min(sel_hi);
+                let hi = sel_lo.max(sel_hi);
+                let mut text = String::new();
+                for idx in lo..=hi {
+                    if let Some(entry) = filtered.get(idx) {
+                        text.push_str(&format!(
+                            "[{}] [{:>4}] {}: {}\n",
+                            entry.timestamp,
+                            entry.level.label(),
+                            entry.source,
+                            entry.message,
+                        ));
                     }
-                    if !text.is_empty() {
-                        ctx.copy_text(text);
-                    }
+                }
+                if !text.is_empty() {
+                    ctx.copy_text(text);
                 }
             }
 
@@ -314,7 +316,7 @@ fn write_log_to_file(
     let lines: Result<Vec<String>, _> = capture_log
         .entries
         .iter()
-        .map(|entry| serde_json::to_string(entry))
+        .map(serde_json::to_string)
         .collect();
     let content = lines.map_err(|e| format!("serialization error: {e}"))?;
     let content = content.join("\n");

@@ -107,7 +107,7 @@ pub fn spawn_home_screen_inner(
             "s"
         }
     );
-    let capture_plan_count_label = format!(
+    let _capture_plan_count_label = format!(
         "{} capture plan{} in workspace",
         capture_plan_lib.plans.len(),
         if capture_plan_lib.plans.len() == 1 {

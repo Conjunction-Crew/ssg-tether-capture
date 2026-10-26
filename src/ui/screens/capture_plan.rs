@@ -1543,9 +1543,7 @@ pub fn generate_filename(plan_name: &str) -> String {
         .to_lowercase()
         .chars()
         .map(|c| {
-            if c == ' ' {
-                '_'
-            } else if ILLEGAL.contains(&c) || c.is_control() {
+            if c == ' ' || ILLEGAL.contains(&c) || c.is_control() {
                 '_'
             } else {
                 c

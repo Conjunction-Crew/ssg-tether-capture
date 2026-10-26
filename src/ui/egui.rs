@@ -58,7 +58,7 @@ pub fn egui_plots(
 
     let mut export_clicked = false;
     let mut selected_filename: String = settings.csv_export_filename.clone();
-    let mut num_exports = settings.num_exports_completed.clone();
+    let mut num_exports = settings.num_exports_completed;
 
     let ctx = contexts.ctx_mut().unwrap();
     let available_rect = ctx.available_rect();
@@ -66,14 +66,10 @@ pub fn egui_plots(
         .default_pos(Pos2::new(0.0, 1920.0))
         .constrain_to(available_rect)
         .show(ctx, |ui| {
-            let pos_points: PlotPoints = pos_data
-                .into_iter()
-                .map(|(epoch, vel)| [*epoch, *vel])
-                .collect();
-            let vel_points: PlotPoints = vel_data
-                .into_iter()
-                .map(|(epoch, vel)| [*epoch, *vel])
-                .collect();
+            let pos_points: PlotPoints =
+                pos_data.iter().map(|(epoch, vel)| [*epoch, *vel]).collect();
+            let vel_points: PlotPoints =
+                vel_data.iter().map(|(epoch, vel)| [*epoch, *vel]).collect();
             let pos_line = Line::new("meters", pos_points);
             let vel_line = Line::new("meters per second", vel_points);
 
@@ -121,9 +117,7 @@ pub fn egui_plots(
                         return;
                     }
 
-                    for (pos_point, vel_point) in
-                        Iterator::zip(pos_data.into_iter(), vel_data.into_iter())
-                    {
+                    for (pos_point, vel_point) in Iterator::zip(pos_data.iter(), &*vel_data) {
                         if let Err(e) = wtr.serialize((pos_point.0, pos_point.1, vel_point.1)) {
                             error!(path = %export_path, error = %e, "Failed to write CSV data row");
                             return;
@@ -157,7 +151,7 @@ pub fn egui_plots(
                 selected_filename = format!(
                     "{}-{}.csv",
                     project.name,
-                    chrono::Local::now().format("%d-%m-%Y_%H-%M-%S").to_string()
+                    chrono::Local::now().format("%d-%m-%Y_%H-%M-%S")
                 );
                 export_clicked = true;
                 info!(
