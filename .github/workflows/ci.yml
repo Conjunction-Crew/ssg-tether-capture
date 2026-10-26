@@ -125,11 +125,13 @@ jobs:
 
       - name: Clippy (tracked warnings report)
         # Lists the two allowed lints in the job summary.  Never fails.  The
-        # short message format has no lint names, so match on the message text.
-        # It reuses the gate's build artifacts.
+        # short message format has no lint names, so match on the message text,
+        # and `--color never` is needed because CARGO_TERM_COLOR=always would put
+        # escape codes inside the `: warning:` marker.  It reuses the gate's build
+        # artifacts.
         if: always()
         run: |
-          cargo clippy --all-targets --locked --message-format=short 2>&1 \
+          cargo clippy --all-targets --locked --color never --message-format=short 2>&1 \
             | grep ': warning:' \
             | grep -E 'very complex type used|too many arguments' \
             | sed -E 's/^([^ ]+): warning: (.*)$/\1 \2/' \
