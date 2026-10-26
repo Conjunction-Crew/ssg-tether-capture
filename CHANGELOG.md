@@ -24,6 +24,7 @@ GitHub Release description.
 - Headless test harness (`src/tests/test_support.rs`): fixed sim epoch, ticks driven through `FixedUpdate` at exactly 1/64 s, and helpers for capture and orbit tests; three integration tests that asserted nothing now assert real behaviour (no app behaviour change)
 - Characterization tests pinning current orbit propagation, floating-origin, physics-bubble and time-warp behaviour, including known defects marked for P4 (no app behaviour change)
 - Characterization tests pinning current capture-plan transition semantics (conditions OR-ed, transitions cascading within one step) and plan load/compile round trips (no app behaviour change)
+- Headless Hubble (HST) capture baseline: fixed-epoch regression guard in CI, plus an opt-in to-capture measurement whose run-to-run spread is P3's tolerance (no app behaviour change)
 
 
 ## [v0.3.0] - 2026-10-26
