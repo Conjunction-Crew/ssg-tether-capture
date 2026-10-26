@@ -1,44 +1,19 @@
 use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit::{Orbit, Orbital};
+use crate::components::orbit::{Earth, Orbit, Orbital, TetherRoot};
 use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
-use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET};
-use crate::create_app;
-use crate::resources::capture_plans::{CapturePlanLibrary, load_plans_from_dir};
-use crate::resources::data_collection::DataCollection;
+use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET, SCENE_LAYER};
+use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::orbital_cache::OrbitalCache;
 use crate::resources::world_time::WorldTime;
-use crate::systems::physics::fixed_physics_step;
-use crate::ui::state::UiScreen;
-use avian3d::collider_tree::ColliderTreeDiagnostics;
-use avian3d::collision::CollisionDiagnostics;
-use avian3d::dynamics::solver::SolverDiagnostics;
+use crate::tests::test_support::{
+    assert_close, assert_close_dvec3, enter_sim, load_example_plans, log_test_app, start_running,
+    test_app, tick,
+};
 use avian3d::prelude::*;
-use bevy::ecs::relationship::RelationshipSourceCollection;
+use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use bevy::{input::InputPlugin, scene::ScenePlugin};
 use brahe::utils::DOrbitStateProvider;
-
-// Minimal test app harness for unit testing
-fn test_app() -> App {
-    let mut app = create_app();
-    app.add_plugins((
-        MinimalPlugins,
-        AssetPlugin::default(),
-        InputPlugin,
-        ScenePlugin,
-    ))
-    .init_asset::<Mesh>()
-    .init_asset::<StandardMaterial>()
-    .init_asset::<GizmoAsset>()
-    .init_resource::<CollisionDiagnostics>()
-    .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>()
-    .init_resource::<ColliderTreeDiagnostics>()
-    .init_resource::<DataCollection>()
-    .init_resource::<WorldTime>();
-    app
-}
 
 #[test]
 fn minimal_rigidbody_setup() {
@@ -55,17 +30,41 @@ fn minimal_rigidbody_setup() {
         ))
         .id();
 
-    assert!(!sphere_body.is_empty());
+    app.update();
+
+    // Avian computes the body's mass from its collider ...
+    let mass = app
+        .world()
+        .get::<ComputedMass>(sphere_body)
+        .expect("rigid body has no ComputedMass");
+    assert!(mass.value() > 0.0, "computed mass is {}", mass.value());
+
+    // ... and syncs the Position from the Transform.
+    assert_close_dvec3(
+        app.world().get::<Position>(sphere_body).unwrap().0,
+        DVec3::new(40.0, 40.0, 40.0),
+        1e-9,
+        "rigid body position",
+    );
 }
 
 #[test]
 fn orbit_camera() {
     let mut app = test_app();
-    let world = app.world_mut();
+    enter_sim(&mut app);
 
-    let orbit_camera = world
+    // `orbit_camera_track` needs the Earth, a target and a camera on the scene layer.
+    // Earth is directly "below" the target (along -Z), so the scene camera's up vector
+    // is +Z.
+    app.world_mut()
+        .spawn((Earth, Transform::from_xyz(10.0, 20.0, -1000.0)));
+    app.world_mut()
+        .spawn((CameraTarget, Transform::from_xyz(10.0, 20.0, 30.0)));
+    let orbit_camera = app
+        .world_mut()
         .spawn((
             Camera3d::default(),
+            RenderLayers::layer(SCENE_LAYER),
             Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
             OrbitCamera {
                 map_params: OrbitCameraParams::default(),
@@ -74,17 +73,33 @@ fn orbit_camera() {
         ))
         .id();
 
-    assert!(!orbit_camera.is_empty());
+    tick(&mut app);
+
+    // The camera tracks the target: focus = target translation, up = away from Earth.
+    let camera = app.world().get::<OrbitCamera>(orbit_camera).unwrap();
+    assert_eq!(camera.scene_params.focus, Vec3::new(10.0, 20.0, 30.0));
+    assert_eq!(camera.scene_params.up, Vec3::Z);
+
+    // With up = +Z, an unrotated Earth (north axis +Z) and zero yaw/pitch,
+    // `orbit_camera_track` gives forward = +X, so the camera sits `distance` (30)
+    // behind the focus: focus - X * 30.
+    let translation = app
+        .world()
+        .get::<Transform>(orbit_camera)
+        .unwrap()
+        .translation;
+    assert!(
+        translation.abs_diff_eq(Vec3::new(-20.0, 20.0, 30.0), 1e-4),
+        "camera translation is {translation:?}"
+    );
 }
 
 #[test]
 fn apply_force_to_target() {
     let mut app = test_app();
 
-    let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
-    next_screen.set(UiScreen::Sim);
-
-    app.update();
+    enter_sim(&mut app);
+    start_running(&mut app);
 
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
@@ -113,7 +128,7 @@ fn apply_force_to_target() {
         .insert("Tether1".to_string(), vec![sphere_body]);
 
     app.update();
-    fixed_physics_step(app.world_mut());
+    tick(&mut app);
 
     // Expect initial velocity of sphere to be zero
     assert_eq!(
@@ -124,19 +139,11 @@ fn apply_force_to_target() {
         DVec3::ZERO
     );
 
-    // Load capture plans
-    let example_plans = load_plans_from_dir(
-        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/example_capture_plans"),
-    );
-    let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
-    capture_plan_lib.plans = example_plans;
-
-    // Compile capture plans
-    for (name, plan) in capture_plan_lib.plans.clone() {
-        capture_plan_lib.insert_plan(name.clone(), plan.clone());
-    }
+    // Load and compile capture plans
+    load_example_plans(&mut app);
 
     // Get plan information
+    let capture_plan_lib = app.world().resource::<CapturePlanLibrary>();
     let plan_res = capture_plan_lib.plans.get("example_plan");
     assert!(plan_res.is_some());
     let plan = plan_res.unwrap().clone();
@@ -157,10 +164,10 @@ fn apply_force_to_target() {
         });
 
     // Need a few updates to actually alter the velocity
-    fixed_physics_step(app.world_mut());
-    fixed_physics_step(app.world_mut());
-    fixed_physics_step(app.world_mut());
-    fixed_physics_step(app.world_mut());
+    tick(&mut app);
+    tick(&mut app);
+    tick(&mut app);
+    tick(&mut app);
 
     // Expect sphere velocity to have changed
     assert_ne!(
@@ -176,10 +183,8 @@ fn apply_force_to_target() {
 fn orbit_propagation() {
     let mut app = test_app();
 
-    let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
-    next_screen.set(UiScreen::Sim);
-
-    app.update();
+    enter_sim(&mut app);
+    start_running(&mut app);
 
     let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
 
@@ -205,7 +210,7 @@ fn orbit_propagation() {
         propagator_o.unwrap().state_eci(world_time.epoch).unwrap()
     };
 
-    fixed_physics_step(app.world_mut());
+    tick(&mut app);
 
     let params_after = {
         let orbital_o = app.world().get::<Orbital>(sphere_body);
@@ -224,19 +229,20 @@ fn orbit_propagation() {
 fn floating_origin_resets() {
     let mut app = test_app();
 
-    let mut next_screen = app.world_mut().resource_mut::<NextState<UiScreen>>();
-    next_screen.set(UiScreen::Sim);
+    enter_sim(&mut app);
+    start_running(&mut app);
 
-    app.update();
-
-    let test_sphere_mesh = Mesh::from(Sphere::new(1.0));
-
+    // `TetherRoot` is what makes `calculate_com_rv` record a centre of mass for the
+    // body; without it the floating origin never fires (F-14, D9).
     let sphere_body = app
         .world_mut()
         .spawn((
             CameraTarget,
+            TetherRoot,
             RigidBody::Dynamic,
-            Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
+            // An analytic sphere has its centre of mass exactly at the origin; the convex
+            // hull of the sphere mesh is ~3.5e-9 m off, which would break the 1e-9 m checks.
+            Collider::sphere(1.0),
             Position::from_xyz(0.0, 0.0, 0.0),
             Orbit::FromElements(ISS_ORBIT),
         ))
@@ -246,7 +252,7 @@ fn floating_origin_resets() {
     assert!(current_transform_o.is_some());
     let current_transform = *current_transform_o.unwrap();
 
-    fixed_physics_step(app.world_mut());
+    tick(&mut app);
 
     let new_transform_o = app.world().get::<Position>(sphere_body);
     assert!(new_transform_o.is_some());
@@ -255,37 +261,54 @@ fn floating_origin_resets() {
     // Expect position to not have updated
     assert_eq!(current_transform, new_transform);
 
-    // Move the object beyond the max origin offset
+    // (a) Exactly at the max origin offset nothing moves: the check is `<=`.
+    app.world_mut()
+        .entity_mut(sphere_body)
+        .insert(Position::from_xyz(MAX_ORIGIN_OFFSET, 0.0, 0.0));
+
+    tick(&mut app);
+
+    assert_close_dvec3(
+        app.world().get::<Position>(sphere_body).unwrap().0,
+        DVec3::new(MAX_ORIGIN_OFFSET, 0.0, 0.0),
+        1e-9,
+        "position at the max origin offset",
+    );
+
+    // (b) Move the object beyond the max origin offset
     app.world_mut()
         .entity_mut(sphere_body)
         .insert(Position::from_xyz(MAX_ORIGIN_OFFSET + 10.0, 0.0, 0.0));
 
-    fixed_physics_step(app.world_mut());
+    tick(&mut app);
 
-    let reset_transform_o = app.world().get::<Position>(sphere_body);
-    assert!(reset_transform_o.is_some());
-    let reset_transform = *reset_transform_o.unwrap();
+    // The centre of mass was computed for the body, so the reset really fired ...
+    let (com_r, _) = *app
+        .world()
+        .resource::<OrbitalCache>()
+        .com_rv
+        .get(&sphere_body)
+        .expect("com_rv has no entry for the body, so the origin reset did not run");
+    assert_close(
+        com_r.x,
+        MAX_ORIGIN_OFFSET + 10.0,
+        1e-9,
+        "centre of mass offset that was reset",
+    );
 
-    // Expect position to have been reset
-    assert!(reset_transform.length() < 1.0);
+    // ... and the body is back at the origin.
+    let reset_position = app.world().get::<Position>(sphere_body).unwrap().0;
+    assert_close_dvec3(
+        reset_position,
+        DVec3::ZERO,
+        1e-9,
+        "position after the reset",
+    );
 }
 
 // ─── Capture Log integration tests (A4) ──────────────────────────────────────
 
-use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEvent, LogLevel};
-use crate::ui::plugin::collect_log_events;
-
-/// Build a minimal app wired up to test `collect_log_events`.
-fn log_test_app() -> App {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins)
-        .add_message::<LogEvent>()
-        .init_resource::<CaptureLog>()
-        .init_resource::<CaptureLogUiState>()
-        .init_resource::<WorldTime>()
-        .add_systems(Update, collect_log_events);
-    app
-}
+use crate::resources::capture_log::{CaptureLog, LogEvent, LogLevel};
 
 #[test]
 fn collect_log_events_appends_to_capture_log() {

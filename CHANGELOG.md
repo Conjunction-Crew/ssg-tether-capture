@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- Headless test harness (`src/tests/test_support.rs`): fixed sim epoch, ticks driven through `FixedUpdate` at exactly 1/64 s, and helpers for capture and orbit tests; three integration tests that asserted nothing now assert real behaviour (no app behaviour change)
+
 
 ## [v0.3.0] - 2026-10-26
 
