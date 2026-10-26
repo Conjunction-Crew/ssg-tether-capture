@@ -39,6 +39,7 @@ GitHub Release description.
 - Unused `lfs: true` checkout options (the repository does not use Git LFS)
 
 ### Fixed
+- Clippy warnings fixed in `src/systems/` (no behaviour change)
 - `cargo fmt` drift and two deny-by-default `clippy::absurd_extreme_comparisons` errors (always-true `u32 / 2 >= 0` time-warp checks) so the new fmt/clippy gate starts green
 - GitHub Release descriptions were empty because the changelog headings (`## [v0.3.0-rc.3]`) did not match what the release job searched for (`## [0.3.0-rc.3]`); extraction now accepts both forms
 

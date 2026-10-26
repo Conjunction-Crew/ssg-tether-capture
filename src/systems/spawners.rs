@@ -7,7 +7,7 @@ use crate::{
         orbit::{Orbit, TetherNode, TetherRoot},
         orbit_camera::CameraTarget,
     },
-    constants::{ISS_ORBIT, PHYSICS_DISABLE_RADIUS, SCENE_LAYER},
+    constants::{PHYSICS_DISABLE_RADIUS, SCENE_LAYER},
     resources::{capture_plans::CapturePlanLibrary, orbital_cache::OrbitalCache},
     ui::state::{SelectedProject, UiScreen},
 };

@@ -85,14 +85,14 @@ pub fn orbit_camera_track(
             camera.up = -(earth_transform.translation - target_transform.translation)
                 .normalize_or(Vec3::NEG_Y);
         }
-    } else if let Some((_, entity)) = target {
-        if let Some(target_rv) = orbital_cache.eci_states.get(&entity) {
-            camera.focus = eci_position_to_map(Vec3::new(
-                target_rv[0] as f32,
-                target_rv[1] as f32,
-                target_rv[2] as f32,
-            ));
-        }
+    } else if let Some((_, entity)) = target
+        && let Some(target_rv) = orbital_cache.eci_states.get(&entity)
+    {
+        camera.focus = eci_position_to_map(Vec3::new(
+            target_rv[0] as f32,
+            target_rv[1] as f32,
+            target_rv[2] as f32,
+        ));
     }
 
     let up = camera.up.normalize_or(Vec3::Y);
