@@ -57,7 +57,7 @@ What the next version will be (`scripts/next_version.sh`):
 | `0.4.0-rc.1` | any | `rc` | `0.4.0-rc.2` |
 | `0.4.0-rc.2` | any | `stable` | `0.4.0` (promotes the RC) |
 
-Tip: do a **`dry_run`** first. The run summary shows the next version, the release notes that would be published and the commits that would land on `main`.
+Tip: do a **`dry_run`** first. The run summary shows the next version, the release notes that would be published and the commits that would land on `main`. A dry run also checks the release credentials (the `preflight` job) and mints a real GitHub App token, so a missing or wrong App key fails the dry run instead of the real release.
 
 The workflow then:
 

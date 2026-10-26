@@ -26,6 +26,7 @@ GitHub Release description.
 - Reusable `build-packages.yml` workflow shared by the release and the manual packaging test, so the packaging steps no longer drift
 - `rust-toolchain.toml` (stable, with rustfmt and clippy) and `.github/dependabot.yml` for GitHub Actions, Cargo and npm updates (Bevy and its lock-step crates are excluded from major/minor updates)
 - Helper scripts `next_version.sh`, `prepare_changelog.sh`, `extract_release_notes.sh` and `check_changelog.sh` under `scripts/`
+- Release workflow `preflight` job: fails in seconds, on dry runs too, if `RELEASE_APP_ID` or the `RELEASE_APP_PRIVATE_KEY` secret is missing, or if the key was stored as a variable. Dry runs now also mint the App token, so a bad key fails the dry run instead of the real release.
 
 ### Changed
 - `rust-toolchain.toml` pins Rust 1.99.1 instead of tracking `stable`, so CI and contributors build and lint with the same compiler

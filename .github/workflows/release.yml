@@ -15,6 +15,11 @@ name: Release
 #               staged commit, push the vX.Y.Z tag, create the GitHub Release.
 #   5. docs     Deploy the docs site (stable major/minor releases only).
 #
+# A `preflight` job runs first (dry runs included) and fails in seconds if the
+# release credentials are missing or misplaced.  A dry run also mints (and the
+# action revokes) a real GitHub App installation token, so a bad key fails the
+# dry run instead of the real release.
+#
 # If any build fails, main is never modified — fix forward and run it again.
 #
 # Version rules (see scripts/next_version.sh):
@@ -41,7 +46,7 @@ on:
         options: [stable, rc]
         default: stable
       dry_run:
-        description: Compute and validate everything, but push and publish nothing
+        description: Compute and validate everything (including the release credentials), but push and publish nothing
         type: boolean
         default: false
 
@@ -60,10 +65,29 @@ env:
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
+  # Fail fast if the release credentials are missing or misplaced.  Runs on dry
+  # runs too.  Only booleans reach the script: the key never enters an env var.
+  # ───────────────────────────────────────────────────────────────────────────
+  preflight:
+    name: Preflight (release credentials)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check release credentials
+        env:
+          APP_ID: ${{ vars.RELEASE_APP_ID }}
+          HAS_PRIVATE_KEY_SECRET: ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+          HAS_PRIVATE_KEY_VARIABLE: ${{ vars.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: sh scripts/check_release_credentials.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Tests on the commit being released.
   # ───────────────────────────────────────────────────────────────────────────
   verify:
     name: Verify (fmt, test)
+    needs: [preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -99,6 +123,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   prepare:
     name: Prepare release commit
+    needs: [preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -117,7 +142,6 @@ jobs:
 
       - name: Create GitHub App token
         id: app-token
-        if: ${{ !inputs.dry_run }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
