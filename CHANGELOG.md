@@ -32,6 +32,7 @@ GitHub Release description.
 - `deploy-docs.yml` is now called by the release workflow (and can be run by hand with a `ref`) instead of firing on tag pushes, and no longer pushes a commit back to the repository
 - GitHub Actions are pinned to commit SHAs and CI uses `Swatinem/rust-cache`, concurrency groups and job timeouts; CI sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_DEV_DEBUG=0` to speed up Windows builds
 - `prune_versioned_docs.sh` links retired docs to the release tag instead of a `release/vX.Y.Z` branch
+- GitHub Actions bumped (checkout 7.0.1, upload-artifact 7.0.2, download-artifact 8.0.2, setup-node 7.1.0, setup-dotnet 6.0.0, upload-pages-artifact 5.0.0, deploy-pages 5.0.1, create-github-app-token 3.3.0, rust-cache), ported from Dependabot #46
 
 ### Removed
 - `pr.yaml`, `release.toml`, `scripts/verify_release_pr.sh` and the `auto-tag` job: version bumps, changelog headings and tags are no longer managed by hand

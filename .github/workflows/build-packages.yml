@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
 
@@ -54,7 +54,7 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: release-v0
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -73,7 +73,7 @@ jobs:
           tar -C dist -czf "$ARCHIVE" .
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux
           path: ${{ env.ARCHIVE }}
@@ -90,19 +90,19 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
 
       - name: Setup .NET (for WiX SDK)
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "8.0.x"
 
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: release-v0
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -138,7 +138,7 @@ jobs:
           Write-Host "MSI: $destPath"
           Add-Content -Path $env:GITHUB_ENV -Value "MSI=$destPath"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows
           path: ${{ env.MSI }}
@@ -159,14 +159,14 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
 
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: release-v0
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -229,7 +229,7 @@ jobs:
           fi
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos
           path: ${{ env.DMG }}
