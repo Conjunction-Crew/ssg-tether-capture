@@ -65,9 +65,11 @@ Branch from `main` and open the PR against `main`. CI runs the same checks you c
 
 ```bash
 cargo fmt --all --check   # run `cargo fmt` to fix
-cargo clippy --all-targets
+cargo clippy --all-targets --locked -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments
 cargo test
 ```
+
+Locally, plain `cargo clippy --all-targets` still shows the two tracked lints (`clippy::type_complexity`, `clippy::too_many_arguments`) as warnings. They are allowed by the CI gate and listed in the CI job summary: do not silence them with `#[allow]`; they are fixed when the affected files are restructured.
 
 Also add a bullet under `## [Unreleased]` in `CHANGELOG.md` describing your change (docs-only PRs are exempt). Don't bump the version; releases do that. Windows and macOS only get a quick `cargo check` on PRs; add the `full-ci` label if your change affects platform-specific code or the build setup.
 

@@ -117,11 +117,41 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
-      - name: Clippy
-        # Deny-by-default clippy lints fail the build.  The existing warning
-        # backlog is reported but not blocking; tighten to `-- -D warnings`
-        # once it has been burned down.
-        run: cargo clippy --all-targets --locked
+      - name: Clippy (gate)
+        # Every clippy warning fails the job except these two Bevy-signature
+        # lints, which the next step tracks until P3/P8 restructure the systems
+        # and UI code that triggers them.  Never silence them with #[allow].
+        run: cargo clippy --all-targets --locked -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments
+
+      - name: Clippy (tracked warnings report)
+        # Lists the two allowed lints in the job summary.  Never fails.  The
+        # short message format has no lint names, so match on the message text,
+        # and `--color never` is needed because CARGO_TERM_COLOR=always would put
+        # escape codes inside the `: warning:` marker.  It reuses the gate's build
+        # artifacts.
+        if: always()
+        run: |
+          cargo clippy --all-targets --locked --color never --message-format=short 2>&1 \
+            | grep ': warning:' \
+            | grep -E 'very complex type used|too many arguments' \
+            | sed -E 's/^([^ ]+): warning: (.*)$/\1 \2/' \
+            | sort -u > "$RUNNER_TEMP/tracked-clippy.txt" || true
+          COUNT=$(wc -l < "$RUNNER_TEMP/tracked-clippy.txt" | tr -d ' ')
+          echo "Tracked clippy warnings: ${COUNT}"
+          {
+            echo "### Tracked clippy warnings"
+            echo ""
+            echo "Tracked clippy warnings: ${COUNT}"
+            echo ""
+            echo "\`clippy::type_complexity\` and \`clippy::too_many_arguments\` are allowed by the gate and listed here until the files are restructured."
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/tracked-clippy.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          sed -E 's/^([^:]+):([0-9]+):([0-9]+) (.*)$/::warning file=\1,line=\2,col=\3::\4/' \
+            "$RUNNER_TEMP/tracked-clippy.txt" || true
+          exit 0
 
       - name: Run tests
         run: cargo test --locked
