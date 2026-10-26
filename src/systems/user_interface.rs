@@ -7,7 +7,7 @@ use crate::{
             CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
         },
     },
-    constants::{EARTH_RADIUS, SCENE_LAYER},
+    constants::EARTH_RADIUS,
     plugins::gpu_compute::eci_position_to_map,
     resources::{
         capture_log::{LogEvent, LogLevel},
@@ -29,8 +29,12 @@ struct CaptureMetrics {
     target_altitude_m: f64,
 }
 
+// unused today; the P3 component/resource audit decides
+#[allow(dead_code)]
 const MAP_LABEL_BOX_SIZE_PX: f32 = 30.0;
 
+// unused today; the P3 component/resource audit decides
+#[allow(dead_code)]
 fn position_label_at_viewport_center(node: &mut Node, center: Vec2, size_px: f32) {
     let half_size = size_px * 0.5;
 
@@ -89,7 +93,7 @@ pub fn update_capture_telemetry(
             *prev_status = capture_status.clone();
         }
 
-        let inside_capture_sphere = if metrics.range_m <= capture_sphere_radius.radius as f64 {
+        let inside_capture_sphere = if metrics.range_m <= capture_sphere_radius.radius {
             "Yes"
         } else {
             "No"
@@ -250,7 +254,7 @@ pub fn map_orbitals(
         let Some(entity) = label.entity else {
             continue;
         };
-        let Ok((rb, disabled, entity)) = rigidbodies.get(entity) else {
+        let Ok((rb, _disabled, entity)) = rigidbodies.get(entity) else {
             continue;
         };
 
@@ -287,22 +291,17 @@ fn capture_metrics(
         return None;
     };
 
-    let Some(target_true) = orbital_cache.eci_states.get(&target_entity) else {
-        return None;
-    };
-    let Some(reference_true) = orbital_cache.eci_states.get(&reference_entity) else {
-        return None;
-    };
+    let target_true = orbital_cache.eci_states.get(&target_entity)?;
+    let reference_true = orbital_cache.eci_states.get(&reference_entity)?;
 
-    let target_position = world_position(&target_true, target_rb.position.0, target_disabled);
+    let target_position = world_position(target_true, target_rb.position.0, target_disabled);
     let reference_position =
-        world_position(&reference_true, reference_rb.position.0, reference_disabled);
+        world_position(reference_true, reference_rb.position.0, reference_disabled);
     let relative_position = target_position - reference_position;
 
-    let target_velocity =
-        world_velocity(&target_true, target_rb.linear_velocity.0, target_disabled);
+    let target_velocity = world_velocity(target_true, target_rb.linear_velocity.0, target_disabled);
     let reference_velocity = world_velocity(
-        &reference_true,
+        reference_true,
         reference_rb.linear_velocity.0,
         reference_disabled,
     );

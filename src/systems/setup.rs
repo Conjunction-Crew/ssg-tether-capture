@@ -2,9 +2,9 @@ use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
 use crate::components::orbit::Earth;
-use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
+use crate::components::orbit_camera::{OrbitCamera, OrbitCameraParams};
 use crate::constants::*;
-use crate::resources::capture_log::{LogEvent, LogLevel};
+use crate::resources::capture_log::LogEvent;
 use crate::resources::capture_plans::CapturePlanLibrary;
 use crate::resources::celestials::Celestials;
 use crate::resources::orbital_cache::OrbitalCache;
@@ -21,7 +21,6 @@ use bevy::pbr::{Atmosphere, AtmosphereMode, AtmosphereSettings, ScatteringMedium
 use bevy::post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use nalgebra::Vector6;
 
 pub fn setup_lighting(mut commands: Commands) {
     let sun_rotation = Quat::from_rotation_x(0.0);
@@ -124,7 +123,7 @@ pub fn setup_camera(
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     mut compensation_curves: ResMut<Assets<AutoExposureCompensationCurve>>,
     asset_server: Res<AssetServer>,
-    mut log_events: MessageWriter<LogEvent>,
+    _log_events: MessageWriter<LogEvent>,
 ) {
     // Skybox
     let skybox_handle: Handle<Image> = asset_server.load("textures/hdr-cubemap-2048x2048.ktx2");
