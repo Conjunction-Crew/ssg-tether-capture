@@ -169,25 +169,25 @@ pub fn orbital_gizmos(
     let orbital_selection = orbital_selection.as_deref();
 
     // Draw the orbital of the currently selected catalog object
-    if let Some(id) = catalog_ui_state.into_inner().selected_index {
-        if let Some(entry) = catalog.entries.get(id) {
-            let catalog_orbit_already_selected = orbital_selection
-                .is_some_and(|selection| selection_contains_gpu_index(selection, entry.gpu_index));
+    if let Some(id) = catalog_ui_state.into_inner().selected_index
+        && let Some(entry) = catalog.entries.get(id)
+    {
+        let catalog_orbit_already_selected = orbital_selection
+            .is_some_and(|selection| selection_contains_gpu_index(selection, entry.gpu_index));
 
-            if !catalog_orbit_already_selected {
-                if let Some(elements) = gpu_elements.0.get(entry.gpu_index) {
-                    draw_orbital_from_elements(
-                        elements.a,
-                        elements.e,
-                        elements.i,
-                        elements.raan,
-                        elements.argp,
-                        orbit_frame_rotation(),
-                        Srgba::new(0.0, 0.0, 1.0, 0.1),
-                        &mut gizmos,
-                    );
-                }
-            }
+        if !catalog_orbit_already_selected
+            && let Some(elements) = gpu_elements.0.get(entry.gpu_index)
+        {
+            draw_orbital_from_elements(
+                elements.a,
+                elements.e,
+                elements.i,
+                elements.raan,
+                elements.argp,
+                orbit_frame_rotation(),
+                Srgba::new(0.0, 0.0, 1.0, 0.1),
+                &mut gizmos,
+            );
         }
     }
 
@@ -301,7 +301,7 @@ pub fn capture_gizmos(
             let max_velocity = parameters
                 .get("max_velocity")
                 .and_then(|value| value.as_f64())
-                .unwrap_or(0.0) as f64;
+                .unwrap_or(0.0);
             (max_velocity, capture_component.current_state == "capture")
         } else {
             (0.0, capture_component.current_state == "capture")

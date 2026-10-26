@@ -94,175 +94,159 @@ pub fn load_dataset_entities(
             return;
         }
     };
-    for dataset_file_result in dir_iter {
-        if let Ok(dataset_file) = dataset_file_result {
-            let path = dataset_file.path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "json")
-            {
-                if let Ok(raw_json) = fs::read_to_string(&path) {
-                    if let Ok(dataset) = serde_json::from_str(&raw_json) {
-                        let data: JsonOrbitalData = dataset;
-                        for object in data.data {
-                            let Some(id_val) = object.norad_cat_id else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "dataset",
-                                    message: "Failed to parse norad_cat_id for an object"
-                                        .to_string(),
-                                });
-                                continue;
-                            };
-                            let Some(id) = id_val.as_u64() else {
-                                continue;
-                            };
-                            let Some(mean_motion_val) = object.mean_motion else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "dataset",
-                                    message: format!(
-                                        "Failed to parse mean_motion for object {:?}",
-                                        id_val
-                                    ),
-                                });
-                                continue;
-                            };
-                            let Some(mean_motion) = mean_motion_val.as_f64() else {
-                                continue;
-                            };
-                            let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
-                            let semi_major_axis = (GM_EARTH
-                                / (mean_motion_rad_s * mean_motion_rad_s))
-                                .powf(1.0 / 3.0);
-                            let Some(eccentricity_val) = object.eccentricity else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "propagation",
-                                    message: format!(
-                                        "Failed to parse eccentricity for object {id}"
-                                    ),
-                                });
-                                continue;
-                            };
-                            let Some(eccentricity) = eccentricity_val.as_f64() else {
-                                continue;
-                            };
-                            let Some(inclination_val) = object.inclination else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "propagation",
-                                    message: format!("Failed to parse inclination for object {id}"),
-                                });
-                                continue;
-                            };
-                            let Some(inclination) = inclination_val.as_f64() else {
-                                continue;
-                            };
-                            let inclination = inclination.to_radians();
-                            let Some(raan_val) = object.ra_of_asc_node else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "propagation",
-                                    message: format!(
-                                        "Failed to parse ra_of_asc_node for object {id}"
-                                    ),
-                                });
-                                continue;
-                            };
-                            let Some(raan) = raan_val.as_f64() else {
-                                continue;
-                            };
-                            let raan = raan.to_radians();
-                            let Some(argp_val) = object.arg_of_pericenter else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "propagation",
-                                    message: format!(
-                                        "Failed to parse arg_of_pericenter for object {id}"
-                                    ),
-                                });
-                                continue;
-                            };
-                            let Some(argp) = argp_val.as_f64() else {
-                                continue;
-                            };
-                            let argp = argp.to_radians();
-                            let Some(mean_anomaly_val) = object.mean_anomaly else {
-                                log_events.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "propagation",
-                                    message: format!(
-                                        "Failed to parse mean_anomaly for object {id}"
-                                    ),
-                                });
-                                continue;
-                            };
-                            let Some(mean_anomaly) = mean_anomaly_val.as_f64() else {
-                                continue;
-                            };
-                            let mean_anomaly = mean_anomaly.to_radians();
-                            let object_epoch = object
-                                .epoch
-                                .as_deref()
-                                .and_then(parse_dataset_epoch_fast)
-                                .unwrap_or(reference_epoch);
-                            let object_name = object
-                                .object_name
-                                .clone()
-                                .filter(|name| !name.is_empty())
-                                .or_else(|| object.object_id.clone().filter(|id| !id.is_empty()))
-                                .unwrap_or_else(|| format!("NORAD {}", id));
-                            let object_id = object
-                                .object_id
-                                .clone()
-                                .filter(|id| !id.is_empty())
-                                .unwrap_or_default();
-                            let gpu_index = space_catalog.entries.len();
-
-                            let elements = Vector6::new(
-                                semi_major_axis,
-                                eccentricity,
-                                inclination,
-                                raan,
-                                argp,
-                                mean_anomaly,
-                            );
-
-                            space_catalog.entries.push(SpaceCatalogEntry {
-                                gpu_index,
-                                norad_id: id as u32,
-                                search_blob: format!(
-                                    "{} {} {}",
-                                    object_name.to_lowercase(),
-                                    object_id.to_lowercase(),
-                                    id
-                                ),
-                                object_name,
-                                object_id,
-                            });
-
-                            if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
-                                gpu_elements.0.push(GpuOrbitalElements {
-                                    id: id as u32,
-                                    a: elements[0] as f32,
-                                    e: elements[1] as f32,
-                                    i: elements[2] as f32,
-                                    raan: elements[3] as f32,
-                                    argp: elements[4] as f32,
-                                    mean_anomaly: elements[5] as f32,
-                                    epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
-                                });
-                            }
-                        }
-                    } else {
+    for dataset_file in dir_iter.flatten() {
+        let path = dataset_file.path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "json")
+            && let Ok(raw_json) = fs::read_to_string(&path)
+        {
+            if let Ok(dataset) = serde_json::from_str(&raw_json) {
+                let data: JsonOrbitalData = dataset;
+                for object in data.data {
+                    let Some(id_val) = object.norad_cat_id else {
                         log_events.write(LogEvent {
                             level: LogLevel::Error,
                             source: "dataset",
-                            message: format!("Failed to parse dataset JSON: {}", path.display()),
+                            message: "Failed to parse norad_cat_id for an object".to_string(),
+                        });
+                        continue;
+                    };
+                    let Some(id) = id_val.as_u64() else {
+                        continue;
+                    };
+                    let Some(mean_motion_val) = object.mean_motion else {
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "dataset",
+                            message: format!("Failed to parse mean_motion for object {:?}", id_val),
+                        });
+                        continue;
+                    };
+                    let Some(mean_motion) = mean_motion_val.as_f64() else {
+                        continue;
+                    };
+                    let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
+                    let semi_major_axis =
+                        (GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s)).powf(1.0 / 3.0);
+                    let Some(eccentricity_val) = object.eccentricity else {
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "propagation",
+                            message: format!("Failed to parse eccentricity for object {id}"),
+                        });
+                        continue;
+                    };
+                    let Some(eccentricity) = eccentricity_val.as_f64() else {
+                        continue;
+                    };
+                    let Some(inclination_val) = object.inclination else {
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "propagation",
+                            message: format!("Failed to parse inclination for object {id}"),
+                        });
+                        continue;
+                    };
+                    let Some(inclination) = inclination_val.as_f64() else {
+                        continue;
+                    };
+                    let inclination = inclination.to_radians();
+                    let Some(raan_val) = object.ra_of_asc_node else {
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "propagation",
+                            message: format!("Failed to parse ra_of_asc_node for object {id}"),
+                        });
+                        continue;
+                    };
+                    let Some(raan) = raan_val.as_f64() else {
+                        continue;
+                    };
+                    let raan = raan.to_radians();
+                    let Some(argp_val) = object.arg_of_pericenter else {
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "propagation",
+                            message: format!("Failed to parse arg_of_pericenter for object {id}"),
+                        });
+                        continue;
+                    };
+                    let Some(argp) = argp_val.as_f64() else {
+                        continue;
+                    };
+                    let argp = argp.to_radians();
+                    let Some(mean_anomaly_val) = object.mean_anomaly else {
+                        log_events.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "propagation",
+                            message: format!("Failed to parse mean_anomaly for object {id}"),
+                        });
+                        continue;
+                    };
+                    let Some(mean_anomaly) = mean_anomaly_val.as_f64() else {
+                        continue;
+                    };
+                    let mean_anomaly = mean_anomaly.to_radians();
+                    let object_epoch = object
+                        .epoch
+                        .as_deref()
+                        .and_then(parse_dataset_epoch_fast)
+                        .unwrap_or(reference_epoch);
+                    let object_name = object
+                        .object_name
+                        .clone()
+                        .filter(|name| !name.is_empty())
+                        .or_else(|| object.object_id.clone().filter(|id| !id.is_empty()))
+                        .unwrap_or_else(|| format!("NORAD {}", id));
+                    let object_id = object
+                        .object_id
+                        .clone()
+                        .filter(|id| !id.is_empty())
+                        .unwrap_or_default();
+                    let gpu_index = space_catalog.entries.len();
+
+                    let elements = Vector6::new(
+                        semi_major_axis,
+                        eccentricity,
+                        inclination,
+                        raan,
+                        argp,
+                        mean_anomaly,
+                    );
+
+                    space_catalog.entries.push(SpaceCatalogEntry {
+                        gpu_index,
+                        norad_id: id as u32,
+                        search_blob: format!(
+                            "{} {} {}",
+                            object_name.to_lowercase(),
+                            object_id.to_lowercase(),
+                            id
+                        ),
+                        object_name,
+                        object_id,
+                    });
+
+                    if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
+                        gpu_elements.0.push(GpuOrbitalElements {
+                            id: id as u32,
+                            a: elements[0] as f32,
+                            e: elements[1] as f32,
+                            i: elements[2] as f32,
+                            raan: elements[3] as f32,
+                            argp: elements[4] as f32,
+                            mean_anomaly: elements[5] as f32,
+                            epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
                         });
                     }
                 }
+            } else {
+                log_events.write(LogEvent {
+                    level: LogLevel::Error,
+                    source: "dataset",
+                    message: format!("Failed to parse dataset JSON: {}", path.display()),
+                });
             }
         }
     }
@@ -348,7 +332,7 @@ pub fn init_orbitals(
                     Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
                 }
             }
-            Orbit::FromTle(tle) => {
+            Orbit::FromTle(_tle) => {
                 // TODO: init logic from TLE data (sgp4)
                 Vector6::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
             }
@@ -503,7 +487,7 @@ pub fn physics_bubble_add_remove(
 
             orbital.propagator = Some(KeplerianPropagator::from_eci(
                 world_time.epoch,
-                target_rv.clone(),
+                target_rv,
                 1.0,
             ));
 

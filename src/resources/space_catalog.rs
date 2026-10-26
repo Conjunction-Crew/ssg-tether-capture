@@ -79,6 +79,8 @@ pub enum OrbitalSelectionRole {
 #[derive(Debug, Clone)]
 pub enum OrbitalSelectionSource {
     Catalog {
+        // unused today; the P3 component/resource audit decides
+        #[allow(dead_code)]
         catalog_index: usize,
         gpu_index: usize,
         label: String,
@@ -100,7 +102,7 @@ pub struct EditableOrbitalElements {
 }
 
 impl EditableOrbitalElements {
-    pub fn to_vec6(&self) -> Vector6<f64> {
+    pub fn to_vec6(self) -> Vector6<f64> {
         Vector6::new(
             self.semi_major_axis_m,
             self.eccentricity,

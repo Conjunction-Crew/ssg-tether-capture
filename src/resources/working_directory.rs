@@ -39,11 +39,11 @@ pub fn save_to_config(working_dir: &str) {
     let Some(path) = config_path() else {
         return;
     };
-    if let Some(parent) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("Failed to create config directory: {e}");
-            return;
-        }
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("Failed to create config directory: {e}");
+        return;
     }
     let value = serde_json::json!({ "working_directory": working_dir });
     if let Err(e) = std::fs::write(&path, value.to_string()) {

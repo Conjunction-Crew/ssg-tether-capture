@@ -569,8 +569,8 @@ pub fn spawn_project_detail_screen(
                                                     if let (Ok(container), Ok(children)) = (
                                                         computed_nodes.get(ev.entity),
                                                         children_query.get(ev.entity),
-                                                    ) {
-                                                        if let Some(wrapper_height) = children
+                                                    )
+                                                        && let Some(wrapper_height) = children
                                                             .iter()
                                                             .find(|c| wrapper_query.contains(*c))
                                                             .and_then(|w| computed_nodes.get(w).ok())
@@ -582,7 +582,6 @@ pub fn spawn_project_detail_screen(
                                                             scroll_pos.0.y =
                                                                 scroll_pos.0.y.min(max_scroll);
                                                         }
-                                                    }
                                                 }
                                             },
                                         )
@@ -757,8 +756,8 @@ pub fn spawn_project_detail_screen(
                                         if let (Ok(container), Ok(children)) = (
                                             computed_nodes.get(ev.entity),
                                             children_query.get(ev.entity),
-                                        ) {
-                                            if let Some(wrapper_height) = children
+                                        )
+                                            && let Some(wrapper_height) = children
                                                 .iter()
                                                 .find(|c| wrapper_query.contains(*c))
                                                 .and_then(|w| computed_nodes.get(w).ok())
@@ -768,7 +767,6 @@ pub fn spawn_project_detail_screen(
                                                     (wrapper_height - container.size().y).max(0.0);
                                                 scroll_pos.0.y = scroll_pos.0.y.min(max_scroll);
                                             }
-                                        }
                                     }
                                 },
                             )
@@ -2382,22 +2380,19 @@ pub fn catalog_interactions(
                 } else if next_page.is_some() {
                     let max_page = filtered_results.0.len().saturating_sub(1) / CATALOG_PAGE_SIZE;
                     catalog_ui.page = (catalog_ui.page + 1).min(max_page);
-                } else if let Some(result_button) = result_button {
-                    if let Some(entry_index) = result_button.entry_index {
-                        if catalog_ui.selected_index == Some(entry_index) {
-                            catalog_ui.selected_index = None;
-                        } else {
-                            catalog_ui.selected_index = Some(entry_index);
-                            if let Some(entry) = catalog.entries.get(entry_index) {
-                                log.write(LogEvent {
-                                    level: LogLevel::Info,
-                                    source: "propagation",
-                                    message: format!(
-                                        "Space object selected: {}",
-                                        entry.object_name
-                                    ),
-                                });
-                            }
+                } else if let Some(result_button) = result_button
+                    && let Some(entry_index) = result_button.entry_index
+                {
+                    if catalog_ui.selected_index == Some(entry_index) {
+                        catalog_ui.selected_index = None;
+                    } else {
+                        catalog_ui.selected_index = Some(entry_index);
+                        if let Some(entry) = catalog.entries.get(entry_index) {
+                            log.write(LogEvent {
+                                level: LogLevel::Info,
+                                source: "propagation",
+                                message: format!("Space object selected: {}", entry.object_name),
+                            });
                         }
                     }
                 }
@@ -2579,9 +2574,9 @@ pub fn sync_space_catalog_ui(
             node.display = Display::Flex;
 
             let entry = &catalog.entries[entry_index];
-            let base_color = if *interaction == Interaction::Hovered {
-                theme.button_background
-            } else if Some(entry_index) == catalog_ui.selected_index {
+            let base_color = if *interaction == Interaction::Hovered
+                || Some(entry_index) == catalog_ui.selected_index
+            {
                 theme.button_background
             } else {
                 theme.panel_background_soft
@@ -2891,9 +2886,7 @@ pub fn project_detail_interactions(
                 }
             }
             Interaction::None => {
-                if is_capture && capture_active {
-                    *background_color = BackgroundColor(theme.panel_background);
-                } else if start_sim.is_some() && !can_start_sim {
+                if (is_capture && capture_active) || (start_sim.is_some() && !can_start_sim) {
                     *background_color = BackgroundColor(theme.panel_background);
                 } else if is_exit_confirm {
                     // Preserve blue spawn color; avoid blink to soft on first frame
@@ -2923,10 +2916,8 @@ pub fn view_edit_plan_interactions(
     for (interaction, mut bg) in &mut buttons {
         match *interaction {
             Interaction::Pressed => {
-                if !any_modal_open {
-                    if let Some(plan_id) = &selected_project.project_id {
-                        events.write(UiEvent::EditCapturePlan(plan_id.clone()));
-                    }
+                if !any_modal_open && let Some(plan_id) = &selected_project.project_id {
+                    events.write(UiEvent::EditCapturePlan(plan_id.clone()));
                 }
             }
             Interaction::Hovered => *bg = BackgroundColor(theme.button_background_hover),
