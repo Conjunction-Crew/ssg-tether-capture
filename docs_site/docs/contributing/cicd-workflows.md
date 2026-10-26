@@ -153,4 +153,6 @@ This blocks developers from pushing version tags directly. The only source of a 
 | Repository variable `RELEASE_APP_ID` | `release.yml` | The App's ID |
 | Repository secret `RELEASE_APP_PRIVATE_KEY` | `release.yml` | The App's private key (PEM) |
 
-Add the variable and secret under **Settings → Secrets and variables → Actions**.
+Add the variable and secret under **Settings → Secrets and variables → Actions**. The private key goes in the **Secrets** tab, never in **Variables** (variables are stored and shown in plaintext).
+
+The Release workflow's `preflight` job enforces this. It runs first, on dry runs too, and fails within seconds if `RELEASE_APP_ID` or the `RELEASE_APP_PRIVATE_KEY` secret is empty or missing, or if a repository *variable* named `RELEASE_APP_PRIVATE_KEY` exists. If it reports a variable, delete it, rotate the App's private key and store the new key as a secret.

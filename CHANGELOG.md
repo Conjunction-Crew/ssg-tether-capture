@@ -26,6 +26,7 @@ GitHub Release description.
 - Reusable `build-packages.yml` workflow shared by the release and the manual packaging test, so the packaging steps no longer drift
 - `rust-toolchain.toml` (stable, with rustfmt and clippy) and `.github/dependabot.yml` for GitHub Actions, Cargo and npm updates (Bevy and its lock-step crates are excluded from major/minor updates)
 - Helper scripts `next_version.sh`, `prepare_changelog.sh`, `extract_release_notes.sh` and `check_changelog.sh` under `scripts/`
+- Release workflow `preflight` job: fails in seconds, on dry runs too, if `RELEASE_APP_ID` or the `RELEASE_APP_PRIVATE_KEY` secret is missing, or if the key was stored as a variable. Dry runs now also mint the App token, so a bad key fails the dry run instead of the real release.
 
 ### Changed
 - `rust-toolchain.toml` pins Rust 1.99.1 instead of tracking `stable`, so CI and contributors build and lint with the same compiler
@@ -47,6 +48,7 @@ GitHub Release description.
 - GitHub Release descriptions were empty because the changelog headings (`## [v0.3.0-rc.3]`) did not match what the release job searched for (`## [0.3.0-rc.3]`); extraction now accepts both forms
 - Clippy warnings fixed in `src/ui/` (no behaviour change)
 - Dependency updates from Dependabot #48 (serde 1.0.229, serde_json 1.0.154, arboard 3.7.0). brahe stays at 1.3.2: brahe 1.6 pulls nalgebra 0.35 next to our 0.34 and the build fails on mismatched `Vector6` types. Dependabot no longer proposes brahe/nalgebra minor bumps on their own.
+- Release workflow: the versioned-docs snapshot step failed on current npm (`npm pkg set version "$VERSION"` → `npm pkg set version="$VERSION"`), which would have broken the first stable major/minor release
 
 ---
 
