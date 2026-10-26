@@ -117,10 +117,16 @@ fn baseline_q13_elements_match_app_loader() {
     assert_eq!(norad(&fixture[1]), Some(CHASER_NORAD_ID));
 }
 
-// Golden values captured at e477c94 on macos/aarch64 (see plans/stage-2/52-p2-testing-baseline.md)
 const SHORT_TICKS: u64 = 6_400;
-const SHORT_TRANSITIONS: &[(u64, &str, &str)] = &[(4_318, "rendezvous", "approach")];
-/// `(step, state, range_m)` every 640 ticks.
+/// The transition order every platform logs in the first 6,400 ticks.
+const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
+
+// Golden values captured at e477c94 on macos/aarch64 (see plans/stage-2/52-p2-testing-baseline.md)
+// They hold on macOS/aarch64 only: Linux and Windows CI reach `approach` 5-6 steps
+// later (F-17), so only `baseline_q13_to_capture` checks them (operator decision,
+// 2026-10-26).
+/// `(step, state, range_m)` every 640 ticks, the first 6,400 ticks of a
+/// fixed-epoch run.
 const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
     (643, "rendezvous", 3430.1655870508084),
     (1_283, "rendezvous", 3185.9125107318605),
@@ -133,46 +139,36 @@ const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
     (5_763, "approach", 1502.7267957128072),
     (6_403, "approach", 1323.7483826339583),
 ];
+/// The fixed-epoch run to `capture`: every transition, and the final range.
+const CAPTURE_TRANSITIONS: &[(u64, &str, &str)] = &[
+    (4_318, "rendezvous", "approach"),
+    (34_041, "approach", "terminal"),
+    (162_041, "terminal", "capture"),
+];
+const CAPTURE_FINAL_RANGE_M: f64 = 4.9996977731142715;
 /// Baseline ranges carry 1e-6 m (A-3).
 const RANGE_TOL_M: f64 = 1e-6;
 
-/// CI guard: the fixed-epoch scenario for 6,400 ticks (100 s of sim time, past
-/// the first transition), run twice in one process.
+fn transition_order(run: &Q13Run) -> Vec<(&str, &str)> {
+    run.transitions
+        .iter()
+        .map(|(_, from, to)| (from.as_str(), to.as_str()))
+        .collect()
+}
+
+/// CI guard on every platform: the fixed-epoch scenario for 6,400 ticks (100 s
+/// of sim time, past the first transition), run twice in one process. It checks
+/// same-process determinism and the transition order; the step indices and
+/// ranges are platform-specific (F-17) and are checked by `baseline_q13_to_capture`.
 #[test]
 fn baseline_q13_fixed_epoch_short() {
     let first = q13::run(EpochMode::Fixed, SHORT_TICKS, false);
     let second = q13::run(EpochMode::Fixed, SHORT_TICKS, false);
-    assert_runs_identical(&first, &second, "fixed epoch, 6,400 ticks");
 
     // Precondition: the whole horizon ran.
     assert_eq!(first.ticks, SHORT_TICKS);
-    let transitions: Vec<(u64, &str, &str)> = first
-        .transitions
-        .iter()
-        .map(|(step, from, to)| (*step, from.as_str(), to.as_str()))
-        .collect();
-    assert_eq!(transitions, SHORT_TRANSITIONS);
-    assert_eq!(first.checkpoints.len(), SHORT_CHECKPOINTS.len());
-    for (sample, &(step, state, range_m)) in first.checkpoints.iter().zip(SHORT_CHECKPOINTS) {
-        assert_eq!((sample.step, sample.state.as_str()), (step, state));
-        assert_close(
-            sample.range_m,
-            range_m,
-            RANGE_TOL_M,
-            &format!("range at step {step}"),
-        );
-    }
-    let &(step, state, range_m) = SHORT_CHECKPOINTS.last().unwrap();
-    assert_eq!(
-        (first.final_sample.step, first.final_sample.state.as_str()),
-        (step, state)
-    );
-    assert_close(
-        first.final_sample.range_m,
-        range_m,
-        RANGE_TOL_M,
-        "final range",
-    );
+    assert_runs_identical(&first, &second, "fixed epoch, 6,400 ticks");
+    assert_eq!(transition_order(&first), SHORT_ORDER);
 }
 
 fn run_json(mode: EpochMode, index: usize, run: &Q13Run) -> serde_json::Value {
@@ -222,7 +218,8 @@ fn spread(runs: &[Q13Run]) -> serde_json::Value {
 }
 
 /// Opt-in measurement (E1): the scenario to `capture`, `P2_BASELINE_RUNS` times
-/// on the app path (default 2, Q17) and twice with the fixed epoch.
+/// on the app path (default 2, Q17) and twice with the fixed epoch. It also
+/// checks the fixed-epoch goldens, which hold on macOS/aarch64 only.
 #[test]
 #[ignore = "P2/P3 baseline measurement (~5 min): cargo test --locked baseline_q13_to_capture -- --ignored --nocapture; see plans/stage-2/52-p2-testing-baseline.md"]
 fn baseline_q13_to_capture() {
@@ -260,4 +257,29 @@ fn baseline_q13_to_capture() {
     }
     let fixed = &results[1].1;
     assert_runs_identical(&fixed[0], &fixed[1], "fixed epoch, to capture");
+
+    // The macOS/aarch64 goldens (P3's exact fixed-epoch check, baseline doc §4).
+    let run = &fixed[0];
+    let transitions: Vec<(u64, &str, &str)> = run
+        .transitions
+        .iter()
+        .map(|(step, from, to)| (*step, from.as_str(), to.as_str()))
+        .collect();
+    assert_eq!(transitions, CAPTURE_TRANSITIONS);
+    assert_eq!(run.final_sample.step, CAPTURE_TRANSITIONS[2].0);
+    assert_close(
+        run.final_sample.range_m,
+        CAPTURE_FINAL_RANGE_M,
+        RANGE_TOL_M,
+        "final range at capture",
+    );
+    for (sample, &(step, state, range_m)) in run.checkpoints.iter().zip(SHORT_CHECKPOINTS) {
+        assert_eq!((sample.step, sample.state.as_str()), (step, state));
+        assert_close(
+            sample.range_m,
+            range_m,
+            RANGE_TOL_M,
+            &format!("range at step {step}"),
+        );
+    }
 }
