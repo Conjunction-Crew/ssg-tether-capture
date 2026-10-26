@@ -259,7 +259,7 @@ jobs:
           # Written by CI only (gitignored): the snapshot should contain the
           # release notes for this version.
           cp ../CHANGELOG.md docs/release-notes.md
-          npm pkg set version "$VERSION"
+          npm pkg set version="$VERSION"
           npm run docusaurus -- docs:version "$VERSION"
           cd ..
           git add docs_site/versioned_docs docs_site/versioned_sidebars \
