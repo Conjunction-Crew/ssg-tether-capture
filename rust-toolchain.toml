@@ -1,6 +1,7 @@
-# Tracks the stable toolchain (the 2024 edition needs Rust 1.85+) and makes sure
-# rustfmt and clippy are installed for both contributors and CI.  Pin an exact
-# version here (e.g. channel = "1.99.1") if reproducible toolchains are needed.
+# Exact toolchain pin (the 2024 edition needs Rust 1.85+) so CI and contributors
+# build and lint with the same compiler and get the same clippy results.
+# Dependabot does not bump this file: raise it by hand in a PR that also fixes
+# any new lints. rustfmt and clippy are installed for both contributors and CI.
 [toolchain]
-channel = "stable"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
