@@ -7317,7 +7317,7 @@ dependencies = [
 
 [[package]]
 name = "ssg_tether_capture"
-version = "0.3.0-rc.3"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "avian3d",
