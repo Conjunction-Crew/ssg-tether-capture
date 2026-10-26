@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.3.0] - 2026-10-26
+
 ### Added
 - `ci.yml` pull-request workflow: Linux `cargo fmt --check`, `cargo clippy` and `cargo test` as the merge gate, a cheaper `cargo check` on Windows and macOS (only when Rust, `Cargo.*`, `wix/` or `assets/` change), a docs build when docs change, and a single `ci-success` job to use as the required status check. Windows/macOS get the full build and test via the `full-ci` PR label, a weekday schedule, or a manual run
 - PRs must now add an entry under `## [Unreleased]` in `CHANGELOG.md` (`Changelog entry` check; docs-only PRs, Dependabot and the `no-changelog` label are exempt)
