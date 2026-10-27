@@ -9,16 +9,17 @@
 //! are not revisited in a step) is pinned here as it is today; P4 (Q14) owns any
 //! change.
 
-use crate::resources::capture_plans::{CapturePlanLibrary, CaptureSphereRadius};
-use crate::systems::physics::PHYS_DT;
+use crate::sim::capture::CaptureSphereRadius;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::time::PHYS_DT;
 use crate::tests::test_support::{
     CaptureRig, assert_close, capture_rig, insert_plan_json, load_example_plans, rig_set, rig_step,
     test_app,
 };
 use bevy::prelude::*;
 
-use crate::components::capture_components::CaptureComponent;
-use crate::resources::capture_plans::build_capture_component;
+use crate::sim::capture::CaptureComponent;
+use crate::sim::capture::plan::build_capture_component;
 
 // Oracle plans (the `compare_runs.py --selftest` plans, with the `name`/`tether`
 // fields the app requires added).

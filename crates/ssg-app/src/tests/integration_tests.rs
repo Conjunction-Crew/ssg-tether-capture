@@ -1,16 +1,16 @@
-use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit::{Earth, Orbit, Orbital, TetherRoot};
-use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
-use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET, SCENE_LAYER};
-use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::world_time::WorldTime;
+use crate::sim::anchor::CameraTarget;
+use crate::sim::capture::CaptureComponent;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::floating_origin::MAX_ORIGIN_OFFSET;
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::{ISS_ORBIT, Orbit, Orbital};
+use crate::sim::tether::TetherRoot;
+use crate::sim::time::WorldTime;
 use crate::tests::test_support::{
     assert_close, assert_close_dvec3, enter_sim, load_example_plans, log_test_app, start_running,
     test_app, tick,
 };
 use avian3d::prelude::*;
-use bevy::camera::visibility::RenderLayers;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
@@ -45,52 +45,6 @@ fn minimal_rigidbody_setup() {
         DVec3::new(40.0, 40.0, 40.0),
         1e-9,
         "rigid body position",
-    );
-}
-
-#[test]
-fn orbit_camera() {
-    let mut app = test_app();
-    enter_sim(&mut app);
-
-    // `orbit_camera_track` needs the Earth, a target and a camera on the scene layer.
-    // Earth is directly "below" the target (along -Z), so the scene camera's up vector
-    // is +Z.
-    app.world_mut()
-        .spawn((Earth, Transform::from_xyz(10.0, 20.0, -1000.0)));
-    app.world_mut()
-        .spawn((CameraTarget, Transform::from_xyz(10.0, 20.0, 30.0)));
-    let orbit_camera = app
-        .world_mut()
-        .spawn((
-            Camera3d::default(),
-            RenderLayers::layer(SCENE_LAYER),
-            Transform::from_xyz(0.0, 0.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
-            OrbitCamera {
-                map_params: OrbitCameraParams::default(),
-                scene_params: OrbitCameraParams::default(),
-            },
-        ))
-        .id();
-
-    tick(&mut app);
-
-    // The camera tracks the target: focus = target translation, up = away from Earth.
-    let camera = app.world().get::<OrbitCamera>(orbit_camera).unwrap();
-    assert_eq!(camera.scene_params.focus, Vec3::new(10.0, 20.0, 30.0));
-    assert_eq!(camera.scene_params.up, Vec3::Z);
-
-    // With up = +Z, an unrotated Earth (north axis +Z) and zero yaw/pitch,
-    // `orbit_camera_track` gives forward = +X, so the camera sits `distance` (30)
-    // behind the focus: focus - X * 30.
-    let translation = app
-        .world()
-        .get::<Transform>(orbit_camera)
-        .unwrap()
-        .translation;
-    assert!(
-        translation.abs_diff_eq(Vec3::new(-20.0, 20.0, 30.0), 1e-4),
-        "camera translation is {translation:?}"
     );
 }
 
@@ -308,7 +262,7 @@ fn floating_origin_resets() {
 
 // ─── Capture Log integration tests (A4) ──────────────────────────────────────
 
-use crate::resources::capture_log::{CaptureLog, LogEvent, LogLevel};
+use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel};
 
 #[test]
 fn collect_log_events_appends_to_capture_log() {

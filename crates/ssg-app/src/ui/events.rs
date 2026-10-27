@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::resources::capture_plan_form::UnitSystem;
+use crate::ui::form::UnitSystem;
 
 #[derive(Message, Debug, Clone)]
 pub enum UiEvent {

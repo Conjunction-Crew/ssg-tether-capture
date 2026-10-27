@@ -5,19 +5,35 @@ use bevy_egui::{
 };
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 
-use crate::{
-    components::capture_components::CaptureComponent,
-    resources::{
-        capture_plans::CapturePlanLibrary, data_collection::DataCollection,
-        working_directory::WorkingDirectory,
-    },
-    ui::state::SelectedProject,
-};
+use crate::sim::capture::CaptureComponent;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::project::{SelectedProject, WorkingDirectory};
+use crate::sim::telemetry::DataCollection;
+
+/// CSV export state of the data collection window (`DataCollection.settings`
+/// before P3, F-18).
+#[derive(Resource, Debug)]
+pub struct CsvExportState {
+    pub selecting_csv_dir: bool,
+    pub csv_export_filename: String,
+    pub num_exports_completed: u32,
+}
+
+impl Default for CsvExportState {
+    fn default() -> Self {
+        Self {
+            selecting_csv_dir: false,
+            csv_export_filename: String::from("capture0.csv"),
+            num_exports_completed: 0,
+        }
+    }
+}
 
 pub fn egui_plots(
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut contexts: EguiContexts,
-    mut data_collection: ResMut<DataCollection>,
+    data_collection: Res<DataCollection>,
+    mut csv_export: ResMut<CsvExportState>,
     working_directory: Res<WorkingDirectory>,
     selected_project: Res<SelectedProject>,
     capture_plan_lib: Res<CapturePlanLibrary>,
@@ -54,7 +70,7 @@ pub fn egui_plots(
         return;
     };
 
-    let settings = &data_collection.settings;
+    let settings = &*csv_export;
 
     let mut export_clicked = false;
     let mut selected_filename: String = settings.csv_export_filename.clone();
@@ -137,10 +153,10 @@ pub fn egui_plots(
                     );
                 }
             } else if ui.button("Export to CSV").clicked() {
-                let project_id = selected_project
-                    .project_id
-                    .clone()
-                    .expect("No project selected, when one should always be when in Sim state");
+                let Some(project_id) = selected_project.project_id.clone() else {
+                    warn!("No project selected, when one should always be when in Sim state");
+                    return;
+                };
                 let Some(project) = capture_plan_lib.plans.get(&project_id) else {
                     warn!(
                         project_id = %project_id,
@@ -162,7 +178,7 @@ pub fn egui_plots(
             }
         });
 
-    data_collection.settings.selecting_csv_dir = export_clicked;
-    data_collection.settings.csv_export_filename = selected_filename;
-    data_collection.settings.num_exports_completed = num_exports;
+    csv_export.selecting_csv_dir = export_clicked;
+    csv_export.csv_export_filename = selected_filename;
+    csv_export.num_exports_completed = num_exports;
 }

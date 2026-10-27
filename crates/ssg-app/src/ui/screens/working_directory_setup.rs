@@ -1,10 +1,10 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
-use crate::constants::UI_LAYER;
-use crate::resources::working_directory::WorkingDirectory;
+use crate::render::layers::UI_LAYER;
+use crate::sim::project::WorkingDirectory;
+use crate::sim::session::UiScreen;
 use crate::ui::events::UiEvent;
-use crate::ui::state::UiScreen;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
 

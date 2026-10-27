@@ -22,28 +22,22 @@ use bevy::ecs::message::{MessageCursor, Messages};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
 use brahe::utils::DOrbitStateProvider;
 use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
 use nalgebra::Vector6;
 
-use crate::components::capture_components::CapturePlan;
-use crate::create_app;
-use crate::plugins::gpu_compute::GpuElements;
-use crate::plugins::orbital_mechanics::SimState;
-use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEvent, LogLevel};
-use crate::resources::capture_plans::{
-    CapturePlanLibrary, CaptureSphereRadius, build_capture_component, load_plans_from_dir,
-};
-use crate::resources::data_collection::DataCollection;
-use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::world_time::WorldTime;
-use crate::systems::capture_algorithms::capture_state_machine_update;
-use crate::systems::physics::PHYS_DT;
-use crate::systems::setup::setup_orbital_selection;
-use crate::ui::plugin::collect_log_events;
-use crate::ui::state::{SelectedProject, UiScreen};
+use crate::sim::SimPlugins;
+use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
+use crate::sim::capture::{CaptureSphereRadius, capture_state_machine_update};
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::catalog::GpuElements;
+use crate::sim::project::{AssetsDir, load_plans_from_dir};
+use crate::sim::session::{SimState, UiScreen};
+use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
+use crate::sim::time::{PHYS_DT, WorldTime};
 
 /// Deterministic sim epoch for tests; never use `Epoch::now()` in tests (F-06).
 ///
@@ -67,37 +61,33 @@ pub(crate) fn repo_root() -> std::path::PathBuf {
 /// `fixed_physics_step` from test code (outside `FixedUpdate`) would therefore
 /// step avian with the last frame's wall-clock delta, or not at all.
 pub(crate) fn test_app() -> App {
-    // P3: `cargo test` runs from `crates/ssg-app`, but `resolve_assets_dir()` is
-    // relative to the working directory; run from the workspace root as before.
-    std::env::set_current_dir(repo_root()).expect("workspace root is reachable");
-    let mut app = create_app();
+    // P3: `SimPlugins` replace `create_app()` and provide what the removed lines
+    // added (`DataCollection`, `SelectedProject`, the body spawn system); the
+    // render assets (`StandardMaterial`, `GizmoAsset`) are app-side now.
+    let mut app = App::new(); // P3: was `create_app()`
     app.add_plugins((
         MinimalPlugins,
+        StatesPlugin, // P3: `SimPlugins` need it first
         AssetPlugin::default(),
         InputPlugin,
         ScenePlugin,
     ))
     .init_asset::<Mesh>()
-    .init_asset::<StandardMaterial>()
-    .init_asset::<GizmoAsset>()
+    .add_plugins(SimPlugins) // P3: the sim plugins
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
     .init_resource::<ColliderTreeDiagnostics>()
-    .init_resource::<DataCollection>()
     // `WorldTime::default()` reads the wall clock (F-06), so insert it explicitly.
     .insert_resource(WorldTime {
         multiplier: 1,
         epoch: fixed_epoch(),
         start_epoch: fixed_epoch(),
     })
-    // Normally provided by `UiPlugin`; `spawn_tether` needs it.
-    .init_resource::<SelectedProject>()
-    // Normally provided by `GpuComputePlugin`; `orbital_gizmos` needs it as soon as a
-    // `Camera3d` exists.
+    // P3: normally provided by the app's GpuComputePlugin; kept so
+    // baseline_q13_elements_match_app_loader can compare the loader's output.
     .init_resource::<GpuElements>()
-    // Mirrors `run()` at `src/lib.rs`.
-    .add_systems(OnEnter(SimState::Running), setup_orbital_selection)
+    .insert_resource(AssetsDir(repo_root().join("assets"))) // P3: the dataset directory
     // One `app.update()` = one `Time<Fixed>` step (see above).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
         PHYS_DT,
@@ -217,7 +207,6 @@ pub(crate) fn log_test_app() -> App {
     app.add_plugins(MinimalPlugins)
         .add_message::<LogEvent>()
         .init_resource::<CaptureLog>()
-        .init_resource::<CaptureLogUiState>()
         .init_resource::<WorldTime>()
         .add_systems(Update, collect_log_events);
     app
@@ -363,7 +352,7 @@ fn parse_transition(message: &str) -> Option<(String, String, String)> {
 
 /// Q13 Hubble scenario builder: the HST (NORAD 20580) as the capture target and
 /// the P0 chaser (NORAD 99901) as the tether root, spawned through the real
-/// `setup_orbital_selection` with the `example_plan` capture plan.
+/// `spawn_selected_bodies` with the `example_plan` capture plan.
 ///
 /// Headless only (A-6): no glTF loader, so the HST has no collider, and no
 /// render, camera or GPU systems run. See plans/stage-2/52-p2-testing-baseline.md.
@@ -381,18 +370,18 @@ pub(crate) mod q13 {
         LogTap, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, load_example_plans,
         parse_transition, start_running, test_app, tick,
     };
-    use crate::components::capture_components::CaptureComponent;
-    use crate::components::orbit::{JsonOrbital, JsonOrbitalData, Orbit, Orbital};
-    use crate::plugins::gpu_compute::GpuOrbitalElements;
-    use crate::resources::capture_plans::{CapturePlanLibrary, build_capture_component};
-    use crate::resources::orbital_cache::OrbitalCache;
-    use crate::resources::space_catalog::{
+    use crate::sim::capture::CaptureComponent;
+    use crate::sim::capture::plan::{CapturePlanLibrary, build_capture_component};
+    use crate::sim::orbit::cache::OrbitalCache;
+    use crate::sim::orbit::catalog::{GpuOrbitalElements, JsonOrbital, JsonOrbitalData};
+    use crate::sim::orbit::selection::{
         EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
         SelectedOrbitalObject,
     };
-    use crate::resources::world_time::WorldTime;
-    use crate::systems::physics::PHYS_DT;
-    use crate::ui::state::{SelectedProject, UiScreen};
+    use crate::sim::orbit::{Orbit, Orbital};
+    use crate::sim::project::SelectedProject;
+    use crate::sim::session::UiScreen;
+    use crate::sim::time::{PHYS_DT, WorldTime};
 
     /// The HST record (verbatim from `assets/datasets/dataset_2026_04_03.json`)
     /// and the P0 chaser record, as a GP JSON array.
@@ -576,7 +565,7 @@ pub(crate) mod q13 {
         }
         start_running(app);
 
-        // `setup_orbital_selection` has spawned the tether root and the debris with
+        // `spawn_selected_bodies` has spawned the tether root and the debris with
         // `Orbit::FromElements`; `init_orbitals` turns them into propagators on the
         // next update.
         let pending: Vec<(Entity, Vector6<f64>)> = app

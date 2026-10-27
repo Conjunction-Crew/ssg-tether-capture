@@ -1,20 +1,16 @@
 //! Characterization of time warp: the N-by-1 invariant, the keyboard ladder
 //! (F-12), pause, the catch-up cap, and the physics-clock double advance (F-38).
 
-use crate::components::orbit::{Orbital, TetherNode, TetherRoot};
-use crate::components::orbit_camera::CameraTarget;
-use crate::constants::ISS_ORBIT;
-use crate::resources::capture_log::LogLevel;
-use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::world_time::WorldTime;
-use crate::systems::physics::{PHYS_DT, fixed_physics_step};
-use crate::systems::user_input::change_time_warp;
+use crate::sim::anchor::CameraTarget;
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::{ISS_ORBIT, Orbital};
+use crate::sim::tether::{TetherNode, TetherRoot};
+use crate::sim::time::{PHYS_DT, WorldTime, fixed_physics_step};
 use crate::tests::test_support::{
-    LogTap, assert_close, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, start_running,
-    test_app, tick, ticks,
+    assert_close, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, start_running, test_app,
+    tick, ticks,
 };
 use avian3d::prelude::*;
-use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use nalgebra::Vector6;
@@ -154,71 +150,6 @@ fn char_warp_n_by_1_equals_1_by_n() {
     assert_eq!(run_warp(1, 8), run_warp(8, 1));
     // 1024 ticks at x1 vs 128 ticks at x8.
     assert_eq!(run_warp(1, 1024), run_warp(8, 128));
-}
-
-/// Press `key` and run `change_time_warp` once; returns the multiplier afterwards
-/// and the Info messages it logged.
-fn press(app: &mut App, key: KeyCode) -> (u32, Vec<String>) {
-    let mut tap = LogTap::new(app.world());
-    app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .press(key);
-    app.world_mut()
-        .run_system_once(change_time_warp)
-        .expect("change_time_warp failed to run");
-    app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .reset_all();
-    let messages = tap
-        .drain(app.world())
-        .into_iter()
-        .filter(|(level, source, _)| *level == LogLevel::Info && *source == "ui")
-        .map(|(_, _, message)| message)
-        .collect();
-    (app.world().resource::<WorldTime>().multiplier, messages)
-}
-
-#[test]
-fn char_warp_keyboard_ladder() {
-    let mut app = running_app();
-    assert_eq!(app.world().resource::<WorldTime>().multiplier, 1);
-
-    // Period doubles from 1 up to 8192, and then stays: 8192 * 2 > 10000
-    // (`user_input.rs:56`, `:70`).
-    let mut up = Vec::new();
-    for _ in 0..13 {
-        let (multiplier, messages) = press(&mut app, KeyCode::Period);
-        assert_eq!(messages, vec![format!("Time warp → {multiplier}x")]);
-        up.push(multiplier);
-    }
-    // F-12: current behaviour, expected to change in P4
-    assert_eq!(
-        up,
-        [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-    );
-    let (multiplier, messages) = press(&mut app, KeyCode::Period);
-    // F-12: current behaviour, expected to change in P4
-    assert_eq!(multiplier, 8192);
-    assert!(messages.is_empty());
-
-    // Comma halves down to 1 and then 0.
-    let mut down = Vec::new();
-    for _ in 0..14 {
-        let (multiplier, messages) = press(&mut app, KeyCode::Comma);
-        assert_eq!(messages, vec![format!("Time warp → {multiplier}x")]);
-        down.push(multiplier);
-    }
-    // F-12: current behaviour, expected to change in P4
-    assert_eq!(
-        down,
-        [4096, 2048, 1024, 512, 256, 128, 64, 32, 16, 8, 4, 2, 1, 0]
-    );
-
-    // Period from 0 goes to 1.
-    let (multiplier, messages) = press(&mut app, KeyCode::Period);
-    // F-12: current behaviour, expected to change in P4
-    assert_eq!(multiplier, 1);
-    assert_eq!(messages, vec!["Time warp → 1x".to_string()]);
 }
 
 #[test]

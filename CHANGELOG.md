@@ -22,6 +22,7 @@ GitHub Release description.
 
 ### Changed
 - Cargo workspace: the desktop app moved to `crates/ssg-app` (binary name and packaging unchanged), new `crates/ssg-sim` and `crates/ssg-sim-cli` placeholders, the Bevy fork pinned to commit `f93dee9` and documented in `FORK.md` (no app behaviour change)
+- Simulation core separated from rendering and UI inside the app crate: one plugin per feature, explicit physics system sets (same order), a sim-side anchor marker mirrored from the camera target, capture start as a sim command, one implementation per keyboard/button action, meshes attached to simulation bodies by the renderer (no behaviour change; the Tab and map-view keys now log like their buttons)
 
 ### Added
 - Headless test harness (`src/tests/test_support.rs`): fixed sim epoch, ticks driven through `FixedUpdate` at exactly 1/64 s, and helpers for capture and orbit tests; three integration tests that asserted nothing now assert real behaviour (no app behaviour change)
