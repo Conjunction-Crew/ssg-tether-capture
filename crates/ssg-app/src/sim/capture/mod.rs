@@ -1,23 +1,35 @@
+//! Capture: the per-step capture controller and its state machine.
+
+pub mod plan;
+
 use avian3d::{
     math::PI,
     prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
 };
 use bevy::{math::DVec3, prelude::*};
 
-use crate::{
-    components::capture_components::CaptureComponent,
-    resources::{
-        capture_log::{LogEvent, LogLevel},
-        capture_plans::{
-            CapturePlanLibrary, CaptureSphereRadius, CompiledCapturePlan,
-            CompiledCaptureStateParameters, CompiledCaptureTransition,
-        },
-        data_collection::DataCollection,
-        orbital_cache::OrbitalCache,
-        world_time::WorldTime,
-    },
-    systems::physics::PHYS_DT,
+use crate::sim::capture::plan::{
+    CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
+    CompiledCaptureTransition,
 };
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::telemetry::{DataCollection, LogEvent, LogLevel};
+use crate::sim::time::{PHYS_DT, WorldTime};
+
+// Component to add to an entity to attempt a capture.
+// There should only ever be 0 or 1 entity with this component at a time.
+#[derive(Component, Debug, Clone)]
+pub struct CaptureComponent {
+    pub plan_id: String,
+    pub current_state: String,
+    pub state_enter_time_s: f64,
+    pub state_elapsed_time_s: f64,
+}
+
+#[derive(Resource, Debug, Default)]
+pub struct CaptureSphereRadius {
+    pub radius: f64,
+}
 
 pub fn capture_state_machine_update(
     mut commands: Commands,

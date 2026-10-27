@@ -1,16 +1,28 @@
+//! The tether and the debris: the two bodies a capture run spawns.
+
 use avian3d::prelude::*;
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 use nalgebra::Vector6;
 
-use crate::{
-    components::{
-        orbit::{Orbit, TetherNode, TetherRoot},
-        orbit_camera::CameraTarget,
-    },
-    constants::{PHYSICS_DISABLE_RADIUS, SCENE_LAYER},
-    resources::{capture_plans::CapturePlanLibrary, orbital_cache::OrbitalCache},
-    ui::state::{SelectedProject, UiScreen},
-};
+use crate::render::layers::SCENE_LAYER;
+use crate::sim::anchor::CameraTarget;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::orbit::Orbit;
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::selection::OrbitalSelectionState;
+use crate::sim::physics_bubble::PHYSICS_DISABLE_RADIUS;
+use crate::sim::project::SelectedProject;
+use crate::sim::session::UiScreen;
+
+// A root tether node
+#[derive(Component, Debug, Clone)]
+pub struct TetherRoot;
+
+// Component for identifying a root node of a tether system.
+#[derive(Component, Debug, Clone)]
+pub struct TetherNode {
+    pub root: Entity,
+}
 
 pub fn spawn_debris(
     commands: &mut Commands,
@@ -210,4 +222,44 @@ pub fn spawn_tether(
         .push(prev_sphere);
 
     Ok(())
+}
+
+pub fn setup_orbital_selection(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    selected_project: Res<SelectedProject>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    selection: Res<OrbitalSelectionState>,
+    mut orbital_cache: ResMut<OrbitalCache>,
+    asset_server: Res<AssetServer>,
+) {
+    let Some(chaser) = selection.chaser.as_ref() else {
+        return;
+    };
+
+    let Some(target) = selection.target.as_ref() else {
+        return;
+    };
+
+    if let Err(e) = spawn_tether(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut orbital_cache,
+        &selected_project,
+        &capture_plan_lib,
+        chaser.elements.to_vec6(),
+    ) {
+        error!("Error spawning tether: {}", e);
+    };
+
+    if let Err(e) = spawn_debris(
+        &mut commands,
+        &mut orbital_cache,
+        &asset_server,
+        target.elements.to_vec6(),
+    ) {
+        error!("Error spawning debris: {}", e);
+    };
 }

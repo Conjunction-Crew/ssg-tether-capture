@@ -1,25 +1,38 @@
 use std::fmt::Write;
 
-use crate::{
-    components::{
-        capture_components::CaptureComponent,
-        user_interface::{
-            CaptureGuidanceReadout, CaptureTelemetryReadout, OrbitLabel, TimeWarpReadout,
-        },
-    },
-    constants::EARTH_RADIUS,
-    plugins::gpu_compute::eci_position_to_map,
-    resources::{
-        capture_log::{LogEvent, LogLevel},
-        capture_plans::{CapturePlanLibrary, CaptureSphereRadius, CompiledCaptureState},
-        orbital_cache::OrbitalCache,
-        world_time::WorldTime,
-    },
-};
-
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 use nalgebra::Vector6;
+
+use crate::render::layers::{EARTH_RADIUS, eci_position_to_map};
+use crate::sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
+use crate::sim::capture::{CaptureComponent, CaptureSphereRadius};
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::telemetry::{LogEvent, LogLevel};
+use crate::sim::time::WorldTime;
+
+#[derive(Component, Debug, Clone)]
+pub struct TimeWarpReadout;
+
+#[derive(Component, Debug, Clone, Default)]
+pub struct CaptureTelemetryReadout {
+    pub target_entity: Option<Entity>,
+    pub reference_entity: Option<Entity>,
+    pub target_label: String,
+}
+
+#[derive(Component, Debug, Clone, Default)]
+pub struct CaptureGuidanceReadout {
+    pub target_entity: Option<Entity>,
+    pub reference_entity: Option<Entity>,
+    pub target_label: String,
+    pub plan_id: String,
+}
+
+#[derive(Component, Debug, Clone, Default)]
+pub struct OrbitLabel {
+    pub entity: Option<Entity>,
+}
 
 struct CaptureMetrics {
     range_m: f64,
@@ -244,7 +257,7 @@ pub fn map_orbitals(
     let (cam, cam_transform, render_layers) = camera.into_inner();
 
     for (mut node, label) in &mut labels {
-        if !render_layers.intersects(&RenderLayers::layer(crate::constants::MAP_LAYER)) {
+        if !render_layers.intersects(&RenderLayers::layer(crate::render::layers::MAP_LAYER)) {
             node.display = Display::None;
             continue;
         }

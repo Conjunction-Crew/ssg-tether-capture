@@ -1,8 +1,13 @@
+pub mod catalog_state;
 pub mod egui;
 pub mod egui_terminal;
 pub mod events;
+pub mod form;
+pub mod hud;
+pub mod input;
+pub mod log_ui;
 pub mod plugin;
 pub mod screens;
-pub mod state;
+pub mod settings;
 pub mod theme;
 pub mod widgets;

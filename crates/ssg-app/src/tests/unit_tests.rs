@@ -2,13 +2,13 @@
 mod tests {
     use serde_json::json;
 
-    use crate::components::capture_components::{CapturePlan, State};
-    use crate::resources::capture_plan_form::{NewCapturePlanForm, TransitionForm, UnitSystem};
-    use crate::resources::capture_plans::{
-        CapturePlanLibrary, build_capture_component, compile_capture_plan,
-        load_plans_from_dir_with_errors, parameter_value, validate_capture_plan,
+    use crate::sim::capture::plan::{
+        CapturePlan, CapturePlanLibrary, State, build_capture_component, compile_capture_plan,
+        parameter_value, validate_capture_plan,
     };
+    use crate::sim::project::load_plans_from_dir_with_errors;
     use crate::tests::test_support::repo_root;
+    use crate::ui::form::{NewCapturePlanForm, TransitionForm, UnitSystem};
     use crate::ui::screens::capture_plan::{
         build_capture_plan_json, generate_filename, validate_form,
     };
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn validate_plan_errors_on_zero_tether_length_in_device() {
-        use crate::components::capture_components::CapturePlanDevice;
+        use crate::sim::capture::plan::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
             device_type: "tether".to_string(),
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn validate_plan_passes_with_valid_device_block() {
-        use crate::components::capture_components::CapturePlanDevice;
+        use crate::sim::capture::plan::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
             device_type: "tether".to_string(),
@@ -707,7 +707,8 @@ mod tests {
     // CaptureLog ring-buffer (A1)
     // -------------------------------------------------------------------------
 
-    use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogLevel};
+    use crate::sim::telemetry::{CaptureLog, LogEntry, LogLevel};
+    use crate::ui::log_ui::CaptureLogUiState;
 
     fn make_entry(msg: &str) -> LogEntry {
         LogEntry {

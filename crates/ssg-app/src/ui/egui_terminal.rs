@@ -7,10 +7,11 @@ use bevy_egui::{
     egui::{self, Color32, RichText},
 };
 
-use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
-use crate::resources::capture_plan_form::NewCapturePlanForm;
-use crate::resources::working_directory::WorkingDirectory;
-use crate::resources::world_time::WorldTime;
+use crate::sim::project::WorkingDirectory;
+use crate::sim::telemetry::{CaptureLog, LogEntry, LogEvent, LogLevel};
+use crate::sim::time::WorldTime;
+use crate::ui::form::NewCapturePlanForm;
+use crate::ui::log_ui::CaptureLogUiState;
 
 // ─── System ───────────────────────────────────────────────────────────────────
 

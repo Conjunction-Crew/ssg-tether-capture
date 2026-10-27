@@ -112,7 +112,7 @@ pub fn input_field_interaction(
         With<Button>,
     >,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
-    form: Res<crate::resources::capture_plan_form::NewCapturePlanForm>,
+    form: Res<crate::ui::form::NewCapturePlanForm>,
 ) {
     if form.read_only {
         return;
@@ -170,7 +170,7 @@ pub fn input_field_keyboard(
     mut field_query: Query<&mut InputField>,
     keys: Res<ButtonInput<KeyCode>>,
     mut clipboard: NonSendMut<ClipboardRes>,
-    form: Res<crate::resources::capture_plan_form::NewCapturePlanForm>,
+    form: Res<crate::ui::form::NewCapturePlanForm>,
 ) {
     if form.read_only {
         // Drain events so they don't accumulate

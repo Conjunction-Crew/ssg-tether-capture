@@ -1,8 +1,5 @@
-mod components;
-mod constants;
-mod plugins;
-mod resources;
-mod systems;
+mod render;
+mod sim;
 mod tests;
 mod ui;
 
@@ -16,28 +13,26 @@ use bevy::state::app::StatesPlugin;
 use bevy::transform::TransformSystems;
 use bevy::ui_widgets::UiWidgetsPlugins;
 use bevy_egui::EguiPlugin;
-use systems::setup::*;
 
-use crate::constants::{MAP_LAYER, SCENE_LAYER};
-use crate::plugins::gpu_compute::GpuComputePlugin;
-use crate::plugins::orbit_camera::OrbitCameraPlugin;
-use crate::plugins::orbital_mechanics::{OrbitalMechanicsPlugin, SimState};
-use crate::resources::capture_log::LogEvent;
-use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::settings::Settings;
-use crate::resources::space_catalog::{
-    FilteredSpaceCatalogResults, OrbitalSelectionState, SpaceCatalogUiState, SpaceObjectCatalog,
-};
-use crate::systems::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
-use crate::systems::physics::FIXED_HZ;
-use crate::systems::user_input::{
-    change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
-};
-use crate::systems::user_interface::{
+use crate::render::camera::{OrbitCameraPlugin, setup_camera};
+use crate::render::celestial::{setup_celestial, setup_lighting};
+use crate::render::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
+use crate::render::gpu_compute::GpuComputePlugin;
+use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::orbit::catalog::SpaceObjectCatalog;
+use crate::sim::orbit::selection::OrbitalSelectionState;
+use crate::sim::session::{OrbitalMechanicsPlugin, SimState, UiScreen};
+use crate::sim::telemetry::LogEvent;
+use crate::sim::tether::setup_orbital_selection;
+use crate::sim::time::FIXED_HZ;
+use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
+use crate::ui::hud::{
     map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
 };
+use crate::ui::input::{change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin};
 use crate::ui::plugin::UiPlugin;
-use crate::ui::state::UiScreen;
+use crate::ui::settings::Settings;
 
 /// Returns the absolute path to the `assets/` directory as a [`PathBuf`].
 ///

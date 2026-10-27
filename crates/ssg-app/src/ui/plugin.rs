@@ -10,28 +10,25 @@ use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_egui::EguiPrimaryContextPass;
 
-use crate::components::capture_components::{CaptureComponent, CapturePlan};
-use crate::components::orbit::Orbital;
-use crate::components::orbit_camera::CameraTarget;
-use crate::constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
-use crate::plugins::orbital_mechanics::SimState;
-use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEntry, LogEvent, LogLevel};
-use crate::resources::capture_plan_form::{
-    NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem,
+use crate::render::camera::setup_camera;
+use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::sim::anchor::CameraTarget;
+use crate::sim::capture::CaptureComponent;
+use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
+use crate::sim::orbit::Orbital;
+use crate::sim::orbit::selection::OrbitalSelectionState;
+use crate::sim::project::{
+    SelectedProject, WorkingDirectory, load_plans_from_dir, load_plans_from_dir_with_errors,
+    save_to_config,
 };
-use crate::resources::capture_plans::{
-    CapturePlanLibrary, CapturePlanLoadErrors, build_capture_component, load_plans_from_dir,
-    load_plans_from_dir_with_errors,
-};
-use crate::resources::data_collection::DataCollection;
-use crate::resources::settings::Settings;
-use crate::resources::space_catalog::OrbitalSelectionState;
-use crate::resources::working_directory::{WorkingDirectory, save_to_config};
-use crate::resources::world_time::WorldTime;
-use crate::systems::setup::setup_camera;
+use crate::sim::session::{SimState, UiScreen};
+use crate::sim::telemetry::{CaptureLog, DataCollection, LogEvent, LogLevel, collect_log_events};
+use crate::sim::time::WorldTime;
 use crate::ui::egui::egui_plots;
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
+use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
+use crate::ui::log_ui::{CaptureLogUiState, CapturePlanLoadErrors};
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
     dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
@@ -54,7 +51,7 @@ use crate::ui::screens::working_directory_setup::{
     DirectoryPathText, cleanup_working_directory_setup_screen,
     spawn_working_directory_setup_screen, working_directory_setup_interactions,
 };
-use crate::ui::state::{SelectedProject, UiScreen};
+use crate::ui::settings::Settings;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{
     ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
@@ -352,28 +349,6 @@ fn update_sim_screen_bottom_padding(
 ) {
     for mut node in &mut screen {
         node.padding.bottom = Val::Px(log_ui.panel_height);
-    }
-}
-
-/// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`].
-pub fn collect_log_events(
-    mut events: MessageReader<LogEvent>,
-    mut capture_log: ResMut<CaptureLog>,
-    world_time: Res<WorldTime>,
-) {
-    for event in events.read() {
-        let full_ts = format!("{}", world_time.epoch);
-        // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
-        let timestamp = full_ts
-            .get(11..19)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| full_ts.clone());
-        capture_log.push(LogEntry {
-            timestamp,
-            level: event.level,
-            source: event.source,
-            message: event.message.clone(),
-        });
     }
 }
 

@@ -1,10 +1,46 @@
-use std::fs;
-use std::path::Path;
+//! Capture plans: the file model, validation and the compiled form.
 
 use bevy::{platform::collections::HashMap, prelude::*};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::components::capture_components::{CaptureComponent, CapturePlan};
+use crate::sim::capture::CaptureComponent;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct State {
+    pub id: String,
+    #[serde(default)]
+    pub next: Option<String>,
+    #[serde(default)]
+    pub parameters: Option<Value>,
+    #[serde(default)]
+    pub transitions: Option<Vec<Value>>,
+    #[serde(default)]
+    pub next_conditions: Option<Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct CapturePlanDevice {
+    #[serde(rename = "type", default)]
+    pub device_type: String,
+    /// Physical length of the tether in metres.
+    #[serde(default)]
+    pub tether_length: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CapturePlan {
+    /// Display name shown to the user. Not used as a lookup key.
+    pub name: String,
+    /// File-stem identifier used as the HashMap key in [`CapturePlanLibrary`].
+    /// Not serialized to JSON — populated by the loader and [`CapturePlanLibrary::insert_plan`].
+    #[serde(skip)]
+    pub id: String,
+    pub states: Vec<State>,
+    pub tether: String,
+    #[serde(default)]
+    pub device: Option<CapturePlanDevice>,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct CompiledCaptureTransition {
@@ -63,17 +99,6 @@ impl CapturePlanLibrary {
         self.plans.insert(plan_id.clone(), plan);
         self.compiled_plans.insert(plan_id, compiled_plan);
     }
-}
-
-/// Stores per-file validation errors for capture plans that failed to load.
-#[derive(Resource, Debug, Default)]
-pub struct CapturePlanLoadErrors {
-    pub errors: HashMap<String, Vec<String>>,
-}
-
-#[derive(Resource, Debug, Default)]
-pub struct CaptureSphereRadius {
-    pub radius: f64,
 }
 
 /// Validates a deserialized [`CapturePlan`], returning a list of human-readable error
@@ -161,64 +186,6 @@ pub fn build_capture_component(
         state_enter_time_s: physics_time_secs,
         state_elapsed_time_s: 0.0,
     })
-}
-
-/// Loads all valid `.json` capture plan files from `dir` and returns them as a map
-/// keyed by file stem. Returns an empty map if the directory does not exist or cannot
-/// be read.
-pub fn load_plans_from_dir(dir: &Path) -> HashMap<String, CapturePlan> {
-    let (plans, _) = load_plans_from_dir_with_errors(dir);
-    plans
-}
-
-/// Like [`load_plans_from_dir`] but also returns a map of file stems to validation
-/// error messages for any files that could not be parsed or failed validation. The
-/// first return value contains only the successfully loaded plans.
-pub fn load_plans_from_dir_with_errors(
-    dir: &Path,
-) -> (HashMap<String, CapturePlan>, HashMap<String, Vec<String>>) {
-    let mut plans = HashMap::new();
-    let mut errors: HashMap<String, Vec<String>> = HashMap::new();
-
-    if !dir.exists() {
-        return (plans, errors);
-    }
-    let read_dir = match fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return (plans, errors),
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "json") {
-            continue;
-        }
-        let stem = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-        let raw_json = match fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.insert(stem, vec![format!("Could not read file: {e}")]);
-                continue;
-            }
-        };
-        let mut plan = match serde_json::from_str::<CapturePlan>(&raw_json) {
-            Ok(p) => p,
-            Err(e) => {
-                errors.insert(stem, vec![format!("Invalid JSON: {e}")]);
-                continue;
-            }
-        };
-        let validation_errors = validate_capture_plan(&stem, &plan);
-        if validation_errors.is_empty() {
-            plan.id = stem.clone();
-            plans.insert(stem, plan);
-        } else {
-            errors.insert(stem, validation_errors);
-        }
-    }
-    (plans, errors)
 }
 
 pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {

@@ -1,14 +1,13 @@
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
-use crate::constants::UI_LAYER;
-use crate::resources::capture_plan_form::{NewCapturePlanForm, SimPlanSyncState};
-use crate::resources::capture_plans::{
-    CapturePlanLibrary, CapturePlanLoadErrors, load_plans_from_dir_with_errors,
-};
-use crate::resources::working_directory::WorkingDirectory;
+use crate::render::layers::UI_LAYER;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::project::{WorkingDirectory, load_plans_from_dir_with_errors};
+use crate::sim::session::UiScreen;
 use crate::ui::events::UiEvent;
-use crate::ui::state::UiScreen;
+use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
+use crate::ui::log_ui::CapturePlanLoadErrors;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
 

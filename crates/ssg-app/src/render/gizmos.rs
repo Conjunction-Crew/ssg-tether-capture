@@ -9,27 +9,25 @@ use bevy::{
 };
 use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
-use crate::{
-    components::{capture_components::CaptureComponent, orbit::Orbital},
-    constants::{
-        MAP_LAYER, MAP_UNITS_TO_M, MAX_ORIGIN_OFFSET, PHYSICS_ENABLE_RADIUS, SCENE_LAYER,
-        orbit_frame_rotation,
-    },
-    plugins::gpu_compute::{
-        GpuElements, GpuOrbitalElements, eci_position_to_map, propagate_catalog_eci_state,
-    },
-    plugins::orbital_mechanics::SimState,
-    resources::{
-        capture_plans::{CapturePlanLibrary, CaptureSphereRadius},
-        orbital_cache::OrbitalCache,
-        settings::Settings,
-        space_catalog::{
-            EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
-            SelectedOrbitalObject, SpaceCatalogUiState, SpaceObjectCatalog,
-        },
-        world_time::WorldTime,
-    },
+use crate::render::layers::{
+    MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map, orbit_frame_rotation,
 };
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::capture::{CaptureComponent, CaptureSphereRadius};
+use crate::sim::floating_origin::MAX_ORIGIN_OFFSET;
+use crate::sim::orbit::Orbital;
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::catalog::{
+    GpuElements, GpuOrbitalElements, SpaceObjectCatalog, propagate_catalog_eci_state,
+};
+use crate::sim::orbit::selection::{
+    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
+};
+use crate::sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
+use crate::sim::session::SimState;
+use crate::sim::time::WorldTime;
+use crate::ui::catalog_state::SpaceCatalogUiState;
+use crate::ui::settings::Settings;
 
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct CaptureGizmoConfigGroup;

@@ -4,15 +4,13 @@
 
 use std::borrow::Cow;
 
-use crate::{
-    constants::{MAP_LAYER, MAP_UNITS_TO_M, eci_to_orbit_frame},
-    resources::space_catalog::SpaceCatalogUiState,
-    resources::world_time::WorldTime,
-    ui::state::UiScreen,
-};
+use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M};
+use crate::sim::orbit::catalog::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
+use crate::sim::session::UiScreen;
+use crate::sim::time::WorldTime;
+use crate::ui::catalog_state::SpaceCatalogUiState;
 use bevy::{
     camera::visibility::RenderLayers,
-    math::DVec3,
     mesh::MeshTag,
     prelude::*,
     render::{
@@ -32,7 +30,6 @@ use bevy::{
     },
     shader::ShaderRef,
 };
-use brahe::Epoch;
 
 const ECI_SHADER_ASSET_PATH: &str = "shaders/orbital_eci.wgsl";
 const MAP_SHADER_ASSET_PATH: &str = "shaders/map_eci_points.wgsl";
@@ -214,135 +211,8 @@ fn setup_map_orbit_points(
 #[derive(Component)]
 pub struct MapOrbitPointMarker;
 
-#[derive(Clone, Copy, ShaderType)]
-pub struct GpuOrbitalElements {
-    pub id: u32,
-    pub a: f32,
-    pub e: f32,
-    pub i: f32,
-    pub raan: f32,
-    pub argp: f32,
-    pub mean_anomaly: f32,
-    pub epoch_offset_seconds: f32,
-}
-
-pub fn propagate_catalog_eci_state(
-    element: &GpuOrbitalElements,
-    current_epoch_offset_seconds: f32,
-) -> Option<(Vec3, Vec3)> {
-    let semi_major_axis = element.a as f64;
-    let eccentricity = element.e as f64;
-
-    if semi_major_axis <= 0.0 || !(0.0..1.0).contains(&eccentricity) {
-        return None;
-    }
-
-    let dt_seconds = current_epoch_offset_seconds as f64 - element.epoch_offset_seconds as f64;
-    let mean_motion =
-        (3.986_004_4e14_f64 / (semi_major_axis * semi_major_axis * semi_major_axis)).sqrt();
-    let mean_anomaly = wrap_angle(element.mean_anomaly as f64 + mean_motion * dt_seconds);
-    let eccentric_anomaly = solve_eccentric_anomaly(mean_anomaly, eccentricity);
-
-    let sin_e = eccentric_anomaly.sin();
-    let cos_e = eccentric_anomaly.cos();
-    let one_minus_e2 = (1.0 - eccentricity * eccentricity).max(0.0);
-    let sqrt_one_minus_e2 = one_minus_e2.sqrt();
-    let radius = semi_major_axis * (1.0 - eccentricity * cos_e);
-
-    if radius <= 0.0 {
-        return None;
-    }
-
-    let position_pf = DVec3::new(
-        semi_major_axis * (cos_e - eccentricity),
-        semi_major_axis * sqrt_one_minus_e2 * sin_e,
-        0.0,
-    );
-
-    let velocity_scale = (3.986_004_4e14_f64 * semi_major_axis).sqrt() / radius;
-    let velocity_pf = DVec3::new(
-        -velocity_scale * sin_e,
-        velocity_scale * sqrt_one_minus_e2 * cos_e,
-        0.0,
-    );
-
-    let position_eci = perifocal_to_eci(
-        position_pf,
-        element.i as f64,
-        element.raan as f64,
-        element.argp as f64,
-    );
-    let velocity_eci = perifocal_to_eci(
-        velocity_pf,
-        element.i as f64,
-        element.raan as f64,
-        element.argp as f64,
-    );
-
-    Some((position_eci.as_vec3(), velocity_eci.as_vec3()))
-}
-
-pub fn eci_position_to_map(position_eci: Vec3) -> Vec3 {
-    let scale = MAP_UNITS_TO_M as f32;
-    eci_to_orbit_frame(position_eci) / scale
-}
-
-fn wrap_angle(angle: f64) -> f64 {
-    angle - std::f64::consts::TAU * ((angle + std::f64::consts::PI) / std::f64::consts::TAU).floor()
-}
-
-fn solve_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
-    let mut eccentric_anomaly = if eccentricity > 0.8 {
-        if mean_anomaly < 0.0 {
-            -std::f64::consts::PI
-        } else {
-            std::f64::consts::PI
-        }
-    } else {
-        mean_anomaly
-    };
-
-    for _ in 0..6 {
-        let sin_e = eccentric_anomaly.sin();
-        let cos_e = eccentric_anomaly.cos();
-        let residual = eccentric_anomaly - eccentricity * sin_e - mean_anomaly;
-        let derivative = 1.0 - eccentricity * cos_e;
-        eccentric_anomaly -= residual / derivative;
-    }
-
-    eccentric_anomaly
-}
-
-fn perifocal_to_eci(value: DVec3, inclination: f64, raan: f64, argp: f64) -> DVec3 {
-    let cos_raan = raan.cos();
-    let sin_raan = raan.sin();
-    let cos_argp = argp.cos();
-    let sin_argp = argp.sin();
-    let cos_i = inclination.cos();
-    let sin_i = inclination.sin();
-
-    let r11 = cos_raan * cos_argp - sin_raan * sin_argp * cos_i;
-    let r12 = -cos_raan * sin_argp - sin_raan * cos_argp * cos_i;
-    let r21 = sin_raan * cos_argp + cos_raan * sin_argp * cos_i;
-    let r22 = -sin_raan * sin_argp + cos_raan * cos_argp * cos_i;
-    let r31 = sin_argp * sin_i;
-    let r32 = cos_argp * sin_i;
-
-    DVec3::new(
-        r11 * value.x + r12 * value.y,
-        r21 * value.x + r22 * value.y,
-        r31 * value.x + r32 * value.y,
-    )
-}
-
-#[derive(Resource, Clone, Default, ExtractResource)]
-pub struct GpuElements(pub Vec<GpuOrbitalElements>);
-
 #[derive(Resource, Clone, ExtractResource)]
 struct GpuEciStateBuffer(Handle<ShaderStorageBuffer>);
-
-#[derive(Resource, Default)]
-pub struct GpuComputeEpochOrigin(pub Option<Epoch>);
 
 #[derive(Clone, Copy, ShaderType, Default)]
 struct GpuEciState {

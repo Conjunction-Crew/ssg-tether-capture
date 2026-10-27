@@ -28,22 +28,17 @@ use brahe::utils::DOrbitStateProvider;
 use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
 use nalgebra::Vector6;
 
-use crate::components::capture_components::CapturePlan;
 use crate::create_app;
-use crate::plugins::gpu_compute::GpuElements;
-use crate::plugins::orbital_mechanics::SimState;
-use crate::resources::capture_log::{CaptureLog, CaptureLogUiState, LogEvent, LogLevel};
-use crate::resources::capture_plans::{
-    CapturePlanLibrary, CaptureSphereRadius, build_capture_component, load_plans_from_dir,
-};
-use crate::resources::data_collection::DataCollection;
-use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::world_time::WorldTime;
-use crate::systems::capture_algorithms::capture_state_machine_update;
-use crate::systems::physics::PHYS_DT;
-use crate::systems::setup::setup_orbital_selection;
-use crate::ui::plugin::collect_log_events;
-use crate::ui::state::{SelectedProject, UiScreen};
+use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
+use crate::sim::capture::{CaptureSphereRadius, capture_state_machine_update};
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::catalog::GpuElements;
+use crate::sim::project::{SelectedProject, load_plans_from_dir};
+use crate::sim::session::{SimState, UiScreen};
+use crate::sim::telemetry::{CaptureLog, DataCollection, LogEvent, LogLevel, collect_log_events};
+use crate::sim::tether::setup_orbital_selection;
+use crate::sim::time::{PHYS_DT, WorldTime};
+use crate::ui::log_ui::CaptureLogUiState;
 
 /// Deterministic sim epoch for tests; never use `Epoch::now()` in tests (F-06).
 ///
@@ -381,18 +376,18 @@ pub(crate) mod q13 {
         LogTap, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, load_example_plans,
         parse_transition, start_running, test_app, tick,
     };
-    use crate::components::capture_components::CaptureComponent;
-    use crate::components::orbit::{JsonOrbital, JsonOrbitalData, Orbit, Orbital};
-    use crate::plugins::gpu_compute::GpuOrbitalElements;
-    use crate::resources::capture_plans::{CapturePlanLibrary, build_capture_component};
-    use crate::resources::orbital_cache::OrbitalCache;
-    use crate::resources::space_catalog::{
+    use crate::sim::capture::CaptureComponent;
+    use crate::sim::capture::plan::{CapturePlanLibrary, build_capture_component};
+    use crate::sim::orbit::cache::OrbitalCache;
+    use crate::sim::orbit::catalog::{GpuOrbitalElements, JsonOrbital, JsonOrbitalData};
+    use crate::sim::orbit::selection::{
         EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
         SelectedOrbitalObject,
     };
-    use crate::resources::world_time::WorldTime;
-    use crate::systems::physics::PHYS_DT;
-    use crate::ui::state::{SelectedProject, UiScreen};
+    use crate::sim::orbit::{Orbit, Orbital};
+    use crate::sim::project::SelectedProject;
+    use crate::sim::session::UiScreen;
+    use crate::sim::time::{PHYS_DT, WorldTime};
 
     /// The HST record (verbatim from `assets/datasets/dataset_2026_04_03.json`)
     /// and the P0 chaser record, as a GP JSON array.

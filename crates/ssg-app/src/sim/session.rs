@@ -1,23 +1,26 @@
-use avian3d::{PhysicsPlugins, prelude::PhysicsSystems};
-use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
-use brahe::Epoch;
+//! Session lifecycle: the screen and sim states and the per-session resources.
 
-use crate::{
-    resources::{
-        capture_plans::CaptureSphereRadius, celestials::Celestials, orbital_cache::OrbitalCache,
-        world_time::WorldTime,
-    },
-    systems::{
-        capture_algorithms::capture_state_machine_update,
-        gizmos::{capture_gizmos, dev_gizmos},
-        physics::fixed_physics_step,
-        propagation::{
-            cache_eci_states, calculate_com_rv, floating_origin_update_visuals, init_orbitals,
-            load_dataset_entities, physics_bubble_add_remove, target_entity_reset_origin,
-        },
-    },
-    ui::state::UiScreen,
-};
+use avian3d::{PhysicsPlugins, prelude::PhysicsSystems};
+use bevy::prelude::*;
+
+use crate::render::celestial::Celestials;
+use crate::render::floating_origin_visuals::floating_origin_update_visuals;
+use crate::render::gizmos::{capture_gizmos, dev_gizmos};
+use crate::sim::capture::{CaptureSphereRadius, capture_state_machine_update};
+use crate::sim::floating_origin::{calculate_com_rv, target_entity_reset_origin};
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::catalog::load_dataset_entities;
+use crate::sim::orbit::{cache_eci_states, init_orbitals};
+use crate::sim::physics_bubble::physics_bubble_add_remove;
+use crate::sim::time::{ManualPhysics, WorldTime, fixed_physics_step, setup_time};
+
+#[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
+pub enum UiScreen {
+    #[default]
+    WorkingDirectorySetup,
+    Home,
+    Sim,
+}
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 pub enum SimState {
@@ -25,9 +28,6 @@ pub enum SimState {
     Setup,
     Running,
 }
-
-#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ManualPhysics;
 
 pub struct OrbitalMechanicsPlugin;
 
@@ -81,9 +81,4 @@ fn remove_sim_resources(mut commands: Commands) {
     commands.remove_resource::<OrbitalCache>();
     commands.remove_resource::<WorldTime>();
     commands.remove_resource::<CaptureSphereRadius>();
-}
-
-pub fn setup_time(mut world_time: ResMut<WorldTime>) {
-    world_time.start_epoch = Epoch::now();
-    world_time.epoch = Epoch::now();
 }

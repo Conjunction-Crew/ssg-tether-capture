@@ -1,18 +1,14 @@
-use crate::{
-    constants::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER},
-    resources::{
-        capture_log::{LogEvent, LogLevel},
-        settings::Settings,
-        space_catalog::SpaceCatalogUiState,
-        world_time::WorldTime,
-    },
-};
-
 use bevy::{
     camera::visibility::RenderLayers,
     pbr::{Atmosphere, AtmosphereSettings},
     prelude::*,
 };
+
+use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER};
+use crate::sim::telemetry::{LogEvent, LogLevel};
+use crate::sim::time::WorldTime;
+use crate::ui::catalog_state::SpaceCatalogUiState;
+use crate::ui::settings::Settings;
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,

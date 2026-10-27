@@ -1,10 +1,14 @@
-use crate::components::capture_components::CaptureComponent;
-use crate::components::orbit::{Earth, Orbit, Orbital, TetherRoot};
-use crate::components::orbit_camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
-use crate::constants::{ISS_ORBIT, MAX_ORIGIN_OFFSET, SCENE_LAYER};
-use crate::resources::capture_plans::CapturePlanLibrary;
-use crate::resources::orbital_cache::OrbitalCache;
-use crate::resources::world_time::WorldTime;
+use crate::render::camera::{OrbitCamera, OrbitCameraParams};
+use crate::render::celestial::Earth;
+use crate::render::layers::SCENE_LAYER;
+use crate::sim::anchor::CameraTarget;
+use crate::sim::capture::CaptureComponent;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::floating_origin::MAX_ORIGIN_OFFSET;
+use crate::sim::orbit::cache::OrbitalCache;
+use crate::sim::orbit::{ISS_ORBIT, Orbit, Orbital};
+use crate::sim::tether::TetherRoot;
+use crate::sim::time::WorldTime;
 use crate::tests::test_support::{
     assert_close, assert_close_dvec3, enter_sim, load_example_plans, log_test_app, start_running,
     test_app, tick,
@@ -308,7 +312,7 @@ fn floating_origin_resets() {
 
 // ─── Capture Log integration tests (A4) ──────────────────────────────────────
 
-use crate::resources::capture_log::{CaptureLog, LogEvent, LogLevel};
+use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel};
 
 #[test]
 fn collect_log_events_appends_to_capture_log() {

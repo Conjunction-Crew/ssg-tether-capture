@@ -5,14 +5,10 @@ use bevy_egui::{
 };
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 
-use crate::{
-    components::capture_components::CaptureComponent,
-    resources::{
-        capture_plans::CapturePlanLibrary, data_collection::DataCollection,
-        working_directory::WorkingDirectory,
-    },
-    ui::state::SelectedProject,
-};
+use crate::sim::capture::CaptureComponent;
+use crate::sim::capture::plan::CapturePlanLibrary;
+use crate::sim::project::{SelectedProject, WorkingDirectory};
+use crate::sim::telemetry::DataCollection;
 
 pub fn egui_plots(
     capture_entities: Query<Entity, With<CaptureComponent>>,

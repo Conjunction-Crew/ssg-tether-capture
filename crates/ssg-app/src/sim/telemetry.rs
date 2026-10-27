@@ -1,7 +1,12 @@
-use std::collections::{HashSet, VecDeque};
+//! Telemetry: the capture log and the per-run data collection.
+
+use std::collections::VecDeque;
 
 use bevy::prelude::*;
+use bevy_egui::egui::ahash::{HashMap, HashMapExt};
 use serde::Serialize;
+
+use crate::sim::time::WorldTime;
 
 // ─── Log Level ────────────────────────────────────────────────────────────────
 
@@ -68,50 +73,6 @@ impl CaptureLog {
     }
 }
 
-// ─── CaptureLogUiState Resource ───────────────────────────────────────────────
-
-/// Transient UI state for the capture log terminal panel.
-#[derive(Resource)]
-pub struct CaptureLogUiState {
-    /// Whether the log viewport is currently expanded.
-    pub is_open: bool,
-    /// Log levels shown in the viewport; entries with other levels are hidden.
-    pub active_filters: HashSet<LogLevel>,
-    /// True when the user has manually scrolled up; disables auto-scroll.
-    pub is_user_scrolled: bool,
-    /// Entry count at the last display rebuild — used to detect new entries.
-    pub last_rendered_count: usize,
-    /// Filter set at the last display rebuild — used to detect filter changes.
-    pub last_rendered_filter: HashSet<LogLevel>,
-    /// Row range currently selected (indices into the filtered list).
-    pub selected_rows: Option<(usize, usize)>,
-    /// Anchor row for shift-click range selection.
-    pub selection_anchor: Option<usize>,
-    /// Height in pixels of the rendered terminal panel (updated each frame).
-    /// Used by other systems to offset UI elements above the terminal.
-    pub panel_height: f32,
-}
-
-impl Default for CaptureLogUiState {
-    fn default() -> Self {
-        let mut all = HashSet::new();
-        all.insert(LogLevel::Error);
-        all.insert(LogLevel::Warn);
-        all.insert(LogLevel::Info);
-        all.insert(LogLevel::Debug);
-        Self {
-            is_open: false,
-            active_filters: all.clone(),
-            is_user_scrolled: false,
-            last_rendered_count: 0,
-            last_rendered_filter: all,
-            selected_rows: None,
-            selection_anchor: None,
-            panel_height: 0.0,
-        }
-    }
-}
-
 // ─── LogEvent ─────────────────────────────────────────────────────────────────
 
 /// Bevy event sent by simulation systems to add an entry to the capture log.
@@ -121,4 +82,58 @@ pub struct LogEvent {
     /// Short label identifying the emitting subsystem (e.g. `"capture"`).
     pub source: &'static str,
     pub message: String,
+}
+
+/// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`].
+pub fn collect_log_events(
+    mut events: MessageReader<LogEvent>,
+    mut capture_log: ResMut<CaptureLog>,
+    world_time: Res<WorldTime>,
+) {
+    for event in events.read() {
+        let full_ts = format!("{}", world_time.epoch);
+        // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
+        let timestamp = full_ts
+            .get(11..19)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| full_ts.clone());
+        capture_log.push(LogEntry {
+            timestamp,
+            level: event.level,
+            source: event.source,
+            message: event.message.clone(),
+        });
+    }
+}
+
+#[derive(Debug)]
+pub struct DataCollectionSettings {
+    pub selecting_csv_dir: bool,
+    pub csv_export_filename: String,
+    pub num_exports_completed: u32,
+}
+
+#[derive(Resource, Debug)]
+pub struct DataCollection {
+    pub velocity: HashMap<Entity, Vec<(f64, f64)>>,
+    pub position: HashMap<Entity, Vec<(f64, f64)>>,
+    // unused today; the P3 component/resource audit decides
+    #[allow(dead_code)]
+    pub forces: HashMap<Entity, Vec<(f64, f64)>>,
+    pub settings: DataCollectionSettings,
+}
+
+impl Default for DataCollection {
+    fn default() -> Self {
+        Self {
+            velocity: HashMap::new(),
+            position: HashMap::new(),
+            forces: HashMap::new(),
+            settings: DataCollectionSettings {
+                selecting_csv_dir: false,
+                csv_export_filename: String::from("capture0.csv"),
+                num_exports_completed: 0,
+            },
+        }
+    }
 }
