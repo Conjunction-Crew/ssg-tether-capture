@@ -3,8 +3,11 @@
 use std::time::Duration;
 
 use avian3d::prelude::*;
-use bevy::{ecs::schedule::ScheduleLabel, prelude::*};
+use bevy::{ecs::schedule::ScheduleLabel, math::DVec3, prelude::*};
 use brahe::Epoch;
+
+use crate::sim::SimStep;
+use crate::sim::session::{SimState, UiScreen};
 
 // FixedUpdate frequency.
 // Higher values will provide higher fidelity simulation, at the cost of performance.
@@ -44,5 +47,36 @@ impl Default for WorldTime {
             epoch: Epoch::now(),
             start_epoch: Epoch::now(),
         }
+    }
+}
+
+pub struct TimePlugin;
+
+impl Plugin for TimePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(PhysicsPlugins::new(ManualPhysics))
+            .insert_resource(Gravity(DVec3::ZERO))
+            .insert_resource(SubstepCount(4)) // Avian3d Substep Count
+            .insert_resource(Time::<Fixed>::from_hz(FIXED_HZ)) // FixedUpdate rate
+            .add_systems(
+                FixedUpdate,
+                fixed_physics_step
+                    .run_if(in_state(UiScreen::Sim))
+                    .run_if(in_state(SimState::Running)),
+            )
+            .configure_sets(
+                ManualPhysics,
+                (
+                    SimStep::SyncAnchor,
+                    SimStep::CenterOfMass,
+                    SimStep::OriginReset,
+                    SimStep::CacheEci,
+                    SimStep::Bubble,
+                    SimStep::Capture,
+                )
+                    .chain()
+                    .in_set(PhysicsSystems::Last)
+                    .run_if(in_state(UiScreen::Sim)),
+            );
     }
 }

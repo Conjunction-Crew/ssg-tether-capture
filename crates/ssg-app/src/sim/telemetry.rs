@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bevy_egui::egui::ahash::{HashMap, HashMapExt};
 use serde::Serialize;
 
+use crate::sim::session::UiScreen;
 use crate::sim::time::WorldTime;
 
 // ─── Log Level ────────────────────────────────────────────────────────────────
@@ -135,5 +136,16 @@ impl Default for DataCollection {
                 num_exports_completed: 0,
             },
         }
+    }
+}
+
+pub struct TelemetryPlugin;
+
+impl Plugin for TelemetryPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_message::<LogEvent>()
+            .init_resource::<CaptureLog>()
+            .init_resource::<DataCollection>()
+            .add_systems(Last, collect_log_events.run_if(in_state(UiScreen::Sim)));
     }
 }

@@ -9,6 +9,7 @@ use bevy::{
 };
 use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
+use crate::render::floating_origin_visuals::floating_origin_update_visuals;
 use crate::render::layers::{
     MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map, orbit_frame_rotation,
 };
@@ -24,7 +25,7 @@ use crate::sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
 use crate::sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
-use crate::sim::session::SimState;
+use crate::sim::session::{SimState, UiScreen};
 use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
@@ -401,5 +402,36 @@ pub fn dev_gizmos(
             transform.translation,
             Color::srgb(0.0, 1.0, 0.5),
         );
+    }
+}
+
+/// Gizmo configs, the clear colour, the gizmo systems and the floating-origin
+/// visuals (which run with the scene gizmos, as before P3).
+pub struct GizmoPlugin;
+
+impl Plugin for GizmoPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (dev_gizmos, capture_gizmos, floating_origin_update_visuals)
+                .run_if(in_state(UiScreen::Sim))
+                .run_if(in_state(SimState::Running)),
+        )
+        .add_systems(Last, orbital_gizmos.run_if(in_state(UiScreen::Sim)))
+        .insert_gizmo_config(
+            DefaultGizmoConfigGroup,
+            GizmoConfig {
+                render_layers: RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
+                ..default()
+            },
+        )
+        .insert_gizmo_config(
+            CaptureGizmoConfigGroup,
+            GizmoConfig {
+                render_layers: RenderLayers::layer(SCENE_LAYER),
+                ..default()
+            },
+        )
+        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)));
     }
 }

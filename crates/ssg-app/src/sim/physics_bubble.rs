@@ -5,11 +5,12 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::KeplerianPropagator;
 
-use crate::sim::anchor::CameraTarget;
+use crate::sim::SimStep;
+use crate::sim::anchor::SimAnchor;
 use crate::sim::orbit::Orbital;
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::time::WorldTime;
+use crate::sim::time::{ManualPhysics, WorldTime};
 
 // Floating origin constants
 pub const PHYSICS_ENABLE_RADIUS: f64 = 100.0;
@@ -18,8 +19,8 @@ pub const PHYSICS_DISABLE_RADIUS: f64 = PHYSICS_ENABLE_RADIUS * 1.1;
 pub fn physics_bubble_add_remove(
     mut commands: Commands,
     disabled_entities: Query<(Entity, &RigidBodyDisabled)>,
-    orbital_entities: Query<(Entity, &mut Orbital, RigidBodyQuery), Without<CameraTarget>>,
-    target_entity: Single<Entity, With<CameraTarget>>,
+    orbital_entities: Query<(Entity, &mut Orbital, RigidBodyQuery), Without<SimAnchor>>,
+    target_entity: Single<Entity, With<SimAnchor>>,
     mut orbital_cache: ResMut<OrbitalCache>,
     world_time: Res<WorldTime>,
     mut log_events: MessageWriter<LogEvent>,
@@ -104,5 +105,16 @@ pub fn physics_bubble_add_remove(
                 entity_rv[5] - target_rv[5],
             );
         }
+    }
+}
+
+pub struct PhysicsBubblePlugin;
+
+impl Plugin for PhysicsBubblePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            ManualPhysics,
+            physics_bubble_add_remove.in_set(SimStep::Bubble),
+        );
     }
 }

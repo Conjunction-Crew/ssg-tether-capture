@@ -8,13 +8,14 @@ use avian3d::{
 };
 use bevy::{math::DVec3, prelude::*};
 
+use crate::sim::SimStep;
 use crate::sim::capture::plan::{
     CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
     CompiledCaptureTransition,
 };
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::telemetry::{DataCollection, LogEvent, LogLevel};
-use crate::sim::time::{PHYS_DT, WorldTime};
+use crate::sim::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 // Component to add to an entity to attempt a capture.
 // There should only ever be 0 or 1 entity with this component at a time.
@@ -335,4 +336,15 @@ fn transition_to(
     capture_component.current_state = String::from(new_state);
     capture_component.state_enter_time_s = 0.0;
     capture_component.state_elapsed_time_s = 0.0;
+}
+
+pub struct CapturePlugin;
+
+impl Plugin for CapturePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            ManualPhysics,
+            capture_state_machine_update.in_set(SimStep::Capture),
+        );
+    }
 }

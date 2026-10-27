@@ -3,36 +3,15 @@ mod sim;
 mod tests;
 mod ui;
 
-use avian3d::prelude::*;
-use bevy::camera::visibility::RenderLayers;
 use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin};
-use bevy::math::DVec3;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
-use bevy::state::app::StatesPlugin;
-use bevy::transform::TransformSystems;
 use bevy::ui_widgets::UiWidgetsPlugins;
 use bevy_egui::EguiPlugin;
 
-use crate::render::camera::{OrbitCameraPlugin, setup_camera};
-use crate::render::celestial::{setup_celestial, setup_lighting};
-use crate::render::gizmos::{CaptureGizmoConfigGroup, orbital_gizmos};
-use crate::render::gpu_compute::GpuComputePlugin;
-use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::orbit::catalog::SpaceObjectCatalog;
-use crate::sim::orbit::selection::OrbitalSelectionState;
-use crate::sim::session::{OrbitalMechanicsPlugin, SimState, UiScreen};
-use crate::sim::telemetry::LogEvent;
-use crate::sim::tether::setup_orbital_selection;
-use crate::sim::time::FIXED_HZ;
-use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
-use crate::ui::hud::{
-    map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
-};
-use crate::ui::input::{change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin};
+use crate::render::RenderPlugins;
+use crate::sim::SimPlugins;
 use crate::ui::plugin::UiPlugin;
-use crate::ui::settings::Settings;
 
 /// Returns the absolute path to the `assets/` directory as a [`PathBuf`].
 ///
@@ -68,79 +47,8 @@ pub fn run() {
     .add_plugins(UiWidgetsPlugins)
     .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
-    .add_plugins(GpuComputePlugin);
-
-    configure_app(&mut app);
-
-    app.add_plugins(UiPlugin)
-        .add_systems(
-            OnEnter(UiScreen::Sim),
-            ((setup_lighting, setup_celestial, setup_camera).chain(),),
-        )
-        .add_systems(OnEnter(SimState::Running), setup_orbital_selection)
-        .run();
-}
-
-// Shared initializations between desktop application and tests go here.
-fn configure_app(app: &mut App) -> &mut App {
-    app.add_plugins(OrbitalMechanicsPlugin)
-        .add_plugins(OrbitCameraPlugin)
-        .add_systems(
-            Update,
-            (
-                toggle_map_view,
-                toggle_origin,
-                toggle_capture_gizmos,
-                change_time_warp,
-                update_time_warp_readout,
-                update_capture_telemetry,
-                update_capture_guidance,
-            )
-                .run_if(in_state(UiScreen::Sim)),
-        )
-        .add_systems(
-            PostUpdate,
-            map_orbitals
-                .after(TransformSystems::Propagate)
-                .run_if(in_state(UiScreen::Sim)),
-        )
-        .add_systems(Last, orbital_gizmos.run_if(in_state(UiScreen::Sim)))
-        .insert_gizmo_config(
-            DefaultGizmoConfigGroup,
-            GizmoConfig {
-                render_layers: RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER]),
-                ..default()
-            },
-        )
-        .insert_gizmo_config(
-            CaptureGizmoConfigGroup,
-            GizmoConfig {
-                render_layers: RenderLayers::layer(SCENE_LAYER),
-                ..default()
-            },
-        )
-        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
-        .insert_resource(Gravity(DVec3::ZERO))
-        .insert_resource(SubstepCount(4)) // Avian3d Substep Count
-        .insert_resource(Time::<Fixed>::from_hz(FIXED_HZ)) // FixedUpdate rate (physics.rs)
-        .init_resource::<CapturePlanLibrary>()
-        .init_resource::<SpaceObjectCatalog>()
-        .init_resource::<SpaceCatalogUiState>()
-        .init_resource::<FilteredSpaceCatalogResults>()
-        .init_resource::<OrbitalSelectionState>()
-        .init_resource::<Settings>();
-
-    // Register LogEvent message channel so systems using `MessageWriter<LogEvent>`
-    // are valid during startup/state transitions (tests rely on this).
-    app.add_message::<LogEvent>();
-
-    app
-}
-
-// Create the bevy application.
-pub fn create_app() -> App {
-    let mut app = App::new();
-    app.add_plugins(StatesPlugin).init_state::<UiScreen>();
-    configure_app(&mut app);
-    app
+    .add_plugins(SimPlugins)
+    .add_plugins(RenderPlugins)
+    .add_plugins(UiPlugin)
+    .run();
 }

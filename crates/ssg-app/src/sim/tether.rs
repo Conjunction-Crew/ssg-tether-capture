@@ -1,10 +1,10 @@
 //! The tether and the debris: the two bodies a capture run spawns.
 
 use avian3d::prelude::*;
-use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
+use bevy::{math::DVec3, prelude::*};
 use nalgebra::Vector6;
 
-use crate::render::layers::SCENE_LAYER;
+use crate::sim::SimSet;
 use crate::sim::anchor::CameraTarget;
 use crate::sim::capture::plan::CapturePlanLibrary;
 use crate::sim::orbit::Orbit;
@@ -12,7 +12,7 @@ use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::orbit::selection::OrbitalSelectionState;
 use crate::sim::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::sim::project::SelectedProject;
-use crate::sim::session::UiScreen;
+use crate::sim::session::{SimState, UiScreen};
 
 // A root tether node
 #[derive(Component, Debug, Clone)]
@@ -24,21 +24,32 @@ pub struct TetherNode {
     pub root: Entity,
 }
 
+/// The visual shape of a tether body; the renderer attaches the mesh (D2).
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub enum TetherShape {
+    Sphere { radius: f64 },
+    Cylinder { radius: f64, length: f64 },
+}
+
+/// A debris body; the renderer attaches the scene at `model_path` (D2).
+#[derive(Component, Debug, Clone)]
+pub struct DebrisBody {
+    pub model_path: String,
+}
+
 pub fn spawn_debris(
     commands: &mut Commands,
     orbital_cache: &mut ResMut<OrbitalCache>,
-    asset_server: &Res<AssetServer>,
     elements: Vector6<f64>,
 ) -> Result<(), BevyError> {
-    let scene: Handle<Scene> =
-        asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/broken_satellite.glb"));
-
     orbital_cache.debris.insert(
         "Satellite1".to_string(),
         commands
             .spawn((
                 DespawnOnExit(UiScreen::Sim),
-                SceneRoot(scene),
+                DebrisBody {
+                    model_path: "models/broken_satellite.glb".to_string(),
+                },
                 RigidBody::Dynamic,
                 RigidBodyDisabled,
                 Orbit::FromElements(elements),
@@ -59,8 +70,6 @@ pub fn spawn_debris(
 
 pub fn spawn_tether(
     commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
     orbital_entities: &mut ResMut<OrbitalCache>,
     selected_project: &Res<SelectedProject>,
     capture_plan_lib: &Res<CapturePlanLibrary>,
@@ -109,25 +118,16 @@ pub fn spawn_tether(
     };
     let tether_node_half_length = tether_node_length * 0.5;
 
-    let sphere_mesh = meshes.add(Mesh::from(Sphere::new(root_tail_radius as f32)));
+    let sphere_shape = TetherShape::Sphere {
+        radius: root_tail_radius,
+    };
     let sphere_collider = Collider::sphere(root_tail_radius);
-    let sphere_material = materials.add(StandardMaterial {
-        base_color: Color::Srgba(Srgba {
-            red: 1.0,
-            green: 0.0,
-            blue: 0.0,
-            alpha: 1.0,
-        }),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
 
-    let tether_node_mesh = Mesh::from(Cylinder::new(
-        (rope_radius / 8.0) as f32,
-        tether_node_length as f32,
-    ));
+    let tether_node_shape = TetherShape::Cylinder {
+        radius: rope_radius / 8.0,
+        length: tether_node_length,
+    };
     let tether_node_collider = Collider::cylinder(rope_radius / 8.0, tether_node_length);
-    let tether_node_mesh = meshes.add(tether_node_mesh);
 
     // The root tether node
     let tether_root = commands
@@ -135,11 +135,9 @@ pub fn spawn_tether(
             DespawnOnExit(UiScreen::Sim),
             CameraTarget,
             TetherRoot,
-            RenderLayers::layer(SCENE_LAYER),
+            sphere_shape,
             RigidBody::Dynamic,
             sphere_collider.clone(),
-            Mesh3d(sphere_mesh.clone()),
-            MeshMaterial3d(sphere_material.clone()),
             Mass::from(2.0),
             Transform::from_xyz(0.0, 0.0, 0.0),
             Orbit::FromElements(elements),
@@ -163,16 +161,11 @@ pub fn spawn_tether(
     let tail_index = interior_node_count + 1;
 
     for i in 1..=tail_index {
-        let (mesh, collider, mass, curr_half_extent) = if i == tail_index {
-            (
-                sphere_mesh.clone(),
-                sphere_collider.clone(),
-                2.0,
-                root_tail_radius,
-            )
+        let (shape, collider, mass, curr_half_extent) = if i == tail_index {
+            (sphere_shape, sphere_collider.clone(), 2.0, root_tail_radius)
         } else {
             (
-                tether_node_mesh.clone(),
+                tether_node_shape,
                 tether_node_collider.clone(),
                 0.1,
                 tether_node_half_length,
@@ -185,12 +178,10 @@ pub fn spawn_tether(
         let sphere = commands
             .spawn((
                 DespawnOnExit(UiScreen::Sim),
-                RenderLayers::layer(SCENE_LAYER),
                 TetherNode { root: tether_root },
+                shape,
                 RigidBody::Dynamic,
                 collider,
-                Mesh3d(mesh),
-                MeshMaterial3d(sphere_material.clone()),
                 Mass::from(mass),
                 Transform::from_xyz(0.0, y as f32, 0.0),
             ))
@@ -215,24 +206,20 @@ pub fn spawn_tether(
     }
 
     // Add tail node to tether entity
-    orbital_entities
-        .tethers
-        .get_mut(&tether_name)
-        .expect("Error getting tether")
-        .push(prev_sphere);
+    let Some(nodes) = orbital_entities.tethers.get_mut(&tether_name) else {
+        return Err("tether not registered".into());
+    };
+    nodes.push(prev_sphere);
 
     Ok(())
 }
 
-pub fn setup_orbital_selection(
+pub fn spawn_selected_bodies(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     selected_project: Res<SelectedProject>,
     capture_plan_lib: Res<CapturePlanLibrary>,
     selection: Res<OrbitalSelectionState>,
     mut orbital_cache: ResMut<OrbitalCache>,
-    asset_server: Res<AssetServer>,
 ) {
     let Some(chaser) = selection.chaser.as_ref() else {
         return;
@@ -244,8 +231,6 @@ pub fn setup_orbital_selection(
 
     if let Err(e) = spawn_tether(
         &mut commands,
-        &mut meshes,
-        &mut materials,
         &mut orbital_cache,
         &selected_project,
         &capture_plan_lib,
@@ -254,12 +239,19 @@ pub fn setup_orbital_selection(
         error!("Error spawning tether: {}", e);
     };
 
-    if let Err(e) = spawn_debris(
-        &mut commands,
-        &mut orbital_cache,
-        &asset_server,
-        target.elements.to_vec6(),
-    ) {
+    if let Err(e) = spawn_debris(&mut commands, &mut orbital_cache, target.elements.to_vec6()) {
         error!("Error spawning debris: {}", e);
     };
+}
+
+pub struct TetherPlugin;
+
+impl Plugin for TetherPlugin {
+    fn build(&self, app: &mut App) {
+        app.configure_sets(OnEnter(SimState::Running), SimSet::SpawnBodies)
+            .add_systems(
+                OnEnter(SimState::Running),
+                spawn_selected_bodies.in_set(SimSet::SpawnBodies),
+            );
+    }
 }

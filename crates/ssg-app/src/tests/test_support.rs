@@ -22,23 +22,22 @@ use bevy::ecs::message::{MessageCursor, Messages};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
 use brahe::utils::DOrbitStateProvider;
 use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
 use nalgebra::Vector6;
 
-use crate::create_app;
+use crate::sim::SimPlugins;
 use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
 use crate::sim::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::orbit::catalog::GpuElements;
-use crate::sim::project::{SelectedProject, load_plans_from_dir};
+use crate::sim::project::load_plans_from_dir;
 use crate::sim::session::{SimState, UiScreen};
-use crate::sim::telemetry::{CaptureLog, DataCollection, LogEvent, LogLevel, collect_log_events};
-use crate::sim::tether::setup_orbital_selection;
+use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
 use crate::sim::time::{PHYS_DT, WorldTime};
-use crate::ui::log_ui::CaptureLogUiState;
 
 /// Deterministic sim epoch for tests; never use `Epoch::now()` in tests (F-06).
 ///
@@ -65,34 +64,30 @@ pub(crate) fn test_app() -> App {
     // P3: `cargo test` runs from `crates/ssg-app`, but `resolve_assets_dir()` is
     // relative to the working directory; run from the workspace root as before.
     std::env::set_current_dir(repo_root()).expect("workspace root is reachable");
-    let mut app = create_app();
+    // P3: the sim plugins replace `create_app()`; they need `StatesPlugin` first.
+    let mut app = App::new(); // P3
     app.add_plugins((
         MinimalPlugins,
+        StatesPlugin, // P3
         AssetPlugin::default(),
         InputPlugin,
         ScenePlugin,
     ))
     .init_asset::<Mesh>()
-    .init_asset::<StandardMaterial>()
-    .init_asset::<GizmoAsset>()
+    .add_plugins(SimPlugins) // P3
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
     .init_resource::<ColliderTreeDiagnostics>()
-    .init_resource::<DataCollection>()
     // `WorldTime::default()` reads the wall clock (F-06), so insert it explicitly.
     .insert_resource(WorldTime {
         multiplier: 1,
         epoch: fixed_epoch(),
         start_epoch: fixed_epoch(),
     })
-    // Normally provided by `UiPlugin`; `spawn_tether` needs it.
-    .init_resource::<SelectedProject>()
-    // Normally provided by `GpuComputePlugin`; `orbital_gizmos` needs it as soon as a
-    // `Camera3d` exists.
+    // P3: normally provided by the app's GpuComputePlugin; kept so
+    // baseline_q13_elements_match_app_loader can compare the loader's output.
     .init_resource::<GpuElements>()
-    // Mirrors `run()` at `src/lib.rs`.
-    .add_systems(OnEnter(SimState::Running), setup_orbital_selection)
     // One `app.update()` = one `Time<Fixed>` step (see above).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
         PHYS_DT,
@@ -212,7 +207,6 @@ pub(crate) fn log_test_app() -> App {
     app.add_plugins(MinimalPlugins)
         .add_message::<LogEvent>()
         .init_resource::<CaptureLog>()
-        .init_resource::<CaptureLogUiState>()
         .init_resource::<WorldTime>()
         .add_systems(Update, collect_log_events);
     app
@@ -358,7 +352,7 @@ fn parse_transition(message: &str) -> Option<(String, String, String)> {
 
 /// Q13 Hubble scenario builder: the HST (NORAD 20580) as the capture target and
 /// the P0 chaser (NORAD 99901) as the tether root, spawned through the real
-/// `setup_orbital_selection` with the `example_plan` capture plan.
+/// `spawn_selected_bodies` with the `example_plan` capture plan.
 ///
 /// Headless only (A-6): no glTF loader, so the HST has no collider, and no
 /// render, camera or GPU systems run. See plans/stage-2/52-p2-testing-baseline.md.
@@ -571,7 +565,7 @@ pub(crate) mod q13 {
         }
         start_running(app);
 
-        // `setup_orbital_selection` has spawned the tether root and the debris with
+        // `spawn_selected_bodies` has spawned the tether root and the debris with
         // `Orbit::FromElements`; `init_orbitals` turns them into propagators on the
         // next update.
         let pending: Vec<(Entity, Vector6<f64>)> = app

@@ -8,10 +8,12 @@ use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
+use bevy::transform::TransformSystems;
 use bevy_egui::EguiPrimaryContextPass;
 
 use crate::render::camera::setup_camera;
 use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, UI_LAYER};
+use crate::sim::SimSet;
 use crate::sim::anchor::CameraTarget;
 use crate::sim::capture::CaptureComponent;
 use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
@@ -22,12 +24,17 @@ use crate::sim::project::{
     save_to_config,
 };
 use crate::sim::session::{SimState, UiScreen};
-use crate::sim::telemetry::{CaptureLog, DataCollection, LogEvent, LogLevel, collect_log_events};
+use crate::sim::telemetry::{DataCollection, LogEvent, LogLevel};
 use crate::sim::time::WorldTime;
+use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
 use crate::ui::egui::egui_plots;
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
+use crate::ui::hud::{
+    map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
+};
+use crate::ui::input::{change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin};
 use crate::ui::log_ui::{CaptureLogUiState, CapturePlanLoadErrors};
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -79,9 +86,7 @@ struct UiCamera;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<UiScreen>()
-            .init_resource::<SelectedProject>()
-            .init_resource::<UiTheme>()
+        app.init_resource::<UiTheme>()
             .init_resource::<WorkingDirectory>()
             .init_resource::<NewCapturePlanForm>()
             .init_resource::<FileDialogTask>()
@@ -89,13 +94,32 @@ impl Plugin for UiPlugin {
             .init_resource::<ExitConfirmPending>()
             .init_resource::<SimPlanSyncState>()
             .init_resource::<CapturePlanLoadErrors>()
-            .init_resource::<DataCollection>()
-            .init_resource::<CaptureLog>()
             .init_resource::<CaptureLogUiState>()
+            .init_resource::<SpaceCatalogUiState>()
+            .init_resource::<FilteredSpaceCatalogResults>()
+            .init_resource::<Settings>()
             .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
-            .add_message::<LogEvent>()
             .add_systems(Startup, setup_ui_camera)
+            .add_systems(
+                Update,
+                (
+                    toggle_map_view,
+                    toggle_origin,
+                    toggle_capture_gizmos,
+                    change_time_warp,
+                    update_time_warp_readout,
+                    update_capture_telemetry,
+                    update_capture_guidance,
+                )
+                    .run_if(in_state(UiScreen::Sim)),
+            )
+            .add_systems(
+                PostUpdate,
+                map_orbitals
+                    .after(TransformSystems::Propagate)
+                    .run_if(in_state(UiScreen::Sim)),
+            )
             .add_systems(
                 OnEnter(UiScreen::WorkingDirectorySetup),
                 spawn_working_directory_setup_screen,
@@ -118,10 +142,11 @@ impl Plugin for UiPlugin {
                 OnEnter(SimState::Running),
                 (
                     cleanup_project_detail_screen,
-                    spawn_project_detail_screen.after(setup_camera),
+                    spawn_project_detail_screen,
                     reset_sync_state,
                 )
-                    .chain(),
+                    .chain()
+                    .after(SimSet::SpawnBodies),
             )
             .add_systems(
                 OnExit(UiScreen::Sim),
@@ -151,7 +176,6 @@ impl Plugin for UiPlugin {
                     poll_exit_confirm_modal,
                     poll_restart_prompt_modal,
                     poll_sim_restart,
-                    collect_log_events.run_if(in_state(UiScreen::Sim)),
                     (
                         update_sim_screen_bottom_padding,
                         project_detail_interactions,

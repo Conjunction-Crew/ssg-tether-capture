@@ -9,8 +9,10 @@ use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, KeplerianPropagator};
 use nalgebra::Vector6;
 
+use crate::sim::SimStep;
 use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::time::WorldTime;
+use crate::sim::session::UiScreen;
+use crate::sim::time::{ManualPhysics, WorldTime};
 
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone, Default)]
@@ -101,4 +103,13 @@ pub fn cache_eci_states(
     });
 
     orbital_cache.eci_states = states.into_inner().unwrap();
+}
+
+pub struct OrbitPlugin;
+
+impl Plugin for OrbitPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
+            .add_systems(ManualPhysics, cache_eci_states.in_set(SimStep::CacheEci));
+    }
 }

@@ -6,13 +6,14 @@ use brahe::KeplerianPropagator;
 use brahe::utils::DOrbitStateProvider;
 use nalgebra::DVector;
 
-use crate::sim::anchor::CameraTarget;
+use crate::sim::SimStep;
+use crate::sim::anchor::SimAnchor;
 use crate::sim::orbit::Orbital;
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
 use crate::sim::telemetry::{LogEvent, LogLevel};
 use crate::sim::tether::{TetherNode, TetherRoot};
-use crate::sim::time::WorldTime;
+use crate::sim::time::{ManualPhysics, WorldTime};
 
 pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
 
@@ -62,7 +63,7 @@ pub fn calculate_com_rv(
 pub fn target_entity_reset_origin(
     mut true_params_query: Query<&mut Orbital, Without<RigidBodyDisabled>>,
     mut rigidbodies: Query<RigidBodyQuery, Without<RigidBodyDisabled>>,
-    target_entity_q: Query<Entity, (With<CameraTarget>, Without<RigidBodyDisabled>)>,
+    target_entity_q: Query<Entity, (With<SimAnchor>, Without<RigidBodyDisabled>)>,
     world_time: Res<WorldTime>,
     orbital_cache: Res<OrbitalCache>,
     mut log_events: MessageWriter<LogEvent>,
@@ -107,4 +108,18 @@ pub fn target_entity_reset_origin(
         rb.position.0 -= com_r;
         rb.linear_velocity.0 -= com_v;
     });
+}
+
+pub struct FloatingOriginPlugin;
+
+impl Plugin for FloatingOriginPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            ManualPhysics,
+            (
+                calculate_com_rv.in_set(SimStep::CenterOfMass),
+                target_entity_reset_origin.in_set(SimStep::OriginReset),
+            ),
+        );
+    }
 }

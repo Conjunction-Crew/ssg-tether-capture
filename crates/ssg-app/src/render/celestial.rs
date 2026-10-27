@@ -8,7 +8,9 @@ use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
+use crate::render::camera::setup_camera;
 use crate::render::layers::*;
+use crate::sim::SimSet;
 use crate::sim::session::UiScreen;
 
 // Component to query Earth.
@@ -114,4 +116,31 @@ pub fn setup_celestial(
             ))
             .id(),
     );
+}
+
+fn init_celestials(mut commands: Commands) {
+    commands.init_resource::<Celestials>();
+}
+
+fn remove_celestials(mut commands: Commands) {
+    commands.remove_resource::<Celestials>();
+}
+
+pub struct CelestialPlugin;
+
+impl Plugin for CelestialPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            OnEnter(UiScreen::Sim),
+            (
+                init_celestials,
+                setup_lighting,
+                setup_celestial,
+                setup_camera,
+            )
+                .chain()
+                .after(SimSet::SessionInit),
+        )
+        .add_systems(OnExit(UiScreen::Sim), remove_celestials);
+    }
 }

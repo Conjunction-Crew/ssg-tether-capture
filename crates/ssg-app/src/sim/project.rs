@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use bevy::{platform::collections::HashMap, prelude::*};
 
-use crate::sim::capture::plan::{CapturePlan, validate_capture_plan};
+use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, validate_capture_plan};
+use crate::sim::orbit::catalog::SpaceObjectCatalog;
+use crate::sim::orbit::selection::OrbitalSelectionState;
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SelectedProject {
@@ -128,4 +130,17 @@ pub fn load_plans_from_dir_with_errors(
         }
     }
     (plans, errors)
+}
+
+/// Project-level resources. `WorkingDirectory` is initialised by the app: its
+/// `Default` reads the user's config file.
+pub struct ProjectPlugin;
+
+impl Plugin for ProjectPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<SelectedProject>()
+            .init_resource::<CapturePlanLibrary>()
+            .init_resource::<SpaceObjectCatalog>()
+            .init_resource::<OrbitalSelectionState>();
+    }
 }
