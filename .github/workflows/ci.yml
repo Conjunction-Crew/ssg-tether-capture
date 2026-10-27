@@ -67,7 +67,7 @@ jobs:
             files=$(git diff --name-only "$BASE_SHA"...HEAD)
             rust=false
             docs=false
-            if printf '%s\n' "$files" | grep -Eq '^(src/|assets/|wix/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/(ci|build-packages)\.yml$)'; then
+            if printf '%s\n' "$files" | grep -Eq '^(src/|crates/|assets/|wix/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.cargo/config\.toml$|\.github/workflows/(ci|build-packages)\.yml$)'; then
               rust=true
             fi
             if printf '%s\n' "$files" | grep -Eq '^(docs_site/|CHANGELOG\.md$|\.github/workflows/ci\.yml$)'; then
@@ -121,7 +121,14 @@ jobs:
         # Every clippy warning fails the job except these two Bevy-signature
         # lints, which the next step tracks until P3/P8 restructure the systems
         # and UI code that triggers them.  Never silence them with #[allow].
-        run: cargo clippy --all-targets --locked -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments
+
+      - name: ssg-sim has no render dependency
+        # The simulation core must stay headless: none of the renderer, window,
+        # UI or egui crates may appear in its normal dependency tree.
+        # `bevy_window` is not listed: bevy_scene -> bevy_camera -> bevy_window
+        # is a types-only chain that pulls no renderer.
+        run: test "$(cargo tree -p ssg-sim -e normal --locked | grep -cE 'bevy_(render|winit|ui\b|pbr|gizmos|core_pipeline|post_process|egui)')" = 0
 
       - name: Clippy (tracked warnings report)
         # Lists the two allowed lints in the job summary.  Never fails.  The
@@ -131,7 +138,7 @@ jobs:
         # artifacts.
         if: always()
         run: |
-          cargo clippy --all-targets --locked --color never --message-format=short 2>&1 \
+          cargo clippy --workspace --all-targets --locked --color never --message-format=short 2>&1 \
             | grep ': warning:' \
             | grep -E 'very complex type used|too many arguments' \
             | sed -E 's/^([^ ]+): warning: (.*)$/\1 \2/' \
@@ -154,11 +161,11 @@ jobs:
           exit 0
 
       - name: Run tests
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
-        run: cargo build --locked
+        run: cargo build --workspace --locked
 
   # ───────────────────────────────────────────────────────────────────────────
   # Windows / macOS.  PRs only run `cargo check` (compile errors, platform-
@@ -191,15 +198,15 @@ jobs:
 
       - name: cargo check
         if: needs.changes.outputs.full != 'true'
-        run: cargo check --all-targets --locked
+        run: cargo check --workspace --all-targets --locked
 
       - name: cargo build
         if: needs.changes.outputs.full == 'true'
-        run: cargo build --locked
+        run: cargo build --workspace --locked
 
       - name: cargo test
         if: needs.changes.outputs.full == 'true'
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docusaurus build — catches broken links / build errors, and enforces the

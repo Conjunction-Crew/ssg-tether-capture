@@ -1,61 +1,60 @@
-[package]
-name = "ssg_tether_capture"
+[workspace]
+members = ["crates/ssg-app", "crates/ssg-sim", "crates/ssg-sim-cli"]
+default-members = ["crates/ssg-app"]
+resolver = "3"
+
+[workspace.package]
 version = "0.3.0"
 edition = "2024"
-description = "Orbital tether capture simulation and mission planning."
 license = "MIT"
 repository = "https://github.com/Conjunction-Crew/ssg-tether-capture"
 homepage = "https://conjunction-crew.github.io/ssg-tether-capture/"
 publish = false
+description = "Orbital tether capture simulation and mission planning."
 
-[dependencies]
-bevy = { version = "0.18.0", features = ["debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
-bevy_egui = { version = "0.39.1" }
-egui_plot = { version = "0.34.1" }
+[workspace.dependencies]
+bevy = { version = "0.18.0", default-features = false }
 avian3d = { version = "0.6.1", default-features = false, features = ["simd", "parallel", "3d", "f64", "parry-f64", "xpbd_joints", "collider-from-mesh", "bevy_scene"] }
+bevy_egui = "0.39.1"
+egui_plot = "0.34.1"
 serde = { version = "1.0.228", features = ["derive"] }
-csv = { version = "1.4.0" }
-chrono = { version = "0.4.41" }
-serde_json = { version = "1.0.149" }
-brahe = { version = "1.1.4" }
-nalgebra = { version = "0.34.1" }
-rfd = { version = "0.17" }
-arboard = { version = "3" }
-dirs = { version = "7" }
+serde_json = "1.0.149"
+csv = "1.4.0"
+chrono = "0.4.41"
+brahe = "1.1.4"
+nalgebra = "0.34.1"
+rfd = "0.17"
+arboard = "3"
+dirs = "7"
+ssg-sim = { path = "crates/ssg-sim" }
 
 [patch.crates-io]
-bevy = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_math = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_reflect = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_reflect_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_a11y = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_app = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_asset = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_camera = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_color = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_core_pipeline = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_ecs = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_image = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_input = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_log = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_mesh = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_picking = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_platform = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_render = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_shader = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_time = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_transform = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_ui_render = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_utils = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_window = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-bevy_winit = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", branch = "ssg-bevy-0.18.0" }
-
-[[bin]]
-name = "ssg_tether_capture"
-path = "src/main.rs"
-test = false
-bench = false
+bevy = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_math = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_reflect = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_reflect_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_a11y = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_app = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_asset = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_camera = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_color = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_core_pipeline = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_derive = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_ecs = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_image = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_input = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_log = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_mesh = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_picking = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_platform = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_render = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_shader = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_time = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_transform = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_ui_render = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_utils = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_window = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
+bevy_winit = { git = "https://github.com/Conjunction-Crew/ssg-bevy.git", rev = "f93dee9e299d46e2af62a8d753fa62227ee3c802" }
 
 [profile.dev]
 opt-level = 1
@@ -74,10 +73,3 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = true
-
-[package.metadata.bundle]
-name = "SSG Tether Capture"
-identifier = "com.conjunction-crew.ssg-tether-capture"
-resources = ["assets"]
-short_description = "Orbital tether capture simulation and mission planning."
-icon = ["assets/logo/icon.icns"]

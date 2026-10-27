@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Testing
 
-Tests live under `src/tests/` and are compiled as part of the main crate.
+Tests live under each crate's `src/tests/` and are compiled as part of that crate; the app crate is `crates/ssg-app`. From v0.3.1 the shared test harness is `ssg_sim::test_support`.
 
 ## Running tests
 
@@ -27,7 +27,7 @@ cargo test -- --nocapture
 ## Test structure
 
 ```
-src/tests/
+crates/ssg-app/src/tests/
   mod.rs              — declares test submodules
   unit_tests.rs       — pure unit tests (no Bevy app)
   integration_tests.rs — tests using create_app()
@@ -48,7 +48,7 @@ Integration tests use `lib::create_app()` to build a real Bevy `App` without the
 ```rust
 #[test]
 fn test_orbital_initialisation() {
-    let mut app = ssg_tether_capture::create_app();
+    let mut app = ssg_app::create_app();
     // spawn entities, run app.update(), assert on components
 }
 ```

@@ -8,6 +8,7 @@ mod tests {
         CapturePlanLibrary, build_capture_component, compile_capture_plan,
         load_plans_from_dir_with_errors, parameter_value, validate_capture_plan,
     };
+    use crate::tests::test_support::repo_root;
     use crate::ui::screens::capture_plan::{
         build_capture_plan_json, generate_filename, validate_form,
     };
@@ -339,8 +340,7 @@ mod tests {
 
     #[test]
     fn load_plans_loads_example_plan_successfully() {
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/example_capture_plans");
+        let dir = repo_root().join("assets/example_capture_plans");
         let (plans, errors) = load_plans_from_dir_with_errors(&dir);
         assert!(
             !plans.is_empty(),
@@ -575,8 +575,7 @@ mod tests {
     fn loader_sets_plan_id_to_file_stem() {
         // All plans loaded from disk must have their id populated with the file
         // stem so that any code using plan.id gets the correct lookup key.
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/example_capture_plans");
+        let dir = repo_root().join("assets/example_capture_plans");
         let (plans, _) = load_plans_from_dir_with_errors(&dir);
         for (stem, plan) in &plans {
             assert_eq!(
@@ -592,8 +591,7 @@ mod tests {
         // The file stem (id) is independent of the JSON "name" field. A plan
         // keyed under "example_plan" must have id == "example_plan" regardless
         // of what its "name" field contains.
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/example_capture_plans");
+        let dir = repo_root().join("assets/example_capture_plans");
         let (plans, _) = load_plans_from_dir_with_errors(&dir);
         if let Some(plan) = plans.get("example_plan") {
             assert_eq!(plan.id, "example_plan");

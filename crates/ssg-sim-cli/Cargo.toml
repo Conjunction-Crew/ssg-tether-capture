@@ -1,0 +1,19 @@
+[package]
+name = "ssg-sim-cli"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ssg-sim"
+path = "src/main.rs"
+
+[dependencies]
+ssg-sim = { workspace = true }
+bevy = { workspace = true, features = ["std", "bevy_log", "bevy_state", "bevy_asset", "bevy_scene", "bevy_mesh", "multi_threaded", "async_executor"] }
+serde_json = { workspace = true }
+csv = { workspace = true }
