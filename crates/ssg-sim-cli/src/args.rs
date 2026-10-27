@@ -15,7 +15,7 @@ options:
   --assets DIR         assets directory (default ./assets)
   --epoch now|ISO      start epoch: `now` (default, the app path) or YYYY-MM-DDTHH:MM:SS[.fff]
   --steps N            number of updates to run (default 200000)
-  --warp N             time-warp multiplier (default 1)
+  --warp N             time-warp multiplier (default 1; at most 64 fixed steps run per update)
   --sample-every N     trajectory sample interval in updates (default 64)
   --out DIR            output directory (default <project-dir>/runs/<utc-timestamp>)
   --stop-at-capture    stop as soon as the state is `capture`";

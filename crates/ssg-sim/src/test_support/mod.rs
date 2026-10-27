@@ -39,7 +39,7 @@ use crate::session::{SimState, UiScreen};
 use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
 use crate::time::{PHYS_DT, SimConfig, WorldTime};
 
-/// Deterministic sim epoch for tests; never use `Epoch::now()` in tests (F-06).
+/// Deterministic sim epoch for tests; never read the wall clock in tests (F-06).
 ///
 /// This is the dataset's GP epoch.
 pub fn fixed_epoch() -> Epoch {
@@ -545,7 +545,9 @@ pub mod q13 {
         }
 
         if epoch_mode == EpochMode::AppPath {
-            // The app's start epoch: the wall clock when the project is opened.
+            // The app's start epoch: the wall clock when the project is opened. The
+            // only wall-clock read under `crates/ssg-sim/src` until S6 retires
+            // `AppPath` (operator decision, P4 Run 1).
             app.insert_resource(SimConfig {
                 start_epoch: Epoch::now(),
             });
