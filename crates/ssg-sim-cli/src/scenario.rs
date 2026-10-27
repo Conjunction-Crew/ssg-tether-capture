@@ -12,8 +12,7 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
-use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
+use brahe::{Epoch, TimeSystem};
 use ssg_sim::SimPlugins;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, SimCommand};
@@ -22,11 +21,10 @@ use ssg_sim::orbit::catalog::{JsonOrbital, gp_record_to_elements};
 use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
-use ssg_sim::orbit::{Orbit, Orbital};
 use ssg_sim::project::{AssetsDir, SelectedProject};
 use ssg_sim::session::{SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
-use ssg_sim::time::{PHYS_DT, WorldTime};
+use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
 
 use crate::args::{Args, EpochArg};
 use crate::inputs::{find_records, load_plans};
@@ -96,6 +94,10 @@ pub fn run(args: &Args) -> Result<Run, String> {
     .init_resource::<SolverDiagnostics>()
     .init_resource::<ColliderTreeDiagnostics>()
     .insert_resource(AssetsDir(args.assets.clone()))
+    // The sim start epoch: `--epoch`, with `now` resolved once above (F-06).
+    .insert_resource(SimConfig {
+        start_epoch: reference_epoch,
+    })
     // One `app.update()` = one fixed step (the P2 clock recipe, D8).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
         PHYS_DT,
@@ -113,47 +115,10 @@ pub fn run(args: &Args) -> Result<Run, String> {
         .resource_mut::<NextState<UiScreen>>()
         .set(UiScreen::Sim);
     app.update();
-    if let EpochArg::At(epoch) = args.epoch {
-        // F-06: `setup_time` has just set both epochs from the wall clock.
-        let mut world_time = app.world_mut().resource_mut::<WorldTime>();
-        world_time.epoch = epoch;
-        world_time.start_epoch = epoch;
-    }
     app.world_mut()
         .resource_mut::<NextState<SimState>>()
         .set(SimState::Running);
     app.update();
-
-    if let EpochArg::At(epoch) = args.epoch {
-        // Replace `init_orbitals`' wall-clock start with the requested epoch.
-        let pending: Vec<(Entity, nalgebra::Vector6<f64>)> = app
-            .world_mut()
-            .query::<(Entity, &Orbit)>()
-            .iter(app.world())
-            .filter_map(|(entity, orbit)| match orbit {
-                Orbit::FromElements(elements) => Some((entity, *elements)),
-                Orbit::FromTle(_) => None,
-            })
-            .collect();
-        if pending.len() != 2 {
-            return Err(format!(
-                "expected the tether root and the debris to await their orbits, found {}",
-                pending.len()
-            ));
-        }
-        for (entity, elements) in pending {
-            let eci =
-                KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, 1.0)
-                    .state_eci(epoch)
-                    .map_err(|e| format!("Keplerian propagation failed: {e:?}"))?;
-            let mut entity = app.world_mut().entity_mut(entity);
-            entity.remove::<Orbit>();
-            entity
-                .get_mut::<Orbital>()
-                .ok_or("an orbiting body has no Orbital")?
-                .propagator = Some(KeplerianPropagator::from_eci(epoch, eci, 1.0));
-        }
-    }
 
     let (debris, root) = {
         let cache = app.world().resource::<OrbitalCache>();

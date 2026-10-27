@@ -12,10 +12,10 @@
 use crate::capture::CaptureSphereRadius;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::test_support::{
-    CaptureRig, assert_close, capture_rig, insert_plan_json, load_example_plans, rig_set, rig_step,
-    test_app,
+    CaptureRig, assert_close, capture_rig, fixed_epoch, insert_plan_json, load_example_plans,
+    rig_set, rig_step, test_app,
 };
-use crate::time::PHYS_DT;
+use crate::time::{PHYS_DT, WorldTime};
 use bevy::prelude::*;
 
 use crate::capture::CaptureComponent;
@@ -412,11 +412,14 @@ fn char_capture_elapsed_time_resets() {
     }
 
     // A transition resets the elapsed time to 0 (after this step's increment) and
-    // overwrites the entry time with 0.0 instead of the physics clock.
+    // sets the entry time to the sim time of the transition. The rig never ticks,
+    // so move the sim clock 40 s past the start (not 12.5 s, the entry time above)
+    // to see the value is set.
+    app.world_mut().resource_mut::<WorldTime>().epoch = fixed_epoch() + 40.0;
     rig_set(&mut app, &rig, 1500.0, 1.0);
     assert_eq!(rig_step(&mut app, &rig).len(), 1);
-    // F-11: current behaviour, expected to change in P4
-    assert_eq!(timers(&app), (0.0, 0.0));
+    // F-11: fixed in P4 (`state_enter_time_s` is sim seconds since the start)
+    assert_eq!(timers(&app), (0.0, 40.0));
 
     // The next quiet step counts again from the reset.
     rig_set(&mut app, &rig, 1500.0, 1.0);

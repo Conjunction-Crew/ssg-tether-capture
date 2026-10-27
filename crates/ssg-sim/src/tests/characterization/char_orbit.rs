@@ -1,15 +1,14 @@
 //! Characterization of Kepler propagation of the cached ECI state and of the
-//! wall-clock epoch defects (F-06).
+//! start epoch (F-06, fixed in P4).
 
 use crate::anchor::CameraTarget;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbit, Orbital};
-use crate::session::UiScreen;
 use crate::test_support::{
     assert_close, assert_close_vec6, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
     start_running, test_app, ticks,
 };
-use crate::time::WorldTime;
+use crate::time::{SimConfig, WorldTime};
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use brahe::propagators::traits::SStatePropagator;
@@ -121,37 +120,28 @@ fn char_orbit_iss_kepler_steps() {
 }
 
 #[test]
-fn char_time_setup_time_uses_wall_clock() {
+fn time_start_epoch_from_config() {
+    // F-06: fixed in P4
+    // `setup_time` takes both epochs from `SimConfig`, never from the wall clock.
+    let start = fixed_epoch() + 1000.0;
     let mut app = test_app();
-    assert_eq!(app.world().resource::<WorldTime>().epoch, fixed_epoch());
-
-    // Enter the sim screen without `enter_sim`, so `setup_time` is left to set the
-    // epochs from the wall clock. The test itself reads no clock.
-    app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Sim);
-    app.update();
+    app.insert_resource(SimConfig { start_epoch: start });
+    enter_sim(&mut app);
 
     let world_time = app.world().resource::<WorldTime>();
-    // F-06: current behaviour, expected to change in P4
-    assert_ne!(world_time.epoch, fixed_epoch());
-    // F-06: current behaviour, expected to change in P4
-    assert!(
-        world_time.epoch - fixed_epoch() > 86_400.0,
-        "epoch is only {} s after the fixed epoch",
-        world_time.epoch - fixed_epoch()
-    );
-    // F-06: current behaviour, expected to change in P4
-    assert_ne!(world_time.start_epoch, fixed_epoch());
-    // F-06: current behaviour, expected to change in P4
-    assert!(world_time.start_epoch - fixed_epoch() > 86_400.0);
+    assert_eq!(world_time.epoch, start);
+    assert_eq!(world_time.start_epoch, start);
+    assert_eq!(world_time.multiplier, 1);
 }
 
 #[test]
-fn char_orbit_init_orbitals_ignores_world_time() {
+fn time_init_orbitals_at_start_epoch() {
+    // F-06: fixed in P4
     let mut app = test_app();
     enter_sim(&mut app);
-    assert_eq!(app.world().resource::<WorldTime>().epoch, fixed_epoch());
+    start_running(&mut app);
+    // Precondition: the clock has moved past the start epoch.
+    assert!(app.world().resource::<WorldTime>().epoch > fixed_epoch());
 
     let entity = app.world_mut().spawn(Orbit::FromElements(ISS_ORBIT)).id();
     app.update();
@@ -166,11 +156,12 @@ fn char_orbit_init_orbitals_ignores_world_time() {
         .as_ref()
         .expect("init_orbitals did not build a propagator");
 
-    // F-06: current behaviour, expected to change in P4
-    // It starts at the wall-clock time, not at `WorldTime.epoch`.
-    let ahead = propagator.initial_epoch() - app.world().resource::<WorldTime>().epoch;
-    assert!(
-        ahead > 86_400.0,
-        "propagator starts only {ahead} s after the world epoch"
+    // It starts at the start epoch, with the elements' state at that epoch.
+    assert_eq!(propagator.initial_epoch(), fixed_epoch());
+    assert_close_vec6(
+        &propagator.state_eci(fixed_epoch()).unwrap(),
+        &kepler_eci(ISS_ORBIT, fixed_epoch()),
+        1e-6,
+        "propagator state at the start epoch",
     );
 }

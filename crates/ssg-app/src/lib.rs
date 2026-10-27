@@ -12,6 +12,7 @@ use crate::render::RenderPlugins;
 use crate::ui::plugin::UiPlugin;
 use ssg_sim::SimPlugins;
 use ssg_sim::project::AssetsDir;
+use ssg_sim::time::SimConfig;
 
 /// Returns the absolute path to the `assets/` directory as a [`PathBuf`].
 ///
@@ -48,6 +49,11 @@ pub fn run() {
     .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
     .insert_resource(AssetsDir(resolve_assets_dir()))
+    // The sim start epoch until a project is opened (`UiEvent::OpenProject` sets
+    // it again); the sim itself never reads the wall clock (F-06).
+    .insert_resource(SimConfig {
+        start_epoch: brahe::Epoch::now(),
+    })
     .add_plugins(SimPlugins)
     .add_plugins(RenderPlugins)
     .add_plugins(UiPlugin)
