@@ -6,50 +6,66 @@ sidebar_position: 1
 
 SSG Tether Capture is a [Bevy](https://bevyengine.org/) application that follows the **Entity Component System (ECS)** pattern. All simulation state lives in components attached to entities; logic runs as systems; shared mutable state is held in resources.
 
+## Workspace layout
+
+The repository is a Cargo workspace of three crates (the version is shared through `[workspace.package]`):
+
+```
+crates/
+  ssg-sim/        — headless simulation core (no render, window or UI types)
+    src/
+      session.rs          — UiScreen / SimState, session resources
+      time.rs             — WorldTime, the fixed-step driver
+      project.rs          — projects, capture-plan library, catalogs
+      telemetry.rs        — LogEvent, capture log, data collection
+      orbit/              — orbital propagation, cache, catalog, selection
+      anchor.rs           — the camera/anchor target
+      floating_origin.rs  — floating-origin reset
+      physics_bubble.rs   — the physics bubble
+      tether.rs           — tether and debris bodies
+      capture/            — capture plans and the capture state machine
+      test_support/       — shared test harness (feature "test-support")
+  ssg-sim-cli/    — `ssg-sim run`, the headless runner (see Getting Started → Headless CLI)
+  ssg-app/        — the desktop application (the only crate that renders)
+    src/
+      render/             — meshes, materials, cameras, gizmos, GPU catalog
+      ui/                 — Bevy-native UI layer (plugin, screens, state, theme)
+      lib.rs              — run(): the entry point
+      main.rs             — binary entry point
+```
+
+`ssg-app` depends on `ssg-sim`; `ssg-sim` depends on neither of the other two. `ssg-sim-cli` depends on `ssg-sim`, not on `ssg-app`.
+
 ## Entry point
 
 ```
 main.rs  →  lib.rs::run()  →  App::new()
 ```
 
-`main.rs` is a thin wrapper. All shared logic — including everything needed by the test harness — lives in `lib.rs`.
-
-`lib.rs` exposes two functions:
-
-| Function | Purpose |
-|---|---|
-| `run()` | Full application entry point. Adds `DefaultPlugins`, `UiPlugin`, rendering setup, and startup systems, then calls `app.run()`. |
-| `create_app()` | Returns a partially-configured `App` with only shared plugins (physics, orbital mechanics, camera). Used by integration tests. |
-
-## Module structure
-
-```
-src/
-  constants.rs        — shared numeric constants and camera layer indices
-  lib.rs              — run() and create_app() entry points
-  main.rs             — binary entry point
-  components/         — ECS components (data attached to entities)
-  plugins/            — Bevy Plugin impls that register systems
-  resources/          — global shared state (ECS Resources)
-  systems/            — all system functions
-  ui/                 — Bevy-native UI layer (plugin, screens, state, theme)
-  tests/              — integration and unit tests
-```
+`run()` adds Bevy's `DefaultPlugins` and the UI-widget and egui plugins, inserts the `AssetsDir` resource, and then adds the three plugin groups below. The headless runner and the tests build the same simulation with `SimPlugins` alone.
 
 ## Plugin graph
 
-The following plugins are added to the app:
+| Group | Crate | Contents |
+|---|---|---|
+| `SimPlugins` | `ssg-sim` | One plugin per feature module: session, time, project, telemetry, orbit, anchor, floating origin, physics bubble, tether, capture. Add after `StatesPlugin`. |
+| `RenderPlugins` | `ssg-app` | `CelestialPlugin`, `OrbitCameraPlugin`, `AttachPlugin`, `GizmoPlugin`, `GpuComputePlugin`. Add after `SimPlugins`. |
+| `UiPlugin` | `ssg-app` | UI camera, screen lifecycle, forms, HUD. |
 
-```
-PhysicsPlugins          (Avian3D rigid-body physics — on custom ManualPhysics schedule)
-OrbitalMechanicsPlugin  (orbital init, physics stepping, capture algorithms)
-OrbitCameraPlugin       (camera input + tracking — Update/PostUpdate)
-GpuComputePlugin        (GPU compute pipeline for large orbital datasets)
-UiPlugin                (UI camera, state machine, screen lifecycle)
-DefaultPlugins          (Bevy standard — only added in run(), not in tests)
-```
+See [Plugins](./plugins) for what each group registers.
 
-See [Plugins](./plugins) for what each plugin registers.
+### Order of the `ManualPhysics` step
+
+`TimePlugin` configures the `SimStep` sets in `ManualPhysics`. They are chained in this order, and all of them run after Avian3D's step (`PhysicsSystems::Last`). This is the order the systems have today, now named; it is stated here as it is, not as a design claim.
+
+| # | `SimStep` | System |
+|---|---|---|
+| 1 | `SyncAnchor` | `sync_anchor_from_camera_target` |
+| 2 | `CenterOfMass` | `calculate_com_rv` |
+| 3 | `OriginReset` | `target_entity_reset_origin` |
+| 4 | `CacheEci` | `cache_eci_states` |
+| 5 | `Bubble` | `physics_bubble_add_remove` |
+| 6 | `Capture` | `capture_state_machine_update` |
 
 ## System schedule
 
@@ -60,7 +76,7 @@ See [Plugins](./plugins) for what each plugin registers.
 | `FixedUpdate` | `fixed_physics_step` (drives the `ManualPhysics` schedule at `FIXED_HZ`) |
 | `Update` | `toggle_map_view`, `toggle_origin`, `toggle_capture_gizmos`, `change_time_warp`, `map_orbitals`, `floating_origin_update_visuals`, `dev_gizmos`, `capture_gizmos`, camera input systems, UI update systems |
 | `PostUpdate` | `orbit_camera_track`, GPU compute sync systems |
-| `ManualPhysics` | `cache_eci_states` (First) → `physics_bubble_add_remove`, `target_entity_reset_origin` (Prepare) → Avian3D physics → `capture_state_machine_update` (Last) |
+| `ManualPhysics` | Avian3D physics, then the `SimStep` chain (see above) |
 | `Last` | `orbital_gizmos` |
 
 ## External dependencies

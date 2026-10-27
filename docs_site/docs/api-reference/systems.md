@@ -4,6 +4,10 @@ sidebar_position: 3
 
 # Systems
 
+:::note
+Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
+:::
+
 Systems are functions that run on matching sets of entities every frame (or on a schedule). Source: `src/systems/`.
 
 ---

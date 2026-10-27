@@ -4,6 +4,10 @@ sidebar_position: 1
 
 # Components
 
+:::note
+Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
+:::
+
 Components are data attached to ECS entities. Source: `src/components/`.
 
 ---
