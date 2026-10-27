@@ -62,7 +62,7 @@ use ssg_sim::project::{
 };
 use ssg_sim::session::{SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
-use ssg_sim::time::WorldTime;
+use ssg_sim::time::{SimConfig, WorldTime};
 
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);
@@ -410,6 +410,11 @@ fn handle_ui_events(
                 if capture_plan_lib.plans.contains_key(project_id.as_str()) {
                     selected_project.project_id = Some(project_id.clone());
                     *orbital_selection = OrbitalSelectionState::default();
+                    // The sim start epoch: "the epoch at project creation" until
+                    // P6 persists it, so re-running the project reuses it (F-06).
+                    commands.insert_resource(SimConfig {
+                        start_epoch: brahe::Epoch::now(),
+                    });
                     next_sim_state.set(SimState::Setup);
                     next_screen.set(UiScreen::Sim);
                 }

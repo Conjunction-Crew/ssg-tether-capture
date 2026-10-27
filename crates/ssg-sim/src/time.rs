@@ -8,6 +8,7 @@ use brahe::Epoch;
 
 use crate::SimStep;
 use crate::session::{SimState, UiScreen};
+use crate::telemetry::{LogEvent, LogLevel};
 
 // FixedUpdate frequency.
 // Higher values will provide higher fidelity simulation, at the cost of performance.
@@ -28,9 +29,28 @@ pub fn fixed_physics_step(world: &mut World) {
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ManualPhysics;
 
-pub fn setup_time(mut world_time: ResMut<WorldTime>) {
-    world_time.start_epoch = Epoch::now();
-    world_time.epoch = Epoch::now();
+/// The simulation's explicit inputs (F-06). The sim never reads the wall clock:
+/// the app, the CLI or the test harness inserts this before entering the sim.
+#[derive(Resource, Debug, Clone)]
+pub struct SimConfig {
+    /// The epoch the simulation starts at; orbital elements are taken at it.
+    pub start_epoch: Epoch,
+}
+
+/// Resets the sim clock to [`SimConfig::start_epoch`] on entering the sim.
+pub fn setup_time(
+    config: Res<SimConfig>,
+    mut world_time: ResMut<WorldTime>,
+    mut log: MessageWriter<LogEvent>,
+) {
+    world_time.start_epoch = config.start_epoch;
+    world_time.epoch = config.start_epoch;
+    world_time.multiplier = 1;
+    log.write(LogEvent {
+        level: LogLevel::Info,
+        source: "time",
+        message: format!("Sim start epoch: {}", config.start_epoch),
+    });
 }
 
 #[derive(Resource, Debug)]
@@ -40,12 +60,13 @@ pub struct WorldTime {
     pub start_epoch: Epoch,
 }
 
-impl Default for WorldTime {
-    fn default() -> Self {
+impl WorldTime {
+    /// A sim clock at `epoch`, at 1x.
+    pub fn starting_at(epoch: Epoch) -> Self {
         Self {
             multiplier: 1,
-            epoch: Epoch::now(),
-            start_epoch: Epoch::now(),
+            epoch,
+            start_epoch: epoch,
         }
     }
 }

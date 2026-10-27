@@ -6,7 +6,7 @@ use crate::SimSet;
 use crate::capture::CaptureSphereRadius;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::load_dataset_entities;
-use crate::time::{WorldTime, setup_time};
+use crate::time::{SimConfig, WorldTime, setup_time};
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 pub enum UiScreen {
@@ -40,9 +40,9 @@ impl Plugin for SessionPlugin {
     }
 }
 
-fn init_sim_resources(mut commands: Commands) {
+fn init_sim_resources(mut commands: Commands, config: Res<SimConfig>) {
     commands.init_resource::<OrbitalCache>();
-    commands.init_resource::<WorldTime>();
+    commands.insert_resource(WorldTime::starting_at(config.start_epoch));
     commands.insert_resource(CaptureSphereRadius { radius: 25.0 });
 }
 

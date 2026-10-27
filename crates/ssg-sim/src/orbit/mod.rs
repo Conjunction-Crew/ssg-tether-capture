@@ -8,7 +8,7 @@ use std::sync::PoisonError;
 
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
-use brahe::{Epoch, KeplerianPropagator};
+use brahe::KeplerianPropagator;
 use nalgebra::Vector6;
 
 use crate::SimStep;
@@ -54,14 +54,18 @@ pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
     4.77190,
 );
 
+/// Builds the propagators of newly spawned bodies. Elements are "at the start
+/// epoch" (F-06): the propagators start at `WorldTime.start_epoch`, not at the
+/// current epoch, which is already past it when this runs.
 pub fn init_orbitals(
     mut commands: Commands,
     mut q: Query<(Entity, &Orbit, &mut Orbital), Added<Orbit>>,
+    world_time: Res<WorldTime>,
 ) {
     for (entity, init, mut orbital) in &mut q {
         match init {
             Orbit::FromElements(elements) => {
-                let epoch = Epoch::now();
+                let epoch = world_time.start_epoch;
                 let propagator = KeplerianPropagator::from_keplerian(
                     epoch,
                     *elements,
