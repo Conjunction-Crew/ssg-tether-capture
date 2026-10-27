@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use nalgebra::Vector6;
 
-use crate::sim::orbit::catalog::GpuOrbitalElements;
+use crate::orbit::catalog::GpuOrbitalElements;
 
 #[derive(Debug, Clone)]
 pub enum OrbitalSelectionSource {

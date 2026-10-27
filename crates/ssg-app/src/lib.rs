@@ -1,5 +1,4 @@
 mod render;
-mod sim;
 mod tests;
 mod ui;
 
@@ -10,9 +9,9 @@ use bevy::ui_widgets::UiWidgetsPlugins;
 use bevy_egui::EguiPlugin;
 
 use crate::render::RenderPlugins;
-use crate::sim::SimPlugins;
-use crate::sim::project::AssetsDir;
 use crate::ui::plugin::UiPlugin;
+use ssg_sim::SimPlugins;
+use ssg_sim::project::AssetsDir;
 
 /// Returns the absolute path to the `assets/` directory as a [`PathBuf`].
 ///

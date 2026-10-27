@@ -1,12 +1,12 @@
 //! Characterization of the keyboard time-warp ladder (F-12). Moved from
 //! `characterization/char_time_warp.rs` in P3: `change_time_warp` is a UI system.
 
-use crate::sim::telemetry::LogLevel;
-use crate::sim::time::WorldTime;
 use crate::tests::app_support::{LogTap, enter_sim, start_running, test_app};
 use crate::ui::input::change_time_warp;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
+use ssg_sim::telemetry::LogLevel;
+use ssg_sim::time::WorldTime;
 
 /// A harness app in `SimState::Running`.
 fn running_app() -> App {

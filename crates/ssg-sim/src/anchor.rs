@@ -2,8 +2,8 @@
 
 use bevy::prelude::*;
 
-use crate::sim::SimStep;
-use crate::sim::time::ManualPhysics;
+use crate::SimStep;
+use crate::time::ManualPhysics;
 
 // Component to query the camera target
 #[derive(Component, Debug, Clone)]

@@ -11,7 +11,7 @@ pub mod layers;
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 
-/// The render plugins. Add them after [`crate::sim::SimPlugins`].
+/// The render plugins. Add them after [`ssg_sim::SimPlugins`].
 pub struct RenderPlugins;
 
 impl PluginGroup for RenderPlugins {

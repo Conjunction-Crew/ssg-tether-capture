@@ -10,9 +10,9 @@ use nalgebra::Vector6;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::sim::project::AssetsDir;
-use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::time::WorldTime;
+use crate::project::AssetsDir;
+use crate::telemetry::{LogEvent, LogLevel};
+use crate::time::WorldTime;
 
 // unused today; the P3 component/resource audit decides
 #[allow(dead_code)]

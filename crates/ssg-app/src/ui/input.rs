@@ -5,10 +5,10 @@ use bevy::{
 };
 
 use crate::render::camera::set_map_view;
-use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
+use ssg_sim::telemetry::{LogEvent, LogLevel};
+use ssg_sim::time::WorldTime;
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,

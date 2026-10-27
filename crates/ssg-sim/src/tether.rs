@@ -4,15 +4,15 @@ use avian3d::prelude::*;
 use bevy::{math::DVec3, prelude::*};
 use nalgebra::Vector6;
 
-use crate::sim::SimSet;
-use crate::sim::anchor::CameraTarget;
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::orbit::Orbit;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::selection::OrbitalSelectionState;
-use crate::sim::physics_bubble::PHYSICS_DISABLE_RADIUS;
-use crate::sim::project::SelectedProject;
-use crate::sim::session::{SimState, UiScreen};
+use crate::SimSet;
+use crate::anchor::CameraTarget;
+use crate::capture::plan::CapturePlanLibrary;
+use crate::orbit::Orbit;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::selection::OrbitalSelectionState;
+use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
+use crate::project::SelectedProject;
+use crate::session::{SimState, UiScreen};
 
 // A root tether node
 #[derive(Component, Debug, Clone)]

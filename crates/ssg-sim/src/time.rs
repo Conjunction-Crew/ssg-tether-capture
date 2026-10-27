@@ -6,8 +6,8 @@ use avian3d::prelude::*;
 use bevy::{ecs::schedule::ScheduleLabel, math::DVec3, prelude::*};
 use brahe::Epoch;
 
-use crate::sim::SimStep;
-use crate::sim::session::{SimState, UiScreen};
+use crate::SimStep;
+use crate::session::{SimState, UiScreen};
 
 // FixedUpdate frequency.
 // Higher values will provide higher fidelity simulation, at the cost of performance.

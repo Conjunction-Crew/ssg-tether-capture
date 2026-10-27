@@ -2,11 +2,11 @@
 
 use bevy::prelude::*;
 
-use crate::sim::SimSet;
-use crate::sim::capture::CaptureSphereRadius;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::catalog::load_dataset_entities;
-use crate::sim::time::{WorldTime, setup_time};
+use crate::SimSet;
+use crate::capture::CaptureSphereRadius;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::catalog::load_dataset_entities;
+use crate::time::{WorldTime, setup_time};
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 pub enum UiScreen {

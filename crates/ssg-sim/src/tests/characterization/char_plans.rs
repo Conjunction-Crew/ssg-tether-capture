@@ -5,11 +5,11 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use crate::sim::capture::plan::{
+use crate::capture::plan::{
     CapturePlan, CompiledCapturePlan, compile_capture_plan, validate_capture_plan,
 };
-use crate::sim::project::load_plans_from_dir_with_errors;
-use crate::tests::test_support::repo_root;
+use crate::project::load_plans_from_dir_with_errors;
+use crate::test_support::repo_root;
 
 fn example_plans_dir() -> PathBuf {
     repo_root().join("assets/example_capture_plans")

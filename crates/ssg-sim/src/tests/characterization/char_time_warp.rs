@@ -1,15 +1,15 @@
 //! Characterization of time warp: the N-by-1 invariant, the keyboard ladder
 //! (F-12), pause, the catch-up cap, and the physics-clock double advance (F-38).
 
-use crate::sim::anchor::CameraTarget;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::{ISS_ORBIT, Orbital};
-use crate::sim::tether::{TetherNode, TetherRoot};
-use crate::sim::time::{PHYS_DT, WorldTime, fixed_physics_step};
-use crate::tests::test_support::{
+use crate::anchor::CameraTarget;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::{ISS_ORBIT, Orbital};
+use crate::test_support::{
     assert_close, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, start_running, test_app,
     tick, ticks,
 };
+use crate::tether::{TetherNode, TetherRoot};
+use crate::time::{PHYS_DT, WorldTime, fixed_physics_step};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;

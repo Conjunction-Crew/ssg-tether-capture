@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use bevy::{platform::collections::HashMap, prelude::*};
 
-use crate::sim::telemetry::LogLevel;
+use ssg_sim::telemetry::LogLevel;
 
 // ─── CaptureLogUiState Resource ───────────────────────────────────────────────
 

@@ -1,15 +1,15 @@
-use crate::sim::anchor::CameraTarget;
-use crate::sim::capture::CaptureComponent;
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::floating_origin::MAX_ORIGIN_OFFSET;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::{ISS_ORBIT, Orbit, Orbital};
-use crate::sim::tether::TetherRoot;
-use crate::sim::time::WorldTime;
-use crate::tests::test_support::{
+use crate::anchor::CameraTarget;
+use crate::capture::CaptureComponent;
+use crate::capture::plan::CapturePlanLibrary;
+use crate::floating_origin::MAX_ORIGIN_OFFSET;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::{ISS_ORBIT, Orbit, Orbital};
+use crate::test_support::{
     assert_close, assert_close_dvec3, enter_sim, load_example_plans, log_test_app, start_running,
     test_app, tick,
 };
+use crate::tether::TetherRoot;
+use crate::time::WorldTime;
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -262,7 +262,7 @@ fn floating_origin_resets() {
 
 // ─── Capture Log integration tests (A4) ──────────────────────────────────────
 
-use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel};
+use crate::telemetry::{CaptureLog, LogEvent, LogLevel};
 
 #[test]
 fn collect_log_events_appends_to_capture_log() {

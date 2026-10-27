@@ -10,15 +10,15 @@ use avian3d::{
 };
 use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
 
-use crate::sim::SimSet;
-use crate::sim::SimStep;
-use crate::sim::capture::plan::{
+use crate::SimSet;
+use crate::SimStep;
+use crate::capture::plan::{
     CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
     CompiledCaptureTransition, build_capture_component,
 };
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::telemetry::{DataCollection, LogEvent, LogLevel};
-use crate::sim::time::{ManualPhysics, PHYS_DT, WorldTime};
+use crate::orbit::cache::OrbitalCache;
+use crate::telemetry::{DataCollection, LogEvent, LogLevel};
+use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 // Component to add to an entity to attempt a capture.
 // There should only ever be 0 or 1 entity with this component at a time.

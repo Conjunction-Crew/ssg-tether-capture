@@ -6,14 +6,14 @@ use brahe::KeplerianPropagator;
 use brahe::utils::DOrbitStateProvider;
 use nalgebra::DVector;
 
-use crate::sim::SimStep;
-use crate::sim::anchor::SimAnchor;
-use crate::sim::orbit::Orbital;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
-use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::tether::{TetherNode, TetherRoot};
-use crate::sim::time::{ManualPhysics, WorldTime};
+use crate::SimStep;
+use crate::anchor::SimAnchor;
+use crate::orbit::Orbital;
+use crate::orbit::cache::OrbitalCache;
+use crate::physics_bubble::PHYSICS_ENABLE_RADIUS;
+use crate::telemetry::{LogEvent, LogLevel};
+use crate::tether::{TetherNode, TetherRoot};
+use crate::time::{ManualPhysics, WorldTime};
 
 pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
 

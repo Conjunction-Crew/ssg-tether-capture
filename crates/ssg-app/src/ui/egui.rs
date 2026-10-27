@@ -5,10 +5,10 @@ use bevy_egui::{
 };
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 
-use crate::sim::capture::CaptureComponent;
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::project::{SelectedProject, WorkingDirectory};
-use crate::sim::telemetry::DataCollection;
+use ssg_sim::capture::CaptureComponent;
+use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::project::{SelectedProject, WorkingDirectory};
+use ssg_sim::telemetry::DataCollection;
 
 /// CSV export state of the data collection window (`DataCollection.settings`
 /// before P3, F-18).

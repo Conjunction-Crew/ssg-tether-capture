@@ -2,12 +2,12 @@
 mod tests {
     use serde_json::json;
 
-    use crate::sim::capture::plan::{
+    use crate::capture::plan::{
         CapturePlan, CapturePlanLibrary, State, build_capture_component, compile_capture_plan,
         parameter_value, validate_capture_plan,
     };
-    use crate::sim::project::load_plans_from_dir_with_errors;
-    use crate::tests::test_support::repo_root;
+    use crate::project::load_plans_from_dir_with_errors;
+    use crate::test_support::repo_root;
 
     // -------------------------------------------------------------------------
     // validate_capture_plan
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn validate_plan_errors_on_zero_tether_length_in_device() {
-        use crate::sim::capture::plan::CapturePlanDevice;
+        use crate::capture::plan::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
             device_type: "tether".to_string(),
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn validate_plan_passes_with_valid_device_block() {
-        use crate::sim::capture::plan::CapturePlanDevice;
+        use crate::capture::plan::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
             device_type: "tether".to_string(),
@@ -443,7 +443,7 @@ mod tests {
     // CaptureLog ring-buffer (A1)
     // -------------------------------------------------------------------------
 
-    use crate::sim::telemetry::{CaptureLog, LogEntry, LogLevel};
+    use crate::telemetry::{CaptureLog, LogEntry, LogLevel};
 
     fn make_entry(msg: &str) -> LogEntry {
         LogEntry {

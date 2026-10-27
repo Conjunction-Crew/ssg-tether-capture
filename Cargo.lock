@@ -7341,6 +7341,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "ssg-sim",
 ]
 
 [[package]]

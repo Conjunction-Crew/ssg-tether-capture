@@ -29,25 +29,25 @@ use brahe::utils::DOrbitStateProvider;
 use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
 use nalgebra::Vector6;
 
-use crate::sim::SimPlugins;
-use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
-use crate::sim::capture::{CaptureSphereRadius, capture_state_machine_update};
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::catalog::GpuElements;
-use crate::sim::project::{AssetsDir, load_plans_from_dir};
-use crate::sim::session::{SimState, UiScreen};
-use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
-use crate::sim::time::{PHYS_DT, WorldTime};
+use crate::SimPlugins;
+use crate::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
+use crate::capture::{CaptureSphereRadius, capture_state_machine_update};
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::catalog::GpuElements;
+use crate::project::{AssetsDir, load_plans_from_dir};
+use crate::session::{SimState, UiScreen};
+use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
+use crate::time::{PHYS_DT, WorldTime};
 
 /// Deterministic sim epoch for tests; never use `Epoch::now()` in tests (F-06).
 ///
 /// This is the dataset's GP epoch.
-pub(crate) fn fixed_epoch() -> Epoch {
+pub fn fixed_epoch() -> Epoch {
     Epoch::from_datetime(2026, 4, 3, 16, 3, 47.002464, 0.0, TimeSystem::UTC)
 }
 
 /// Workspace root (this crate lives in `crates/ssg-app`).
-pub(crate) fn repo_root() -> std::path::PathBuf {
+pub fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
@@ -60,10 +60,10 @@ pub(crate) fn repo_root() -> std::path::PathBuf {
 /// `PHYS_DT`, and skips the step when that delta is zero. Calling
 /// `fixed_physics_step` from test code (outside `FixedUpdate`) would therefore
 /// step avian with the last frame's wall-clock delta, or not at all.
-pub(crate) fn test_app() -> App {
+pub fn test_app() -> App {
     // P3: `SimPlugins` replace `create_app()` and provide what the removed lines
     // added (`DataCollection`, `SelectedProject`, the body spawn system); the
-    // render assets (`StandardMaterial`, `GizmoAsset`) are app-side now.
+    // render-side asset registrations are app-side now.
     let mut app = App::new(); // P3: was `create_app()`
     app.add_plugins((
         MinimalPlugins,
@@ -96,7 +96,7 @@ pub(crate) fn test_app() -> App {
 }
 
 /// Switch to the sim screen and pin the sim epoch to [`fixed_epoch`].
-pub(crate) fn enter_sim(app: &mut App) {
+pub fn enter_sim(app: &mut App) {
     app.world_mut()
         .resource_mut::<NextState<UiScreen>>()
         .set(UiScreen::Sim);
@@ -110,7 +110,7 @@ pub(crate) fn enter_sim(app: &mut App) {
 }
 
 /// Set `SimState::Running` so `FixedUpdate` starts running `fixed_physics_step`.
-pub(crate) fn start_running(app: &mut App) {
+pub fn start_running(app: &mut App) {
     app.world_mut()
         .resource_mut::<NextState<SimState>>()
         .set(SimState::Running);
@@ -118,12 +118,12 @@ pub(crate) fn start_running(app: &mut App) {
 }
 
 /// One `app.update()`: exactly one fixed step (times the warp multiplier).
-pub(crate) fn tick(app: &mut App) {
+pub fn tick(app: &mut App) {
     app.update();
 }
 
 /// `n` calls to [`tick`].
-pub(crate) fn ticks(app: &mut App, n: u64) {
+pub fn ticks(app: &mut App, n: u64) {
     for _ in 0..n {
         tick(app);
     }
@@ -131,20 +131,20 @@ pub(crate) fn ticks(app: &mut App, n: u64) {
 
 /// ECI state for Keplerian `elements` at `epoch`: the same two brahe calls
 /// `init_orbitals` makes.
-pub(crate) fn kepler_eci(elements: Vector6<f64>, epoch: Epoch) -> Vector6<f64> {
+pub fn kepler_eci(elements: Vector6<f64>, epoch: Epoch) -> Vector6<f64> {
     KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, 1.0)
         .state_eci(epoch)
         .expect("Keplerian propagation failed")
 }
 
 /// A propagator starting from `eci` at [`fixed_epoch`].
-pub(crate) fn fixed_propagator(eci: Vector6<f64>) -> KeplerianPropagator {
+pub fn fixed_propagator(eci: Vector6<f64>) -> KeplerianPropagator {
     KeplerianPropagator::from_eci(fixed_epoch(), eci, 1.0)
 }
 
 /// Assert `|actual - expected| <= tol`; the message names `what` and both values.
 #[track_caller]
-pub(crate) fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
+pub fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
     let diff = (actual - expected).abs();
     assert!(
         diff <= tol,
@@ -154,7 +154,7 @@ pub(crate) fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
 
 /// Component-wise [`assert_close`] for [`DVec3`].
 #[track_caller]
-pub(crate) fn assert_close_dvec3(actual: DVec3, expected: DVec3, tol: f64, what: &str) {
+pub fn assert_close_dvec3(actual: DVec3, expected: DVec3, tol: f64, what: &str) {
     for (axis, (a, e)) in ["x", "y", "z"]
         .iter()
         .zip(actual.to_array().into_iter().zip(expected.to_array()))
@@ -165,12 +165,7 @@ pub(crate) fn assert_close_dvec3(actual: DVec3, expected: DVec3, tol: f64, what:
 
 /// Component-wise [`assert_close`] for [`Vector6`].
 #[track_caller]
-pub(crate) fn assert_close_vec6(
-    actual: &Vector6<f64>,
-    expected: &Vector6<f64>,
-    tol: f64,
-    what: &str,
-) {
+pub fn assert_close_vec6(actual: &Vector6<f64>, expected: &Vector6<f64>, tol: f64, what: &str) {
     for i in 0..6 {
         assert_close(actual[i], expected[i], tol, &format!("{what}[{i}]"));
     }
@@ -180,19 +175,19 @@ pub(crate) fn assert_close_vec6(
 ///
 /// `app.update()` swaps message buffers each frame, so drain after **every**
 /// tick.
-pub(crate) struct LogTap {
+pub struct LogTap {
     cursor: MessageCursor<LogEvent>,
 }
 
 impl LogTap {
     /// A tap that sees messages written from now on.
-    pub(crate) fn new(world: &World) -> Self {
+    pub fn new(world: &World) -> Self {
         Self {
             cursor: world.resource::<Messages<LogEvent>>().get_cursor_current(),
         }
     }
 
-    pub(crate) fn drain(&mut self, world: &World) -> Vec<(LogLevel, &'static str, String)> {
+    pub fn drain(&mut self, world: &World) -> Vec<(LogLevel, &'static str, String)> {
         let messages = world.resource::<Messages<LogEvent>>();
         self.cursor
             .read(messages)
@@ -202,7 +197,7 @@ impl LogTap {
 }
 
 /// Build a minimal app wired up to test `collect_log_events`.
-pub(crate) fn log_test_app() -> App {
+pub fn log_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_message::<LogEvent>()
@@ -213,7 +208,7 @@ pub(crate) fn log_test_app() -> App {
 }
 
 /// Load every plan in `assets/example_capture_plans` into the app's library.
-pub(crate) fn load_example_plans(app: &mut App) {
+pub fn load_example_plans(app: &mut App) {
     let example_plans = load_plans_from_dir(&repo_root().join("assets/example_capture_plans"));
     let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
     capture_plan_lib.plans = example_plans;
@@ -226,7 +221,7 @@ pub(crate) fn load_example_plans(app: &mut App) {
 
 /// Parse `json` as a [`CapturePlan`] and insert it under `id` **without**
 /// validation: some characterization plans are invalid on purpose.
-pub(crate) fn insert_plan_json(app: &mut App, id: &str, json: &str) {
+pub fn insert_plan_json(app: &mut App, id: &str, json: &str) {
     let plan: CapturePlan = serde_json::from_str(json).expect("plan JSON did not parse");
     app.world_mut()
         .resource_mut::<CapturePlanLibrary>()
@@ -235,17 +230,17 @@ pub(crate) fn insert_plan_json(app: &mut App, id: &str, json: &str) {
 
 /// Three rigid bodies driving `capture_state_machine_update` with scripted
 /// ranges and speeds (no physics advance between script rows).
-pub(crate) struct CaptureRig {
-    pub(crate) capture: Entity,
-    pub(crate) root: Entity,
-    pub(crate) tail: Entity,
+pub struct CaptureRig {
+    pub capture: Entity,
+    pub root: Entity,
+    pub tail: Entity,
 }
 
 /// Spawn the capture entity (radius 1.0) and a two-node tether (radius 0.5,
 /// mass 2.0), register the tether under the plan's name and attach the capture
 /// component for plan `plan_id`. Runs one `app.update()` so avian initialises the
 /// rigid bodies.
-pub(crate) fn capture_rig(app: &mut App, plan_id: &str) -> CaptureRig {
+pub fn capture_rig(app: &mut App, plan_id: &str) -> CaptureRig {
     let plan = app
         .world()
         .resource::<CapturePlanLibrary>()
@@ -313,7 +308,7 @@ pub(crate) fn capture_rig(app: &mut App, plan_id: &str) -> CaptureRig {
 /// root and tail at the origin moving `(rel_speed, 0, 0)`. Then `|rel_r| = range`
 /// and `|rel_v| = rel_speed` exactly as `capture_state_machine_update` computes
 /// them.
-pub(crate) fn rig_set(app: &mut App, rig: &CaptureRig, range_m: f64, rel_speed_mps: f64) {
+pub fn rig_set(app: &mut App, rig: &CaptureRig, range_m: f64, rel_speed_mps: f64) {
     let world = app.world_mut();
     world
         .entity_mut(rig.capture)
@@ -329,7 +324,7 @@ pub(crate) fn rig_set(app: &mut App, rig: &CaptureRig, range_m: f64, rel_speed_m
 /// Run `capture_state_machine_update` once and return the `(from, to, reason)`
 /// triples it logged, in order. Does **not** call `app.update()`: that would let
 /// avian move the bodies and the scripted range would be lost.
-pub(crate) fn rig_step(app: &mut App, _rig: &CaptureRig) -> Vec<(String, String, String)> {
+pub fn rig_step(app: &mut App, _rig: &CaptureRig) -> Vec<(String, String, String)> {
     let mut tap = LogTap::new(app.world());
     app.world_mut()
         .run_system_once(capture_state_machine_update)
@@ -356,7 +351,7 @@ fn parse_transition(message: &str) -> Option<(String, String, String)> {
 ///
 /// Headless only (A-6): no glTF loader, so the HST has no collider, and no
 /// render, camera or GPU systems run. See plans/stage-2/52-p2-testing-baseline.md.
-pub(crate) mod q13 {
+pub mod q13 {
     use std::f64::consts::PI;
     use std::time::{Duration, Instant};
 
@@ -370,30 +365,30 @@ pub(crate) mod q13 {
         LogTap, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, load_example_plans,
         parse_transition, start_running, test_app, tick,
     };
-    use crate::sim::capture::CaptureComponent;
-    use crate::sim::capture::plan::{CapturePlanLibrary, build_capture_component};
-    use crate::sim::orbit::cache::OrbitalCache;
-    use crate::sim::orbit::catalog::{GpuOrbitalElements, JsonOrbital, JsonOrbitalData};
-    use crate::sim::orbit::selection::{
+    use crate::capture::CaptureComponent;
+    use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
+    use crate::orbit::cache::OrbitalCache;
+    use crate::orbit::catalog::{GpuOrbitalElements, JsonOrbital, JsonOrbitalData};
+    use crate::orbit::selection::{
         EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
         SelectedOrbitalObject,
     };
-    use crate::sim::orbit::{Orbit, Orbital};
-    use crate::sim::project::SelectedProject;
-    use crate::sim::session::UiScreen;
-    use crate::sim::time::{PHYS_DT, WorldTime};
+    use crate::orbit::{Orbit, Orbital};
+    use crate::project::SelectedProject;
+    use crate::session::UiScreen;
+    use crate::time::{PHYS_DT, WorldTime};
 
     /// The HST record (verbatim from `assets/datasets/dataset_2026_04_03.json`)
     /// and the P0 chaser record, as a GP JSON array.
-    pub(crate) const FIXTURE: &str = include_str!("fixtures/q13_hubble_pair.json");
-    pub(crate) const HST_NORAD_ID: u64 = 20580;
-    pub(crate) const CHASER_NORAD_ID: u64 = 99901;
-    pub(crate) const PLAN_ID: &str = "example_plan";
+    pub const FIXTURE: &str = include_str!("fixtures/q13_hubble_pair.json");
+    pub const HST_NORAD_ID: u64 = 20580;
+    pub const CHASER_NORAD_ID: u64 = 99901;
+    pub const PLAN_ID: &str = "example_plan";
     /// [`run`] records a checkpoint every this many ticks.
-    pub(crate) const CHECKPOINT_EVERY: u64 = 640;
+    pub const CHECKPOINT_EVERY: u64 = 640;
 
     /// The fixture record with `NORAD_CAT_ID == norad_id`.
-    pub(crate) fn fixture_record(norad_id: u64) -> JsonOrbital {
+    pub fn fixture_record(norad_id: u64) -> JsonOrbital {
         let data: JsonOrbitalData =
             serde_json::from_str(FIXTURE).expect("Q13 fixture did not parse");
         data.data
@@ -411,7 +406,7 @@ pub(crate) mod q13 {
     ///
     /// The epoch offset is taken against [`fixed_epoch`], the dataset reference
     /// epoch in a harness app; the app uses the wall clock there (F-06).
-    pub(crate) fn app_elements(record: &JsonOrbital) -> EditableOrbitalElements {
+    pub fn app_elements(record: &JsonOrbital) -> EditableOrbitalElements {
         let value = |field: &Option<serde_json::Value>, name: &str| {
             field
                 .as_ref()
@@ -440,7 +435,7 @@ pub(crate) mod q13 {
     /// `project_detail.rs`'s f32 → f64 conversion of a catalog entry.
     /// `epoch_offset_seconds` is kept here but `to_vec6()` drops it.
     // F-27: current behaviour, expected to change in P4
-    pub(crate) fn gpu_to_editable(elements: &GpuOrbitalElements) -> EditableOrbitalElements {
+    pub fn gpu_to_editable(elements: &GpuOrbitalElements) -> EditableOrbitalElements {
         EditableOrbitalElements {
             semi_major_axis_m: elements.a as f64,
             eccentricity: elements.e as f64,
@@ -486,7 +481,7 @@ pub(crate) mod q13 {
 
     /// How the two spacecraft get their initial epoch.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub(crate) enum EpochMode {
+    pub enum EpochMode {
         /// As in the app: `setup_time` and `init_orbitals` read the wall clock (F-06).
         AppPath,
         /// Both propagators start at [`fixed_epoch`], and so does `WorldTime`.
@@ -494,7 +489,7 @@ pub(crate) mod q13 {
     }
 
     impl EpochMode {
-        pub(crate) fn name(self) -> &'static str {
+        pub fn name(self) -> &'static str {
             match self {
                 Self::AppPath => "app_path",
                 Self::Fixed => "fixed",
@@ -502,34 +497,34 @@ pub(crate) mod q13 {
         }
     }
 
-    pub(crate) struct Q13Handles {
+    pub struct Q13Handles {
         /// The HST: `"Satellite1"`, carries the `CaptureComponent`.
-        pub(crate) debris: Entity,
+        pub debris: Entity,
         /// The chaser: the tether root, `CameraTarget`.
-        pub(crate) root: Entity,
+        pub root: Entity,
     }
 
     #[derive(Clone, Debug, PartialEq)]
-    pub(crate) struct Q13Sample {
+    pub struct Q13Sample {
         /// `round((WorldTime.epoch − WorldTime.start_epoch) / PHYS_DT)`.
-        pub(crate) step: u64,
-        pub(crate) state: String,
+        pub step: u64,
+        pub state: String,
         /// `|Position(debris) − Position(root)|`, the range the transitions use.
-        pub(crate) range_m: f64,
+        pub range_m: f64,
     }
 
-    pub(crate) struct Q13Run {
+    pub struct Q13Run {
         /// `(step, from, to)` per logged transition; a cascade shares one step.
-        pub(crate) transitions: Vec<(u64, String, String)>,
+        pub transitions: Vec<(u64, String, String)>,
         /// One sample every [`CHECKPOINT_EVERY`] ticks.
-        pub(crate) checkpoints: Vec<Q13Sample>,
-        pub(crate) final_sample: Q13Sample,
-        pub(crate) final_root: DVec3,
-        pub(crate) final_debris: DVec3,
+        pub checkpoints: Vec<Q13Sample>,
+        pub final_sample: Q13Sample,
+        pub final_root: DVec3,
+        pub final_debris: DVec3,
         /// Ticks run after [`build`].
-        pub(crate) ticks: u64,
+        pub ticks: u64,
         /// Wall time of the whole run, including [`build`].
-        pub(crate) wall: Duration,
+        pub wall: Duration,
     }
 
     fn catalog_pick(label: &str, norad_id: u64) -> SelectedOrbitalObject {
@@ -543,7 +538,7 @@ pub(crate) mod q13 {
 
     /// Select the HST and the chaser, enter the sim, start it, and mark the HST
     /// for capture with `example_plan`, as the app's UI does.
-    pub(crate) fn build(app: &mut App, epoch_mode: EpochMode) -> Q13Handles {
+    pub fn build(app: &mut App, epoch_mode: EpochMode) -> Q13Handles {
         load_example_plans(app);
         app.world_mut().resource_mut::<SelectedProject>().project_id = Some(PLAN_ID.to_string());
         {
@@ -627,7 +622,7 @@ pub(crate) mod q13 {
         handles
     }
 
-    pub(crate) fn sample(app: &App, handles: &Q13Handles) -> Q13Sample {
+    pub fn sample(app: &App, handles: &Q13Handles) -> Q13Sample {
         let world = app.world();
         let world_time = world.resource::<WorldTime>();
         let step = ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64;
@@ -653,7 +648,7 @@ pub(crate) mod q13 {
 
     /// Build the scenario in a fresh harness app and tick it up to `max_ticks`
     /// times (stopping once the state is `capture` if `stop_at_capture`).
-    pub(crate) fn run(epoch_mode: EpochMode, max_ticks: u64, stop_at_capture: bool) -> Q13Run {
+    pub fn run(epoch_mode: EpochMode, max_ticks: u64, stop_at_capture: bool) -> Q13Run {
         let started = Instant::now();
         let mut app = test_app();
         let handles = build(&mut app, epoch_mode);

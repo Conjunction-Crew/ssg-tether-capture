@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use bevy::{platform::collections::HashMap, prelude::*};
 
-use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, validate_capture_plan};
-use crate::sim::orbit::catalog::SpaceObjectCatalog;
-use crate::sim::orbit::selection::OrbitalSelectionState;
+use crate::capture::plan::{CapturePlan, CapturePlanLibrary, validate_capture_plan};
+use crate::orbit::catalog::SpaceObjectCatalog;
+use crate::orbit::selection::OrbitalSelectionState;
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SelectedProject {

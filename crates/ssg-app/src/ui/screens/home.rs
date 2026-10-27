@@ -2,14 +2,14 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
 use crate::render::layers::UI_LAYER;
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::project::WorkingDirectory;
-use crate::sim::session::UiScreen;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::ui::log_ui::CapturePlanLoadErrors;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
+use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::project::WorkingDirectory;
+use ssg_sim::session::UiScreen;
 
 #[derive(Component)]
 pub struct HomeScreen;

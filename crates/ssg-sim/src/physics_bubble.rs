@@ -5,12 +5,12 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::KeplerianPropagator;
 
-use crate::sim::SimStep;
-use crate::sim::anchor::SimAnchor;
-use crate::sim::orbit::Orbital;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::time::{ManualPhysics, WorldTime};
+use crate::SimStep;
+use crate::anchor::SimAnchor;
+use crate::orbit::Orbital;
+use crate::orbit::cache::OrbitalCache;
+use crate::telemetry::{LogEvent, LogLevel};
+use crate::time::{ManualPhysics, WorldTime};
 
 // Floating origin constants
 pub const PHYSICS_ENABLE_RADIUS: f64 = 100.0;

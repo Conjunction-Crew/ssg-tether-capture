@@ -5,9 +5,6 @@
 use std::borrow::Cow;
 
 use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M};
-use crate::sim::orbit::catalog::{GpuComputeEpochOrigin, GpuElements};
-use crate::sim::session::UiScreen;
-use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use bevy::{
     camera::visibility::RenderLayers,
@@ -31,6 +28,9 @@ use bevy::{
     },
     shader::ShaderRef,
 };
+use ssg_sim::orbit::catalog::{GpuComputeEpochOrigin, GpuElements};
+use ssg_sim::session::UiScreen;
+use ssg_sim::time::WorldTime;
 
 const ECI_SHADER_ASSET_PATH: &str = "shaders/orbital_eci.wgsl";
 const MAP_SHADER_ASSET_PATH: &str = "shaders/map_eci_points.wgsl";

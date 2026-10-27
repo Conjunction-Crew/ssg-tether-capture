@@ -14,19 +14,6 @@ use bevy::ui_widgets::{
 };
 
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER, UI_LAYER, eci_position_to_map};
-use crate::sim::capture::CaptureComponent;
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::orbit::ISS_ORBIT;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::catalog::{
-    GpuComputeEpochOrigin, GpuElements, SpaceObjectCatalog, propagate_catalog_eci_state,
-};
-use crate::sim::orbit::selection::{
-    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
-};
-use crate::sim::project::{SelectedProject, WorkingDirectory};
-use crate::sim::session::SimState;
-use crate::sim::telemetry::{LogEvent, LogLevel};
 use crate::ui::catalog_state::{
     FilteredSpaceCatalogResults, OrbitalSelectionRole, SpaceCatalogUiState,
 };
@@ -38,6 +25,19 @@ use crate::ui::hud::{
 use crate::ui::screens::capture_plan::ScrollContentWrapper;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
+use ssg_sim::capture::CaptureComponent;
+use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::orbit::ISS_ORBIT;
+use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::orbit::catalog::{
+    GpuComputeEpochOrigin, GpuElements, SpaceObjectCatalog, propagate_catalog_eci_state,
+};
+use ssg_sim::orbit::selection::{
+    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
+};
+use ssg_sim::project::{SelectedProject, WorkingDirectory};
+use ssg_sim::session::SimState;
+use ssg_sim::telemetry::{LogEvent, LogLevel};
 
 #[derive(Component)]
 pub struct SimScreen;
@@ -2608,7 +2608,7 @@ pub fn update_selected_catalog_overlay(
     catalog_ui: Res<SpaceCatalogUiState>,
     gpu_elements: Res<GpuElements>,
     epoch_origin: Res<GpuComputeEpochOrigin>,
-    world_time: Res<crate::sim::time::WorldTime>,
+    world_time: Res<ssg_sim::time::WorldTime>,
     overlay: Single<(&mut Node, &Children), With<SelectedCatalogOverlay>>,
     mut label_texts: Query<&mut Text, With<SelectedCatalogOverlayLabel>>,
 ) {
@@ -2799,13 +2799,13 @@ pub fn project_detail_interactions(
     exit_modal_query: Query<Entity, With<ExitSimConfirmModal>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut events: MessageWriter<UiEvent>,
-    screen: Res<State<crate::sim::session::UiScreen>>,
+    screen: Res<State<ssg_sim::session::UiScreen>>,
     theme: Res<UiTheme>,
     form: Res<NewCapturePlanForm>,
     restart_modal_query: Query<Entity, With<RestartPromptModal>>,
     selection: Res<OrbitalSelectionState>,
 ) {
-    if *screen.get() != crate::sim::session::UiScreen::Sim {
+    if *screen.get() != ssg_sim::session::UiScreen::Sim {
         return;
     }
 
@@ -2941,7 +2941,7 @@ pub fn restart_prompt_interactions(
     mut commands: Commands,
     modal_query: Query<Entity, With<RestartPromptModal>>,
     mut sync_state: ResMut<SimPlanSyncState>,
-    mut next_screen: ResMut<NextState<crate::sim::session::UiScreen>>,
+    mut next_screen: ResMut<NextState<ssg_sim::session::UiScreen>>,
     mut next_sim_state: ResMut<NextState<SimState>>,
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     theme: Res<UiTheme>,
@@ -2967,7 +2967,7 @@ pub fn restart_prompt_interactions(
                     });
                     // Transition Home → Sim to trigger full cleanup and re-setup
                     next_sim_state.set(SimState::Setup);
-                    next_screen.set(crate::sim::session::UiScreen::Home);
+                    next_screen.set(ssg_sim::session::UiScreen::Home);
                 } else if recompile_btn.is_some() {
                     // Apply changes live without restarting the sim.
                     let refreshed: Vec<_> = capture_plan_lib
