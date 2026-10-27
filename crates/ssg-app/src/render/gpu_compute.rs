@@ -11,6 +11,7 @@ use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use bevy::{
     camera::visibility::RenderLayers,
+    ecs::system::SystemParam,
     mesh::MeshTag,
     prelude::*,
     render::{
@@ -287,18 +288,30 @@ struct GpuComputeBuffers {
     uniforms: UniformBuffer<GpuComputeUniforms>,
 }
 
+/// The pipeline and device handles [`prepare_bind_group`] uses.
+#[derive(SystemParam)]
+struct GpuComputeContext<'w> {
+    pipeline: Res<'w, GpuComputePipeline>,
+    render_device: Res<'w, RenderDevice>,
+    pipeline_cache: Res<'w, PipelineCache>,
+    queue: Res<'w, RenderQueue>,
+}
+
 fn prepare_bind_group(
     mut commands: Commands,
-    pipeline: Res<GpuComputePipeline>,
-    render_device: Res<RenderDevice>,
-    pipeline_cache: Res<PipelineCache>,
-    queue: Res<RenderQueue>,
+    context: GpuComputeContext,
     gpu_elements: Res<RenderCatalogElements>,
     uniforms: Res<GpuComputeUniforms>,
     output_handle: Res<GpuEciStateBuffer>,
     gpu_output_buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
     buffers: Option<ResMut<GpuComputeBuffers>>,
 ) {
+    let GpuComputeContext {
+        pipeline,
+        render_device,
+        pipeline_cache,
+        queue,
+    } = context;
     let count = gpu_elements.0.len();
 
     if count == 0 {

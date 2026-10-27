@@ -8,7 +8,7 @@ use avian3d::{
         Forces, LinearVelocity, Physics, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
     },
 };
-use bevy::{math::DVec3, prelude::*};
+use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
 
 use crate::sim::SimSet;
 use crate::sim::SimStep;
@@ -35,17 +35,28 @@ pub struct CaptureSphereRadius {
     pub radius: f64,
 }
 
+/// The read-only resources [`capture_state_machine_update`] reads.
+#[derive(SystemParam)]
+pub struct CaptureInputs<'w> {
+    capture_plan_lib: Res<'w, CapturePlanLibrary>,
+    orbital_cache: Res<'w, OrbitalCache>,
+    world_time: Res<'w, WorldTime>,
+}
+
 pub fn capture_state_machine_update(
     mut commands: Commands,
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
+    inputs: CaptureInputs,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
-    orbital_cache: Res<OrbitalCache>,
     mut data_collection: ResMut<DataCollection>,
-    world_time: Res<WorldTime>,
     mut log_events: MessageWriter<LogEvent>,
 ) {
+    let CaptureInputs {
+        capture_plan_lib,
+        orbital_cache,
+        world_time,
+    } = inputs;
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
 

@@ -207,12 +207,33 @@ pub fn orbit_camera_input(
     }
 }
 
+/// The camera target's transform (not the camera's, not the Earth's).
+type TargetTransforms<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Transform, Entity),
+    (With<CameraTarget>, Without<Camera3d>, Without<Earth>),
+>;
+
+/// The scene camera's orbit state, transform and render layers.
+type TrackedCamera<'w, 's> = Single<
+    'w,
+    's,
+    (
+        &'static mut OrbitCamera,
+        &'static mut Transform,
+        &'static RenderLayers,
+    ),
+    (With<Camera3d>, Without<Earth>),
+>;
+
+/// The bodies the camera can switch to, and whether each is the camera target.
+type CameraBodies<'w, 's> =
+    Query<'w, 's, (Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>;
+
 pub fn orbit_camera_track(
-    targets: Query<(&Transform, Entity), (With<CameraTarget>, Without<Camera3d>, Without<Earth>)>,
-    cam_q: Single<
-        (&mut OrbitCamera, &mut Transform, &RenderLayers),
-        (With<Camera3d>, Without<Earth>),
-    >,
+    targets: TargetTransforms,
+    cam_q: TrackedCamera,
     earth: Single<&Transform, With<Earth>>,
     orbital_cache: Res<OrbitalCache>,
 ) {
@@ -264,7 +285,7 @@ pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     catalog_ui: Res<SpaceCatalogUiState>,
     mut commands: Commands,
-    bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    bodies: CameraBodies,
     mut log: MessageWriter<LogEvent>,
 ) {
     if catalog_ui.search_focused {

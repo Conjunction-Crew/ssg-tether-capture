@@ -11,16 +11,29 @@ use crate::sim::anchor::CameraTarget;
 use crate::sim::orbit::Orbital;
 use crate::sim::orbit::cache::OrbitalCache;
 
+/// The camera target's transform, while its physics is enabled.
+type TargetTransform<'w, 's> = Single<
+    'w,
+    's,
+    (Entity, &'static Transform),
+    (
+        Without<RigidBodyDisabled>,
+        With<CameraTarget>,
+        Without<Earth>,
+    ),
+>;
+
+/// The scene camera's atmosphere and render layers.
+type CameraAtmosphere<'w, 's> = Single<
+    'w,
+    's,
+    (&'static mut Atmosphere, &'static RenderLayers),
+    (With<Camera3d>, Without<Orbital>),
+>;
+
 pub fn floating_origin_update_visuals(
-    target_params_s: Single<
-        (Entity, &Transform),
-        (
-            Without<RigidBodyDisabled>,
-            With<CameraTarget>,
-            Without<Earth>,
-        ),
-    >,
-    camera_s: Single<(&mut Atmosphere, &RenderLayers), (With<Camera3d>, Without<Orbital>)>,
+    target_params_s: TargetTransform,
+    camera_s: CameraAtmosphere,
     earth: Single<&mut Transform, (With<Earth>, Without<CameraTarget>)>,
     orbital_cache: ResMut<OrbitalCache>,
 ) {

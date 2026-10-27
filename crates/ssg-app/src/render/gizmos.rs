@@ -4,6 +4,7 @@ use avian3d::{
 };
 use bevy::{
     camera::visibility::RenderLayers,
+    ecs::system::SystemParam,
     math::{DQuat, DVec3},
     prelude::*,
 };
@@ -39,10 +40,10 @@ fn draw_orbital_from_elements(
     inclination: f32,
     raan: f32,
     arg_of_perigee: f32,
-    frame_rotation: Quat,
     color: Srgba,
     gizmos: &mut Gizmos,
 ) {
+    let frame_rotation = orbit_frame_rotation();
     if semi_major <= 0.0 || !(0.0..1.0).contains(&eccentricity) {
         return;
     }
@@ -78,7 +79,6 @@ fn draw_orbital_selection_from_elements(
         elements.inclination_rad as f32,
         elements.raan_rad as f32,
         elements.arg_perigee_rad as f32,
-        orbit_frame_rotation(),
         color,
         gizmos,
     );
@@ -119,17 +119,29 @@ fn selection_contains_gpu_index(selection: &OrbitalSelectionState, gpu_index: us
         .any(|selected| selected_orbital_gpu_index(selected) == Some(gpu_index))
 }
 
+/// The catalog and selection state [`orbital_gizmos`] draws from.
+#[derive(SystemParam)]
+pub struct CatalogGizmoInputs<'w> {
+    catalog_ui_state: Res<'w, SpaceCatalogUiState>,
+    catalog: Res<'w, SpaceObjectCatalog>,
+    gpu_elements: Res<'w, GpuElements>,
+    orbital_selection: Option<Res<'w, OrbitalSelectionState>>,
+}
+
 pub fn orbital_gizmos(
     orbitals: Query<&Orbital>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
     world_time: Res<WorldTime>,
     mut gizmos: Gizmos,
-    catalog_ui_state: Res<SpaceCatalogUiState>,
-    catalog: Res<SpaceObjectCatalog>,
-    gpu_elements: Res<GpuElements>,
-    orbital_selection: Option<Res<OrbitalSelectionState>>,
+    catalog_inputs: CatalogGizmoInputs,
     sim_state: Res<State<SimState>>,
 ) {
+    let CatalogGizmoInputs {
+        catalog_ui_state,
+        catalog,
+        gpu_elements,
+        orbital_selection,
+    } = catalog_inputs;
     let render_layers = camera_s.into_inner();
 
     // Do not render orbit gizmos in scene view
@@ -154,7 +166,6 @@ pub fn orbital_gizmos(
                 elements.z as f32,
                 elements.w as f32,
                 elements.a as f32,
-                orbit_frame_rotation(),
                 Srgba::new(0.0, 0.0, 1.0, 0.1),
                 &mut gizmos,
             );
@@ -183,7 +194,6 @@ pub fn orbital_gizmos(
                 elements.i,
                 elements.raan,
                 elements.argp,
-                orbit_frame_rotation(),
                 Srgba::new(0.0, 0.0, 1.0, 0.1),
                 &mut gizmos,
             );
@@ -245,16 +255,27 @@ fn capture_force_direction(
     force_vec
 }
 
+/// The capture state [`capture_gizmos`] draws.
+#[derive(SystemParam)]
+pub struct CaptureGizmoInputs<'w> {
+    capture_plan_lib: Res<'w, CapturePlanLibrary>,
+    orbital_entities: Res<'w, OrbitalCache>,
+    capture_sphere_radius: Res<'w, CaptureSphereRadius>,
+}
+
 pub fn capture_gizmos(
     capture_entities: Query<(Entity, &CaptureComponent)>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
-    orbital_entities: Res<OrbitalCache>,
+    capture_inputs: CaptureGizmoInputs,
     rigidbodies: Query<RigidBodyQuery>,
-    capture_sphere_radius: Res<CaptureSphereRadius>,
     settings: Res<Settings>,
     mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
 ) {
+    let CaptureGizmoInputs {
+        capture_plan_lib,
+        orbital_entities,
+        capture_sphere_radius,
+    } = capture_inputs;
     let render_layers = camera_s.into_inner();
 
     if !settings.capture_gizmos || render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
