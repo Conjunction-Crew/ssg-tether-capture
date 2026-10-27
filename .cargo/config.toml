@@ -1,0 +1,5 @@
+[env]
+# Bevy resolves `assets/` against this (else `CARGO_MANIFEST_DIR`, which is
+# `crates/ssg-app` under `cargo run`); relative = true makes it the workspace
+# root. Packaged binaries never see it.
+BEVY_ASSET_ROOT = { value = "", relative = true }

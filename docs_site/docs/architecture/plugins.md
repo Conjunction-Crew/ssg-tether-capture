@@ -4,59 +4,61 @@ sidebar_position: 2
 
 # Plugins
 
-Plugins bundle related systems and resources into a reusable unit. Each implements Bevy's `Plugin` trait and is registered in `create_app()` or `run()`.
+Plugins bundle related systems and resources into a reusable unit. Each implements Bevy's `Plugin` trait. The simulation plugins are collected in `SimPlugins` (crate `ssg-sim`); the rendering plugins in `RenderPlugins` and `UiPlugin` (crate `ssg-app`), which `run()` adds.
 
-## OrbitalMechanicsPlugin
+## SimPlugins
 
-**Source:** `src/plugins/orbital_mechanics.rs`
+**Source:** `crates/ssg-sim/src/lib.rs` (the group); one plugin per feature module under `crates/ssg-sim/src/`.
 
-The central simulation plugin. Registers Avian3D physics on a custom `ManualPhysics` schedule (decoupled from the render frame rate), and orchestrates all orbital mechanics and capture systems.
+The headless simulation, as a plugin group. Add it after `StatesPlugin`, because `init_state` needs the `StateTransition` schedule. It contains no render, window or UI type, so it also runs under the `ssg-sim run` command.
 
-Registers the following on `OnEnter(UiScreen::Sim)`:
-- `init_sim_resources` — inserts `Celestials`, `OrbitalCache`, `WorldTime`, and `CaptureSphereRadius`
-- `load_dataset_entities` — loads JSON orbital datasets from `assets/datasets/`
+| Plugin | Source | Registers |
+|---|---|---|
+| `SessionPlugin` | `session.rs` | `UiScreen` and `SimState`; session resources on `OnEnter(UiScreen::Sim)` (set `SimSet::SessionInit`) and their removal on `OnExit` |
+| `TimePlugin` | `time.rs` | Avian3D `PhysicsPlugins` on `ManualPhysics`, gravity, substeps, the `FixedUpdate` rate, `fixed_physics_step`, and the `SimStep` chain |
+| `ProjectPlugin` | `project.rs` | `SelectedProject`, `CapturePlanLibrary`, `SpaceObjectCatalog`, `OrbitalSelectionState` |
+| `TelemetryPlugin` | `telemetry.rs` | `LogEvent`, `CaptureLog`, `DataCollection`, `collect_log_events` in `Last` |
+| `OrbitPlugin` | `orbit/mod.rs` | `init_orbitals` in `First`; `cache_eci_states` in `SimStep::CacheEci` |
+| `AnchorPlugin` | `anchor.rs` | `sync_anchor_from_camera_target` in `SimStep::SyncAnchor` |
+| `FloatingOriginPlugin` | `floating_origin.rs` | `calculate_com_rv` (`SimStep::CenterOfMass`), `target_entity_reset_origin` (`SimStep::OriginReset`) |
+| `PhysicsBubblePlugin` | `physics_bubble.rs` | `physics_bubble_add_remove` in `SimStep::Bubble` |
+| `TetherPlugin` | `tether.rs` | `spawn_selected_bodies` on `OnEnter(SimState::Running)` (set `SimSet::SpawnBodies`) |
+| `CapturePlugin` | `capture/mod.rs` | `SimCommand`, `capture_state_machine_update` in `SimStep::Capture`, `apply_sim_commands` in `Last` (set `SimSet::ApplyCommands`) |
 
-Registers the following on `OnExit(UiScreen::Sim)`:
-- `remove_sim_resources` — removes the above resources
+`init_orbitals` runs in `First` so that newly spawned `Orbit` components are initialised before any `Update` system runs.
 
-`init_orbitals` runs in `First` to ensure newly-spawned `Orbit` components are initialised before any `Update` system runs.
+`fixed_physics_step` runs in `FixedUpdate` at `FIXED_HZ` while the session is running, and drives the `ManualPhysics` schedule each tick, scaled by `WorldTime::multiplier`.
 
-`fixed_physics_step` runs in `FixedUpdate` at `FIXED_HZ` and manually drives the `ManualPhysics` schedule each tick, scaled by `WorldTime::multiplier`.
+The `SimStep` sets run in `ManualPhysics`, chained in this order and all after Avian3D's step (`PhysicsSystems::Last`). This is today's order, named:
 
-The `ManualPhysics` schedule runs in this order:
-
-| Set | Systems |
+| Order | Set |
 |---|---|
-| `PhysicsSystems::First` | `cache_eci_states` |
-| `PhysicsSystems::Prepare` | `physics_bubble_add_remove`, `target_entity_reset_origin` |
-| *(Avian3D default sets)* | Broad-phase, narrow-phase, constraint solving, integration |
-| `PhysicsSystems::Last` | `capture_state_machine_update` |
+| 1 | `SimStep::SyncAnchor` |
+| 2 | `SimStep::CenterOfMass` |
+| 3 | `SimStep::OriginReset` |
+| 4 | `SimStep::CacheEci` |
+| 5 | `SimStep::Bubble` |
+| 6 | `SimStep::Capture` |
 
-Also registers `dev_gizmos`, `capture_gizmos`, and `floating_origin_update_visuals` in `Update`.
+The app orders its own systems against `SimSet::SessionInit`, `SimSet::SpawnBodies` and `SimSet::ApplyCommands`.
 
-```rust
-pub struct OrbitalMechanicsPlugin;
+## RenderPlugins
 
-impl Plugin for OrbitalMechanicsPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(PhysicsPlugins::new(ManualPhysics))
-            .add_systems(OnEnter(UiScreen::Sim), (init_sim_resources, load_dataset_entities).chain())
-            .add_systems(OnExit(UiScreen::Sim), remove_sim_resources)
-            .add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
-            .add_systems(FixedUpdate, fixed_physics_step.run_if(in_state(UiScreen::Sim)))
-            // ... gizmo + visual update systems in Update
-            .add_systems(ManualPhysics, (
-                cache_eci_states.in_set(PhysicsSystems::First),
-                (physics_bubble_add_remove, target_entity_reset_origin).in_set(PhysicsSystems::Prepare),
-                capture_state_machine_update.in_set(PhysicsSystems::Last),
-            ).run_if(in_state(UiScreen::Sim)));
-    }
-}
-```
+**Source:** `crates/ssg-app/src/render/mod.rs` (the group)
+
+The rendering side, in `ssg-app`. Add it after `SimPlugins`.
+
+| Plugin | Source |
+|---|---|
+| `CelestialPlugin` | `render/celestial.rs` |
+| `OrbitCameraPlugin` | `render/camera.rs` (below) |
+| `AttachPlugin` | `render/attach.rs` — attaches meshes and scenes to the tether and debris bodies that `SimPlugins` spawns |
+| `GizmoPlugin` | `render/gizmos.rs` |
+| `GpuComputePlugin` | `render/gpu_compute.rs` (below) |
 
 ## OrbitCameraPlugin
 
-**Source:** `src/plugins/orbit_camera.rs`
+**Source:** `crates/ssg-app/src/render/camera.rs`
 
 Registers three input systems in `Update` and one tracking system in `PostUpdate`.
 
@@ -71,7 +73,7 @@ Registers three input systems in `Update` and one tracking system in `PostUpdate
 
 ## GpuComputePlugin
 
-**Source:** `src/plugins/gpu_compute.rs`
+**Source:** `crates/ssg-app/src/render/gpu_compute.rs`
 
 Manages a GPU compute pipeline for efficiently rendering large orbital debris datasets (thousands of objects) as instanced points on the map view.
 
@@ -87,7 +89,7 @@ The compute pipeline takes the initial ECI state buffer and a time offset unifor
 
 ## UiPlugin
 
-**Source:** `src/ui/plugin.rs`
+**Source:** `crates/ssg-app/src/ui/plugin.rs`
 
 Responsible for the entire Bevy-native UI layer. Registers:
 

@@ -4,6 +4,10 @@ sidebar_position: 2
 
 # Resources
 
+:::note
+Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
+:::
+
 Resources are singleton values stored globally in the Bevy `World`. Unlike components they are not attached to entities. Source: `src/resources/`.
 
 ---

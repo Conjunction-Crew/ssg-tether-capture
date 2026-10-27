@@ -20,6 +20,19 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Changed
+- Cargo workspace: the desktop app moved to `crates/ssg-app` (binary name and packaging unchanged), new `crates/ssg-sim` and `crates/ssg-sim-cli` placeholders, the Bevy fork pinned to commit `f93dee9` and documented in `FORK.md` (no app behaviour change)
+- Simulation core separated from rendering and UI inside the app crate: one plugin per feature, explicit physics system sets (same order), a sim-side anchor marker mirrored from the camera target, capture start as a sim command, one implementation per keyboard/button action, meshes attached to simulation bodies by the renderer (no behaviour change; the Tab and map-view keys now log like their buttons)
+- `ssg-sim`: the simulation core is now a headless library crate (no render, window or UI dependencies) with the P2 headless harness behind the `test-support` feature (no behaviour change)
+- UI screen modules split into folders; architecture docs point at the workspace layout (no behaviour change)
+
+### Added
+- `ssg-sim` headless runner (`crates/ssg-sim-cli`): `ssg-sim run <project-dir> …` runs a capture scenario without a window and writes `summary.json` and `trajectory.csv`
+- Headless test harness (`src/tests/test_support.rs`): fixed sim epoch, ticks driven through `FixedUpdate` at exactly 1/64 s, and helpers for capture and orbit tests; three integration tests that asserted nothing now assert real behaviour (no app behaviour change)
+- Characterization tests pinning current orbit propagation, floating-origin, physics-bubble and time-warp behaviour, including known defects marked for P4 (no app behaviour change)
+- Characterization tests pinning current capture-plan transition semantics (conditions OR-ed, transitions cascading within one step) and plan load/compile round trips (no app behaviour change)
+- Headless Hubble (HST) capture baseline: fixed-epoch regression guard in CI, plus an opt-in to-capture measurement whose run-to-run spread is P3's tolerance (no app behaviour change)
+
 
 ## [v0.3.0] - 2026-10-26
 

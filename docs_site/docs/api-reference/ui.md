@@ -4,6 +4,10 @@ sidebar_position: 4
 
 # UI
 
+:::note
+Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
+:::
+
 The UI is implemented entirely with Bevy's native node-based UI system (no external UI crates). Source: `src/ui/`.
 
 ---
