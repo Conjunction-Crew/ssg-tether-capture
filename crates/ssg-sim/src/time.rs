@@ -1,7 +1,5 @@
 //! Simulation time: the fixed step, the physics schedule and the sim clock.
 
-use std::time::Duration;
-
 use avian3d::prelude::*;
 use bevy::{ecs::schedule::ScheduleLabel, math::DVec3, prelude::*};
 use brahe::Epoch;
@@ -17,9 +15,8 @@ pub const PHYS_DT: f64 = 1.0 / FIXED_HZ;
 
 pub fn fixed_physics_step(world: &mut World) {
     for _ in 0..world.resource::<WorldTime>().multiplier {
-        world
-            .resource_mut::<Time<Physics>>()
-            .advance_by(Duration::from_secs_f64(PHYS_DT));
+        // `Time<Physics>` is advanced once, by avian's `run_physics_schedule`
+        // (F-38: fixed in P4).
         world.resource_mut::<WorldTime>().epoch += PHYS_DT;
 
         world.run_schedule(ManualPhysics);

@@ -556,12 +556,11 @@ pub mod q13 {
         // `spawn_selected_bodies` has spawned the tether root and the debris with
         // `Orbit::FromElements`; `init_orbitals` turns them into propagators at the
         // start epoch on the next update.
-        let pending = app
-            .world_mut()
-            .query::<&Orbit>()
-            .iter(app.world())
-            .count();
-        assert_eq!(pending, 2, "precondition: root and debris await init_orbitals");
+        let pending = app.world_mut().query::<&Orbit>().iter(app.world()).count();
+        assert_eq!(
+            pending, 2,
+            "precondition: root and debris await init_orbitals"
+        );
         tick(app);
 
         let plan = app

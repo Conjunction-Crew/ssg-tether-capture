@@ -7,8 +7,8 @@ pub mod selection;
 use std::sync::PoisonError;
 
 use bevy::prelude::*;
-use brahe::utils::DOrbitStateProvider;
 use brahe::KeplerianPropagator;
+use brahe::utils::DOrbitStateProvider;
 use nalgebra::Vector6;
 
 use crate::SimStep;

@@ -1,5 +1,5 @@
 //! Characterization of time warp: the N-by-1 invariant, the keyboard ladder
-//! (F-12), pause, the catch-up cap, and the physics-clock double advance (F-38).
+//! (F-12), pause, the catch-up cap, and the single physics-clock advance (F-38).
 
 use crate::anchor::CameraTarget;
 use crate::orbit::cache::OrbitalCache;
@@ -9,7 +9,7 @@ use crate::test_support::{
     tick, ticks,
 };
 use crate::tether::{TetherNode, TetherRoot};
-use crate::time::{PHYS_DT, WorldTime, fixed_physics_step};
+use crate::time::{PHYS_DT, WorldTime};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -193,7 +193,7 @@ fn char_warp_catch_up_cap() {
 }
 
 #[test]
-fn char_time_physics_clock_double_advance() {
+fn time_physics_clock_single_advance() {
     let mut app = running_app();
     let physics_secs = |app: &App| {
         app.world()
@@ -209,41 +209,13 @@ fn char_time_physics_clock_double_advance() {
     let physics_advance = physics_secs(&app) - physics_before;
 
     assert_close(epoch_advance, PHYS_DT, 1e-12, "sim epoch advance per tick");
-    // F-38 (proposed in P2): current behaviour, expected to change in P4
-    // `physics.rs:17` advances `Time<Physics>` once and avian's
-    // `run_physics_schedule` advances it again by the generic `Time` delta, so the
-    // physics clock runs at twice the sim clock.
+    // F-38: fixed in P4
+    // Only avian's `run_physics_schedule` advances `Time<Physics>`, by the generic
+    // `Time` delta (`Time<Fixed>` = `PHYS_DT` inside `FixedUpdate`).
     assert_close(
         physics_advance,
-        2.0 * PHYS_DT,
+        PHYS_DT,
         1e-9,
         "Time<Physics> advance per tick",
-    );
-
-    // The trap behind `tick`: calling `fixed_physics_step` from test code, outside
-    // `FixedUpdate`, leaves the generic `Time` at whatever the last frame's delta
-    // was. This is the only place a test may do it.
-    let mut app = running_app();
-    let epoch_before = app.world().resource::<WorldTime>().epoch;
-    let physics_before = physics_secs(&app);
-    fixed_physics_step(app.world_mut());
-    let epoch_advance = app.world().resource::<WorldTime>().epoch - epoch_before;
-    let physics_advance = physics_secs(&app) - physics_before;
-    assert_close(
-        epoch_advance,
-        PHYS_DT,
-        1e-12,
-        "sim epoch advance, direct call",
-    );
-    // Observed: the generic `Time` delta is still 1/64 s at that moment, so the
-    // physics clock advances by `PHYS_DT` plus 1/64 s. With a different last-frame
-    // delta (or none) the advance, and avian's step, would differ: that is why
-    // tests use `tick`.
-    // F-38 (proposed in P2): current behaviour, expected to change in P4
-    assert_close(
-        physics_advance,
-        2.0 * PHYS_DT,
-        1e-9,
-        "Time<Physics> advance, direct call",
     );
 }

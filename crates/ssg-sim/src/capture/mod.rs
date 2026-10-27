@@ -4,9 +4,7 @@ pub mod plan;
 
 use avian3d::{
     math::PI,
-    prelude::{
-        Forces, LinearVelocity, Physics, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
-    },
+    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
 };
 use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
 
@@ -97,6 +95,7 @@ pub fn capture_state_machine_update(
                         plan,
                         r_len,
                         v_len,
+                        world_time.epoch - world_time.start_epoch,
                         &mut capture_sphere_radius,
                         &mut log_events,
                     )
@@ -243,6 +242,7 @@ fn resolve_root_state(
     plan: &CompiledCapturePlan,
     rel_r_length: f64,
     rel_v_length: f64,
+    sim_time_s: f64,
     capture_sphere_radius: &mut CaptureSphereRadius,
     log_events: &mut MessageWriter<LogEvent>,
 ) -> CompiledCaptureStateParameters {
@@ -271,6 +271,7 @@ fn resolve_root_state(
                 transition,
                 rel_r_length,
                 rel_v_length,
+                sim_time_s,
                 log_events,
             );
         }
@@ -284,6 +285,7 @@ fn apply_transition(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
+    sim_time_s: f64,
     log_events: &mut MessageWriter<LogEvent>,
 ) {
     if let Some(limit) = transition.distance_less_than
@@ -292,6 +294,7 @@ fn apply_transition(
         transition_to(
             capture_component,
             &transition.to,
+            sim_time_s,
             format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
             log_events,
         );
@@ -303,6 +306,7 @@ fn apply_transition(
         transition_to(
             capture_component,
             &transition.to,
+            sim_time_s,
             format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
             log_events,
         );
@@ -314,6 +318,7 @@ fn apply_transition(
         transition_to(
             capture_component,
             &transition.to,
+            sim_time_s,
             format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
             log_events,
         );
@@ -325,15 +330,18 @@ fn apply_transition(
         transition_to(
             capture_component,
             &transition.to,
+            sim_time_s,
             format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
             log_events,
         );
     }
 }
 
+/// Enters `new_state` at `sim_time_s` (sim seconds since the start epoch).
 fn transition_to(
     capture_component: &mut CaptureComponent,
     new_state: &str,
+    sim_time_s: f64,
     reason: String,
     log_events: &mut MessageWriter<LogEvent>,
 ) {
@@ -346,7 +354,7 @@ fn transition_to(
         ),
     });
     capture_component.current_state = String::from(new_state);
-    capture_component.state_enter_time_s = 0.0;
+    capture_component.state_enter_time_s = sim_time_s;
     capture_component.state_elapsed_time_s = 0.0;
 }
 
@@ -362,12 +370,13 @@ pub enum SimCommand {
 
 /// Applies the queued [`SimCommand`]s in `Last` ([`SimSet::ApplyCommands`]), the
 /// frame the UI sends them, as the UI handler did before P3. The capture start
-/// time is the physics clock (F-38: current behaviour, expected to change in P4).
+/// time is sim seconds since the start epoch (F-38: fixed in P4).
 pub fn apply_sim_commands(
     mut commands: Commands,
     mut sim_commands: MessageReader<SimCommand>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    physics_time: Res<Time<Physics>>,
+    // Absent outside the sim screen, where no capture target exists.
+    world_time: Option<Res<WorldTime>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut data_collection: ResMut<DataCollection>,
     mut log: MessageWriter<LogEvent>,
@@ -391,7 +400,7 @@ pub fn apply_sim_commands(
                             if let Some(capture_component) = build_capture_component(
                                 plan_id.as_str(),
                                 plan,
-                                physics_time.elapsed_secs_f64(),
+                                world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
                                 log.write(LogEvent {

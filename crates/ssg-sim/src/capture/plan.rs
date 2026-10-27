@@ -172,18 +172,19 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
     errors
 }
 
-/// Builds a [`CaptureComponent`] from a plan and the current physics clock. Returns
-/// `None` if the plan has no states (should have been caught by validation).
+/// Builds a [`CaptureComponent`] from a plan, entering its first state at
+/// `sim_time_s` (sim seconds since the start epoch). Returns `None` if the plan
+/// has no states (should have been caught by validation).
 pub fn build_capture_component(
     plan_id: &str,
     plan: &CapturePlan,
-    physics_time_secs: f64,
+    sim_time_s: f64,
 ) -> Option<CaptureComponent> {
     let first_state = plan.states.first()?;
     Some(CaptureComponent {
         plan_id: plan_id.to_string(),
         current_state: first_state.id.clone(),
-        state_enter_time_s: physics_time_secs,
+        state_enter_time_s: sim_time_s,
         state_elapsed_time_s: 0.0,
     })
 }
