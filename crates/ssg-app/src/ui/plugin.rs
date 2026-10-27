@@ -21,7 +21,9 @@ use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, Unit
 use crate::ui::hud::{
     map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
 };
-use crate::ui::input::{change_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin};
+use crate::ui::input::{
+    change_time_warp, step_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
+};
 use crate::ui::log_ui::{CaptureLogUiState, CapturePlanLoadErrors};
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -60,7 +62,7 @@ use ssg_sim::project::{
     SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, save_plan_file,
     set_working_directory,
 };
-use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::session::{PauseState, SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::{SimConfig, WorldTime};
 
@@ -401,6 +403,7 @@ fn handle_ui_events(
     ),
     mut flow: UiFlowState,
     mut log: MessageWriter<LogEvent>,
+    (pause, mut next_pause): (Res<State<PauseState>>, ResMut<NextState<PauseState>>),
 ) {
     let (mut settings, mut next_sim_state, mut sim_commands, mut form) = ui_runtime;
 
@@ -477,14 +480,8 @@ fn handle_ui_events(
                 }
             }
             UiEvent::ChangeTimeWarp { increase } => {
-                if let Some(ref mut world_time) = world_time
-                    && world_time.change_warp(*increase)
-                {
-                    log.write(LogEvent {
-                        level: LogLevel::Info,
-                        source: "ui",
-                        message: format!("Time warp → {}x", world_time.multiplier),
-                    });
+                if let Some(ref mut world_time) = world_time {
+                    step_time_warp(*increase, world_time, &pause, &mut next_pause, &mut log);
                 }
             }
             UiEvent::CycleCameraTarget => {

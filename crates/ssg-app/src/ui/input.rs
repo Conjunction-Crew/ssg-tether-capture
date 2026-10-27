@@ -7,8 +7,9 @@ use bevy::{
 use crate::render::camera::set_map_view;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
+use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
-use ssg_sim::time::WorldTime;
+use ssg_sim::time::{WarpChange, WorldTime};
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -33,26 +34,55 @@ pub fn toggle_map_view(
     }
 }
 
+/// One step on the time-warp ladder ([`WorldTime::change_warp`]): applies the
+/// pause state and logs the change. Shared by the keyboard and the UI button.
+pub(crate) fn step_time_warp(
+    increase: bool,
+    world_time: &mut WorldTime,
+    pause: &State<PauseState>,
+    next_pause: &mut NextState<PauseState>,
+    log: &mut MessageWriter<LogEvent>,
+) {
+    let message = match world_time.change_warp(increase, *pause.get() == PauseState::Paused) {
+        WarpChange::Unchanged => return,
+        WarpChange::Multiplier(multiplier) => format!("Time warp → {multiplier}x"),
+        WarpChange::Paused => {
+            next_pause.set(PauseState::Paused);
+            "Sim paused".to_string()
+        }
+        WarpChange::Resumed => {
+            next_pause.set(PauseState::Running);
+            "Sim resumed".to_string()
+        }
+    };
+    log.write(LogEvent {
+        level: LogLevel::Info,
+        source: "ui",
+        message,
+    });
+}
+
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     catalog_ui: Res<SpaceCatalogUiState>,
     mut world_time: ResMut<WorldTime>,
+    pause: Res<State<PauseState>>,
+    mut next_pause: ResMut<NextState<PauseState>>,
     mut log: MessageWriter<LogEvent>,
 ) {
     if catalog_ui.search_focused {
         return;
     }
 
-    // Period steps up (unless at the top of the ladder), else Comma steps down.
-    let changed = (keyboard_input.just_pressed(KeyCode::Period) && world_time.change_warp(true))
-        || (keyboard_input.just_pressed(KeyCode::Comma) && world_time.change_warp(false));
-    if changed {
-        log.write(LogEvent {
-            level: LogLevel::Info,
-            source: "ui",
-            message: format!("Time warp → {}x", world_time.multiplier),
-        });
-    }
+    // Period steps up, else Comma steps down.
+    let increase = if keyboard_input.just_pressed(KeyCode::Period) {
+        true
+    } else if keyboard_input.just_pressed(KeyCode::Comma) {
+        false
+    } else {
+        return;
+    };
+    step_time_warp(increase, &mut world_time, &pause, &mut next_pause, &mut log);
 }
 
 pub fn toggle_origin(

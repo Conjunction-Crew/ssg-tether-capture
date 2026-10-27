@@ -8,6 +8,7 @@ use crate::render::layers::{EARTH_RADIUS, eci_position_to_map};
 use ssg_sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
 use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
 use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::WorldTime;
 
@@ -57,12 +58,25 @@ fn position_label_at_viewport_center(node: &mut Node, center: Vec2, size_px: f32
     node.height = Val::Px(size_px);
 }
 
+/// `Paused`, `{m}x`, or `{m}x (effective {e}x)` when the per-update cap
+/// ([`ssg_sim::time::MAX_STEPS_PER_UPDATE`]) holds the warp below the request.
+/// Before the first fixed step (effective 0) it shows the request.
 pub fn update_time_warp_readout(
     mut readouts: Query<&mut Text, With<TimeWarpReadout>>,
     world_time: Res<WorldTime>,
+    pause: Res<State<PauseState>>,
 ) {
+    let requested = world_time.multiplier;
+    let effective = world_time.effective_multiplier;
+    let readout = if *pause.get() == PauseState::Paused {
+        "Paused".to_string()
+    } else if effective == requested || effective == 0 {
+        format!("{requested}x")
+    } else {
+        format!("{requested}x (effective {effective}x)")
+    };
     for mut text in &mut readouts {
-        text.0 = format!("{}x", world_time.multiplier);
+        text.0.clone_from(&readout);
     }
 }
 

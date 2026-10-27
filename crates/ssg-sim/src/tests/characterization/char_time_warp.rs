@@ -4,12 +4,13 @@
 use crate::anchor::CameraTarget;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbital};
+use crate::session::PauseState;
 use crate::test_support::{
     assert_close, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, start_running, test_app,
     tick, ticks,
 };
 use crate::tether::{TetherNode, TetherRoot};
-use crate::time::{PHYS_DT, WorldTime};
+use crate::time::{MAX_STEPS_PER_UPDATE, PHYS_DT, WorldTime};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -153,34 +154,41 @@ fn char_warp_n_by_1_equals_1_by_n() {
 }
 
 #[test]
-fn char_warp_pause_is_zero_multiplier() {
+fn time_pause_state_freezes_sim() {
     let mut app = running_app();
     let scenario = warp_scenario(&mut app);
     // One moving tick so the cache holds the states.
     tick(&mut app);
     let before = snapshot(&app, &scenario);
 
-    app.world_mut().resource_mut::<WorldTime>().multiplier = 0;
+    // F-12: fixed in P4
+    // Pause is a state; the multiplier is untouched and never 0.
+    app.world_mut()
+        .resource_mut::<NextState<PauseState>>()
+        .set(PauseState::Paused);
     ticks(&mut app, 5);
-    // F-12: current behaviour, expected to change in P4
     assert_eq!(snapshot(&app, &scenario), before);
+    assert_eq!(app.world().resource::<WorldTime>().multiplier, 1);
 
-    // Control: at x1 the same scenario moves.
-    app.world_mut().resource_mut::<WorldTime>().multiplier = 1;
+    // Resumed, the same scenario moves.
+    app.world_mut()
+        .resource_mut::<NextState<PauseState>>()
+        .set(PauseState::Running);
     tick(&mut app);
     assert_ne!(snapshot(&app, &scenario), before);
 }
 
 #[test]
-fn char_warp_catch_up_cap() {
+fn time_catch_up_window_is_three_steps() {
     let app = running_app();
-    // F-12: current behaviour, expected to change in P4
-    // A slow frame is clamped to 250 ms of virtual time, which is 16 fixed steps,
-    // so a x8192 frame on a slow machine silently falls behind the readout.
+    // F-12: fixed in P4
+    // A slow frame is clamped to 3 fixed steps of virtual time (was 250 ms, 16
+    // steps), and one `FixedUpdate` run executes at most `MAX_STEPS_PER_UPDATE`.
     assert_eq!(
         app.world().resource::<Time<Virtual>>().max_delta(),
-        std::time::Duration::from_millis(250)
+        std::time::Duration::from_secs_f64(3.0 * PHYS_DT)
     );
+    assert_eq!(MAX_STEPS_PER_UPDATE, 64);
     assert_close(
         app.world()
             .resource::<Time<Fixed>>()
@@ -190,6 +198,36 @@ fn char_warp_catch_up_cap() {
         1e-15,
         "fixed timestep",
     );
+}
+
+#[test]
+fn time_effective_warp_capped() {
+    let mut app = running_app();
+    let advance = |app: &mut App| {
+        let before = app.world().resource::<WorldTime>().epoch;
+        tick(app);
+        let world_time = app.world().resource::<WorldTime>();
+        (world_time.epoch - before, world_time.effective_multiplier)
+    };
+
+    // F-12: fixed in P4
+    // Above the cap, one tick runs `MAX_STEPS_PER_UPDATE` steps and says so.
+    app.world_mut().resource_mut::<WorldTime>().multiplier = 8192;
+    let (elapsed, effective) = advance(&mut app);
+    assert_close(
+        elapsed,
+        MAX_STEPS_PER_UPDATE as f64 * PHYS_DT,
+        1e-9,
+        "one tick at x8192",
+    );
+    assert_eq!(effective, MAX_STEPS_PER_UPDATE);
+    assert_eq!(app.world().resource::<WorldTime>().multiplier, 8192);
+
+    // Below it, the requested warp runs in full.
+    app.world_mut().resource_mut::<WorldTime>().multiplier = 8;
+    let (elapsed, effective) = advance(&mut app);
+    assert_close(elapsed, 8.0 * PHYS_DT, 1e-12, "one tick at x8");
+    assert_eq!(effective, 8);
 }
 
 #[test]
