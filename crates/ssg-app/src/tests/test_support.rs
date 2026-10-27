@@ -61,17 +61,19 @@ pub(crate) fn repo_root() -> std::path::PathBuf {
 /// `fixed_physics_step` from test code (outside `FixedUpdate`) would therefore
 /// step avian with the last frame's wall-clock delta, or not at all.
 pub(crate) fn test_app() -> App {
-    // P3: the sim plugins replace `create_app()`; they need `StatesPlugin` first.
-    let mut app = App::new(); // P3
+    // P3: `SimPlugins` replace `create_app()` and provide what the removed lines
+    // added (`DataCollection`, `SelectedProject`, the body spawn system); the
+    // render assets (`StandardMaterial`, `GizmoAsset`) are app-side now.
+    let mut app = App::new(); // P3: was `create_app()`
     app.add_plugins((
         MinimalPlugins,
-        StatesPlugin, // P3
+        StatesPlugin, // P3: `SimPlugins` need it first
         AssetPlugin::default(),
         InputPlugin,
         ScenePlugin,
     ))
     .init_asset::<Mesh>()
-    .add_plugins(SimPlugins) // P3
+    .add_plugins(SimPlugins) // P3: the sim plugins
     .init_resource::<CollisionDiagnostics>()
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
