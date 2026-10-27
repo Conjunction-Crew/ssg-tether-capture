@@ -8,7 +8,7 @@ use crate::tests::test_support::q13::{
     self, CHASER_NORAD_ID, EpochMode, HST_NORAD_ID, Q13Run, app_elements, fixture_record,
     gpu_to_editable,
 };
-use crate::tests::test_support::{assert_close, enter_sim, fixed_epoch, test_app};
+use crate::tests::test_support::{assert_close, enter_sim, fixed_epoch, repo_root, test_app};
 
 fn element_bits(elements: &EditableOrbitalElements) -> [u64; 7] {
     [
@@ -97,11 +97,8 @@ fn baseline_q13_elements_match_app_loader() {
 
     // The fixture's HST record is the dataset's, verbatim.
     let dataset: Vec<serde_json::Value> = serde_json::from_str(
-        &std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("assets/datasets/dataset_2026_04_03.json"),
-        )
-        .expect("dataset is readable"),
+        &std::fs::read_to_string(repo_root().join("assets/datasets/dataset_2026_04_03.json"))
+            .expect("dataset is readable"),
     )
     .expect("dataset parses");
     let fixture: Vec<serde_json::Value> =

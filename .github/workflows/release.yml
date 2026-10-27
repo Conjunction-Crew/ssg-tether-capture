@@ -212,10 +212,14 @@ jobs:
           mv Cargo.toml.new Cargo.toml
           cargo update --workspace
 
-          # Cargo.lock must change by exactly the one package version line.
+          # Cargo.lock must change by exactly one version line per workspace
+          # member (every member inherits the workspace version): 2 changed
+          # lines (-/+) each.
+          MEMBERS=$(cargo metadata --no-deps --format-version 1 | jq '.packages | length')
+          EXPECTED=$((2 * MEMBERS))
           CHANGED=$(git diff -U0 Cargo.lock | grep -E '^[+-][^+-]' | wc -l)
-          if [ "$CHANGED" -ne 2 ]; then
-            echo "::error::Unexpected Cargo.lock changes (${CHANGED} lines); expected only the package version."
+          if [ "$CHANGED" -ne "$EXPECTED" ]; then
+            echo "::error::Unexpected Cargo.lock changes (${CHANGED} lines); expected ${EXPECTED} (only the package versions)."
             git diff Cargo.lock
             exit 1
           fi

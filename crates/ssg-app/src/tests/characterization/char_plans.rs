@@ -10,9 +10,10 @@ use crate::resources::capture_plans::{
     CompiledCapturePlan, compile_capture_plan, load_plans_from_dir_with_errors,
     validate_capture_plan,
 };
+use crate::tests::test_support::repo_root;
 
 fn example_plans_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/example_capture_plans")
+    repo_root().join("assets/example_capture_plans")
 }
 
 /// Every key path that differs between `file` (the plan as written) and `round`

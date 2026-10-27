@@ -2,5 +2,5 @@
 /// Shared logic between the app and test environments
 /// can be found in lib.rs
 fn main() {
-    ssg_tether_capture::run();
+    ssg_app::run();
 }

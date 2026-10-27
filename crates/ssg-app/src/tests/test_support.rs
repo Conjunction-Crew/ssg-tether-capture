@@ -52,6 +52,11 @@ pub(crate) fn fixed_epoch() -> Epoch {
     Epoch::from_datetime(2026, 4, 3, 16, 3, 47.002464, 0.0, TimeSystem::UTC)
 }
 
+/// Workspace root (this crate lives in `crates/ssg-app`).
+pub(crate) fn repo_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
 /// Minimal headless app wired like the real one, with a fixed sim epoch.
 ///
 /// Time: `app.update()` advances virtual time by exactly one fixed step
@@ -62,6 +67,9 @@ pub(crate) fn fixed_epoch() -> Epoch {
 /// `fixed_physics_step` from test code (outside `FixedUpdate`) would therefore
 /// step avian with the last frame's wall-clock delta, or not at all.
 pub(crate) fn test_app() -> App {
+    // P3: `cargo test` runs from `crates/ssg-app`, but `resolve_assets_dir()` is
+    // relative to the working directory; run from the workspace root as before.
+    std::env::set_current_dir(repo_root()).expect("workspace root is reachable");
     let mut app = create_app();
     app.add_plugins((
         MinimalPlugins,
@@ -217,9 +225,7 @@ pub(crate) fn log_test_app() -> App {
 
 /// Load every plan in `assets/example_capture_plans` into the app's library.
 pub(crate) fn load_example_plans(app: &mut App) {
-    let example_plans = load_plans_from_dir(
-        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/example_capture_plans"),
-    );
+    let example_plans = load_plans_from_dir(&repo_root().join("assets/example_capture_plans"));
     let mut capture_plan_lib = app.world_mut().resource_mut::<CapturePlanLibrary>();
     capture_plan_lib.plans = example_plans;
 
