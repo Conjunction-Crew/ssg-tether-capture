@@ -26,6 +26,7 @@ GitHub Release description.
 - `ssg-sim`: the simulation core is now a headless library crate (no render, window or UI dependencies) with the P2 headless harness behind the `test-support` feature (no behaviour change)
 
 ### Added
+- `ssg-sim` headless runner (`crates/ssg-sim-cli`): `ssg-sim run <project-dir> …` runs a capture scenario without a window and writes `summary.json` and `trajectory.csv`
 - Headless test harness (`src/tests/test_support.rs`): fixed sim epoch, ticks driven through `FixedUpdate` at exactly 1/64 s, and helpers for capture and orbit tests; three integration tests that asserted nothing now assert real behaviour (no app behaviour change)
 - Characterization tests pinning current orbit propagation, floating-origin, physics-bubble and time-warp behaviour, including known defects marked for P4 (no app behaviour change)
 - Characterization tests pinning current capture-plan transition semantics (conditions OR-ed, transitions cascading within one step) and plan load/compile round trips (no app behaviour change)
