@@ -7361,8 +7361,11 @@ dependencies = [
 name = "ssg-sim-cli"
 version = "0.3.0"
 dependencies = [
+ "avian3d",
  "bevy",
+ "brahe",
  "csv",
+ "nalgebra",
  "serde_json",
  "ssg-sim",
 ]
