@@ -34,7 +34,7 @@ use crate::sim::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_c
 use crate::sim::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::orbit::catalog::GpuElements;
-use crate::sim::project::load_plans_from_dir;
+use crate::sim::project::{AssetsDir, load_plans_from_dir};
 use crate::sim::session::{SimState, UiScreen};
 use crate::sim::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
 use crate::sim::time::{PHYS_DT, WorldTime};
@@ -61,9 +61,6 @@ pub(crate) fn repo_root() -> std::path::PathBuf {
 /// `fixed_physics_step` from test code (outside `FixedUpdate`) would therefore
 /// step avian with the last frame's wall-clock delta, or not at all.
 pub(crate) fn test_app() -> App {
-    // P3: `cargo test` runs from `crates/ssg-app`, but `resolve_assets_dir()` is
-    // relative to the working directory; run from the workspace root as before.
-    std::env::set_current_dir(repo_root()).expect("workspace root is reachable");
     // P3: the sim plugins replace `create_app()`; they need `StatesPlugin` first.
     let mut app = App::new(); // P3
     app.add_plugins((
@@ -88,6 +85,7 @@ pub(crate) fn test_app() -> App {
     // P3: normally provided by the app's GpuComputePlugin; kept so
     // baseline_q13_elements_match_app_loader can compare the loader's output.
     .init_resource::<GpuElements>()
+    .insert_resource(AssetsDir(repo_root().join("assets"))) // P3: the dataset directory
     // One `app.update()` = one `Time<Fixed>` step (see above).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
         PHYS_DT,

@@ -25,7 +25,7 @@ use crate::sim::anchor::CameraTarget;
 use crate::sim::orbit::Orbital;
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::session::UiScreen;
-use crate::sim::telemetry::LogEvent;
+use crate::sim::telemetry::{LogEvent, LogLevel};
 use crate::ui::catalog_state::SpaceCatalogUiState;
 
 // A camera that "orbits" around a target. Hold right click to pan.
@@ -265,6 +265,7 @@ pub fn orbit_camera_switch_target(
     catalog_ui: Res<SpaceCatalogUiState>,
     mut commands: Commands,
     bodies: Query<(Entity, Has<CameraTarget>), (With<RigidBody>, With<Orbital>)>,
+    mut log: MessageWriter<LogEvent>,
 ) {
     if catalog_ui.search_focused {
         return;
@@ -274,9 +275,25 @@ pub fn orbit_camera_switch_target(
         return;
     }
 
-    let mut entities: Vec<(Entity, bool)> = bodies.iter().collect();
+    if let Some(next_target) = cycle_camera_target(&mut commands, bodies.iter()) {
+        log.write(LogEvent {
+            level: LogLevel::Info,
+            source: "ui",
+            message: format!("Camera target → entity {next_target:?}"),
+        });
+    }
+}
+
+/// Moves `CameraTarget` to the next of `bodies` by entity index, wrapping, and
+/// returns the new target (`None` if there are no bodies). The Tab key and the
+/// UI button both call it (F-29).
+pub fn cycle_camera_target(
+    commands: &mut Commands,
+    bodies: impl Iterator<Item = (Entity, bool)>,
+) -> Option<Entity> {
+    let mut entities: Vec<(Entity, bool)> = bodies.collect();
     if entities.is_empty() {
-        return;
+        return None;
     }
 
     entities.sort_by_key(|(entity, _)| entity.index());
@@ -293,4 +310,31 @@ pub fn orbit_camera_switch_target(
         }
     }
     commands.entity(next_target).insert(CameraTarget);
+    Some(next_target)
+}
+
+/// Switches the scene camera between the scene and the map layer and adjusts the
+/// atmosphere. Returns the log line, or `None` if the camera is on neither layer.
+/// The M key and the UI button both call it (F-29).
+pub fn set_map_view(
+    mut render_layers: Mut<RenderLayers>,
+    mut atmosphere: Mut<Atmosphere>,
+    mut atmosphere_settings: Mut<AtmosphereSettings>,
+) -> Option<&'static str> {
+    if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
+        *render_layers = RenderLayers::layer(MAP_LAYER);
+
+        // Adjust atmosphere
+        atmosphere.world_position = Vec3::ZERO;
+        atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
+        Some("Switched to map view")
+    } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        *render_layers = RenderLayers::layer(SCENE_LAYER);
+
+        // Adjust atmosphere
+        atmosphere_settings.scene_units_to_m = 1.0;
+        Some("Switched to scene view")
+    } else {
+        None
+    }
 }

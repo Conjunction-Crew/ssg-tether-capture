@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER};
+use crate::render::camera::set_map_view;
 use crate::sim::telemetry::{LogEvent, LogLevel};
 use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
@@ -21,35 +21,17 @@ pub fn toggle_map_view(
     }
 
     if keyboard_input.just_pressed(KeyCode::KeyM) {
-        let (mut render_layers, mut atmosphere, mut atmosphere_settings) =
-            scene_camera.into_inner();
+        let (render_layers, atmosphere, atmosphere_settings) = scene_camera.into_inner();
 
-        if render_layers.intersects(&RenderLayers::layer(SCENE_LAYER)) {
-            *render_layers = RenderLayers::layer(MAP_LAYER);
-
-            // Adjust atmosphere
-            atmosphere.world_position = Vec3::ZERO;
-            atmosphere_settings.scene_units_to_m = MAP_UNITS_TO_M as f32;
+        if let Some(message) = set_map_view(render_layers, atmosphere, atmosphere_settings) {
             log.write(LogEvent {
                 level: LogLevel::Debug,
                 source: "ui",
-                message: "Switched to map view".to_string(),
-            });
-        } else if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
-            *render_layers = RenderLayers::layer(SCENE_LAYER);
-
-            // Adjust atmosphere
-            atmosphere_settings.scene_units_to_m = 1.0;
-            log.write(LogEvent {
-                level: LogLevel::Debug,
-                source: "ui",
-                message: "Switched to scene view".to_string(),
+                message: message.to_string(),
             });
         }
     }
 }
-
-const MAX_TIME_WARP: u32 = 10000;
 
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -61,21 +43,10 @@ pub fn change_time_warp(
         return;
     }
 
-    let prev = world_time.multiplier;
-    if keyboard_input.just_pressed(KeyCode::Period) && world_time.multiplier * 2 <= MAX_TIME_WARP {
-        if world_time.multiplier == 0 {
-            world_time.multiplier = 1;
-        } else {
-            world_time.multiplier *= 2;
-        }
-    } else if keyboard_input.just_pressed(KeyCode::Comma) {
-        if world_time.multiplier == 1 {
-            world_time.multiplier = 0;
-        } else {
-            world_time.multiplier /= 2;
-        }
-    }
-    if world_time.multiplier != prev {
+    // Period steps up (unless at the top of the ladder), else Comma steps down.
+    let changed = (keyboard_input.just_pressed(KeyCode::Period) && world_time.change_warp(true))
+        || (keyboard_input.just_pressed(KeyCode::Comma) && world_time.change_warp(false));
+    if changed {
         log.write(LogEvent {
             level: LogLevel::Info,
             source: "ui",
@@ -108,6 +79,6 @@ pub fn toggle_capture_gizmos(
     }
 
     if keyboard_input.just_pressed(KeyCode::KeyC) {
-        settings.capture_gizmos = !settings.capture_gizmos;
+        settings.toggle_capture_gizmos();
     }
 }

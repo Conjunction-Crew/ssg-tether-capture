@@ -1,9 +1,9 @@
 //! Simulation core: everything that runs headless (time, orbits, the physics
 //! bubble, the floating origin, the tether, capture, logging, project files).
 //!
-//! This tree is the future `ssg-sim` crate (P3 S3). Nothing under `sim/` may name
-//! `crate::render`, `crate::ui`, `crate::resolve_assets_dir` or a render, window
-//! or UI type.
+//! This tree is the future `ssg-sim` crate (P3 S3). Nothing under `sim/` may use
+//! the app's render or UI modules, the app's asset-path helper, or a render,
+//! window or UI type (the P3 sim-boundary check).
 
 pub mod anchor;
 pub mod capture;

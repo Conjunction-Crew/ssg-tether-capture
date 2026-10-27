@@ -2,8 +2,7 @@
 
 use std::collections::VecDeque;
 
-use bevy::prelude::*;
-use bevy_egui::egui::ahash::{HashMap, HashMapExt};
+use bevy::{platform::collections::HashMap, prelude::*};
 use serde::Serialize;
 
 use crate::sim::session::UiScreen;
@@ -107,36 +106,15 @@ pub fn collect_log_events(
     }
 }
 
-#[derive(Debug)]
-pub struct DataCollectionSettings {
-    pub selecting_csv_dir: bool,
-    pub csv_export_filename: String,
-    pub num_exports_completed: u32,
-}
-
-#[derive(Resource, Debug)]
+/// Relative range and speed samples per capture entity (the plots and the CSV
+/// export read them; the export settings are the app's `CsvExportState`).
+#[derive(Resource, Debug, Default)]
 pub struct DataCollection {
     pub velocity: HashMap<Entity, Vec<(f64, f64)>>,
     pub position: HashMap<Entity, Vec<(f64, f64)>>,
     // unused today; the P3 component/resource audit decides
     #[allow(dead_code)]
     pub forces: HashMap<Entity, Vec<(f64, f64)>>,
-    pub settings: DataCollectionSettings,
-}
-
-impl Default for DataCollection {
-    fn default() -> Self {
-        Self {
-            velocity: HashMap::new(),
-            position: HashMap::new(),
-            forces: HashMap::new(),
-            settings: DataCollectionSettings {
-                selecting_csv_dir: false,
-                csv_export_filename: String::from("capture0.csv"),
-                num_exports_completed: 0,
-            },
-        }
-    }
 }
 
 pub struct TelemetryPlugin;

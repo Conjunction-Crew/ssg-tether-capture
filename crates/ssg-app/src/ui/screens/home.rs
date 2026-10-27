@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use crate::render::layers::UI_LAYER;
 use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::project::{WorkingDirectory, load_plans_from_dir_with_errors};
+use crate::sim::project::WorkingDirectory;
 use crate::sim::session::UiScreen;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
@@ -42,26 +42,10 @@ pub fn spawn_home_screen(
     working_directory: Res<WorkingDirectory>,
     sync_state: Res<SimPlanSyncState>,
 ) {
-    let (example_plans, mut load_errors) =
-        load_plans_from_dir_with_errors(&crate::resolve_assets_dir().join("example_capture_plans"));
-    let (user_plans, user_load_errors) =
-        load_plans_from_dir_with_errors(&std::path::PathBuf::from(&working_directory.path));
-    load_errors.extend(user_load_errors);
-    capture_plan_load_errors.errors = load_errors;
-
-    capture_plan_lib.example_plans = example_plans;
-    capture_plan_lib.user_plans = user_plans;
-    capture_plan_lib.plans = capture_plan_lib
-        .example_plans
-        .iter()
-        .chain(capture_plan_lib.user_plans.iter())
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-
-    // Compile capture plans
-    for (name, plan) in capture_plan_lib.plans.clone() {
-        capture_plan_lib.insert_plan(name.clone(), plan.clone());
-    }
+    capture_plan_load_errors.errors = capture_plan_lib.load_all(
+        &crate::resolve_assets_dir().join("example_capture_plans"),
+        std::path::Path::new(&working_directory.path),
+    );
 
     // When restarting the sim we pass through Home only to trigger cleanup
     // and reload. Skip spawning the UI so the home screen never flashes.

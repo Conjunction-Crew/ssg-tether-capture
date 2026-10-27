@@ -11,6 +11,7 @@ use bevy_egui::EguiPlugin;
 
 use crate::render::RenderPlugins;
 use crate::sim::SimPlugins;
+use crate::sim::project::AssetsDir;
 use crate::ui::plugin::UiPlugin;
 
 /// Returns the absolute path to the `assets/` directory as a [`PathBuf`].
@@ -47,6 +48,7 @@ pub fn run() {
     .add_plugins(UiWidgetsPlugins)
     .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
+    .insert_resource(AssetsDir(resolve_assets_dir()))
     .add_plugins(SimPlugins)
     .add_plugins(RenderPlugins)
     .add_plugins(UiPlugin)

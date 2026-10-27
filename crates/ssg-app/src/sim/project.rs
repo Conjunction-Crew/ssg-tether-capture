@@ -55,12 +55,12 @@ pub fn save_to_config(working_dir: &str) {
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        eprintln!("Failed to create config directory: {e}");
+        warn!("Failed to create config directory: {e}");
         return;
     }
     let value = serde_json::json!({ "working_directory": working_dir });
     if let Err(e) = std::fs::write(&path, value.to_string()) {
-        eprintln!("Failed to save config: {e}");
+        warn!("Failed to save config: {e}");
     }
 }
 
@@ -130,6 +130,75 @@ pub fn load_plans_from_dir_with_errors(
         }
     }
     (plans, errors)
+}
+
+/// The `assets/` directory the sim reads datasets from: the app inserts the
+/// directory it resolved at start-up, the test harness `<repo>/assets`.
+#[derive(Resource, Debug, Clone)]
+pub struct AssetsDir(pub PathBuf);
+
+/// Sets the working directory, saves it to the config file and creates it.
+pub fn set_working_directory(wd: &mut WorkingDirectory, path: &str) -> std::io::Result<()> {
+    wd.path = path.to_string();
+    save_to_config(path);
+    fs::create_dir_all(path)
+}
+
+/// Writes `json`, pretty-printed, to `dir/filename`.
+pub fn save_plan_file(dir: &Path, filename: &str, json: &serde_json::Value) -> std::io::Result<()> {
+    let content = serde_json::to_string_pretty(json)?;
+    fs::write(dir.join(filename), content)
+}
+
+impl CapturePlanLibrary {
+    /// Loads the example and user plans, rebuilds the union and compiles every
+    /// plan. Returns the load errors by file stem.
+    pub fn load_all(
+        &mut self,
+        example_dir: &Path,
+        user_dir: &Path,
+    ) -> HashMap<String, Vec<String>> {
+        let (example_plans, mut load_errors) = load_plans_from_dir_with_errors(example_dir);
+        let (user_plans, user_load_errors) = load_plans_from_dir_with_errors(user_dir);
+        load_errors.extend(user_load_errors);
+
+        self.example_plans = example_plans;
+        self.user_plans = user_plans;
+        self.plans = self
+            .example_plans
+            .iter()
+            .chain(self.user_plans.iter())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        // Compile capture plans
+        for (name, plan) in self.plans.clone() {
+            self.insert_plan(name.clone(), plan.clone());
+        }
+
+        load_errors
+    }
+
+    /// Reloads the user plans after a plan file was saved, rebuilds the union and
+    /// recompiles every plan so `compiled_plans` stays in sync.
+    pub fn reload_user_plans(&mut self, user_dir: &Path) {
+        let new_user_plans = load_plans_from_dir(user_dir);
+        self.user_plans = new_user_plans;
+        self.plans = self
+            .example_plans
+            .iter()
+            .chain(self.user_plans.iter())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let refreshed: Vec<(String, CapturePlan)> = self
+            .plans
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (id, plan) in refreshed {
+            self.insert_plan(id, plan);
+        }
+    }
 }
 
 /// Project-level resources. `WorkingDirectory` is initialised by the app: its

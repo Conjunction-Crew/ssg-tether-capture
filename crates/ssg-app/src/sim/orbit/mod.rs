@@ -4,6 +4,8 @@ pub mod cache;
 pub mod catalog;
 pub mod selection;
 
+use std::sync::PoisonError;
+
 use bevy::prelude::*;
 use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, KeplerianPropagator};
@@ -98,11 +100,14 @@ pub fn cache_eci_states(
             .as_ref()
             .and_then(|prop| prop.state_eci(epoch).ok())
         {
-            states.lock().unwrap().insert(entity, state);
+            states
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(entity, state);
         }
     });
 
-    orbital_cache.eci_states = states.into_inner().unwrap();
+    orbital_cache.eci_states = states.into_inner().unwrap_or_else(PoisonError::into_inner);
 }
 
 pub struct OrbitPlugin;

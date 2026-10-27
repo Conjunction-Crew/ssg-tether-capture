@@ -3203,15 +3203,7 @@ pub fn orbital_selection_interactions(
                             gpu_index: entry.gpu_index,
                             label: entry.display_label(),
                         },
-                        elements: EditableOrbitalElements {
-                            semi_major_axis_m: elements.a as f64,
-                            eccentricity: elements.e as f64,
-                            inclination_rad: elements.i as f64,
-                            raan_rad: elements.raan as f64,
-                            arg_perigee_rad: elements.argp as f64,
-                            mean_anomaly_rad: elements.mean_anomaly as f64,
-                            epoch_offset_seconds: elements.epoch_offset_seconds as f64,
-                        },
+                        elements: EditableOrbitalElements::from_gpu(elements),
                     };
 
                     match button.role {

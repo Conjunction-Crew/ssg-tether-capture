@@ -50,6 +50,32 @@ impl Default for WorldTime {
     }
 }
 
+/// The time-warp ladder stops below this multiplier (F-12).
+pub const MAX_TIME_WARP: u32 = 10000;
+
+impl WorldTime {
+    /// One step up (`increase`) or down the time-warp ladder: up doubles while the
+    /// result stays within [`MAX_TIME_WARP`] (0 goes to 1), down halves (1 goes to
+    /// 0). Returns whether the multiplier changed; the callers log the change.
+    pub fn change_warp(&mut self, increase: bool) -> bool {
+        let prev = self.multiplier;
+        if increase && self.multiplier * 2 <= MAX_TIME_WARP {
+            if self.multiplier == 0 {
+                self.multiplier = 1;
+            } else {
+                self.multiplier *= 2;
+            }
+        } else if !increase {
+            if self.multiplier == 1 {
+                self.multiplier = 0;
+            } else {
+                self.multiplier /= 2;
+            }
+        }
+        self.multiplier != prev
+    }
+}
+
 pub struct TimePlugin;
 
 impl Plugin for TimePlugin {

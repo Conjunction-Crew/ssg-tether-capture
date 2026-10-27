@@ -4,14 +4,17 @@ pub mod plan;
 
 use avian3d::{
     math::PI,
-    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
+    prelude::{
+        Forces, LinearVelocity, Physics, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
+    },
 };
 use bevy::{math::DVec3, prelude::*};
 
+use crate::sim::SimSet;
 use crate::sim::SimStep;
 use crate::sim::capture::plan::{
     CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
-    CompiledCaptureTransition,
+    CompiledCaptureTransition, build_capture_component,
 };
 use crate::sim::orbit::cache::OrbitalCache;
 use crate::sim::telemetry::{DataCollection, LogEvent, LogLevel};
@@ -170,7 +173,6 @@ pub fn capture_state_machine_update(
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
                         node_forces.apply_force(force_vec.normalize() * max_force);
                     } else {
-                        println!("Faled to apply force for node");
                         log_events.write(LogEvent {
                             level: LogLevel::Warn,
                             source: "capture",
@@ -324,7 +326,6 @@ fn transition_to(
     reason: String,
     log_events: &mut MessageWriter<LogEvent>,
 ) {
-    println!("Transition: {}, Reason: {}", new_state, reason);
     log_events.write(LogEvent {
         level: LogLevel::Info,
         source: "capture",
@@ -338,13 +339,115 @@ fn transition_to(
     capture_component.state_elapsed_time_s = 0.0;
 }
 
+/// Commands the app sends to the simulation (D1).
+#[derive(Message, Debug, Clone)]
+pub enum SimCommand {
+    /// Mark `target` for capture with the plan `plan_id` (the UI's "Capture").
+    StartCapture {
+        target: Option<Entity>,
+        plan_id: String,
+    },
+}
+
+/// Applies the queued [`SimCommand`]s in `Last` ([`SimSet::ApplyCommands`]), the
+/// frame the UI sends them, as the UI handler did before P3. The capture start
+/// time is the physics clock (F-38: current behaviour, expected to change in P4).
+pub fn apply_sim_commands(
+    mut commands: Commands,
+    mut sim_commands: MessageReader<SimCommand>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    physics_time: Res<Time<Physics>>,
+    capture_entities: Query<Entity, With<CaptureComponent>>,
+    mut data_collection: ResMut<DataCollection>,
+    mut log: MessageWriter<LogEvent>,
+) {
+    for command in sim_commands.read() {
+        match command {
+            SimCommand::StartCapture {
+                target: entity,
+                plan_id,
+            } => {
+                if let Some(capture_entity) = entity {
+                    // Check if the entity is not already marked for capture
+                    if !capture_entities.contains(*capture_entity) {
+                        // Remove CaptureComponent from entities (if any)
+                        for marked_entity in capture_entities {
+                            commands.entity(marked_entity).remove::<CaptureComponent>();
+                        }
+                        // Get plan information
+                        if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
+                            // Now, mark the entity for capture
+                            if let Some(capture_component) = build_capture_component(
+                                plan_id.as_str(),
+                                plan,
+                                physics_time.elapsed_secs_f64(),
+                            ) {
+                                commands.entity(*capture_entity).insert(capture_component);
+                                log.write(LogEvent {
+                                    level: LogLevel::Info,
+                                    source: "ui",
+                                    message: format!(
+                                        "Capture initiated for entity {capture_entity:?} with plan '{plan_id}'"
+                                    ),
+                                });
+                            } else {
+                                log.write(LogEvent {
+                                    level: LogLevel::Error,
+                                    source: "ui",
+                                    message: format!(
+                                        "Failed to initiate capture for entity {capture_entity:?} with plan '{plan_id}'"
+                                    ),
+                                });
+                                continue;
+                            }
+
+                            // Begin data collection on entity
+                            data_collection
+                                .position
+                                .insert(*capture_entity, Vec::<(f64, f64)>::new());
+                            data_collection
+                                .velocity
+                                .insert(*capture_entity, Vec::<(f64, f64)>::new());
+                        } else {
+                            log.write(LogEvent {
+                                level: LogLevel::Error,
+                                source: "ui",
+                                message: format!("Capture plan '{plan_id}' not found"),
+                            });
+                        }
+                    } else {
+                        log.write(LogEvent {
+                            level: LogLevel::Warn,
+                            source: "ui",
+                            message: format!(
+                                "Entity {capture_entity:?} already marked for capture — ignoring"
+                            ),
+                        });
+                    }
+                } else {
+                    log.write(LogEvent {
+                        level: LogLevel::Warn,
+                        source: "ui",
+                        message: format!(
+                            "Capture initiated with no target entity for plan '{plan_id}'"
+                        ),
+                    });
+                }
+            }
+        }
+    }
+}
+
 pub struct CapturePlugin;
 
 impl Plugin for CapturePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            ManualPhysics,
-            capture_state_machine_update.in_set(SimStep::Capture),
-        );
+        app.add_message::<SimCommand>()
+            .configure_sets(Last, SimSet::ApplyCommands)
+            .add_systems(
+                ManualPhysics,
+                capture_state_machine_update.in_set(SimStep::Capture),
+            )
+            .add_systems(Last, apply_sim_commands.in_set(SimSet::ApplyCommands));
     }
 }

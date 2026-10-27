@@ -8,3 +8,10 @@ pub struct Settings {
     #[allow(dead_code)]
     pub start_sim: bool,
 }
+
+impl Settings {
+    /// Shows or hides the capture gizmos (the C key and the UI button, F-29).
+    pub fn toggle_capture_gizmos(&mut self) {
+        self.capture_gizmos = !self.capture_gizmos;
+    }
+}
