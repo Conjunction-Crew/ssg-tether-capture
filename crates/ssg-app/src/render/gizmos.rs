@@ -14,22 +14,22 @@ use crate::render::floating_origin_visuals::floating_origin_update_visuals;
 use crate::render::layers::{
     MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map, orbit_frame_rotation,
 };
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::capture::{CaptureComponent, CaptureSphereRadius};
-use crate::sim::floating_origin::MAX_ORIGIN_OFFSET;
-use crate::sim::orbit::Orbital;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::catalog::{
-    GpuElements, GpuOrbitalElements, SpaceObjectCatalog, propagate_catalog_eci_state,
-};
-use crate::sim::orbit::selection::{
-    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
-};
-use crate::sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
-use crate::sim::session::{SimState, UiScreen};
-use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
+use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
+use ssg_sim::floating_origin::MAX_ORIGIN_OFFSET;
+use ssg_sim::orbit::Orbital;
+use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::orbit::catalog::{
+    GpuElements, GpuOrbitalElements, SpaceObjectCatalog, propagate_catalog_eci_state,
+};
+use ssg_sim::orbit::selection::{
+    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
+};
+use ssg_sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
+use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::time::WorldTime;
 
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct CaptureGizmoConfigGroup;

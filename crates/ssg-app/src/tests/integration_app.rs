@@ -3,10 +3,10 @@
 use crate::render::camera::{OrbitCamera, OrbitCameraParams};
 use crate::render::celestial::Earth;
 use crate::render::layers::SCENE_LAYER;
-use crate::sim::anchor::CameraTarget;
 use crate::tests::app_support::{enter_sim, test_app, tick};
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
+use ssg_sim::anchor::CameraTarget;
 
 #[test]
 fn orbit_camera() {

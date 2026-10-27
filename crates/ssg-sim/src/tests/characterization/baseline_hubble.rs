@@ -2,13 +2,13 @@
 //! `test_support::q13`; the measurement and P3's tolerance are in
 //! plans/stage-2/52-p2-testing-baseline.md.
 
-use crate::sim::orbit::catalog::{GpuComputeEpochOrigin, GpuElements, SpaceObjectCatalog};
-use crate::sim::orbit::selection::EditableOrbitalElements;
-use crate::tests::test_support::q13::{
+use crate::orbit::catalog::{GpuComputeEpochOrigin, GpuElements, SpaceObjectCatalog};
+use crate::orbit::selection::EditableOrbitalElements;
+use crate::test_support::q13::{
     self, CHASER_NORAD_ID, EpochMode, HST_NORAD_ID, Q13Run, app_elements, fixture_record,
     gpu_to_editable,
 };
-use crate::tests::test_support::{assert_close, enter_sim, fixed_epoch, repo_root, test_app};
+use crate::test_support::{assert_close, enter_sim, fixed_epoch, repo_root, test_app};
 
 fn element_bits(elements: &EditableOrbitalElements) -> [u64; 7] {
     [

@@ -3,17 +3,17 @@
 //! Constants: `MAX_ORIGIN_OFFSET = 50`, `PHYSICS_ENABLE_RADIUS = 100`,
 //! `PHYSICS_DISABLE_RADIUS = 110` (`src/constants.rs`).
 
-use crate::sim::anchor::CameraTarget;
-use crate::sim::floating_origin::MAX_ORIGIN_OFFSET;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::{ISS_ORBIT, Orbital};
-use crate::sim::telemetry::LogLevel;
-use crate::sim::tether::TetherRoot;
-use crate::sim::time::{PHYS_DT, WorldTime};
-use crate::tests::test_support::{
+use crate::anchor::CameraTarget;
+use crate::floating_origin::MAX_ORIGIN_OFFSET;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::{ISS_ORBIT, Orbital};
+use crate::telemetry::LogLevel;
+use crate::test_support::{
     LogTap, assert_close, assert_close_dvec3, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
     start_running, test_app, tick,
 };
+use crate::tether::TetherRoot;
+use crate::time::{PHYS_DT, WorldTime};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;

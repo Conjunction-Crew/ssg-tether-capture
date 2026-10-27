@@ -13,19 +13,6 @@ use bevy_egui::EguiPrimaryContextPass;
 
 use crate::render::camera::{cycle_camera_target, set_map_view, setup_camera};
 use crate::render::layers::UI_LAYER;
-use crate::sim::SimSet;
-use crate::sim::anchor::CameraTarget;
-use crate::sim::capture::SimCommand;
-use crate::sim::capture::plan::CapturePlanLibrary;
-use crate::sim::orbit::Orbital;
-use crate::sim::orbit::selection::OrbitalSelectionState;
-use crate::sim::project::{
-    SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, save_plan_file,
-    set_working_directory,
-};
-use crate::sim::session::{SimState, UiScreen};
-use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
 use crate::ui::egui::{CsvExportState, egui_plots};
 use crate::ui::egui_terminal::egui_terminal_panel;
@@ -63,6 +50,19 @@ use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{
     ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
 };
+use ssg_sim::SimSet;
+use ssg_sim::anchor::CameraTarget;
+use ssg_sim::capture::SimCommand;
+use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::orbit::Orbital;
+use ssg_sim::orbit::selection::OrbitalSelectionState;
+use ssg_sim::project::{
+    SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, save_plan_file,
+    set_working_directory,
+};
+use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::telemetry::{LogEvent, LogLevel};
+use ssg_sim::time::WorldTime;
 
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);

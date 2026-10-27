@@ -21,12 +21,12 @@ use crate::render::layers::{
     EARTH_ATMOSPHERE_RADIUS, EARTH_RADIUS, EARTH_TEXTURE_NORTH_AXIS, MAP_LAYER, MAP_UNITS_TO_M,
     SCENE_LAYER, eci_position_to_map,
 };
-use crate::sim::anchor::CameraTarget;
-use crate::sim::orbit::Orbital;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::session::UiScreen;
-use crate::sim::telemetry::{LogEvent, LogLevel};
 use crate::ui::catalog_state::SpaceCatalogUiState;
+use ssg_sim::anchor::CameraTarget;
+use ssg_sim::orbit::Orbital;
+use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::session::UiScreen;
+use ssg_sim::telemetry::{LogEvent, LogLevel};
 
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]

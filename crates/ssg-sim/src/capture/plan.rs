@@ -4,7 +4,7 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::sim::capture::CaptureComponent;
+use crate::capture::CaptureComponent;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct State {

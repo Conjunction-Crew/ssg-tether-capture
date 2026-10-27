@@ -16,6 +16,7 @@ bevy = { workspace = true, features = ["default", "debug", "jpeg", "basis-univer
 bevy_egui = { workspace = true }
 egui_plot = { workspace = true }
 avian3d = { workspace = true }
+ssg-sim = { workspace = true }
 serde = { workspace = true }
 csv = { workspace = true }
 chrono = { workspace = true }
@@ -25,6 +26,9 @@ nalgebra = { workspace = true }
 rfd = { workspace = true }
 arboard = { workspace = true }
 dirs = { workspace = true }
+
+[dev-dependencies]
+ssg-sim = { workspace = true, features = ["test-support"] }
 
 [[bin]]
 name = "ssg_tether_capture"

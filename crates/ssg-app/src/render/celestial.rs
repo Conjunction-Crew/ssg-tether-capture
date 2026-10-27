@@ -10,8 +10,8 @@ use bevy::prelude::*;
 
 use crate::render::camera::setup_camera;
 use crate::render::layers::*;
-use crate::sim::SimSet;
-use crate::sim::session::UiScreen;
+use ssg_sim::SimSet;
+use ssg_sim::session::UiScreen;
 
 // Component to query Earth.
 #[derive(Component)]

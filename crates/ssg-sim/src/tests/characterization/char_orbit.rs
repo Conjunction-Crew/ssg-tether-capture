@@ -1,15 +1,15 @@
 //! Characterization of Kepler propagation of the cached ECI state and of the
 //! wall-clock epoch defects (F-06).
 
-use crate::sim::anchor::CameraTarget;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::{ISS_ORBIT, Orbit, Orbital};
-use crate::sim::session::UiScreen;
-use crate::sim::time::WorldTime;
-use crate::tests::test_support::{
+use crate::anchor::CameraTarget;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::{ISS_ORBIT, Orbit, Orbital};
+use crate::session::UiScreen;
+use crate::test_support::{
     assert_close, assert_close_vec6, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
     start_running, test_app, ticks,
 };
+use crate::time::WorldTime;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use brahe::propagators::traits::SStatePropagator;

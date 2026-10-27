@@ -7,9 +7,9 @@ use bevy::prelude::*;
 
 use crate::render::celestial::Earth;
 use crate::render::layers::{MAP_LAYER, eci_to_orbit_frame};
-use crate::sim::anchor::CameraTarget;
-use crate::sim::orbit::Orbital;
-use crate::sim::orbit::cache::OrbitalCache;
+use ssg_sim::anchor::CameraTarget;
+use ssg_sim::orbit::Orbital;
+use ssg_sim::orbit::cache::OrbitalCache;
 
 /// The camera target's transform, while its physics is enabled.
 type TargetTransform<'w, 's> = Single<

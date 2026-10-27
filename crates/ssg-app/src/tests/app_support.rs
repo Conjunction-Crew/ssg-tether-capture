@@ -6,12 +6,12 @@ use bevy::prelude::*;
 use crate::render::camera::OrbitCameraPlugin;
 use crate::ui::catalog_state::SpaceCatalogUiState;
 
-pub(crate) use super::test_support::{LogTap, enter_sim, start_running, tick};
+pub(crate) use ssg_sim::test_support::{LogTap, enter_sim, start_running, tick};
 
-/// [`super::test_support::test_app`] plus the camera plugin and the UI state the
+/// [`ssg_sim::test_support::test_app`] plus the camera plugin and the UI state the
 /// keyboard and camera systems read.
 pub(crate) fn test_app() -> App {
-    let mut app = super::test_support::test_app();
+    let mut app = ssg_sim::test_support::test_app();
     app.add_plugins(OrbitCameraPlugin)
         .init_asset::<StandardMaterial>()
         .init_resource::<SpaceCatalogUiState>();

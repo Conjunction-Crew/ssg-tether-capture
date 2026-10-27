@@ -5,8 +5,8 @@ use std::collections::VecDeque;
 use bevy::{platform::collections::HashMap, prelude::*};
 use serde::Serialize;
 
-use crate::sim::session::UiScreen;
-use crate::sim::time::WorldTime;
+use crate::session::UiScreen;
+use crate::time::WorldTime;
 
 // ─── Log Level ────────────────────────────────────────────────────────────────
 

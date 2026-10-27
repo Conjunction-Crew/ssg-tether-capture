@@ -5,11 +5,11 @@ use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 use nalgebra::Vector6;
 
 use crate::render::layers::{EARTH_RADIUS, eci_position_to_map};
-use crate::sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
-use crate::sim::capture::{CaptureComponent, CaptureSphereRadius};
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::telemetry::{LogEvent, LogLevel};
-use crate::sim::time::WorldTime;
+use ssg_sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
+use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
+use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::telemetry::{LogEvent, LogLevel};
+use ssg_sim::time::WorldTime;
 
 #[derive(Component, Debug, Clone)]
 pub struct TimeWarpReadout;

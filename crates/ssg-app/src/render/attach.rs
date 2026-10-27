@@ -9,9 +9,9 @@
 use bevy::{camera::visibility::RenderLayers, platform::collections::HashMap, prelude::*};
 
 use crate::render::layers::SCENE_LAYER;
-use crate::sim::SimSet;
-use crate::sim::session::SimState;
-use crate::sim::tether::{DebrisBody, TetherShape};
+use ssg_sim::SimSet;
+use ssg_sim::session::SimState;
+use ssg_sim::tether::{DebrisBody, TetherShape};
 
 /// The shared tether material and one mesh per distinct shape.
 #[derive(Default)]

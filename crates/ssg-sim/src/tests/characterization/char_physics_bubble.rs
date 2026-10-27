@@ -6,15 +6,15 @@
 //! a known offset and zero relative velocity. Distances are `rb.position.length()`
 //! (`propagation.rs:480`, `:505`).
 
-use crate::sim::anchor::CameraTarget;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::orbit::{ISS_ORBIT, Orbital};
-use crate::sim::telemetry::LogLevel;
-use crate::sim::time::WorldTime;
-use crate::tests::test_support::{
+use crate::anchor::CameraTarget;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::{ISS_ORBIT, Orbital};
+use crate::telemetry::LogLevel;
+use crate::test_support::{
     LogTap, assert_close, assert_close_dvec3, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
     start_running, test_app, tick,
 };
+use crate::time::WorldTime;
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;

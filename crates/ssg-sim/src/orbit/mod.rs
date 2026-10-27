@@ -11,10 +11,10 @@ use brahe::utils::DOrbitStateProvider;
 use brahe::{Epoch, KeplerianPropagator};
 use nalgebra::Vector6;
 
-use crate::sim::SimStep;
-use crate::sim::orbit::cache::OrbitalCache;
-use crate::sim::session::UiScreen;
-use crate::sim::time::{ManualPhysics, WorldTime};
+use crate::SimStep;
+use crate::orbit::cache::OrbitalCache;
+use crate::session::UiScreen;
+use crate::time::{ManualPhysics, WorldTime};
 
 // Orbital parameters and state for a body approaching another object.
 #[derive(Component, Debug, Clone, Default)]

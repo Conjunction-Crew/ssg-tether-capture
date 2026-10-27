@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use crate::sim::telemetry::LogLevel;
     use crate::ui::form::{NewCapturePlanForm, TransitionForm, UnitSystem};
     use crate::ui::log_ui::CaptureLogUiState;
     use crate::ui::screens::capture_plan::{
         build_capture_plan_json, generate_filename, validate_form,
     };
+    use ssg_sim::telemetry::LogLevel;
 
     // -------------------------------------------------------------------------
     // generate_filename
