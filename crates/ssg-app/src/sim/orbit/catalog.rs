@@ -5,7 +5,6 @@ use std::fs;
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use bevy::render::{extract_resource::ExtractResource, render_resource::ShaderType};
 use brahe::{Epoch, GM_EARTH, TimeSystem};
 use nalgebra::Vector6;
 use serde::Deserialize;
@@ -144,7 +143,12 @@ pub struct SpaceObjectCatalog {
     pub entries: Vec<SpaceCatalogEntry>,
 }
 
-#[derive(Clone, Copy, ShaderType)]
+/// One catalog object's elements as stored in the catalog buffer (f32).
+///
+/// The `Gpu*` names are kept because the P2 tests import them; the sim never
+/// touches the GPU (the renderer mirrors this as `GpuOrbitalElementsShader`).
+/// P4 may rename them with F-27.
+#[derive(Clone, Copy)]
 pub struct GpuOrbitalElements {
     pub id: u32,
     pub a: f32,
@@ -260,7 +264,9 @@ fn perifocal_to_eci(value: DVec3, inclination: f64, raan: f64, argp: f64) -> DVe
     )
 }
 
-#[derive(Resource, Clone, Default, ExtractResource)]
+/// The catalog buffer, filled by [`load_dataset_entities`]; the renderer extracts
+/// it to the GPU.
+#[derive(Resource, Clone, Default)]
 pub struct GpuElements(pub Vec<GpuOrbitalElements>);
 
 #[derive(Resource, Default)]

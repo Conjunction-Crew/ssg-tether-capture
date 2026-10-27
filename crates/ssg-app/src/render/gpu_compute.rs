@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 
 use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M};
-use crate::sim::orbit::catalog::{GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements};
+use crate::sim::orbit::catalog::{GpuComputeEpochOrigin, GpuElements};
 use crate::sim::session::UiScreen;
 use crate::sim::time::WorldTime;
 use crate::ui::catalog_state::SpaceCatalogUiState;
@@ -68,7 +68,7 @@ pub struct GpuComputePlugin;
 impl Plugin for GpuComputePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            ExtractResourcePlugin::<GpuElements>::default(),
+            ExtractResourcePlugin::<RenderCatalogElements>::default(),
             ExtractResourcePlugin::<GpuComputeUniforms>::default(),
             ExtractResourcePlugin::<GpuEciStateBuffer>::default(),
             MaterialPlugin::<MapOrbitPointMaterial>::default(),
@@ -99,7 +99,7 @@ impl Plugin for GpuComputePlugin {
                 Render,
                 prepare_bind_group
                     .in_set(RenderSystems::PrepareBindGroups)
-                    .run_if(resource_exists::<GpuElements>)
+                    .run_if(resource_exists::<RenderCatalogElements>)
                     .run_if(resource_exists::<GpuComputeUniforms>)
                     .run_if(resource_exists::<GpuEciStateBuffer>),
             );
@@ -211,6 +211,48 @@ fn setup_map_orbit_points(
 #[derive(Component)]
 pub struct MapOrbitPointMarker;
 
+/// The render-world copy of the catalog buffer ([`GpuElements`]) in the shader
+/// layout (D2): the sim's element type carries no render traits.
+#[derive(Resource, Clone, Default)]
+pub struct RenderCatalogElements(pub Vec<GpuOrbitalElementsShader>);
+
+impl ExtractResource for RenderCatalogElements {
+    type Source = GpuElements;
+
+    fn extract_resource(source: &GpuElements) -> Self {
+        Self(
+            source
+                .0
+                .iter()
+                .map(|e| GpuOrbitalElementsShader {
+                    id: e.id,
+                    a: e.a,
+                    e: e.e,
+                    i: e.i,
+                    raan: e.raan,
+                    argp: e.argp,
+                    mean_anomaly: e.mean_anomaly,
+                    epoch_offset_seconds: e.epoch_offset_seconds,
+                })
+                .collect(),
+        )
+    }
+}
+
+/// The sim's `GpuOrbitalElements` as the compute shader reads it: same fields,
+/// same order.
+#[derive(Clone, Copy, ShaderType)]
+pub struct GpuOrbitalElementsShader {
+    id: u32,
+    a: f32,
+    e: f32,
+    i: f32,
+    raan: f32,
+    argp: f32,
+    mean_anomaly: f32,
+    epoch_offset_seconds: f32,
+}
+
 #[derive(Resource, Clone, ExtractResource)]
 struct GpuEciStateBuffer(Handle<ShaderStorageBuffer>);
 
@@ -241,7 +283,7 @@ struct GpuComputeBindGroups([BindGroup; 1]);
 struct GpuComputeBuffers {
     count: usize,
     output_handle: Handle<ShaderStorageBuffer>,
-    elements: StorageBuffer<Vec<GpuOrbitalElements>>,
+    elements: StorageBuffer<Vec<GpuOrbitalElementsShader>>,
     uniforms: UniformBuffer<GpuComputeUniforms>,
 }
 
@@ -251,7 +293,7 @@ fn prepare_bind_group(
     render_device: Res<RenderDevice>,
     pipeline_cache: Res<PipelineCache>,
     queue: Res<RenderQueue>,
-    gpu_elements: Res<GpuElements>,
+    gpu_elements: Res<RenderCatalogElements>,
     uniforms: Res<GpuComputeUniforms>,
     output_handle: Res<GpuEciStateBuffer>,
     gpu_output_buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
@@ -319,7 +361,7 @@ fn init_compute_pipeline(
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
-                storage_buffer_read_only::<Vec<GpuOrbitalElements>>(false),
+                storage_buffer_read_only::<Vec<GpuOrbitalElementsShader>>(false),
                 storage_buffer::<Vec<GpuEciState>>(false),
                 uniform_buffer::<GpuComputeUniforms>(false),
             ),
