@@ -326,7 +326,7 @@ fn gp_mean_motion_and_semi_major_axis_are_consistent() {
     let mut rng = Lcg::new(SEED);
     for case in 0..300 {
         let rev_per_day = rng.range(0.5, 16.5);
-        let json = full_record(1, &format!(r#", "MEAN_MOTION_X": 0"#)).replace(
+        let json = full_record(1, "").replace(
             "\"MEAN_MOTION\": 15.5",
             &format!("\"MEAN_MOTION\": {rev_per_day}"),
         );
@@ -470,10 +470,7 @@ fn gp_record_missing_or_non_numeric_field_gives_none() {
         // Remove the field.
         let pattern = format!("\"{field}\": ");
         let start = complete.find(&pattern).expect("field present");
-        let end = start
-            + complete[start..]
-                .find(|c| c == ',' || c == '}')
-                .expect("field end");
+        let end = start + complete[start..].find([',', '}']).expect("field end");
         let mut removed = complete.clone();
         removed.replace_range(start..end, &format!("\"X_{field}\": 0"));
         assert!(
