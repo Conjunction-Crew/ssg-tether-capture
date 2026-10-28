@@ -169,6 +169,42 @@ pub fn assert_close_vec6(actual: &Vector6<f64>, expected: &Vector6<f64>, tol: f6
     }
 }
 
+/// A fresh directory under `std::env::temp_dir()`, named after the process id and
+/// `tag`, removed on drop. Tests that need files use this and never touch the
+/// user's config, home or working directory (P5 rule 19).
+pub struct TempDir {
+    path: std::path::PathBuf,
+}
+
+impl TempDir {
+    pub fn new(tag: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("ssg-sim-test-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("could not create the test directory");
+        Self { path }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Writes `contents` to `relative` (creating parent directories) and returns
+    /// the full path.
+    pub fn write(&self, relative: &str, contents: &str) -> std::path::PathBuf {
+        let file = self.path.join(relative);
+        std::fs::create_dir_all(file.parent().expect("a file path has a parent"))
+            .expect("could not create the parent directory");
+        std::fs::write(&file, contents).expect("could not write the test file");
+        file
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// A fixed-seed linear congruential generator (Knuth's MMIX constants) for the
 /// property-style tests (P5, A-4): the same seed gives the same cases on every
 /// platform, and a failing case is reproduced from the printed seed and index.
