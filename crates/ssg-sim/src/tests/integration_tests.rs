@@ -317,3 +317,11 @@ fn collect_log_events_respects_ring_buffer_limit() {
     );
     assert_eq!(log.entries[4].message, "msg 9");
 }
+
+/// No NaN reaches avian: the Q13 scenario runs 640 steps in a debug build, where
+/// `assert_finite_state` and the controller's `debug_assert!` would panic.
+#[test]
+fn sim_state_is_finite() {
+    let run = crate::test_support::q13::run(crate::test_support::q13::EpochMode::Fixed, 640, false);
+    assert!(run.final_sample.range_m.is_finite());
+}

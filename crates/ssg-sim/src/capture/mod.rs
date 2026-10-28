@@ -4,7 +4,10 @@ pub mod plan;
 
 use avian3d::{
     math::PI,
-    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
+    prelude::{
+        Forces, LinearVelocity, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery, Rotation,
+        WriteRigidBodyForces,
+    },
 };
 use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
 
@@ -186,7 +189,12 @@ pub fn capture_state_machine_update(
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
                         // F-11: a zero vector gives a zero force, not NaN.
-                        node_forces.apply_force(force_vec.normalize_or_zero() * max_force);
+                        let force = force_vec.normalize_or_zero() * max_force;
+                        debug_assert!(
+                            force.is_finite(),
+                            "non-finite force {force:?} on tether node {idx}"
+                        );
+                        node_forces.apply_force(force);
                     } else {
                         log_events.write(LogEvent {
                             level: LogLevel::Warn,
@@ -363,6 +371,27 @@ fn transition_to(
     capture_component.state_elapsed_time_s = 0.0;
 }
 
+/// Debug builds only: panics if an enabled rigid body has a non-finite `Position`
+/// or `LinearVelocity`, naming the entity and the step (no NaN reaches avian).
+#[cfg(debug_assertions)]
+pub fn assert_finite_state(
+    bodies: Query<
+        (Entity, &Position, &LinearVelocity),
+        (With<RigidBody>, Without<RigidBodyDisabled>),
+    >,
+    world_time: Res<WorldTime>,
+) {
+    for (entity, position, velocity) in &bodies {
+        if !position.0.is_finite() || !velocity.0.is_finite() {
+            let step = ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round();
+            panic!(
+                "non-finite state for {entity:?} at step {step}: position {:?}, velocity {:?}",
+                position.0, velocity.0
+            );
+        }
+    }
+}
+
 /// Commands the app sends to the simulation (D1).
 #[derive(Message, Debug, Clone)]
 pub enum SimCommand {
@@ -482,5 +511,12 @@ impl Plugin for CapturePlugin {
                 capture_state_machine_update.in_set(SimStep::Capture),
             )
             .add_systems(Last, apply_sim_commands.in_set(SimSet::ApplyCommands));
+        #[cfg(debug_assertions)]
+        app.add_systems(
+            ManualPhysics,
+            assert_finite_state
+                .in_set(SimStep::Capture)
+                .after(capture_state_machine_update),
+        );
     }
 }
