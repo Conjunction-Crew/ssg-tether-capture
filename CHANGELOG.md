@@ -22,9 +22,12 @@ GitHub Release description.
 
 ### Changed
 - Time warp: explicit pause state, ladder tops out at 8192×, work per update is capped and the HUD shows the effective warp (F-12)
+- Cycling the camera target is a pure viewing action: the floating origin and the physics bubble follow the simulation anchor (the tether root), not the camera (F-25)
 
 ### Fixed
 - Simulation start epoch is an explicit input (`SimConfig`); the simulation core no longer reads the wall clock; the physics clock advances once per step (F-06, F-38)
+- Physics bubble: one body without an orbit no longer stops bubble processing, bodies entering the bubble get their orbit rebuilt, and each leaving body gets its own relative state (F-07, F-23)
+- Capture controller: zero-vector forces no longer produce NaN, a capture entity without a rigid body no longer stops the controller, the capture-sphere radius resets per capture (F-11, F-39)
 
 
 ## [v0.3.1] - 2026-10-27
