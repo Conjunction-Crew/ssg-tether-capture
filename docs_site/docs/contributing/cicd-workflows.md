@@ -43,8 +43,8 @@ Merging to `main` never creates a tag or a release. Only the Release workflow do
 | Job | Runs on | Purpose |
 |---|---|---|
 | `changes` | ubuntu-latest | Decides which of the jobs below are relevant, based on the files a PR touches and on the `full-ci` label |
-| `rust-linux` | ubuntu-latest | `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`. Runs when `src/`, `crates/`, `assets/`, `wix/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` or the CI/packaging workflows change. Clippy fails the job on any warning except `clippy::type_complexity` and `clippy::too_many_arguments` (Bevy system signatures that are tracked, not yet fixed). A non-failing step lists those in the job summary ("Tracked clippy warnings: N") |
-| `cross-platform` | windows-latest, macos-latest | PRs: `cargo check --all-targets` only. With the `full-ci` label, on the weekday schedule and on manual runs: `cargo build` + `cargo test` |
+| `rust-linux` | ubuntu-latest | `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`, then prints the test execution time. Runs when `src/`, `crates/`, `assets/`, `wix/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` or the CI/packaging workflows change. Clippy fails the job on any warning except `clippy::type_complexity` and `clippy::too_many_arguments` (Bevy system signatures that are tracked, not yet fixed). A non-failing step lists those in the job summary ("Tracked clippy warnings: N"). A "Test execution time" step prints the sum of the `finished in` times of every test binary to the job summary and as an annotation (`gh run view <id>` shows it) |
+| `cross-platform` | windows-latest, macos-latest | PRs: `cargo check --all-targets` only. With the `full-ci` label, on the weekday schedule and on manual runs: `cargo build` + `cargo test`, then the same "Test execution time" summary line |
 | `docs-build` | ubuntu-latest | Docusaurus build, plus a check that `versions.json` has at most 10 entries. Runs when `docs_site/**` or `CHANGELOG.md` change |
 | `changelog` | ubuntu-latest | PRs only: fails unless the `## [Unreleased]` section of `CHANGELOG.md` was changed. Exempt: docs-only PRs (`docs_site/**` and `*.md`), PRs labelled `no-changelog`, and Dependabot |
 | `ci-success` | ubuntu-latest | Passes when every job above passed or was skipped. **This is the only status check branch protection needs to require**, so skipped jobs never block a merge |
@@ -52,6 +52,10 @@ Merging to `main` never creates a tag or a release. Only the Release workflow do
 Why Windows and macOS only run `cargo check` on PRs: the full cross-platform build was the slowest part of every PR (Windows especially). `cargo check` still catches compile errors in platform-specific code. Linking and packaging problems are caught by the weekday run and, definitively, by the release build. Add the **`full-ci`** label to a PR when you change platform-specific code or build configuration and want the full run before merging.
 
 The workflow sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_DEV_DEBUG=0`. The `dev` profile enables debug info, which makes Windows link times and cache sizes balloon and which CI never needs. Caches use [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) and are saved only from `main`, so PR runs cannot evict the shared cache.
+
+**Cache keys**: every rust-cache step sets `add-rust-environment-hash-key: false`. The key is therefore the toolchain file (`rust-toolchain.toml`), the lockfile and the manifests; the set of toolchains preinstalled on the runner image alternates between images and used to turn most PR runs into total cache misses (Q39). On Windows and macOS the key also carries `check` (PRs and pushes to `main`, which only run `cargo check`) or `build` (full runs), so the check cache cannot shadow the build cache. Only `main` saves, so the schedule is what refreshes the `build` cache.
+
+**Test time**: the "Test execution time" line (job summary and annotation) is the number later stages compare against when a change might slow the tests down (a trigger fires at the reference plus 25 s). It is noisy: the same code has measured 60 to 87 s on Linux, so it is a tripwire, not a benchmark.
 
 ---
 

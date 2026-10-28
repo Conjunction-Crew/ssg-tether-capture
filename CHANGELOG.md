@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Changed
+- CI: the Rust cache key no longer includes the runner image's toolchain set, so PR runs stop missing the cache; Windows and macOS use separate check and build keys; the Linux and full cross-platform test jobs print "Test execution time" to the job summary (Q39)
 
 ## [v0.3.2] - 2026-10-28
 
