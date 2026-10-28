@@ -66,8 +66,8 @@ Add `--warp 16` to one of them: the hash stays the same.
 | `cli_warp_16_equals_warp_1` | 6,400 steps at 1× and at 16×: `trajectory.csv`, transitions and `state_hash` equal | same |
 | `cli_steps_must_be_multiple_of_warp` | `--steps` not a multiple of `--warp` is a usage error | same |
 | `baseline_q13_fixed_epoch_short` | the Q13 scenario for 6,400 steps, twice in one process: bit-identical | same |
-| `cli_three_runs_to_capture_identical` (ignored) | the scenario to `capture`: three runs at 1× and one at 16×, bit-identical | on demand: `cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture` |
-| `baseline_q13_to_capture` (ignored) | two in-process runs to `capture`, bit-identical, and the macOS/aarch64 goldens | on demand: `cargo test -p ssg-sim --locked baseline_q13_to_capture -- --ignored --nocapture` |
+| `cli_three_runs_to_capture_identical` (ignored) | the scenario to `capture`: three runs at 1× and one at 16×, bit-identical | weekday schedule, manual CI runs and `full-ci` PRs (the release PR carries it), on Linux, macOS and Windows; on demand: `cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture` |
+| `baseline_q13_to_capture` (ignored) | two in-process runs to `capture`, bit-identical, and the macOS/aarch64 goldens | same runs, **macOS only** (the goldens hold on macOS/aarch64 only); on demand: `cargo test -p ssg-sim --locked baseline_q13_to_capture -- --ignored --nocapture` |
 
 ## Known divergence sources
 
