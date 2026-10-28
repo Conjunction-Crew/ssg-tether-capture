@@ -113,6 +113,11 @@ jobs:
           # PR caches are not shared between PRs and would evict the main-branch
           # cache (repo cache quota is 10 GB), so only main saves.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The key is rust-toolchain.toml + the lockfile and manifests.  The
+          # set of toolchains preinstalled on the runner image changes between
+          # images and made the environment hash alternate, turning most PR
+          # runs into total cache misses; it is left out (Q39, P5).
+          add-rust-environment-hash-key: false
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -161,7 +166,18 @@ jobs:
           exit 0
 
       - name: Run tests
-        run: cargo test --workspace --locked
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+
+      - name: Test execution time
+        # Sum of the `finished in` lines of every test binary, printed to the job
+        # summary and as an annotation (visible in `gh run view <id>`).
+        if: success() || failure()
+        run: |
+          line=$(sh scripts/ci_test_time.sh "$RUNNER_TEMP/cargo-test.log" "$GITHUB_STEP_SUMMARY")
+          echo "$line"
+          echo "::notice title=Test execution time (Linux)::$line"
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
@@ -195,6 +211,11 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Same as rust-linux: no runner-image toolchain set in the key (Q39, P5).
+          add-rust-environment-hash-key: false
+          # `cargo check` runs and full build-and-test runs need different
+          # artifacts; with one key the check cache shadowed the build cache.
+          key: ${{ needs.changes.outputs.full == 'true' && 'build' || 'check' }}
 
       - name: cargo check
         if: needs.changes.outputs.full != 'true'
@@ -206,7 +227,18 @@ jobs:
 
       - name: cargo test
         if: needs.changes.outputs.full == 'true'
-        run: cargo test --workspace --locked
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+
+      - name: Test execution time
+        if: needs.changes.outputs.full == 'true' && (success() || failure())
+        shell: bash
+        run: |
+          line=$(sh scripts/ci_test_time.sh "$RUNNER_TEMP/cargo-test.log" "$GITHUB_STEP_SUMMARY")
+          echo "$line"
+          echo "::notice title=Test execution time (${{ matrix.name }})::$line"
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docusaurus build — catches broken links / build errors, and enforces the
