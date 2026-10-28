@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- CI: a report-only `coverage` job runs the workspace tests under `cargo-llvm-cov`, prints per-area line coverage against the Q7 thresholds to the job summary and uploads a `coverage-report` artifact; the inline test modules of `orbit/lvlh.rs` and `ssg-sim-cli` `output.rs` moved to `tests/` files so coverage counts production code only (F-14)
+
 ### Changed
 - CI: only the pinned Rust toolchain is installed before the cache step, so the Rust cache key no longer alternates with the runner image's preinstalled toolchains and PR runs stop missing the cache; Windows and macOS use separate check and build keys; the Linux and full cross-platform test jobs print "Test execution time" to the job summary (Q39)
 

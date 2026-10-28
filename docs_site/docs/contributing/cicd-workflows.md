@@ -15,6 +15,7 @@ Pull request / push to main / weekday schedule / manual
       └─ ci.yml
            ├─ Detect changes
            ├─ Lint and test (Linux)       ← fmt + clippy + cargo test   (the merge gate)
+           ├─ Coverage (Linux)            ← cargo-llvm-cov, line coverage per area (report only for now)
            ├─ Check (Windows, macOS)      ← cargo check on PRs; full build + test with `full-ci`
            ├─ Build docs site             ← only when docs/changelog change
            ├─ Changelog entry             ← PRs only
@@ -44,6 +45,7 @@ Merging to `main` never creates a tag or a release. Only the Release workflow do
 |---|---|---|
 | `changes` | ubuntu-latest | Decides which of the jobs below are relevant, based on the files a PR touches and on the `full-ci` label |
 | `rust-linux` | ubuntu-latest | `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test`, then prints the test execution time. Runs when `src/`, `crates/`, `assets/`, `wix/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` or the CI/packaging workflows change. Clippy fails the job on any warning except `clippy::type_complexity` and `clippy::too_many_arguments` (Bevy system signatures that are tracked, not yet fixed). A non-failing step lists those in the job summary ("Tracked clippy warnings: N"). A "Test execution time" step prints the sum of the `finished in` times of every test binary to the job summary and as an annotation (`gh run view <id>` shows it) |
+| `coverage` | ubuntu-latest | Runs all workspace tests once under `cargo llvm-cov` (in parallel with `rust-linux`, so the uninstrumented test time stays the timing number), prints a per-area line-coverage table to the job summary and uploads the `coverage-report` artifact (HTML, `lcov.info`, `summary.json`; kept 14 days). The areas and thresholds are in `scripts/coverage_gates.conf`: `ssg-sim` 80 %, `capture/`, `orbit/`, `physics_bubble`, `floating_origin` and `time` 85 %, `ssg-sim-cli` 70 %, `ssg-app` reported only. **Report only until the gates are enforced** (the summary says so); `ci-success` waits for the job but it cannot fail on a threshold yet. The instrumented build rebuilds every dependency, so it never reuses the `rust-linux` cache: expect about 20–30 min until `main` has saved a coverage cache |
 | `cross-platform` | windows-latest, macos-latest | PRs: `cargo check --all-targets` only. With the `full-ci` label, on the weekday schedule and on manual runs: `cargo build` + `cargo test`, then the same "Test execution time" summary line |
 | `docs-build` | ubuntu-latest | Docusaurus build, plus a check that `versions.json` has at most 10 entries. Runs when `docs_site/**` or `CHANGELOG.md` change |
 | `changelog` | ubuntu-latest | PRs only: fails unless the `## [Unreleased]` section of `CHANGELOG.md` was changed. Exempt: docs-only PRs (`docs_site/**` and `*.md`), PRs labelled `no-changelog`, and Dependabot |
@@ -52,6 +54,16 @@ Merging to `main` never creates a tag or a release. Only the Release workflow do
 Why Windows and macOS only run `cargo check` on PRs: the full cross-platform build was the slowest part of every PR (Windows especially). `cargo check` still catches compile errors in platform-specific code. Linking and packaging problems are caught by the weekday run and, definitively, by the release build. Add the **`full-ci`** label to a PR when you change platform-specific code or build configuration and want the full run before merging.
 
 The workflow sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_DEV_DEBUG=0`. The `dev` profile enables debug info, which makes Windows link times and cache sizes balloon and which CI never needs. Caches use [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) and are saved only from `main`, so PR runs cannot evict the shared cache.
+
+**Coverage**: the gates count line coverage of production code from one instrumented run of all workspace tests (`cargo llvm-cov --workspace`), so tests in `ssg-app` and `ssg-sim-cli` count towards the `ssg-sim` lines they execute. Test code is never counted: `crates/*/src/tests/`, `crates/ssg-sim/src/test_support/` and `crates/*/tests/` are excluded by `scripts/coverage_gate.sh` (inline `#[cfg(test)]` modules were moved into `tests/` files for this). To reproduce the CI numbers locally, with the same settings (without them the instrumented build needs tens of GB of disk):
+
+```bash
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo llvm-cov --workspace --locked \
+  --json --summary-only --output-path target/coverage-summary.json
+sh scripts/coverage_gate.sh target/coverage-summary.json --report-only
+```
+
+This needs `cargo-llvm-cov` 0.9.1 and `rustup component add llvm-tools-preview`. Local numbers can differ from CI by a few lines (platform `cfg`); the CI job is the gate.
 
 **Cache keys**: rust-cache hashes every installed Rust toolchain into its key, and the set preinstalled on the runner image alternates between images (1.99.0 present or not), which used to turn most PR runs into total cache misses (Q39). Each job therefore runs a "Remove other preinstalled toolchains" step before the cache step, so only the toolchain pinned in `rust-toolchain.toml` is installed and the key depends only on that pin, the lockfile and the manifests. (rust-cache's `add-rust-environment-hash-key: false` is not used: in the pinned version it also drops the lockfile hash, so the key would never change and `main` would never refresh its cache.) On Windows and macOS the key also carries `check` (PRs and pushes to `main`, which only run `cargo check`) or `build` (full runs), so the check cache cannot shadow the build cache. Only `main` saves, so the schedule is what refreshes the `build` cache.
 

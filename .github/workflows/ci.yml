@@ -197,6 +197,76 @@ jobs:
         run: cargo build --workspace --locked
 
   # ───────────────────────────────────────────────────────────────────────────
+  # Line coverage of the workspace tests (cargo-llvm-cov), in parallel with
+  # rust-linux so the uninstrumented test time stays the timing number.  Report
+  # only until the gates are enforced (P5 S8); the report is uploaded as an
+  # artifact.  Production code only: see scripts/coverage_gate.sh.
+  # ───────────────────────────────────────────────────────────────────────────
+  coverage:
+    name: Coverage (Linux)
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libasound2-dev libudev-dev
+
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustup component add llvm-tools-preview
+
+      - name: Remove other preinstalled toolchains
+        # Keeps the rust-cache key stable (see rust-linux).
+        shell: bash
+        run: |
+          set -eu
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          echo "Active toolchain: $active"
+          echo "Installed before:"
+          rustup toolchain list
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            if [ "$tc" != "$active" ]; then rustup toolchain uninstall "$tc"; fi
+          done
+          echo "Installed after:"
+          rustup toolchain list
+
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-llvm-cov@0.9.1
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The instrumented build lives in target/llvm-cov-target, not target.
+          workspaces: ". -> target/llvm-cov-target"
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --workspace --locked --no-report
+
+      - name: Coverage reports
+        run: |
+          mkdir -p target/coverage
+          cargo llvm-cov report --json --summary-only --output-path target/coverage/summary.json
+          cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
+          cargo llvm-cov report --html --output-dir target/coverage
+
+      - name: Coverage gates (report only)
+        run: sh scripts/coverage_gate.sh target/coverage/summary.json "$GITHUB_STEP_SUMMARY" --report-only
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage-report
+          path: target/coverage/
+          retention-days: 14
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Windows / macOS.  PRs only run `cargo check` (compile errors, platform-
   # specific cfg code).  A `full-ci` label, the weekday schedule and manual
   # runs do the full build + test.  Release builds always cover both.
@@ -335,7 +405,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, rust-linux, cross-platform, docs-build, changelog]
+    needs: [changes, rust-linux, coverage, cross-platform, docs-build, changelog]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
