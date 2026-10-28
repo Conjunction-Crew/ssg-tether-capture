@@ -22,6 +22,7 @@ GitHub Release description.
 
 ### Added
 - CI: a report-only `coverage` job runs the workspace tests under `cargo-llvm-cov`, prints per-area line coverage against the Q7 thresholds to the job summary and uploads a `coverage-report` artifact; the inline test modules of `orbit/lvlh.rs` and `ssg-sim-cli` `output.rs` moved to `tests/` files so coverage counts production code only (F-14)
+- Tests: branch tests for the capture controller (force direction and magnitude per branch, the missing-root, tether and plan paths), for `apply_sim_commands` and for `assert_finite_state`, and property-style tests (fixed-seed generator, 300 plans per property) for capture-plan validation and compilation; `capture/` coverage reaches the 85 % gate; `plans/stage-5/results/pub-fn-inventory.md` starts the one-test-per-public-function inventory (F-14)
 
 ### Changed
 - CI: the long determinism-to-capture tests (`cli_three_runs_to_capture_identical` on Linux, macOS and Windows; `baseline_q13_to_capture` on macOS only) now run on the weekday schedule, manual runs and `full-ci` PRs, so the release PR checks them before a release
