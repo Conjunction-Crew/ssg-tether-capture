@@ -8,8 +8,10 @@
 
 use bevy::{camera::visibility::RenderLayers, platform::collections::HashMap, prelude::*};
 
+use crate::render::camera::CameraTarget;
 use crate::render::layers::SCENE_LAYER;
 use ssg_sim::SimSet;
+use ssg_sim::anchor::SimAnchor;
 use ssg_sim::session::SimState;
 use ssg_sim::tether::{DebrisBody, TetherShape};
 
@@ -82,13 +84,33 @@ pub fn attach_debris_scene(
     }
 }
 
+/// Points the camera at the simulation anchor when it is spawned, unless some body
+/// already carries `CameraTarget` (Q15).
+pub fn attach_camera_target(
+    mut commands: Commands,
+    anchors: Query<Entity, Added<SimAnchor>>,
+    targets: Query<(), With<CameraTarget>>,
+) {
+    if !targets.is_empty() {
+        return;
+    }
+    if let Some(anchor) = anchors.iter().next() {
+        commands.entity(anchor).insert(CameraTarget);
+    }
+}
+
 pub struct AttachPlugin;
 
 impl Plugin for AttachPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(SimState::Running),
-            (attach_tether_visuals, attach_debris_scene).after(SimSet::SpawnBodies),
+            (
+                attach_tether_visuals,
+                attach_debris_scene,
+                attach_camera_target,
+            )
+                .after(SimSet::SpawnBodies),
         );
     }
 }

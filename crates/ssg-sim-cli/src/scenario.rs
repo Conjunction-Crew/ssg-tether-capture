@@ -8,25 +8,26 @@ use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
 use avian3d::prelude::*;
 use bevy::ecs::message::{MessageCursor, Messages};
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
-use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
+use brahe::{Epoch, TimeSystem};
 use ssg_sim::SimPlugins;
 use ssg_sim::capture::plan::CapturePlanLibrary;
-use ssg_sim::capture::{CaptureComponent, SimCommand};
+use ssg_sim::capture::{CaptureComponent, CaptureTransition, SimCommand};
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::catalog::{JsonOrbital, gp_record_to_elements};
+use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
-use ssg_sim::orbit::{Orbit, Orbital};
+use ssg_sim::physics_bubble::body_eci_state;
 use ssg_sim::project::{AssetsDir, SelectedProject};
 use ssg_sim::session::{SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
-use ssg_sim::time::{PHYS_DT, WorldTime};
+use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
 
 use crate::args::{Args, EpochArg};
 use crate::inputs::{find_records, load_plans};
@@ -43,14 +44,20 @@ pub struct Sample {
     pub state: String,
     pub range_m: f64,
     pub rel_speed_mps: f64,
+    /// The tether root's and the debris's `Position` and `LinearVelocity` (bubble
+    /// frame), for the state hash.
+    pub root_position: DVec3,
+    pub root_velocity: DVec3,
+    pub debris_position: DVec3,
+    pub debris_velocity: DVec3,
 }
 
 pub struct Run {
     pub plan: String,
     pub epoch_mode: &'static str,
     pub start_epoch: String,
-    /// Updates run after the capture command.
-    pub updates: u64,
+    /// Fixed steps run after the capture command.
+    pub steps: u64,
     pub transitions: Vec<Transition>,
     pub samples: Vec<Sample>,
     pub last: Sample,
@@ -65,7 +72,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
     };
     let (target, chaser) = find_records(args)?;
     let pick = |record: &JsonOrbital, id: u64| -> Result<SelectedOrbitalObject, String> {
-        let (_, gpu) = gp_record_to_elements(record, reference_epoch)
+        let (_, gp, _) = gp_record_to_elements(record, reference_epoch)
             .ok_or_else(|| format!("NORAD {id}: the record is missing an orbital element"))?;
         Ok(SelectedOrbitalObject {
             source: OrbitalSelectionSource::Custom {
@@ -74,8 +81,9 @@ pub fn run(args: &Args) -> Result<Run, String> {
                     .clone()
                     .unwrap_or_else(|| format!("NORAD {id}")),
             },
-            // The f32 round trip the app performs (F-27).
-            elements: EditableOrbitalElements::from_gpu(&gpu),
+            // A catalog pick, as the app makes it (F-27): SGP4 at the start epoch.
+            elements: EditableOrbitalElements::from_gp(&gp),
+            gp: Some(gp),
         })
     };
     let target = pick(&target, args.target)?;
@@ -96,6 +104,10 @@ pub fn run(args: &Args) -> Result<Run, String> {
     .init_resource::<SolverDiagnostics>()
     .init_resource::<ColliderTreeDiagnostics>()
     .insert_resource(AssetsDir(args.assets.clone()))
+    // The sim start epoch: `--epoch`, with `now` resolved once above (F-06).
+    .insert_resource(SimConfig {
+        start_epoch: reference_epoch,
+    })
     // One `app.update()` = one fixed step (the P2 clock recipe, D8).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
         PHYS_DT,
@@ -113,47 +125,10 @@ pub fn run(args: &Args) -> Result<Run, String> {
         .resource_mut::<NextState<UiScreen>>()
         .set(UiScreen::Sim);
     app.update();
-    if let EpochArg::At(epoch) = args.epoch {
-        // F-06: `setup_time` has just set both epochs from the wall clock.
-        let mut world_time = app.world_mut().resource_mut::<WorldTime>();
-        world_time.epoch = epoch;
-        world_time.start_epoch = epoch;
-    }
     app.world_mut()
         .resource_mut::<NextState<SimState>>()
         .set(SimState::Running);
     app.update();
-
-    if let EpochArg::At(epoch) = args.epoch {
-        // Replace `init_orbitals`' wall-clock start with the requested epoch.
-        let pending: Vec<(Entity, nalgebra::Vector6<f64>)> = app
-            .world_mut()
-            .query::<(Entity, &Orbit)>()
-            .iter(app.world())
-            .filter_map(|(entity, orbit)| match orbit {
-                Orbit::FromElements(elements) => Some((entity, *elements)),
-                Orbit::FromTle(_) => None,
-            })
-            .collect();
-        if pending.len() != 2 {
-            return Err(format!(
-                "expected the tether root and the debris to await their orbits, found {}",
-                pending.len()
-            ));
-        }
-        for (entity, elements) in pending {
-            let eci =
-                KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, 1.0)
-                    .state_eci(epoch)
-                    .map_err(|e| format!("Keplerian propagation failed: {e:?}"))?;
-            let mut entity = app.world_mut().entity_mut(entity);
-            entity.remove::<Orbit>();
-            entity
-                .get_mut::<Orbital>()
-                .ok_or("an orbiting body has no Orbital")?
-                .propagator = Some(KeplerianPropagator::from_eci(epoch, eci, 1.0));
-        }
-    }
 
     let (debris, root) = {
         let cache = app.world().resource::<OrbitalCache>();
@@ -190,29 +165,38 @@ pub fn run(args: &Args) -> Result<Run, String> {
         .world()
         .resource::<Messages<LogEvent>>()
         .get_cursor_current();
+    let mut transition_cursor: MessageCursor<CaptureTransition> = app
+        .world()
+        .resource::<Messages<CaptureTransition>>()
+        .get_cursor_current();
+    // One update runs `--warp` fixed steps (`--warp` is at most
+    // `MAX_STEPS_PER_UPDATE`); `--steps` and `--sample-every` are multiples of it.
+    let warp = u64::from(args.warp);
+    let (total_updates, sample_every_updates) = (args.steps / warp, args.sample_every / warp);
     let mut transitions = Vec::new();
     let mut samples = Vec::new();
     let mut updates = 0;
     let mut last = sample(&app, debris, root)?;
-    while updates < args.steps {
+    while updates < total_updates {
         app.update();
         updates += 1;
         last = sample(&app, debris, root)?;
+        let messages = app.world().resource::<Messages<CaptureTransition>>();
+        for transition in transition_cursor.read(messages) {
+            transitions.push(Transition {
+                // The step the transition fired in (exact also when warped).
+                step: ((transition.epoch - start_epoch) / PHYS_DT).round() as u64,
+                from: transition.from.clone(),
+                to: transition.to.clone(),
+            });
+        }
         let messages = app.world().resource::<Messages<LogEvent>>();
         for event in cursor.read(messages) {
-            if event.source == "capture"
-                && let Some((from, to)) = parse_transition(&event.message)
-            {
-                transitions.push(Transition {
-                    step: last.step,
-                    from,
-                    to,
-                });
-            } else if matches!(event.level, LogLevel::Warn | LogLevel::Error) {
+            if matches!(event.level, LogLevel::Warn | LogLevel::Error) {
                 eprintln!("ssg-sim: {}: {}", event.source, event.message);
             }
         }
-        if updates % args.sample_every == 0 {
+        if updates % sample_every_updates == 0 {
             samples.push(sample(&app, debris, root)?);
         }
         if args.stop_at_capture && last.state == "capture" {
@@ -221,7 +205,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
     }
     if args.stop_at_capture && last.state != "capture" {
         return Err(format!(
-            "no capture within {updates} updates (final state `{}`)",
+            "no capture within {} steps (final state `{}`)",
+            updates * warp,
             last.state
         ));
     }
@@ -233,7 +218,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
             EpochArg::At(_) => "fixed",
         },
         start_epoch: iso(start_epoch),
-        updates,
+        steps: updates * warp,
         transitions,
         samples,
         last,
@@ -260,12 +245,33 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
         world.get::<Position>(root).ok_or("root Position")?.0,
         world.get::<LinearVelocity>(root).ok_or("root velocity")?.0,
     );
+    // The root's velocity relative to the debris in the debris's LVLH frame, as
+    // the controller measures it (F-35).
+    let (rel_r, rel_v) = (
+        root_position - debris_position,
+        root_velocity - debris_velocity,
+    );
+    let rel_v = body_eci_state(
+        world.resource::<OrbitalCache>(),
+        debris,
+        debris_position,
+        debris_velocity,
+        world.get::<RigidBodyDisabled>(debris).is_some(),
+    )
+    .and_then(|state| LvlhFrame::from_eci(&state))
+    .map_or(rel_v, |frame| {
+        frame.relative_velocity_in_frame(rel_r, rel_v)
+    });
     Ok(Sample {
         step: ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64,
         epoch: iso(world_time.epoch),
         state,
         range_m: (debris_position - root_position).length(),
-        rel_speed_mps: (root_velocity - debris_velocity).length(),
+        rel_speed_mps: rel_v.length(),
+        root_position,
+        root_velocity,
+        debris_position,
+        debris_velocity,
     })
 }
 
@@ -276,12 +282,4 @@ fn iso(epoch: Epoch) -> String {
         epoch.to_datetime_as_time_system(TimeSystem::UTC);
     let seconds = second + nanoseconds / 1e9;
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{seconds:09.6}Z")
-}
-
-/// Parse `State: {from} → {to} ({reason})`.
-fn parse_transition(message: &str) -> Option<(String, String)> {
-    let rest = message.strip_prefix("State: ")?;
-    let (from, rest) = rest.split_once(" → ")?;
-    let (to, _) = rest.split_once(" (")?;
-    Some((from.to_string(), to.to_string()))
 }

@@ -22,11 +22,15 @@ use crate::render::layers::{
     SCENE_LAYER, eci_position_to_map,
 };
 use crate::ui::catalog_state::SpaceCatalogUiState;
-use ssg_sim::anchor::CameraTarget;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::session::UiScreen;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
+
+/// The body the camera looks at. A pure viewing marker: the floating origin and
+/// the physics bubble follow `SimAnchor`, never this (Q15, F-25).
+#[derive(Component, Debug, Clone)]
+pub struct CameraTarget;
 
 // A camera that "orbits" around a target. Hold right click to pan.
 #[derive(Component, Debug, Clone)]
@@ -138,6 +142,8 @@ pub fn setup_camera(
                 distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32
                     + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32),
                 min_distance: 0.2,
+                // North (ECI +Z) up on screen; the map is in ECI axes (F-08).
+                up: Vec3::Z,
                 ..default()
             },
         },

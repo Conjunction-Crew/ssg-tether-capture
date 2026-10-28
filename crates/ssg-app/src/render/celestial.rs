@@ -23,7 +23,9 @@ pub struct Celestials {
 }
 
 pub fn setup_lighting(mut commands: Commands) {
-    let sun_rotation = Quat::from_rotation_x(0.0);
+    // The sun shines along ECI +Y, in the equatorial plane: the direction it had
+    // before the scene moved to ECI axes (F-08).
+    let sun_rotation = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
     let moon_rotation = sun_rotation * Quat::from_rotation_y(PI);
 
     // Sun
@@ -94,7 +96,7 @@ pub fn setup_celestial(
                 // }),
                 Mesh3d(meshes.add(earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
-                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(orbit_frame_rotation()),
+                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(earth_mesh_rotation()),
             ))
             .id(),
     );
@@ -112,7 +114,7 @@ pub fn setup_celestial(
                 RenderLayers::layer(MAP_LAYER),
                 Mesh3d(meshes.add(map_earth_mesh)),
                 MeshMaterial3d(earth_material.clone()),
-                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(orbit_frame_rotation()),
+                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(earth_mesh_rotation()),
             ))
             .id(),
     );

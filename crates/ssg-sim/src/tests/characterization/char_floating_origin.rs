@@ -3,14 +3,14 @@
 //! Constants: `MAX_ORIGIN_OFFSET = 50`, `PHYSICS_ENABLE_RADIUS = 100`,
 //! `PHYSICS_DISABLE_RADIUS = 110` (`src/constants.rs`).
 
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::floating_origin::MAX_ORIGIN_OFFSET;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::telemetry::LogLevel;
 use crate::test_support::{
-    LogTap, assert_close, assert_close_dvec3, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
-    start_running, test_app, tick,
+    LogTap, assert_close, assert_close_dvec3, disable_relative_gravity, enter_sim, fixed_epoch,
+    fixed_propagator, kepler_eci, start_running, test_app, tick,
 };
 use crate::tether::TetherRoot;
 use crate::time::{PHYS_DT, WorldTime};
@@ -110,7 +110,7 @@ fn char_origin_no_reset_at_max_offset() {
     );
     app.world_mut()
         .entity_mut(anchor)
-        .insert((CameraTarget, TetherRoot));
+        .insert((SimAnchor, TetherRoot));
     let before = orbital_propagator(&app, anchor);
 
     let mut tap = LogTap::new(app.world());
@@ -149,7 +149,7 @@ fn char_origin_reset_above_max_offset() {
     );
     app.world_mut()
         .entity_mut(anchor)
-        .insert((CameraTarget, TetherRoot));
+        .insert((SimAnchor, TetherRoot));
     // B: an enabled body with an orbit, 10 m from the origin.
     let body_b = spawn_body(
         &mut app,
@@ -221,9 +221,9 @@ fn char_origin_reset_above_max_offset() {
 }
 
 #[test]
-fn char_origin_requires_tether_root() {
+fn origin_requires_tether_root() {
     let mut app = running_app();
-    // `CameraTarget` without `TetherRoot`, beyond the max offset. The `Transform`
+    // `SimAnchor` without `TetherRoot`, beyond the max offset. The `Transform`
     // matches, so the position stays at 60 m and a missing reset is visible.
     let anchor = spawn_body(
         &mut app,
@@ -231,19 +231,20 @@ fn char_origin_requires_tether_root() {
         DVec3::ZERO,
         DVec3::ZERO,
     );
-    app.world_mut().entity_mut(anchor).insert(CameraTarget);
+    app.world_mut().entity_mut(anchor).insert(SimAnchor);
     assert!(position(&app, anchor).length() > MAX_ORIGIN_OFFSET);
 
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
     let events = tap.drain(app.world());
 
-    // F-25: current behaviour, expected to change in P4
+    // F-25: fixed in P4. No longer a defect but the contract: the reset needs a
+    // centre of mass, so the anchor is a tether root; a `SimAnchor` without
+    // `TetherRoot` never resets.
     assert!(
         app.world().resource::<OrbitalCache>().com_rv.is_empty(),
         "com_rv has entries without a TetherRoot"
     );
-    // F-25: current behaviour, expected to change in P4
     assert_eq!(reset_events(&events), 0);
     assert_close_dvec3(
         position(&app, anchor),
@@ -254,8 +255,9 @@ fn char_origin_requires_tether_root() {
 }
 
 #[test]
-fn char_origin_keys_on_camera_target() {
+fn origin_keys_on_sim_anchor() {
     let mut app = running_app();
+    disable_relative_gravity(&mut app);
     let body_a = spawn_body(
         &mut app,
         DVec3::new(60.0, 0.0, 0.0),
@@ -271,14 +273,14 @@ fn char_origin_keys_on_camera_target() {
     app.world_mut().entity_mut(body_a).insert(TetherRoot);
     app.world_mut()
         .entity_mut(body_b)
-        .insert((TetherRoot, CameraTarget));
+        .insert((TetherRoot, SimAnchor));
 
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
     let events = tap.drain(app.world());
 
     // Precondition: both roots have a centre of mass (so A's 60 m would reset if
-    // it were the target), and B (10 m) is the target.
+    // it were the anchor), and B (10 m) is the anchor.
     assert_close(
         com_rv(&app, body_a).unwrap().0.length(),
         60.0,
@@ -291,7 +293,6 @@ fn char_origin_keys_on_camera_target() {
         1e-9,
         "|com_r| B",
     );
-    // F-25: current behaviour, expected to change in P4
     assert_eq!(reset_events(&events), 0);
     assert_close_dvec3(
         position(&app, body_a),
@@ -300,15 +301,16 @@ fn char_origin_keys_on_camera_target() {
         "A position before the move",
     );
 
-    // Move `CameraTarget` from B to A, as `orbit_camera_switch_target` does.
-    app.world_mut().entity_mut(body_b).remove::<CameraTarget>();
-    app.world_mut().entity_mut(body_a).insert(CameraTarget);
+    // Move `SimAnchor` from B to A: the reset follows the anchor (F-25: fixed in
+    // P4; the camera target no longer moves it, see the app's
+    // `origin_ignores_camera_target`).
+    app.world_mut().entity_mut(body_b).remove::<SimAnchor>();
+    app.world_mut().entity_mut(body_a).insert(SimAnchor);
 
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
     let events = tap.drain(app.world());
 
-    // F-25: current behaviour, expected to change in P4
     assert_eq!(reset_events(&events), 1);
     assert_close_dvec3(
         position(&app, body_a),

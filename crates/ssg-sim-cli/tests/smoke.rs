@@ -45,6 +45,15 @@ fn run_writes_summary_and_trajectory() {
     assert_eq!(summary["transitions"][0]["from"], "rendezvous");
     assert_eq!(summary["transitions"][0]["to"], "approach");
     assert_eq!(summary["final"]["state"], "approach");
+    // `--steps` counts fixed steps (A-12); the sampled state is hashed.
+    assert_eq!(summary["steps"], 6400);
+    let hash = summary["state_hash"]
+        .as_str()
+        .expect("state_hash is a string");
+    assert!(
+        hash.len() == 16 && hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "state_hash `{hash}` is 16 hex digits"
+    );
     let csv = std::fs::read_to_string(out.join("trajectory.csv")).unwrap();
     assert_eq!(csv.lines().count(), 101, "header + 6400 / 64 samples");
     assert_eq!(

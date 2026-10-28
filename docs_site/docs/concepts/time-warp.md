@@ -4,34 +4,31 @@ sidebar_position: 4
 
 # Time Warp
 
-The `WorldTime` resource controls both the current simulation epoch and how quickly simulation time advances relative to real time.
+The `WorldTime` resource (`crates/ssg-sim/src/time.rs`) holds the simulation epoch and the time-warp multiplier.
 
-## WorldTime resource
+## Start epoch
 
-```rust
-pub struct WorldTime {
-    pub multiplier: u32, // default: 1
-    pub epoch: Epoch,    // default: Epoch::now()
-}
-```
+The simulation never reads the wall clock. Its start epoch is an explicit input, the `SimConfig` resource:
 
-The default multiplier is `1` (real time). A multiplier of `60` makes one fixed tick advance the simulation epoch by 60× the normal timestep.
+- the desktop app sets it at startup and again when a project is opened, so re-running a project in one session reuses the same epoch;
+- the headless CLI sets it from `--epoch` (`now` is read once, before the run);
+- the test harness uses a fixed epoch.
 
-## Changing time warp
+On entering the simulation, `setup_time` starts the clock at `SimConfig.start_epoch`, and every orbit's elements are taken at that epoch.
 
-The `change_time_warp` system (registered in `lib.rs` `Update`) responds to key input:
+## The warp ladder
 
 | Key | Effect |
 |---|---|
-| `,` (comma) | Decrease multiplier |
-| `.` (period) | Increase multiplier |
+| `.` (period) | Double the warp, up to 8192× (`MAX_TIME_WARP`); resume if paused |
+| `,` (comma) | Halve the warp; at 1× it pauses the simulation |
 
-The multiplier is a `u32` — it steps in whole-number increments.
+Pause is a state (`PauseState::Paused`), not a 0× warp: the multiplier keeps its value and the simulation resumes at it.
 
-## Effect on propagation
+## Requested and effective warp
 
-The `fixed_physics_step` system advances `WorldTime::epoch` each `FixedUpdate` tick. The time delta applied is `fixed_dt * multiplier`. The `cache_eci_states` system then calls `propagator.state_eci(epoch)` with the updated epoch, so all Keplerian positions advance at the scaled rate.
+The multiplier is the **requested** warp: the number of fixed steps (`1/64` s each) to run per `FixedUpdate` run. One run executes at most `MAX_STEPS_PER_UPDATE` (64) steps, so the app stays responsive; the number actually run is the **effective** warp. The HUD shows `8192x (effective 64x)` when the cap holds the warp back, and `Paused` when paused. No step debt is carried over, so lowering the warp takes effect at once. Bevy's catch-up window is lowered to three fixed steps, so one slow frame cannot multiply the work.
 
-## Effect on physics
+## Invariant
 
-Avian3D physics runs inside the `ManualPhysics` schedule, which is driven by `fixed_physics_step`. The physics timestep itself is fixed at `FIXED_HZ` regardless of `multiplier`; only the orbital epoch advances faster. This is intentional: tether dynamics are a local physics simulation that must remain stable, while orbital propagation is an analytical calculation that can be freely time-scaled.
+Each fixed step advances the epoch by `1/64` s and runs one physics step. Results depend only on the sequence of fixed steps and user inputs, never on the wall clock or the frame rate: 8 ticks at 1× and 1 tick at 8× give the same state.

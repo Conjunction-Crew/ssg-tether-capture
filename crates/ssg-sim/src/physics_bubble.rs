@@ -1,14 +1,42 @@
 //! Physics bubble: bodies near the anchor are simulated, the rest are propagated.
+//!
+//! The bubble frame is the anchor's Kepler orbit (its `Orbital.propagator`),
+//! translating, with ECI axes. For an **enabled** body, `Orbital.propagator`
+//! describes the frame origin's orbit (the anchor's, up to numerical noise) and its
+//! ECI state is `propagator.state_eci(epoch) + (Position, LinearVelocity)`. For a
+//! **disabled** body, `Orbital.propagator` is its own orbit, and its bubble-frame
+//! `Position`/`LinearVelocity` are mirrored from `own_state − frame_state` each step.
+//!
+//! On **disable** the propagator is rebuilt from `frame_state + (Position,
+//! LinearVelocity)`; on **enable** from `own_state − (Position, LinearVelocity)`, the
+//! frame origin. The floating-origin reset shifts every enabled propagator by the
+//! same `(com_r, com_v)`, which keeps "enabled propagator = frame origin" true.
+//!
+//! **Relative dynamics (F-09).** The frame origin is in free fall on a Kepler
+//! orbit, so a body at bubble position `p` feels only the difference of Earth's
+//! gravity between `r_o + p` and `r_o`: [`apply_relative_gravity`] applies
+//! `differential_gravity(r_o, p)` ([`crate::orbit::lvlh`]) to every enabled
+//! dynamic body in `SimStep::RelativeDynamics`, with `r_o` the anchor's cached
+//! state (the frame origin). The bubble keeps ECI axes, so no Coriolis or
+//! centrifugal term appears: this is Clohessy-Wiltshire relative motion without
+//! its linearisation. Like the capture controller's forces, the acceleration is
+//! applied after avian's step and acts during the next one; the one-step lag in
+//! `r_o` (≈ 120 m of 6.8e6 m at 64 Hz) changes the acceleration (≈ 1e-4 m/s²) by
+//! about 2e-5 of itself, which is negligible.
 
-use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{
+    Forces, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery, WriteRigidBodyForces,
+};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::KeplerianPropagator;
+use nalgebra::Vector6;
 
 use crate::SimStep;
 use crate::anchor::SimAnchor;
 use crate::orbit::Orbital;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::differential_gravity;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::{ManualPhysics, WorldTime};
 
@@ -21,36 +49,41 @@ pub fn physics_bubble_add_remove(
     disabled_entities: Query<(Entity, &RigidBodyDisabled)>,
     orbital_entities: Query<(Entity, &mut Orbital, RigidBodyQuery), Without<SimAnchor>>,
     target_entity: Single<Entity, With<SimAnchor>>,
-    mut orbital_cache: ResMut<OrbitalCache>,
+    orbital_cache: Res<OrbitalCache>,
     world_time: Res<WorldTime>,
     mut log_events: MessageWriter<LogEvent>,
 ) {
     let entity = target_entity.into_inner();
 
-    // Get current cartesian state of our target
-    let Some(mut target_rv) = orbital_cache.eci_states.get_mut(&entity).cloned() else {
+    // Get current cartesian state of our target (the frame origin); never mutated
+    // (F-23).
+    let Some(&target_rv) = orbital_cache.eci_states.get(&entity) else {
         return;
     };
 
     // Loop through entities to see if any should be disabled/enabled
     for (entity, mut orbital, mut rb) in orbital_entities {
-        let Some(entity_rv) = orbital_cache.eci_states.get_mut(&entity) else {
-            return;
+        // F-07: a body without a cached state is skipped, not the rest of the loop.
+        let Some(&entity_rv) = orbital_cache.eci_states.get(&entity) else {
+            continue;
         };
+
+        let relative = Vector6::new(
+            rb.position.x,
+            rb.position.y,
+            rb.position.z,
+            rb.linear_velocity.x,
+            rb.linear_velocity.y,
+            rb.linear_velocity.z,
+        );
 
         let mut enabled = false;
 
         if !disabled_entities.contains(entity) && rb.position.0.length() > PHYSICS_DISABLE_RADIUS {
-            target_rv[0] += rb.position.x;
-            target_rv[1] += rb.position.y;
-            target_rv[2] += rb.position.z;
-            target_rv[3] += rb.linear_velocity.x;
-            target_rv[4] += rb.linear_velocity.y;
-            target_rv[5] += rb.linear_velocity.z;
-
+            // The leaving body's own orbit: the frame state plus its relative state.
             orbital.propagator = Some(KeplerianPropagator::from_eci(
                 world_time.epoch,
-                target_rv,
+                target_rv + relative,
                 1.0,
             ));
 
@@ -67,15 +100,12 @@ pub fn physics_bubble_add_remove(
         } else if disabled_entities.contains(entity)
             && rb.position.0.length() < PHYSICS_ENABLE_RADIUS
         {
-            // println!("rel: {}", relative_pos);
-            entity_rv[0] -= rb.position.x;
-            entity_rv[1] -= rb.position.y;
-            entity_rv[2] -= rb.position.z;
-            entity_rv[3] -= rb.linear_velocity.x;
-            entity_rv[4] -= rb.linear_velocity.y;
-            entity_rv[5] -= rb.linear_velocity.z;
-
-            // *prop = KeplerianPropagator::from_eci(world_time.epoch, entity_rv, 1.0);
+            // F-07: the entering body's propagator becomes the frame origin's orbit.
+            orbital.propagator = Some(KeplerianPropagator::from_eci(
+                world_time.epoch,
+                entity_rv - relative,
+                1.0,
+            ));
 
             commands.entity(entity).remove::<RigidBodyDisabled>();
 
@@ -108,13 +138,69 @@ pub fn physics_bubble_add_remove(
     }
 }
 
+/// A body's ECI state (module doc): for an enabled body its cached state (the
+/// frame origin) plus its bubble-frame `position` and `linear_velocity`; for a
+/// disabled body its cached state (its own orbit). `None` before the body has a
+/// cached state.
+pub fn body_eci_state(
+    cache: &OrbitalCache,
+    entity: Entity,
+    position: DVec3,
+    linear_velocity: DVec3,
+    disabled: bool,
+) -> Option<Vector6<f64>> {
+    let cached = *cache.eci_states.get(&entity)?;
+    if disabled {
+        return Some(cached);
+    }
+    Some(
+        cached
+            + Vector6::new(
+                position.x,
+                position.y,
+                position.z,
+                linear_velocity.x,
+                linear_velocity.y,
+                linear_velocity.z,
+            ),
+    )
+}
+
+/// Applies the differential two-body acceleration about the frame origin (the
+/// anchor's cached state) to every enabled dynamic body (F-09; module doc).
+pub fn apply_relative_gravity(
+    anchor: Single<Entity, With<SimAnchor>>,
+    cache: Res<OrbitalCache>,
+    mut bodies: Query<(Entity, &RigidBody, Forces, &Position), Without<RigidBodyDisabled>>,
+) {
+    let Some(origin) = cache.eci_states.get(&*anchor) else {
+        return;
+    };
+    let r_o = DVec3::new(origin[0], origin[1], origin[2]);
+
+    for (entity, rigid_body, mut forces, position) in &mut bodies {
+        if !rigid_body.is_dynamic() {
+            continue;
+        }
+        let acceleration = differential_gravity(r_o, position.0);
+        debug_assert!(
+            acceleration.is_finite(),
+            "non-finite relative gravity {acceleration:?} on {entity:?}"
+        );
+        forces.apply_linear_acceleration(acceleration);
+    }
+}
+
 pub struct PhysicsBubblePlugin;
 
 impl Plugin for PhysicsBubblePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             ManualPhysics,
-            physics_bubble_add_remove.in_set(SimStep::Bubble),
+            (
+                physics_bubble_add_remove.in_set(SimStep::Bubble),
+                apply_relative_gravity.in_set(SimStep::RelativeDynamics),
+            ),
         );
     }
 }

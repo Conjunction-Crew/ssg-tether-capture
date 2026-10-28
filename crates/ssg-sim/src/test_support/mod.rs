@@ -30,16 +30,16 @@ use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
 use nalgebra::Vector6;
 
 use crate::SimPlugins;
+use crate::SimStep;
 use crate::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
 use crate::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::orbit::cache::OrbitalCache;
-use crate::orbit::catalog::GpuElements;
 use crate::project::{AssetsDir, load_plans_from_dir};
 use crate::session::{SimState, UiScreen};
 use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
-use crate::time::{PHYS_DT, WorldTime};
+use crate::time::{ManualPhysics, PHYS_DT, SimConfig, WorldTime};
 
-/// Deterministic sim epoch for tests; never use `Epoch::now()` in tests (F-06).
+/// Deterministic sim epoch for tests; never read the wall clock in tests (F-06).
 ///
 /// This is the dataset's GP epoch.
 pub fn fixed_epoch() -> Epoch {
@@ -78,15 +78,10 @@ pub fn test_app() -> App {
     .init_resource::<SpatialQueryDiagnostics>()
     .init_resource::<SolverDiagnostics>()
     .init_resource::<ColliderTreeDiagnostics>()
-    // `WorldTime::default()` reads the wall clock (F-06), so insert it explicitly.
-    .insert_resource(WorldTime {
-        multiplier: 1,
-        epoch: fixed_epoch(),
+    // The sim start epoch (F-06: fixed in P4).
+    .insert_resource(SimConfig {
         start_epoch: fixed_epoch(),
     })
-    // P3: normally provided by the app's GpuComputePlugin; kept so
-    // baseline_q13_elements_match_app_loader can compare the loader's output.
-    .init_resource::<GpuElements>()
     .insert_resource(AssetsDir(repo_root().join("assets"))) // P3: the dataset directory
     // One `app.update()` = one `Time<Fixed>` step (see above).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
@@ -95,18 +90,13 @@ pub fn test_app() -> App {
     app
 }
 
-/// Switch to the sim screen and pin the sim epoch to [`fixed_epoch`].
+/// Switch to the sim screen; `setup_time` starts the clock at the app's
+/// [`SimConfig`] epoch ([`fixed_epoch`] in [`test_app`]).
 pub fn enter_sim(app: &mut App) {
     app.world_mut()
         .resource_mut::<NextState<UiScreen>>()
         .set(UiScreen::Sim);
     app.update();
-
-    // `setup_time` has just set both epochs from the wall clock; overwrite them.
-    // F-06: current behaviour, expected to change in P4
-    let mut world_time = app.world_mut().resource_mut::<WorldTime>();
-    world_time.epoch = fixed_epoch();
-    world_time.start_epoch = fixed_epoch();
 }
 
 /// Set `SimState::Running` so `FixedUpdate` starts running `fixed_physics_step`.
@@ -120,6 +110,14 @@ pub fn start_running(app: &mut App) {
 /// One `app.update()`: exactly one fixed step (times the warp multiplier).
 pub fn tick(app: &mut App) {
     app.update();
+}
+
+/// Turns the relative gravity (`SimStep::RelativeDynamics`, F-09) off in `app`.
+/// For the floating-origin and camera tests that pin positions to 1e-9 m with
+/// bodies 50-60 m from the anchor, where one step of differential gravity moves
+/// them by about 1.5e-8 m (operator decision, P4 Run 3).
+pub fn disable_relative_gravity(app: &mut App) {
+    app.configure_sets(ManualPhysics, SimStep::RelativeDynamics.run_if(|| false));
 }
 
 /// `n` calls to [`tick`].
@@ -202,7 +200,7 @@ pub fn log_test_app() -> App {
     app.add_plugins(MinimalPlugins)
         .add_message::<LogEvent>()
         .init_resource::<CaptureLog>()
-        .init_resource::<WorldTime>()
+        .insert_resource(WorldTime::starting_at(fixed_epoch()))
         .add_systems(Update, collect_log_events);
     app
 }
@@ -251,6 +249,11 @@ pub fn capture_rig(app: &mut App, plan_id: &str) -> CaptureRig {
 
     if app.world().get_resource::<OrbitalCache>().is_none() {
         app.world_mut().insert_resource(OrbitalCache::default());
+    }
+    if app.world().get_resource::<WorldTime>().is_none() {
+        // The clock `init_sim_resources` inserts; the rig never advances it.
+        app.world_mut()
+            .insert_resource(WorldTime::starting_at(fixed_epoch()));
     }
     if app.world().get_resource::<CaptureSphereRadius>().is_none() {
         // The value `init_sim_resources` inserts.
@@ -352,30 +355,24 @@ fn parse_transition(message: &str) -> Option<(String, String, String)> {
 /// Headless only (A-6): no glTF loader, so the HST has no collider, and no
 /// render, camera or GPU systems run. See plans/stage-2/52-p2-testing-baseline.md.
 pub mod q13 {
-    use std::f64::consts::PI;
     use std::time::{Duration, Instant};
 
     use avian3d::prelude::*;
+    use bevy::ecs::message::Messages;
     use bevy::math::DVec3;
     use bevy::prelude::*;
-    use brahe::{Epoch, GM_EARTH, TimeSystem};
-    use nalgebra::Vector6;
 
-    use super::{
-        LogTap, enter_sim, fixed_epoch, fixed_propagator, kepler_eci, load_example_plans,
-        parse_transition, start_running, test_app, tick,
-    };
-    use crate::capture::CaptureComponent;
+    use super::{enter_sim, fixed_epoch, load_example_plans, start_running, test_app, tick};
     use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
+    use crate::capture::{CaptureComponent, CaptureTransition};
     use crate::orbit::cache::OrbitalCache;
-    use crate::orbit::catalog::{GpuOrbitalElements, JsonOrbital, JsonOrbitalData};
+    use crate::orbit::catalog::{JsonOrbital, JsonOrbitalData, gp_record_to_elements};
     use crate::orbit::selection::{
         EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
         SelectedOrbitalObject,
     };
     use crate::orbit::{Orbit, Orbital};
     use crate::project::SelectedProject;
-    use crate::session::UiScreen;
     use crate::time::{PHYS_DT, WorldTime};
 
     /// The HST record (verbatim from `assets/datasets/dataset_2026_04_03.json`)
@@ -399,108 +396,10 @@ pub mod q13 {
             .unwrap_or_else(|| panic!("NORAD {norad_id} is not in the Q13 fixture"))
     }
 
-    /// The elements the app stores in `OrbitalSelectionState` when the user picks
-    /// `record` from the catalog: `load_dataset_entities` (mean motion → semi-major
-    /// axis, degrees → radians, then the f32 `GpuOrbitalElements` buffer), then
-    /// back to f64 as `project_detail.rs` does ([`gpu_to_editable`]).
-    ///
-    /// The epoch offset is taken against [`fixed_epoch`], the dataset reference
-    /// epoch in a harness app; the app uses the wall clock there (F-06).
-    pub fn app_elements(record: &JsonOrbital) -> EditableOrbitalElements {
-        let value = |field: &Option<serde_json::Value>, name: &str| {
-            field
-                .as_ref()
-                .and_then(|value| value.as_f64())
-                .unwrap_or_else(|| panic!("record has no numeric {name}"))
-        };
-        let mean_motion = value(&record.mean_motion, "MEAN_MOTION");
-        let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
-        let semi_major_axis = (GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s)).powf(1.0 / 3.0);
-        let object_epoch =
-            parse_dataset_epoch(record.epoch.as_deref().expect("record has no EPOCH"));
-
-        let gpu = GpuOrbitalElements {
-            id: value(&record.norad_cat_id, "NORAD_CAT_ID") as u32,
-            a: semi_major_axis as f32,
-            e: value(&record.eccentricity, "ECCENTRICITY") as f32,
-            i: value(&record.inclination, "INCLINATION").to_radians() as f32,
-            raan: value(&record.ra_of_asc_node, "RA_OF_ASC_NODE").to_radians() as f32,
-            argp: value(&record.arg_of_pericenter, "ARG_OF_PERICENTER").to_radians() as f32,
-            mean_anomaly: value(&record.mean_anomaly, "MEAN_ANOMALY").to_radians() as f32,
-            epoch_offset_seconds: (object_epoch - fixed_epoch()) as f32,
-        };
-        gpu_to_editable(&gpu)
-    }
-
-    /// `project_detail.rs`'s f32 → f64 conversion of a catalog entry.
-    /// `epoch_offset_seconds` is kept here but `to_vec6()` drops it.
-    // F-27: current behaviour, expected to change in P4
-    pub fn gpu_to_editable(elements: &GpuOrbitalElements) -> EditableOrbitalElements {
-        EditableOrbitalElements {
-            semi_major_axis_m: elements.a as f64,
-            eccentricity: elements.e as f64,
-            inclination_rad: elements.i as f64,
-            raan_rad: elements.raan as f64,
-            arg_perigee_rad: elements.argp as f64,
-            mean_anomaly_rad: elements.mean_anomaly as f64,
-            epoch_offset_seconds: elements.epoch_offset_seconds as f64,
-        }
-    }
-
-    /// The fixed-format branch of `parse_dataset_epoch_fast` (`propagation.rs`),
-    /// the format every fixture record uses.
-    fn parse_dataset_epoch(raw: &str) -> Epoch {
-        let field = |range: std::ops::Range<usize>| -> u32 {
-            raw.get(range)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or_else(|| panic!("bad EPOCH {raw}"))
-        };
-        assert!(
-            raw.len() >= 19 && &raw[4..5] == "-" && &raw[10..11] == "T",
-            "EPOCH {raw} is not in the fixed format"
-        );
-        let whole_seconds = field(17..19) as f64;
-        let digits = raw.get(20..).unwrap_or_default();
-        let fractional_seconds = if raw.get(19..20) == Some(".") && !digits.is_empty() {
-            digits.parse::<u32>().expect("bad EPOCH fraction") as f64
-                / 10_f64.powi(digits.len() as i32)
-        } else {
-            0.0
-        };
-        Epoch::from_datetime(
-            field(0..4),
-            field(5..7) as u8,
-            field(8..10) as u8,
-            field(11..13) as u8,
-            field(14..16) as u8,
-            whole_seconds + fractional_seconds,
-            0.0,
-            TimeSystem::UTC,
-        )
-    }
-
-    /// How the two spacecraft get their initial epoch.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum EpochMode {
-        /// As in the app: `setup_time` and `init_orbitals` read the wall clock (F-06).
-        AppPath,
-        /// Both propagators start at [`fixed_epoch`], and so does `WorldTime`.
-        Fixed,
-    }
-
-    impl EpochMode {
-        pub fn name(self) -> &'static str {
-            match self {
-                Self::AppPath => "app_path",
-                Self::Fixed => "fixed",
-            }
-        }
-    }
-
     pub struct Q13Handles {
         /// The HST: `"Satellite1"`, carries the `CaptureComponent`.
         pub debris: Entity,
-        /// The chaser: the tether root, `CameraTarget`.
+        /// The chaser: the tether root, `SimAnchor`.
         pub root: Entity,
     }
 
@@ -514,7 +413,8 @@ pub mod q13 {
     }
 
     pub struct Q13Run {
-        /// `(step, from, to)` per logged transition; a cascade shares one step.
+        /// `(step, from, to)` per [`CaptureTransition`], `step` being the fixed step
+        /// it fired in.
         pub transitions: Vec<(u64, String, String)>,
         /// One sample every [`CHECKPOINT_EVERY`] ticks.
         pub checkpoints: Vec<Q13Sample>,
@@ -527,18 +427,26 @@ pub mod q13 {
         pub wall: Duration,
     }
 
-    fn catalog_pick(label: &str, norad_id: u64) -> SelectedOrbitalObject {
+    /// The selection the app makes when the user picks `norad_id` from the catalog
+    /// (F-27: fixed in P4): the record's full-precision elements at its own epoch,
+    /// and the record itself, so the body starts from SGP4.
+    pub fn catalog_pick(label: &str, norad_id: u64) -> SelectedOrbitalObject {
+        let (_, gp, _) = gp_record_to_elements(&fixture_record(norad_id), fixed_epoch())
+            .unwrap_or_else(|| panic!("NORAD {norad_id}: the fixture record is incomplete"));
         SelectedOrbitalObject {
             source: OrbitalSelectionSource::Custom {
                 label: label.to_string(),
             },
-            elements: app_elements(&fixture_record(norad_id)),
+            elements: EditableOrbitalElements::from_gp(&gp),
+            gp: Some(gp),
         }
     }
 
     /// Select the HST and the chaser, enter the sim, start it, and mark the HST
-    /// for capture with `example_plan`, as the app's UI does.
-    pub fn build(app: &mut App, epoch_mode: EpochMode) -> Q13Handles {
+    /// for capture with `example_plan`, as the app's UI does. The start epoch is
+    /// the app's [`SimConfig`](crate::time::SimConfig) ([`fixed_epoch`] in [`test_app`]); the wall-clock
+    /// epoch mode was retired in P4 S6 (the sim has no wall-clock path, Q41).
+    pub fn build(app: &mut App) -> Q13Handles {
         load_example_plans(app);
         app.world_mut().resource_mut::<SelectedProject>().project_id = Some(PLAN_ID.to_string());
         {
@@ -547,47 +455,17 @@ pub mod q13 {
             selection.chaser = Some(catalog_pick("P0 HST CHASER", CHASER_NORAD_ID));
         }
 
-        match epoch_mode {
-            EpochMode::Fixed => enter_sim(app),
-            EpochMode::AppPath => {
-                // Keep `setup_time`'s wall-clock epoch, as in the app.
-                // F-06: current behaviour, expected to change in P4
-                app.world_mut()
-                    .resource_mut::<NextState<UiScreen>>()
-                    .set(UiScreen::Sim);
-                app.update();
-            }
-        }
+        enter_sim(app);
         start_running(app);
 
         // `spawn_selected_bodies` has spawned the tether root and the debris with
-        // `Orbit::FromElements`; `init_orbitals` turns them into propagators on the
-        // next update.
-        let pending: Vec<(Entity, Vector6<f64>)> = app
-            .world_mut()
-            .query::<(Entity, &Orbit)>()
-            .iter(app.world())
-            .map(|(entity, orbit)| match orbit {
-                Orbit::FromElements(elements) => (entity, *elements),
-                Orbit::FromTle(_) => panic!("unexpected TLE orbit"),
-            })
-            .collect();
+        // `Orbit::FromGp`; `init_orbitals` turns them into propagators at the start
+        // epoch (SGP4 state there) on the next update.
+        let pending = app.world_mut().query::<&Orbit>().iter(app.world()).count();
         assert_eq!(
-            pending.len(),
-            2,
+            pending, 2,
             "precondition: root and debris await init_orbitals"
         );
-        if epoch_mode == EpochMode::Fixed {
-            // Replace `init_orbitals`' wall-clock start with the fixed epoch.
-            for (entity, elements) in pending {
-                let mut entity = app.world_mut().entity_mut(entity);
-                entity.remove::<Orbit>();
-                entity
-                    .get_mut::<Orbital>()
-                    .expect("Orbit requires Orbital")
-                    .propagator = Some(fixed_propagator(kepler_eci(elements, fixed_epoch())));
-            }
-        }
         tick(app);
 
         let plan = app
@@ -613,8 +491,11 @@ pub mod q13 {
             );
         }
 
-        // As `ui/plugin.rs` does on "Capture".
-        let start_time = app.world().resource::<Time<Physics>>().elapsed_secs_f64();
+        // As `apply_sim_commands` does on "Capture": sim seconds since the start.
+        let start_time = {
+            let world_time = app.world().resource::<WorldTime>();
+            world_time.epoch - world_time.start_epoch
+        };
         let component =
             build_capture_component(PLAN_ID, &plan, start_time).expect("example_plan has states");
         app.world_mut().entity_mut(handles.debris).insert(component);
@@ -648,17 +529,20 @@ pub mod q13 {
 
     /// Build the scenario in a fresh harness app and tick it up to `max_ticks`
     /// times (stopping once the state is `capture` if `stop_at_capture`).
-    pub fn run(epoch_mode: EpochMode, max_ticks: u64, stop_at_capture: bool) -> Q13Run {
+    pub fn run(max_ticks: u64, stop_at_capture: bool) -> Q13Run {
         let started = Instant::now();
         let mut app = test_app();
-        let handles = build(&mut app, epoch_mode);
+        let handles = build(&mut app);
         assert_eq!(
             sample(&app, &handles).state,
             "rendezvous",
             "precondition: no transition before the run starts"
         );
 
-        let mut tap = LogTap::new(app.world());
+        let mut cursor = app
+            .world()
+            .resource::<Messages<CaptureTransition>>()
+            .get_cursor_current();
         let mut transitions = Vec::new();
         let mut checkpoints = Vec::new();
         let mut ticks = 0;
@@ -667,12 +551,10 @@ pub mod q13 {
             tick(&mut app);
             ticks += 1;
             final_sample = sample(&app, &handles);
-            for (_, source, message) in tap.drain(app.world()) {
-                if source == "capture"
-                    && let Some((from, to, _)) = parse_transition(&message)
-                {
-                    transitions.push((final_sample.step, from, to));
-                }
+            let start_epoch = app.world().resource::<WorldTime>().start_epoch;
+            for transition in cursor.read(app.world().resource::<Messages<CaptureTransition>>()) {
+                let step = ((transition.epoch - start_epoch) / PHYS_DT).round() as u64;
+                transitions.push((step, transition.from.clone(), transition.to.clone()));
             }
             if ticks % CHECKPOINT_EVERY == 0 {
                 checkpoints.push(final_sample.clone());
@@ -735,11 +617,10 @@ mod self_tests {
     #[test]
     fn harness_epoch_is_fixed() {
         let mut app = test_app();
-        {
-            let world_time = app.world().resource::<WorldTime>();
-            assert_eq!(world_time.epoch, fixed_epoch());
-            assert_eq!(world_time.start_epoch, fixed_epoch());
-        }
+        assert_eq!(
+            app.world().resource::<SimConfig>().start_epoch,
+            fixed_epoch()
+        );
 
         enter_sim(&mut app);
         let world_time = app.world().resource::<WorldTime>();

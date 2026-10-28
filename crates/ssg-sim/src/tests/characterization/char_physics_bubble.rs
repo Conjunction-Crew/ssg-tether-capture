@@ -1,12 +1,12 @@
 //! Characterization of the physics bubble (`physics_bubble_add_remove`): the
-//! enable/disable thresholds and the F-07, F-23 and F-25 defects.
+//! enable/disable thresholds, the F-07 and F-23 fixes and the anchor (F-25).
 //!
-//! Layout: the anchor A (`CameraTarget`) sits at the origin of the floating-origin
+//! Layout: the anchor A (`SimAnchor`) sits at the origin of the floating-origin
 //! frame with an ISS orbit. Other bodies carry an orbit whose ECI state is A's plus
 //! a known offset and zero relative velocity. Distances are `rb.position.length()`
 //! (`propagation.rs:480`, `:505`).
 
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::telemetry::LogLevel;
@@ -35,10 +35,10 @@ fn iss_eci_plus(offset: DVec3) -> Vector6<f64> {
     kepler_eci(ISS_ORBIT, fixed_epoch()) + Vector6::new(offset.x, offset.y, offset.z, 0.0, 0.0, 0.0)
 }
 
-/// The anchor: `CameraTarget`, at the origin, on the ISS orbit.
+/// The anchor: `SimAnchor`, at the origin, on the ISS orbit.
 fn spawn_anchor(app: &mut App) -> Entity {
     let anchor = spawn_body(app, DVec3::ZERO, Some(DVec3::ZERO), false);
-    app.world_mut().entity_mut(anchor).insert(CameraTarget);
+    app.world_mut().entity_mut(anchor).insert(SimAnchor);
     anchor
 }
 
@@ -134,11 +134,11 @@ fn bubble_messages(events: &[(LogLevel, &'static str, String)]) -> Vec<String> {
         .collect()
 }
 
-/// Entities with an `Orbital` and no `CameraTarget`, in the order the bubble system
+/// Entities with an `Orbital` and no `SimAnchor`, in the order the bubble system
 /// iterates them.
 fn bubble_iteration_order(app: &mut App) -> Vec<Entity> {
     app.world_mut()
-        .query_filtered::<Entity, (With<Orbital>, Without<CameraTarget>)>()
+        .query_filtered::<Entity, (With<Orbital>, Without<SimAnchor>)>()
         .iter(app.world())
         .collect()
 }
@@ -260,7 +260,7 @@ fn char_bubble_disabled_body_tracks_relative_state() {
 }
 
 #[test]
-fn char_bubble_enables_below_100m_keeps_propagator() {
+fn bubble_enable_rebuilds_propagator() {
     let mut app = running_app();
     let anchor = spawn_anchor(&mut app);
     let body = spawn_body(
@@ -270,7 +270,6 @@ fn char_bubble_enables_below_100m_keeps_propagator() {
         true,
     );
     assert!(is_disabled(&app, body));
-    let before = propagator(&app, body);
 
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
@@ -285,13 +284,28 @@ fn char_bubble_enables_below_100m_keeps_propagator() {
         )]
     );
 
-    // F-07: current behaviour, expected to change in P4
-    // The propagator was not rebuilt (`propagation.rs:515` is commented out), so it
-    // still gives the pre-enable state.
-    let epoch = app.world().resource::<WorldTime>().epoch;
-    assert_eq!(
-        propagator(&app, body).state_eci(epoch).unwrap(),
-        before.state_eci(epoch).unwrap()
+    // F-07: fixed in P4
+    // The propagator was rebuilt as the frame origin's orbit: the body's own ECI
+    // state minus its bubble-frame state ...
+    let expected = eci_of(&app, body)
+        - plus(
+            &Vector6::zeros(),
+            position(&app, body),
+            velocity(&app, body),
+        );
+    assert_eci_close(
+        &state_at_epoch(&app, body),
+        &expected,
+        "rebuilt propagator state",
+    );
+    // ... which is the anchor's position, up to two-body drift.
+    let anchor_state = eci_of(&app, anchor);
+    let rebuilt = state_at_epoch(&app, body);
+    assert_close_dvec3(
+        DVec3::new(rebuilt[0], rebuilt[1], rebuilt[2]),
+        DVec3::new(anchor_state[0], anchor_state[1], anchor_state[2]),
+        1e-3,
+        "rebuilt propagator position vs the anchor",
     );
 }
 
@@ -309,7 +323,7 @@ fn missing_state_scenario(with_m: bool) -> (App, Entity) {
     );
 
     // Preconditions: B has a cached state to process and M, if any, is iterated
-    // before B (the loop's `return` then skips B).
+    // before B.
     tick_precondition(&mut app, anchor, m, b);
     (app, b)
 }
@@ -323,7 +337,7 @@ fn tick_precondition(app: &mut App, _anchor: Entity, m: Option<Entity>, b: Entit
 }
 
 #[test]
-fn char_bubble_missing_state_stops_loop() {
+fn bubble_missing_state_skips_entity() {
     // Control: without M, B (111 m) is disabled.
     let (mut app, b) = missing_state_scenario(false);
     let mut tap = LogTap::new(app.world());
@@ -332,20 +346,24 @@ fn char_bubble_missing_state_stops_loop() {
     assert!(is_disabled(&app, b));
     assert_eq!(bubble_messages(&events).len(), 1);
 
-    // With M first, whose `Orbital` has no propagator and so no cached state, the
-    // `return` at `propagation.rs:475` ends the loop before B is reached.
+    // With M first, whose `Orbital` has no propagator and so no cached state, M is
+    // skipped and B is still disabled.
     let (mut app, b) = missing_state_scenario(true);
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
     let events = tap.drain(app.world());
-    // F-07: current behaviour, expected to change in P4
-    assert!(!is_disabled(&app, b));
-    // F-07: current behaviour, expected to change in P4
-    assert!(bubble_messages(&events).is_empty());
+    // F-07: fixed in P4
+    assert!(is_disabled(&app, b));
+    assert_eq!(
+        bubble_messages(&events),
+        vec![format!(
+            "Physics disabled for entity {b:?} (dist 0 km from target)"
+        )]
+    );
 }
 
 #[test]
-fn char_bubble_shared_target_rv_accumulates() {
+fn bubble_per_body_relative_state() {
     let mut app = running_app();
     let anchor = spawn_anchor(&mut app);
     let b1 = spawn_body(
@@ -386,19 +404,17 @@ fn char_bubble_shared_target_rv_accumulates() {
         &plus(&anchor_state, DVec3::new(111.0, 0.0, 0.0), DVec3::ZERO),
         "B1 propagator state",
     );
-    // F-23: current behaviour, expected to change in P4
-    // ... but B2's includes B1's offset as well: the shared `target_rv` accumulates
-    // (`propagation.rs:481-486`).
+    // F-23: fixed in P4
+    // ... and B2's from the anchor's state plus B2's own offset only.
     assert_eci_close(
         &state_at_epoch(&app, b2),
-        &plus(&anchor_state, DVec3::new(111.0, 111.0, 0.0), DVec3::ZERO),
+        &plus(&anchor_state, DVec3::new(0.0, 111.0, 0.0), DVec3::ZERO),
         "B2 propagator state",
     );
-    // F-23: current behaviour, expected to change in P4
+    // F-23: fixed in P4
     // B3 (already disabled, visited after B1 and B2) gets its relative Position
-    // against the accumulated `target_rv`, not against the anchor.
-    let relative =
-        eci_of(&app, b3) - plus(&anchor_state, DVec3::new(111.0, 111.0, 0.0), DVec3::ZERO);
+    // against the anchor.
+    let relative = eci_of(&app, b3) - anchor_state;
     assert_close_dvec3(
         position(&app, b3),
         DVec3::new(relative[0], relative[1], relative[2]),
@@ -407,14 +423,14 @@ fn char_bubble_shared_target_rv_accumulates() {
     );
     assert_close_dvec3(
         position(&app, b3),
-        DVec3::new(-111.0, -111.0, 300.0),
+        DVec3::new(0.0, 0.0, 300.0),
         1e-3,
         "B3 relative position vs nominal",
     );
 }
 
 #[test]
-fn char_bubble_keys_on_camera_target() {
+fn bubble_keys_on_sim_anchor() {
     let mut app = running_app();
     let anchor_a = spawn_anchor(&mut app);
     // B: disabled, 300 m from A along x. T: disabled, 200 m from A along -x.
@@ -442,17 +458,16 @@ fn char_bubble_keys_on_camera_target() {
     assert!(is_disabled(&app, body_b));
     assert!(is_disabled(&app, body_t));
 
-    // Move `CameraTarget` from A to T, as `orbit_camera_switch_target` does.
-    app.world_mut()
-        .entity_mut(anchor_a)
-        .remove::<CameraTarget>();
-    app.world_mut().entity_mut(body_t).insert(CameraTarget);
+    // Move `SimAnchor` from A to T: the bubble re-centres on the anchor (F-25: fixed
+    // in P4; the camera target no longer moves it, see the app's
+    // `bubble_ignores_camera_target`).
+    app.world_mut().entity_mut(anchor_a).remove::<SimAnchor>();
+    app.world_mut().entity_mut(body_t).insert(SimAnchor);
 
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
     let events = tap.drain(app.world());
 
-    // F-25: current behaviour, expected to change in P4
     // The bubble is now relative to T: B is ~500 m from T.
     assert_close_dvec3(
         position(&app, body_b),
@@ -470,11 +485,8 @@ fn char_bubble_keys_on_camera_target() {
         "B relative to T (from the cache)",
     );
 
-    // OBSERVED, differs from the plan: the plan predicted that A, "now 200 m from T
-    // and enabled", gets disabled. The bubble measures `rb.position.length()` in the
-    // frame of the old anchor, where A is still at the origin, so A stays enabled
-    // and silent.
-    // F-25: current behaviour, expected to change in P4
+    // The bubble measures `rb.position.length()` in the frame of the old anchor,
+    // where A is still at the origin, so A stays enabled and silent.
     assert!(!is_disabled(&app, anchor_a));
     assert_close_dvec3(position(&app, anchor_a), DVec3::ZERO, 1e-9, "A position");
     assert!(bubble_messages(&events).is_empty());

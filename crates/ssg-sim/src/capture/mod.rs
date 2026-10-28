@@ -5,10 +5,12 @@ pub mod plan;
 use avian3d::{
     math::PI,
     prelude::{
-        Forces, LinearVelocity, Physics, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces,
+        Forces, LinearVelocity, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery, Rotation,
+        WriteRigidBodyForces,
     },
 };
-use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
+use bevy::{ecs::system::SystemParam, log::debug_once, math::DVec3, prelude::*};
+use brahe::Epoch;
 
 use crate::SimSet;
 use crate::SimStep;
@@ -17,6 +19,8 @@ use crate::capture::plan::{
     CompiledCaptureTransition, build_capture_component,
 };
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::LvlhFrame;
+use crate::physics_bubble::body_eci_state;
 use crate::telemetry::{DataCollection, LogEvent, LogLevel};
 use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
@@ -30,17 +34,52 @@ pub struct CaptureComponent {
     pub state_elapsed_time_s: f64,
 }
 
+/// The capture-sphere radius at the start of every capture (F-11).
+pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
+
 #[derive(Resource, Debug, Default)]
 pub struct CaptureSphereRadius {
     pub radius: f64,
 }
 
-/// The read-only resources [`capture_state_machine_update`] reads.
+/// A capture-state transition, written by the capture controller next to its
+/// `State: from → to (reason)` log line. `epoch` is the sub-step the transition
+/// fired in, so `round((epoch − start_epoch) / PHYS_DT)` is its exact fixed step,
+/// also when one update runs several steps (warp, F-17).
+#[derive(Message, Debug, Clone, PartialEq)]
+pub struct CaptureTransition {
+    pub entity: Entity,
+    pub from: String,
+    pub to: String,
+    pub epoch: Epoch,
+    pub reason: String,
+}
+
+/// The messages [`capture_state_machine_update`] writes.
 #[derive(SystemParam)]
-pub struct CaptureInputs<'w> {
+pub struct CaptureMessages<'w> {
+    log_events: MessageWriter<'w, LogEvent>,
+    transitions: MessageWriter<'w, CaptureTransition>,
+}
+
+/// The read-only data [`capture_state_machine_update`] reads.
+#[derive(SystemParam)]
+pub struct CaptureInputs<'w, 's> {
     capture_plan_lib: Res<'w, CapturePlanLibrary>,
     orbital_cache: Res<'w, OrbitalCache>,
     world_time: Res<'w, WorldTime>,
+    disabled: Query<'w, 's, (), With<RigidBodyDisabled>>,
+}
+
+/// The velocity of a tether node relative to the capture target, measured in the
+/// target's LVLH frame (F-35): `rel_v − omega × rel_r` with `rel_r = node −
+/// target` and `rel_v = node_v − target_v`, in ECI axes. Without a frame (the
+/// target has no cached state yet) the plain difference.
+fn node_relative_velocity(frame: Option<&LvlhFrame>, rel_r: DVec3, rel_v: DVec3) -> DVec3 {
+    match frame {
+        Some(frame) => frame.relative_velocity_in_frame(rel_r, rel_v),
+        None => rel_v,
+    }
 }
 
 pub fn capture_state_machine_update(
@@ -50,12 +89,13 @@ pub fn capture_state_machine_update(
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
     mut data_collection: ResMut<DataCollection>,
-    mut log_events: MessageWriter<LogEvent>,
+    mut messages: CaptureMessages,
 ) {
     let CaptureInputs {
         capture_plan_lib,
         orbital_cache,
         world_time,
+        disabled,
     } = inputs;
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
@@ -69,7 +109,23 @@ pub fn capture_state_machine_update(
             capture_entity_linvel = *capture_entity_rb.linear_velocity;
             capture_entity_rotation = *capture_entity_rb.rotation;
         } else {
-            return;
+            // F-39: one capture entity without a rigid body does not stop the others.
+            continue;
+        }
+
+        // The capture target's own LVLH frame (F-35).
+        let frame = body_eci_state(
+            &orbital_cache,
+            capture_entity,
+            capture_entity_position.0,
+            capture_entity_linvel.0,
+            disabled.contains(capture_entity),
+        )
+        .and_then(|state| LvlhFrame::from_eci(&state));
+        if frame.is_none() {
+            debug_once!(
+                "capture target {capture_entity:?} has no cached ECI state: relative velocity in ECI axes"
+            );
         }
 
         // Execute plan state machine
@@ -82,23 +138,28 @@ pub fn capture_state_machine_update(
 
                 // Compute root-relative position/velocity first so that the
                 // rb_forces.p0() borrow is fully released before calling
-                // resolve_root_state (which needs &mut log_events).
+                // resolve_root_state (which needs &mut messages).
                 let root_rv: Option<(f64, f64)> = nodes.first().and_then(|&root_node| {
                     rb_forces.p0().get(root_node).ok().map(|root_rb| {
                         let r = capture_entity_position.0 - root_rb.position.0;
-                        let v = root_rb.linear_velocity.0 - capture_entity_linvel.0;
+                        let v = node_relative_velocity(
+                            frame.as_ref(),
+                            -r,
+                            root_rb.linear_velocity.0 - capture_entity_linvel.0,
+                        );
                         (r.length(), v.length())
                     })
                 });
 
                 let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
                     resolve_root_state(
+                        capture_entity,
                         &mut capture_component,
                         plan,
-                        r_len,
-                        v_len,
+                        (r_len, v_len),
+                        &world_time,
                         &mut capture_sphere_radius,
-                        &mut log_events,
+                        &mut messages,
                     )
                 } else {
                     current_state_parameters(plan, &capture_component.current_state)
@@ -113,9 +174,16 @@ pub fn capture_state_machine_update(
                             continue;
                         };
 
+                        // `rel_r` points from the node to the target; `rel_v` is
+                        // the node's LVLH-frame velocity relative to it (F-35).
+                        let rel_r = capture_entity_position.0 - rb.position.0;
                         (
-                            capture_entity_position.0 - rb.position.0,
-                            rb.linear_velocity.0 - capture_entity_linvel.0,
+                            rel_r,
+                            node_relative_velocity(
+                                frame.as_ref(),
+                                -rel_r,
+                                rb.linear_velocity.0 - capture_entity_linvel.0,
+                            ),
                         )
                     };
                     let rel_r_len = rel_r.length();
@@ -182,9 +250,15 @@ pub fn capture_state_machine_update(
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        node_forces.apply_force(force_vec.normalize() * max_force);
+                        // F-11: a zero vector gives a zero force, not NaN.
+                        let force = force_vec.normalize_or_zero() * max_force;
+                        debug_assert!(
+                            force.is_finite(),
+                            "non-finite force {force:?} on tether node {idx}"
+                        );
+                        node_forces.apply_force(force);
                     } else {
-                        log_events.write(LogEvent {
+                        messages.log_events.write(LogEvent {
                             level: LogLevel::Warn,
                             source: "capture",
                             message: format!(
@@ -202,7 +276,7 @@ pub fn capture_state_machine_update(
                     plan.tether,
                     orbital_cache.tethers.keys().collect::<Vec<_>>()
                 );
-                log_events.write(LogEvent {
+                messages.log_events.write(LogEvent {
                     level: LogLevel::Error,
                     source: "capture",
                     message: format!(
@@ -217,7 +291,7 @@ pub fn capture_state_machine_update(
                 capture_component.plan_id
             );
             commands.entity(capture_entity).remove::<CaptureComponent>();
-            log_events.write(LogEvent {
+            messages.log_events.write(LogEvent {
                 level: LogLevel::Error,
                 source: "capture",
                 message: format!(
@@ -238,106 +312,107 @@ fn current_state_parameters(
         .unwrap_or_default()
 }
 
+/// One step of the capture state machine (Q14, F-24). Only the current state's
+/// transitions are checked, in plan order. A transition is satisfied when every
+/// condition it carries holds; one without a condition never fires. The first
+/// satisfied transition fires and nothing more happens this step (no cascade).
+/// The state current after this check sets this step's parameters and shrinks the
+/// capture sphere once, so when a transition fires, the new state's limits and
+/// shrink rate already apply to this step's forces.
 fn resolve_root_state(
+    capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     plan: &CompiledCapturePlan,
-    rel_r_length: f64,
-    rel_v_length: f64,
+    (rel_r_length, rel_v_length): (f64, f64),
+    world_time: &WorldTime,
     capture_sphere_radius: &mut CaptureSphereRadius,
-    log_events: &mut MessageWriter<LogEvent>,
+    messages: &mut CaptureMessages,
 ) -> CompiledCaptureStateParameters {
-    let Some(&start_index) = plan.state_indices.get(&capture_component.current_state) else {
+    let Some(state) = plan.state(&capture_component.current_state) else {
         return CompiledCaptureStateParameters::default();
     };
 
-    let mut parameters = CompiledCaptureStateParameters::default();
+    let fired = state.transitions.iter().find_map(|transition| {
+        transition_satisfied(transition, rel_r_length, rel_v_length)
+            .map(|reason| (transition.to.clone(), reason))
+    });
+    if let Some((to, reason)) = fired {
+        transition_to(
+            capture_entity,
+            capture_component,
+            &to,
+            world_time,
+            reason,
+            messages,
+        );
+    }
 
-    for state in &plan.states[start_index..] {
-        if state.id != capture_component.current_state {
-            continue;
-        }
-
-        parameters = state.parameters;
-
-        if let Some(shrink_rate) = state.parameters.shrink_rate
-            && capture_sphere_radius.radius > 0.1
-        {
-            capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
-        }
-
-        for transition in &state.transitions {
-            apply_transition(
-                capture_component,
-                transition,
-                rel_r_length,
-                rel_v_length,
-                log_events,
-            );
-        }
+    let parameters = current_state_parameters(plan, &capture_component.current_state);
+    if let Some(shrink_rate) = parameters.shrink_rate
+        && capture_sphere_radius.radius > 0.1
+    {
+        capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
     }
 
     parameters
 }
 
-fn apply_transition(
-    capture_component: &mut CaptureComponent,
+/// The reason string if every condition of `transition` holds (`None` if one does
+/// not, or if it has no condition), e.g. `distance 1500.0 m < 2000.0 m, rel vel
+/// 1.00 m/s < 5.00 m/s`.
+fn transition_satisfied(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
-    log_events: &mut MessageWriter<LogEvent>,
-) {
-    if let Some(limit) = transition.distance_less_than
-        && rel_r_length < limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
-            log_events,
-        );
-    }
+) -> Option<String> {
+    let checks = [
+        transition.distance_less_than.map(|limit| {
+            (
+                rel_r_length < limit,
+                format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
+            )
+        }),
+        transition.distance_greater_than.map(|limit| {
+            (
+                rel_r_length > limit,
+                format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
+            )
+        }),
+        transition.relative_velocity_less_than.map(|limit| {
+            (
+                rel_v_length < limit,
+                format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
+            )
+        }),
+        transition.relative_velocity_greater_than.map(|limit| {
+            (
+                rel_v_length > limit,
+                format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
+            )
+        }),
+    ];
 
-    if let Some(limit) = transition.distance_greater_than
-        && rel_r_length > limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
-            log_events,
-        );
+    let mut reasons = Vec::new();
+    for (holds, reason) in checks.into_iter().flatten() {
+        if !holds {
+            return None;
+        }
+        reasons.push(reason);
     }
-
-    if let Some(limit) = transition.relative_velocity_less_than
-        && rel_v_length < limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
-            log_events,
-        );
-    }
-
-    if let Some(limit) = transition.relative_velocity_greater_than
-        && rel_v_length > limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
-            log_events,
-        );
-    }
+    (!reasons.is_empty()).then(|| reasons.join(", "))
 }
 
+/// Enters `new_state` at the current sim time (`state_enter_time_s` is sim seconds
+/// since the start epoch) and reports it as a log line and a [`CaptureTransition`].
 fn transition_to(
+    capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     new_state: &str,
+    world_time: &WorldTime,
     reason: String,
-    log_events: &mut MessageWriter<LogEvent>,
+    messages: &mut CaptureMessages,
 ) {
-    log_events.write(LogEvent {
+    messages.log_events.write(LogEvent {
         level: LogLevel::Info,
         source: "capture",
         message: format!(
@@ -345,9 +420,37 @@ fn transition_to(
             capture_component.current_state, new_state, reason
         ),
     });
+    messages.transitions.write(CaptureTransition {
+        entity: capture_entity,
+        from: capture_component.current_state.clone(),
+        to: String::from(new_state),
+        epoch: world_time.epoch,
+        reason,
+    });
     capture_component.current_state = String::from(new_state);
-    capture_component.state_enter_time_s = 0.0;
+    capture_component.state_enter_time_s = world_time.epoch - world_time.start_epoch;
     capture_component.state_elapsed_time_s = 0.0;
+}
+
+/// Debug builds only: panics if an enabled rigid body has a non-finite `Position`
+/// or `LinearVelocity`, naming the entity and the step (no NaN reaches avian).
+#[cfg(debug_assertions)]
+pub fn assert_finite_state(
+    bodies: Query<
+        (Entity, &Position, &LinearVelocity),
+        (With<RigidBody>, Without<RigidBodyDisabled>),
+    >,
+    world_time: Res<WorldTime>,
+) {
+    for (entity, position, velocity) in &bodies {
+        if !position.0.is_finite() || !velocity.0.is_finite() {
+            let step = ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round();
+            panic!(
+                "non-finite state for {entity:?} at step {step}: position {:?}, velocity {:?}",
+                position.0, velocity.0
+            );
+        }
+    }
 }
 
 /// Commands the app sends to the simulation (D1).
@@ -362,14 +465,19 @@ pub enum SimCommand {
 
 /// Applies the queued [`SimCommand`]s in `Last` ([`SimSet::ApplyCommands`]), the
 /// frame the UI sends them, as the UI handler did before P3. The capture start
-/// time is the physics clock (F-38: current behaviour, expected to change in P4).
+/// time is sim seconds since the start epoch (F-38: fixed in P4).
 pub fn apply_sim_commands(
     mut commands: Commands,
     mut sim_commands: MessageReader<SimCommand>,
     capture_plan_lib: Res<CapturePlanLibrary>,
-    physics_time: Res<Time<Physics>>,
+    // Absent outside the sim screen, where no capture target exists.
+    world_time: Option<Res<WorldTime>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut data_collection: ResMut<DataCollection>,
+    // The radius is absent outside the sim screen, like `WorldTime`.
+    (mut data_collection, mut capture_sphere_radius): (
+        ResMut<DataCollection>,
+        Option<ResMut<CaptureSphereRadius>>,
+    ),
     mut log: MessageWriter<LogEvent>,
 ) {
     for command in sim_commands.read() {
@@ -391,9 +499,13 @@ pub fn apply_sim_commands(
                             if let Some(capture_component) = build_capture_component(
                                 plan_id.as_str(),
                                 plan,
-                                physics_time.elapsed_secs_f64(),
+                                world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                                // F-11: every capture starts with the initial radius.
+                                if let Some(radius) = capture_sphere_radius.as_mut() {
+                                    radius.radius = INITIAL_CAPTURE_SPHERE_RADIUS_M;
+                                }
                                 log.write(LogEvent {
                                     level: LogLevel::Info,
                                     source: "ui",
@@ -454,11 +566,19 @@ pub struct CapturePlugin;
 impl Plugin for CapturePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SimCommand>()
+            .add_message::<CaptureTransition>()
             .configure_sets(Last, SimSet::ApplyCommands)
             .add_systems(
                 ManualPhysics,
                 capture_state_machine_update.in_set(SimStep::Capture),
             )
             .add_systems(Last, apply_sim_commands.in_set(SimSet::ApplyCommands));
+        #[cfg(debug_assertions)]
+        app.add_systems(
+            ManualPhysics,
+            assert_finite_state
+                .in_set(SimStep::Capture)
+                .after(capture_state_machine_update),
+        );
     }
 }

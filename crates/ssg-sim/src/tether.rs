@@ -2,14 +2,13 @@
 
 use avian3d::prelude::*;
 use bevy::{math::DVec3, prelude::*};
-use nalgebra::Vector6;
 
 use crate::SimSet;
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::orbit::Orbit;
 use crate::orbit::cache::OrbitalCache;
-use crate::orbit::selection::OrbitalSelectionState;
+use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
 use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::project::SelectedProject;
 use crate::session::{SimState, UiScreen};
@@ -37,10 +36,22 @@ pub struct DebrisBody {
     pub model_path: String,
 }
 
+/// How a selected body starts: SGP4 for an unedited catalog pick, otherwise its
+/// elements at their epoch (F-10, F-27).
+fn initial_orbit(selected: &SelectedOrbitalObject) -> Orbit {
+    match &selected.gp {
+        Some(gp) => Orbit::FromGp(gp.clone()),
+        None => Orbit::FromElementsAt {
+            elements: selected.elements.to_vec6(),
+            epoch: selected.elements.epoch,
+        },
+    }
+}
+
 pub fn spawn_debris(
     commands: &mut Commands,
     orbital_cache: &mut ResMut<OrbitalCache>,
-    elements: Vector6<f64>,
+    selected: &SelectedOrbitalObject,
 ) -> Result<(), BevyError> {
     orbital_cache.debris.insert(
         "Satellite1".to_string(),
@@ -52,7 +63,7 @@ pub fn spawn_debris(
                 },
                 RigidBody::Dynamic,
                 RigidBodyDisabled,
-                Orbit::FromElements(elements),
+                initial_orbit(selected),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
                 Mass::from(2500.0),
@@ -73,7 +84,7 @@ pub fn spawn_tether(
     orbital_entities: &mut ResMut<OrbitalCache>,
     selected_project: &Res<SelectedProject>,
     capture_plan_lib: &Res<CapturePlanLibrary>,
-    elements: Vector6<f64>,
+    selected: &SelectedOrbitalObject,
 ) -> Result<(), BevyError> {
     let root_tail_radius: f64 = 0.50;
     let rope_radius: f64 = 0.25;
@@ -133,14 +144,14 @@ pub fn spawn_tether(
     let tether_root = commands
         .spawn((
             DespawnOnExit(UiScreen::Sim),
-            CameraTarget,
+            SimAnchor,
             TetherRoot,
             sphere_shape,
             RigidBody::Dynamic,
             sphere_collider.clone(),
             Mass::from(2.0),
             Transform::from_xyz(0.0, 0.0, 0.0),
-            Orbit::FromElements(elements),
+            initial_orbit(selected),
         ))
         .id();
 
@@ -234,12 +245,12 @@ pub fn spawn_selected_bodies(
         &mut orbital_cache,
         &selected_project,
         &capture_plan_lib,
-        chaser.elements.to_vec6(),
+        chaser,
     ) {
         error!("Error spawning tether: {}", e);
     };
 
-    if let Err(e) = spawn_debris(&mut commands, &mut orbital_cache, target.elements.to_vec6()) {
+    if let Err(e) = spawn_debris(&mut commands, &mut orbital_cache, target) {
         error!("Error spawning debris: {}", e);
     };
 }

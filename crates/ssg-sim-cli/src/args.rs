@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use brahe::{Epoch, TimeSystem};
+use ssg_sim::time::MAX_STEPS_PER_UPDATE;
 
 pub const USAGE: &str = "usage: ssg-sim run <project-dir> [options]
 
@@ -14,11 +15,13 @@ options:
                        <project-dir>/datasets/*.json and <assets>/datasets/*.json)
   --assets DIR         assets directory (default ./assets)
   --epoch now|ISO      start epoch: `now` (default, the app path) or YYYY-MM-DDTHH:MM:SS[.fff]
-  --steps N            number of updates to run (default 200000)
-  --warp N             time-warp multiplier (default 1)
-  --sample-every N     trajectory sample interval in updates (default 64)
+  --steps N            fixed steps to run after the capture starts (default 200000;
+                       a multiple of --warp)
+  --warp N             time warp: fixed steps per update (default 1, at most 64)
+  --sample-every N     trajectory sample interval in fixed steps (default 64; a multiple
+                       of --warp)
   --out DIR            output directory (default <project-dir>/runs/<utc-timestamp>)
-  --stop-at-capture    stop as soon as the state is `capture`";
+  --stop-at-capture    stop at the end of the update in which the state becomes `capture`";
 
 pub const DEFAULT_PLAN: &str = "example_plan";
 
@@ -38,8 +41,11 @@ pub struct Args {
     pub datasets: Vec<PathBuf>,
     pub assets: PathBuf,
     pub epoch: EpochArg,
+    /// Fixed steps to run after the capture starts; a multiple of `warp`.
     pub steps: u64,
+    /// Fixed steps per update, at most [`MAX_STEPS_PER_UPDATE`].
     pub warp: u32,
+    /// Trajectory sample interval in fixed steps; a multiple of `warp`.
     pub sample_every: u64,
     pub out: Option<PathBuf>,
     pub stop_at_capture: bool,
@@ -99,6 +105,21 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     }
     if parsed.warp == 0 {
         return Err("--warp must be at least 1".to_string());
+    }
+    // The sim runs at most `MAX_STEPS_PER_UPDATE` fixed steps per update, so a
+    // larger warp would run fewer steps than `--steps` asks for (operator
+    // decision, P4 Run 5).
+    if parsed.warp > MAX_STEPS_PER_UPDATE {
+        return Err(format!(
+            "--warp must be at most {MAX_STEPS_PER_UPDATE} (fixed steps per update)"
+        ));
+    }
+    // Runs at different warps then sample the same fixed steps (A-12).
+    if !parsed.steps.is_multiple_of(u64::from(parsed.warp)) {
+        return Err("--steps must be a multiple of --warp".to_string());
+    }
+    if !parsed.sample_every.is_multiple_of(u64::from(parsed.warp)) {
+        return Err("--sample-every must be a multiple of --warp".to_string());
     }
     Ok(parsed)
 }

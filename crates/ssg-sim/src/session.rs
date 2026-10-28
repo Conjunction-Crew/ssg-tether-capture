@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 
 use crate::SimSet;
-use crate::capture::CaptureSphereRadius;
+use crate::capture::{CaptureSphereRadius, INITIAL_CAPTURE_SPHERE_RADIUS_M};
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::load_dataset_entities;
-use crate::time::{WorldTime, setup_time};
+use crate::time::{SimConfig, WorldTime, setup_time};
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 pub enum UiScreen {
@@ -23,12 +23,21 @@ pub enum SimState {
     Running,
 }
 
+/// Whether the sim clock advances (F-12): pause is a state, not a 0x warp.
+#[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
+pub enum PauseState {
+    #[default]
+    Running,
+    Paused,
+}
+
 pub struct SessionPlugin;
 
 impl Plugin for SessionPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<UiScreen>()
             .init_state::<SimState>()
+            .init_state::<PauseState>()
             .configure_sets(OnEnter(UiScreen::Sim), SimSet::SessionInit)
             .add_systems(
                 OnEnter(UiScreen::Sim),
@@ -40,10 +49,17 @@ impl Plugin for SessionPlugin {
     }
 }
 
-fn init_sim_resources(mut commands: Commands) {
+fn init_sim_resources(
+    mut commands: Commands,
+    config: Res<SimConfig>,
+    mut pause: ResMut<NextState<PauseState>>,
+) {
+    pause.set(PauseState::Running);
     commands.init_resource::<OrbitalCache>();
-    commands.init_resource::<WorldTime>();
-    commands.insert_resource(CaptureSphereRadius { radius: 25.0 });
+    commands.insert_resource(WorldTime::starting_at(config.start_epoch));
+    commands.insert_resource(CaptureSphereRadius {
+        radius: INITIAL_CAPTURE_SPHERE_RADIUS_M,
+    });
 }
 
 fn remove_sim_resources(mut commands: Commands) {

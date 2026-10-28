@@ -20,6 +20,22 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- `ssg-sim run`: `--steps` and `--sample-every` count fixed steps and must be multiples of `--warp` (at most 64); `summary.json` carries a `state_hash`; transitions carry their exact step; determinism tests (two runs identical, 1× vs 16× identical) and the determinism contract page (F-17)
+
+### Changed
+- Time warp: explicit pause state, ladder tops out at 8192×, work per update is capped and the HUD shows the effective warp (F-12)
+- Cycling the camera target is a pure viewing action: the floating origin and the physics bubble follow the simulation anchor (the tether root), not the camera (F-25)
+- Capture plan transitions: all conditions of a transition must hold, at most one transition fires per physics step, no cascades (F-24, Q14)
+- Bodies inside the physics bubble feel the differential two-body acceleration about the anchor's orbit (Clohessy-Wiltshire relative dynamics, F-09); relative velocity for the controller, transitions, HUD, plots and CSV is measured in the target's LVLH frame (F-35); HUD altitude uses the WGS-84 equatorial radius (F-28)
+- Catalog objects start from an SGP4 state at the simulation start epoch, computed from the full-precision record and its own epoch; edited elements are honoured at their epoch (F-10, F-27). `Orbit::FromTle` is replaced by `Orbit::FromGp` (the catalog is GP/OMM JSON, not TLE lines). Map points keep the lightweight Kepler model (documented offset)
+
+### Fixed
+- Simulation start epoch is an explicit input (`SimConfig`); the simulation core no longer reads the wall clock; the physics clock advances once per step (F-06, F-38)
+- Physics bubble: one body without an orbit no longer stops bubble processing, bodies entering the bubble get their orbit rebuilt, and each leaving body gets its own relative state (F-07, F-23)
+- Capture controller: zero-vector forces no longer produce NaN, a capture entity without a rigid body no longer stops the controller, the capture-sphere radius resets per capture (F-11, F-39)
+- Scene and map are drawn in ECI axes; the Earth is on the physical nadir (F-08)
+
 
 ## [v0.3.1] - 2026-10-27
 
