@@ -18,8 +18,13 @@ use crate::test_support::{
 use crate::time::{PHYS_DT, WorldTime};
 use bevy::prelude::*;
 
-use crate::capture::CaptureComponent;
 use crate::capture::plan::build_capture_component;
+use crate::capture::{
+    CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M, SimCommand, apply_sim_commands,
+};
+use avian3d::prelude::{Forces, LinearVelocity, Position, ReadRigidBodyForces};
+use bevy::ecs::system::RunSystemOnce;
+use bevy::math::DVec3;
 
 // Oracle plans (the `compare_runs.py --selftest` plans, with the `name`/`tether`
 // fields the app requires added).
@@ -374,7 +379,7 @@ fn char_capture_transition_without_to_skipped() {
 }
 
 #[test]
-fn char_capture_elapsed_time_resets() {
+fn capture_elapsed_time_resets() {
     let mut app = example_app();
     let rig = capture_rig(&mut app, "example_plan");
 
@@ -425,4 +430,120 @@ fn char_capture_elapsed_time_resets() {
     rig_set(&mut app, &rig, 1500.0, 1.0);
     assert!(rig_step(&mut app, &rig).is_empty());
     assert_close(timers(&app).0, PHYS_DT, 1e-12, "elapsed after the reset");
+}
+
+/// The capture component `capture_rig` attaches, for `plan_id`.
+fn component_for(app: &App, plan_id: &str) -> CaptureComponent {
+    let plan = app
+        .world()
+        .resource::<CapturePlanLibrary>()
+        .plans
+        .get(plan_id)
+        .unwrap()
+        .clone();
+    build_capture_component(plan_id, &plan, 0.0).unwrap()
+}
+
+#[test]
+fn capture_missing_rigid_body_continues() {
+    #[derive(Component)]
+    struct PadA;
+    #[derive(Component)]
+    struct PadB;
+    #[derive(Component)]
+    struct PadC;
+
+    let mut app = example_app();
+    // The controller's query visits archetypes in Bevy's component-index order (a
+    // fixed-hasher map keyed by archetype id), not in spawn order. Five padding
+    // archetypes before the rig give a layout where M is visited first; the
+    // precondition below checks it.
+    for combo in 1..=5u32 {
+        let mut pad = app.world_mut().spawn_empty();
+        if combo & 1 != 0 {
+            pad.insert(PadA);
+        }
+        if combo & 2 != 0 {
+            pad.insert(PadB);
+        }
+        if combo & 4 != 0 {
+            pad.insert(PadC);
+        }
+    }
+    let rig = capture_rig(&mut app, "example_plan");
+    // M: a capture entity without a rigid body.
+    let component = component_for(&app, "example_plan");
+    let m = app.world_mut().spawn(component).id();
+    let order: Vec<Entity> = app
+        .world_mut()
+        .query::<(Entity, &mut CaptureComponent)>()
+        .iter(app.world())
+        .map(|(entity, _)| entity)
+        .collect();
+    assert_eq!(order, vec![m, rig.capture], "M must be visited first");
+
+    // F-39: fixed in P4. M is skipped; the rig's entity still transitions.
+    let events = play(&mut app, &rig, &[(1500.0, 1.0)]);
+    assert_timeline(
+        &events,
+        &[(0, "rendezvous", "approach", "distance 1500.0 m < 2000.0 m")],
+    );
+    assert_eq!(state_of(&app, &rig), "approach");
+}
+
+#[test]
+fn capture_zero_vector_force_is_zero() {
+    let mut app = example_app();
+    let rig = capture_rig(&mut app, "example_plan");
+    // The capture entity on top of both nodes, at rest relative to them: inside 80 %
+    // of the radius, `rel_r == 0` and `rel_v == 0`, so the controller's direction is
+    // the zero vector.
+    for entity in [rig.capture, rig.root, rig.tail] {
+        app.world_mut()
+            .entity_mut(entity)
+            .insert((Position(DVec3::ZERO), LinearVelocity::ZERO));
+    }
+    rig_step(&mut app, &rig);
+
+    // F-11: fixed in P4 (was `normalize()`: NaN)
+    let accelerations = app
+        .world_mut()
+        .run_system_once(move |forces: Query<Forces>| {
+            [rig.root, rig.tail].map(|node| {
+                forces
+                    .get(node)
+                    .expect("tether node has Forces")
+                    .accumulated_linear_acceleration()
+            })
+        })
+        .unwrap();
+    for acceleration in accelerations {
+        assert!(acceleration.is_finite(), "acceleration {acceleration:?}");
+        assert_eq!(acceleration, DVec3::ZERO);
+    }
+}
+
+#[test]
+fn capture_sphere_radius_reset_per_capture() {
+    let mut app = example_app();
+    let rig = capture_rig(&mut app, "example_plan");
+    assert_eq!(radius(&app), INITIAL_CAPTURE_SPHERE_RADIUS_M);
+
+    // The first capture shrank the radius.
+    app.world_mut().resource_mut::<CaptureSphereRadius>().radius = 7.0;
+
+    // A second capture, for a new entity, starts from the initial radius again.
+    let second = app.world_mut().spawn_empty().id();
+    app.world_mut().write_message(SimCommand::StartCapture {
+        target: Some(second),
+        plan_id: "example_plan".to_string(),
+    });
+    app.world_mut()
+        .run_system_once(apply_sim_commands)
+        .expect("apply_sim_commands failed to run");
+
+    // F-11: fixed in P4
+    assert_eq!(radius(&app), INITIAL_CAPTURE_SPHERE_RADIUS_M);
+    assert!(app.world().get::<CaptureComponent>(second).is_some());
+    assert!(app.world().get::<CaptureComponent>(rig.capture).is_none());
 }

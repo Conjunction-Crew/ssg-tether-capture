@@ -4,7 +4,10 @@ pub mod plan;
 
 use avian3d::{
     math::PI,
-    prelude::{Forces, LinearVelocity, Position, RigidBodyQuery, Rotation, WriteRigidBodyForces},
+    prelude::{
+        Forces, LinearVelocity, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery, Rotation,
+        WriteRigidBodyForces,
+    },
 };
 use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
 
@@ -27,6 +30,9 @@ pub struct CaptureComponent {
     pub state_enter_time_s: f64,
     pub state_elapsed_time_s: f64,
 }
+
+/// The capture-sphere radius at the start of every capture (F-11).
+pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
 
 #[derive(Resource, Debug, Default)]
 pub struct CaptureSphereRadius {
@@ -67,7 +73,8 @@ pub fn capture_state_machine_update(
             capture_entity_linvel = *capture_entity_rb.linear_velocity;
             capture_entity_rotation = *capture_entity_rb.rotation;
         } else {
-            return;
+            // F-39: one capture entity without a rigid body does not stop the others.
+            continue;
         }
 
         // Execute plan state machine
@@ -181,7 +188,13 @@ pub fn capture_state_machine_update(
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        node_forces.apply_force(force_vec.normalize() * max_force);
+                        // F-11: a zero vector gives a zero force, not NaN.
+                        let force = force_vec.normalize_or_zero() * max_force;
+                        debug_assert!(
+                            force.is_finite(),
+                            "non-finite force {force:?} on tether node {idx}"
+                        );
+                        node_forces.apply_force(force);
                     } else {
                         log_events.write(LogEvent {
                             level: LogLevel::Warn,
@@ -358,6 +371,27 @@ fn transition_to(
     capture_component.state_elapsed_time_s = 0.0;
 }
 
+/// Debug builds only: panics if an enabled rigid body has a non-finite `Position`
+/// or `LinearVelocity`, naming the entity and the step (no NaN reaches avian).
+#[cfg(debug_assertions)]
+pub fn assert_finite_state(
+    bodies: Query<
+        (Entity, &Position, &LinearVelocity),
+        (With<RigidBody>, Without<RigidBodyDisabled>),
+    >,
+    world_time: Res<WorldTime>,
+) {
+    for (entity, position, velocity) in &bodies {
+        if !position.0.is_finite() || !velocity.0.is_finite() {
+            let step = ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round();
+            panic!(
+                "non-finite state for {entity:?} at step {step}: position {:?}, velocity {:?}",
+                position.0, velocity.0
+            );
+        }
+    }
+}
+
 /// Commands the app sends to the simulation (D1).
 #[derive(Message, Debug, Clone)]
 pub enum SimCommand {
@@ -378,7 +412,11 @@ pub fn apply_sim_commands(
     // Absent outside the sim screen, where no capture target exists.
     world_time: Option<Res<WorldTime>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut data_collection: ResMut<DataCollection>,
+    // The radius is absent outside the sim screen, like `WorldTime`.
+    (mut data_collection, mut capture_sphere_radius): (
+        ResMut<DataCollection>,
+        Option<ResMut<CaptureSphereRadius>>,
+    ),
     mut log: MessageWriter<LogEvent>,
 ) {
     for command in sim_commands.read() {
@@ -403,6 +441,10 @@ pub fn apply_sim_commands(
                                 world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                                // F-11: every capture starts with the initial radius.
+                                if let Some(radius) = capture_sphere_radius.as_mut() {
+                                    radius.radius = INITIAL_CAPTURE_SPHERE_RADIUS_M;
+                                }
                                 log.write(LogEvent {
                                     level: LogLevel::Info,
                                     source: "ui",
@@ -469,5 +511,12 @@ impl Plugin for CapturePlugin {
                 capture_state_machine_update.in_set(SimStep::Capture),
             )
             .add_systems(Last, apply_sim_commands.in_set(SimSet::ApplyCommands));
+        #[cfg(debug_assertions)]
+        app.add_systems(
+            ManualPhysics,
+            assert_finite_state
+                .in_set(SimStep::Capture)
+                .after(capture_state_machine_update),
+        );
     }
 }

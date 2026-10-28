@@ -497,7 +497,7 @@ pub mod q13 {
     pub struct Q13Handles {
         /// The HST: `"Satellite1"`, carries the `CaptureComponent`.
         pub debris: Entity,
-        /// The chaser: the tether root, `CameraTarget`.
+        /// The chaser: the tether root, `SimAnchor`.
         pub root: Entity,
     }
 

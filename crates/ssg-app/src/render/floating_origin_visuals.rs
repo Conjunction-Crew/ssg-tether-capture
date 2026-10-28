@@ -5,9 +5,9 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 
+use crate::render::camera::CameraTarget;
 use crate::render::celestial::Earth;
 use crate::render::layers::{MAP_LAYER, eci_to_orbit_frame};
-use ssg_sim::anchor::CameraTarget;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::cache::OrbitalCache;
 

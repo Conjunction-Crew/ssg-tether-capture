@@ -5,7 +5,7 @@ use bevy::{math::DVec3, prelude::*};
 use nalgebra::Vector6;
 
 use crate::SimSet;
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::orbit::Orbit;
 use crate::orbit::cache::OrbitalCache;
@@ -133,7 +133,7 @@ pub fn spawn_tether(
     let tether_root = commands
         .spawn((
             DespawnOnExit(UiScreen::Sim),
-            CameraTarget,
+            SimAnchor,
             TetherRoot,
             sphere_shape,
             RigidBody::Dynamic,

@@ -149,7 +149,6 @@ impl Plugin for TimePlugin {
             .configure_sets(
                 ManualPhysics,
                 (
-                    SimStep::SyncAnchor,
                     SimStep::CenterOfMass,
                     SimStep::OriginReset,
                     SimStep::CacheEci,
