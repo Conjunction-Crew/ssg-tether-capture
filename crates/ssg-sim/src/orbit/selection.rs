@@ -1,9 +1,10 @@
 //! The target and chaser the user selects before a run.
 
 use bevy::prelude::*;
+use brahe::Epoch;
 use nalgebra::Vector6;
 
-use crate::orbit::catalog::GpuOrbitalElements;
+use crate::orbit::catalog::GpElements;
 
 #[derive(Debug, Clone)]
 pub enum OrbitalSelectionSource {
@@ -27,21 +28,23 @@ pub struct EditableOrbitalElements {
     pub raan_rad: f64,
     pub arg_perigee_rad: f64,
     pub mean_anomaly_rad: f64,
-    pub epoch_offset_seconds: f64,
+    /// The epoch the six elements are valid at (F-27).
+    pub epoch: Epoch,
 }
 
 impl EditableOrbitalElements {
-    /// The f64 elements of a catalog buffer entry, as the app selects them.
-    // F-27: current behaviour, expected to change in P4 (the values went through f32)
-    pub fn from_gpu(elements: &GpuOrbitalElements) -> Self {
+    /// The elements of a catalog record, f64 throughout, at the record's epoch.
+    // F-27: fixed in P4 (was `from_gpu`, through the f32 catalog buffer)
+    pub fn from_gp(gp: &GpElements) -> Self {
+        let elements = gp.kepler_elements_rad();
         Self {
-            semi_major_axis_m: elements.a as f64,
-            eccentricity: elements.e as f64,
-            inclination_rad: elements.i as f64,
-            raan_rad: elements.raan as f64,
-            arg_perigee_rad: elements.argp as f64,
-            mean_anomaly_rad: elements.mean_anomaly as f64,
-            epoch_offset_seconds: elements.epoch_offset_seconds as f64,
+            semi_major_axis_m: elements[0],
+            eccentricity: elements[1],
+            inclination_rad: elements[2],
+            raan_rad: elements[3],
+            arg_perigee_rad: elements[4],
+            mean_anomaly_rad: elements[5],
+            epoch: gp.epoch,
         }
     }
 
@@ -61,6 +64,9 @@ impl EditableOrbitalElements {
 pub struct SelectedOrbitalObject {
     pub source: OrbitalSelectionSource,
     pub elements: EditableOrbitalElements,
+    /// The catalog record a pick came from; `None` for a custom orbit or once
+    /// the elements are edited. `Some` starts the body from SGP4 (F-10).
+    pub gp: Option<GpElements>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]

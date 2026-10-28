@@ -18,7 +18,7 @@ fn element_bits(elements: &EditableOrbitalElements) -> [u64; 7] {
         elements.raan_rad.to_bits(),
         elements.arg_perigee_rad.to_bits(),
         elements.mean_anomaly_rad.to_bits(),
-        elements.epoch_offset_seconds.to_bits(),
+        (elements.epoch - fixed_epoch()).to_bits(),
     ]
 }
 

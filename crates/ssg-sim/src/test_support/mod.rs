@@ -448,7 +448,7 @@ pub mod q13 {
             raan_rad: elements.raan as f64,
             arg_perigee_rad: elements.argp as f64,
             mean_anomaly_rad: elements.mean_anomaly as f64,
-            epoch_offset_seconds: elements.epoch_offset_seconds as f64,
+            epoch: fixed_epoch() + elements.epoch_offset_seconds as f64,
         }
     }
 
@@ -539,6 +539,7 @@ pub mod q13 {
                 label: label.to_string(),
             },
             elements: app_elements(&fixture_record(norad_id)),
+            gp: None,
         }
     }
 

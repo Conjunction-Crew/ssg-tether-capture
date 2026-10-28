@@ -4,6 +4,7 @@ use super::spawn::{
     slider_fraction,
 };
 use super::*;
+use ssg_sim::time::SimConfig;
 
 pub fn sync_orbital_selection_ui(
     mut commands: Commands,
@@ -108,7 +109,7 @@ pub fn orbital_selection_interactions(
     >,
     catalog_ui: Res<SpaceCatalogUiState>,
     catalog: Res<SpaceObjectCatalog>,
-    gpu_elements: Res<GpuElements>,
+    sim_config: Res<SimConfig>,
     mut selection: ResMut<OrbitalSelectionState>,
     theme: Res<UiTheme>,
 ) {
@@ -124,17 +125,14 @@ pub fn orbital_selection_interactions(
                     let Some(entry) = catalog.entries.get(catalog_index) else {
                         continue;
                     };
-                    let Some(elements) = gpu_elements.0.get(entry.gpu_index) else {
-                        continue;
-                    };
-
                     let selected = SelectedOrbitalObject {
                         source: OrbitalSelectionSource::Catalog {
                             catalog_index,
                             gpu_index: entry.gpu_index,
                             label: entry.display_label(),
                         },
-                        elements: EditableOrbitalElements::from_gpu(elements),
+                        elements: EditableOrbitalElements::from_gp(&entry.gp),
+                        gp: Some(entry.gp.clone()),
                     };
 
                     match button.role {
@@ -157,8 +155,9 @@ pub fn orbital_selection_interactions(
                             raan_rad: ISS_ORBIT[3],
                             arg_perigee_rad: ISS_ORBIT[4],
                             mean_anomaly_rad: ISS_ORBIT[5],
-                            epoch_offset_seconds: 0.0,
+                            epoch: sim_config.start_epoch,
                         },
+                        gp: None,
                     };
 
                     match button.role {
