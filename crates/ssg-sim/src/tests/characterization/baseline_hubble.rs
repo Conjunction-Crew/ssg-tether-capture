@@ -145,31 +145,31 @@ const SHORT_TICKS: u64 = 6_400;
 /// The transition order every platform logs in the first 6,400 ticks.
 const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
 
-// Golden values captured at 3369a3a on macos/aarch64 (P4 S4: relative dynamics and LVLH velocity, F-09/F-35)
+// Golden values captured at a465ece on macos/aarch64 (P4 S5: SGP4 initial states, F-10/F-27)
 // They hold on macOS/aarch64 only: Linux and Windows CI reach `approach` 5-6 steps
 // later (F-17), so only `baseline_q13_to_capture` checks them (operator decision,
 // 2026-10-26).
 /// `(step, state, range_m)` every 640 ticks, the first 6,400 ticks of a
 /// fixed-epoch run.
 const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
-    (643, "rendezvous", 3431.047008487971),
-    (1_283, "rendezvous", 3184.419069275464),
-    (1_923, "rendezvous", 2934.688970841489),
-    (2_563, "rendezvous", 2684.60751014994),
-    (3_203, "rendezvous", 2434.834817199054),
-    (3_843, "rendezvous", 2185.184423735223),
-    (4_483, "approach", 1938.1291044962209),
-    (5_123, "approach", 1706.4027837179738),
-    (5_763, "approach", 1501.845758355041),
-    (6_403, "approach", 1325.6073130387854),
+    (643, "rendezvous", 3432.4996012584393),
+    (1_283, "rendezvous", 3185.0703447915175),
+    (1_923, "rendezvous", 2935.0054350755054),
+    (2_563, "rendezvous", 2684.9178989882676),
+    (3_203, "rendezvous", 2434.914064423956),
+    (3_843, "rendezvous", 2184.9201163227362),
+    (4_483, "approach", 1939.1233616820625),
+    (5_123, "approach", 1709.44125926763),
+    (5_763, "approach", 1508.3059241292256),
+    (6_403, "approach", 1334.4098855460968),
 ];
 /// The fixed-epoch run to `capture`: every transition, and the final range.
 const CAPTURE_TRANSITIONS: &[(u64, &str, &str)] = &[
     (4_318, "rendezvous", "approach"),
-    (34_112, "approach", "terminal"),
-    (156_811, "terminal", "capture"),
+    (34_755, "approach", "terminal"),
+    (162_745, "terminal", "capture"),
 ];
-const CAPTURE_FINAL_RANGE_M: f64 = 4.999946993667034;
+const CAPTURE_FINAL_RANGE_M: f64 = 4.999972839403157;
 /// Baseline ranges carry 1e-6 m (A-3).
 const RANGE_TOL_M: f64 = 1e-6;
 

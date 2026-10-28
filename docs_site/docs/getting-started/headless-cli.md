@@ -50,4 +50,4 @@ ssg-sim run my-project --target 20580 --chaser 99901 \
   --epoch 2026-04-03T16:03:47.002464 --stop-at-capture
 ```
 
-On macOS (Apple Silicon) this ends in `capture` at step 156811 with the transitions at steps 4318, 34112 and 156811. With `--epoch now` (the default) the start epoch is the wall clock, as in the app, and the capture step varies from run to run.
+On macOS (Apple Silicon) this ends in `capture` at step 162745 with the transitions at steps 4318, 34755 and 162745. With `--epoch now` (the default) the start epoch is the wall clock, as in the app, and the capture step varies from run to run.

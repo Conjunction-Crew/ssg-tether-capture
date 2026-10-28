@@ -25,6 +25,7 @@ GitHub Release description.
 - Cycling the camera target is a pure viewing action: the floating origin and the physics bubble follow the simulation anchor (the tether root), not the camera (F-25)
 - Capture plan transitions: all conditions of a transition must hold, at most one transition fires per physics step, no cascades (F-24, Q14)
 - Bodies inside the physics bubble feel the differential two-body acceleration about the anchor's orbit (Clohessy-Wiltshire relative dynamics, F-09); relative velocity for the controller, transitions, HUD, plots and CSV is measured in the target's LVLH frame (F-35); HUD altitude uses the WGS-84 equatorial radius (F-28)
+- Catalog objects start from an SGP4 state at the simulation start epoch, computed from the full-precision record and its own epoch; edited elements are honoured at their epoch (F-10, F-27). `Orbit::FromTle` is replaced by `Orbit::FromGp` (the catalog is GP/OMM JSON, not TLE lines). Map points keep the lightweight Kepler model (documented offset)
 
 ### Fixed
 - Simulation start epoch is an explicit input (`SimConfig`); the simulation core no longer reads the wall clock; the physics clock advances once per step (F-06, F-38)
