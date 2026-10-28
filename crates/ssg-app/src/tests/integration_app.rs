@@ -7,6 +7,7 @@ use crate::render::layers::{
     EARTH_TEXTURE_NORTH_AXIS, MAP_UNITS_TO_M, SCENE_LAYER, earth_mesh_rotation, eci_position_to_map,
 };
 use crate::tests::app_support::{enter_sim, start_running, test_app, tick};
+use crate::ui::hud::capture_metrics;
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::system::RunSystemOnce;
@@ -17,6 +18,7 @@ use bevy::prelude::*;
 use nalgebra::Vector6;
 use ssg_sim::anchor::SimAnchor;
 use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::orbit::{ISS_ORBIT, Orbital};
 use ssg_sim::test_support::{disable_relative_gravity, fixed_epoch, fixed_propagator, kepler_eci};
 use ssg_sim::tether::TetherRoot;
@@ -309,5 +311,83 @@ fn earth_mesh_pole_is_eci_z() {
     assert!(
         (rotated - Vec3::Z).length() < 1e-6,
         "Earth pole in the scene: {rotated:?}"
+    );
+}
+
+/// The HUD metrics for a capture target at rest at the bubble origin on the ISS
+/// orbit and a reference body 3,536 m along-track of it moving at
+/// `reference_velocity(frame, offset)`: `(relative speed, closing speed, range,
+/// |omega × offset|)`.
+fn hud_metrics(reference_velocity: fn(&LvlhFrame, DVec3) -> DVec3) -> (f64, f64, f64, f64) {
+    let mut app = test_app();
+    let state = kepler_eci(ISS_ORBIT, fixed_epoch());
+    let frame = LvlhFrame::from_eci(&state).unwrap();
+    let offset = frame.along * 3_536.0;
+    let target = app
+        .world_mut()
+        .spawn((
+            RigidBody::Dynamic,
+            Collider::sphere(1.0),
+            Position(DVec3::ZERO),
+            LinearVelocity::ZERO,
+        ))
+        .id();
+    let reference = app
+        .world_mut()
+        .spawn((
+            RigidBody::Dynamic,
+            Collider::sphere(0.5),
+            Position(offset),
+            LinearVelocity(reference_velocity(&frame, offset)),
+        ))
+        .id();
+    // Both enabled: their cached state is the frame origin, here the target's.
+    let mut cache = OrbitalCache::default();
+    cache.eci_states.insert(target, state);
+    cache.eci_states.insert(reference, state);
+    app.world_mut().insert_resource(cache);
+
+    let metrics = app
+        .world_mut()
+        .run_system_once(
+            move |bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
+                  cache: Res<OrbitalCache>| {
+                capture_metrics(&bodies, Some(target), Some(reference), &cache)
+                    .map(|m| (m.relative_speed_m_s, m.closing_speed_m_s, m.range_m))
+            },
+        )
+        .unwrap()
+        .expect("metrics for two cached bodies");
+    (
+        metrics.0,
+        metrics.1,
+        metrics.2,
+        frame.omega.cross(offset).length(),
+    )
+}
+
+#[test]
+fn hud_relative_speed_is_lvlh() {
+    // F-35: fixed in P4. At rest in the target's LVLH frame: zero relative speed,
+    // although the ECI velocities differ by |omega × r| ≈ 4 m/s.
+    let (speed, closing, range, artefact) = hud_metrics(|frame, offset| frame.omega.cross(offset));
+    assert!(artefact > 3.5, "precondition: ECI artefact {artefact} m/s");
+    assert!(speed < 1e-9, "LVLH rest: relative speed {speed} m/s");
+    assert!(
+        closing.abs() < 1e-9,
+        "LVLH rest: closing speed {closing} m/s"
+    );
+    assert!((range - 3_536.0).abs() < 1e-9, "range {range} m");
+
+    // ECI-equal velocities: moving at |omega × r| relative to the LVLH frame; the
+    // closing speed is unchanged (omega × r is perpendicular to r).
+    let (speed, closing, _, artefact) = hud_metrics(|_, _| DVec3::ZERO);
+    assert!(
+        (speed - artefact).abs() < 1e-9,
+        "ECI-equal: relative speed {speed} m/s, expected {artefact}"
+    );
+    assert!(
+        closing.abs() < 1e-9,
+        "ECI-equal: closing speed {closing} m/s"
     );
 }

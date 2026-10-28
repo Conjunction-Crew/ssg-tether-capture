@@ -2,12 +2,13 @@ use std::fmt::Write;
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
-use nalgebra::Vector6;
 
 use crate::render::layers::{EARTH_RADIUS, eci_position_to_map};
 use ssg_sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
 use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
 use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::orbit::lvlh::LvlhFrame;
+use ssg_sim::physics_bubble::body_eci_state;
 use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::WorldTime;
@@ -35,12 +36,12 @@ pub struct OrbitLabel {
     pub entity: Option<Entity>,
 }
 
-struct CaptureMetrics {
-    range_m: f64,
-    relative_speed_m_s: f64,
-    closing_speed_m_s: f64,
-    target_speed_m_s: f64,
-    target_altitude_m: f64,
+pub(crate) struct CaptureMetrics {
+    pub(crate) range_m: f64,
+    pub(crate) relative_speed_m_s: f64,
+    pub(crate) closing_speed_m_s: f64,
+    pub(crate) target_speed_m_s: f64,
+    pub(crate) target_altitude_m: f64,
 }
 
 // unused today; the P3 component/resource audit decides
@@ -302,7 +303,9 @@ pub fn map_orbitals(
     }
 }
 
-fn capture_metrics(
+/// Range, speeds and altitude of the capture target relative to the reference
+/// body. The relative velocity is measured in the target's LVLH frame (F-35).
+pub(crate) fn capture_metrics(
     bodies: &Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
     target_entity: Option<Entity>,
     reference_entity: Option<Entity>,
@@ -318,21 +321,33 @@ fn capture_metrics(
         return None;
     };
 
-    let target_true = orbital_cache.eci_states.get(&target_entity)?;
-    let reference_true = orbital_cache.eci_states.get(&reference_entity)?;
-
-    let target_position = world_position(target_true, target_rb.position.0, target_disabled);
-    let reference_position =
-        world_position(reference_true, reference_rb.position.0, reference_disabled);
-    let relative_position = target_position - reference_position;
-
-    let target_velocity = world_velocity(target_true, target_rb.linear_velocity.0, target_disabled);
-    let reference_velocity = world_velocity(
-        reference_true,
+    let target_state = body_eci_state(
+        orbital_cache,
+        target_entity,
+        target_rb.position.0,
+        target_rb.linear_velocity.0,
+        target_disabled,
+    )?;
+    let reference_state = body_eci_state(
+        orbital_cache,
+        reference_entity,
+        reference_rb.position.0,
         reference_rb.linear_velocity.0,
         reference_disabled,
-    );
-    let relative_velocity = target_velocity - reference_velocity;
+    )?;
+    let position = |state: &nalgebra::Vector6<f64>| DVec3::new(state[0], state[1], state[2]);
+    let velocity = |state: &nalgebra::Vector6<f64>| DVec3::new(state[3], state[4], state[5]);
+
+    let target_position = position(&target_state);
+    let relative_position = target_position - position(&reference_state);
+    let target_velocity = velocity(&target_state);
+    let eci_relative_velocity = target_velocity - velocity(&reference_state);
+    // In the target's LVLH frame: the same `target - reference` convention for the
+    // position and the velocity difference (F-35).
+    let relative_velocity = match LvlhFrame::from_eci(&target_state) {
+        Some(frame) => frame.relative_velocity_in_frame(relative_position, eci_relative_velocity),
+        None => eci_relative_velocity,
+    };
 
     let range_m = relative_position.length();
     let closing_speed_m_s = if range_m > 1e-6 {
@@ -348,20 +363,6 @@ fn capture_metrics(
         target_speed_m_s: target_velocity.length(),
         target_altitude_m: target_position.length() - EARTH_RADIUS as f64,
     })
-}
-
-fn world_position(true_params: &Vector6<f64>, position: DVec3, disabled: bool) -> DVec3 {
-    let base = DVec3::new(true_params[0], true_params[1], true_params[2]);
-    if disabled { base } else { base + position }
-}
-
-fn world_velocity(true_params: &Vector6<f64>, linear_velocity: DVec3, disabled: bool) -> DVec3 {
-    let base = DVec3::new(true_params[3], true_params[4], true_params[5]);
-    if disabled {
-        base
-    } else {
-        base + linear_velocity
-    }
 }
 
 fn append_state_parameters(body: &mut String, state: &CompiledCaptureState) {

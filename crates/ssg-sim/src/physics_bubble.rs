@@ -138,6 +138,34 @@ pub fn physics_bubble_add_remove(
     }
 }
 
+/// A body's ECI state (module doc): for an enabled body its cached state (the
+/// frame origin) plus its bubble-frame `position` and `linear_velocity`; for a
+/// disabled body its cached state (its own orbit). `None` before the body has a
+/// cached state.
+pub fn body_eci_state(
+    cache: &OrbitalCache,
+    entity: Entity,
+    position: DVec3,
+    linear_velocity: DVec3,
+    disabled: bool,
+) -> Option<Vector6<f64>> {
+    let cached = *cache.eci_states.get(&entity)?;
+    if disabled {
+        return Some(cached);
+    }
+    Some(
+        cached
+            + Vector6::new(
+                position.x,
+                position.y,
+                position.z,
+                linear_velocity.x,
+                linear_velocity.y,
+                linear_velocity.z,
+            ),
+    )
+}
+
 /// Applies the differential two-body acceleration about the frame origin (the
 /// anchor's cached state) to every enabled dynamic body (F-09; module doc).
 pub fn apply_relative_gravity(
