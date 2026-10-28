@@ -20,6 +20,11 @@ use crate::capture::plan::build_capture_component;
 use crate::capture::{
     CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M, SimCommand, apply_sim_commands,
 };
+use crate::orbit::ISS_ORBIT;
+use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::LvlhFrame;
+use crate::telemetry::DataCollection;
+use crate::test_support::kepler_eci;
 use avian3d::prelude::{Forces, LinearVelocity, Position, ReadRigidBodyForces};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
@@ -518,4 +523,81 @@ fn capture_sphere_radius_reset_per_capture() {
     assert_eq!(radius(&app), INITIAL_CAPTURE_SPHERE_RADIUS_M);
     assert!(app.world().get::<CaptureComponent>(second).is_some());
     assert!(app.world().get::<CaptureComponent>(rig.capture).is_none());
+}
+
+/// The rig in `approach` (max velocity 2.0 m/s) with the capture target at rest
+/// at the bubble origin on the ISS orbit, and both tether nodes 3,536 m
+/// along-track of it moving at `node_velocity(frame, offset)`. Runs the controller
+/// once; returns the logged relative speed, the root's applied acceleration and
+/// the root's offset from the target.
+fn lvlh_rig(node_velocity: fn(&LvlhFrame, DVec3) -> DVec3) -> (f64, DVec3, DVec3) {
+    let mut app = example_app();
+    let rig = capture_rig(&mut app, "example_plan");
+    let target_state = kepler_eci(ISS_ORBIT, fixed_epoch());
+    let frame = LvlhFrame::from_eci(&target_state).unwrap();
+    let offset = frame.along * 3_536.0;
+    let world = app.world_mut();
+    world
+        .resource_mut::<OrbitalCache>()
+        .eci_states
+        .insert(rig.capture, target_state);
+    world
+        .resource_mut::<DataCollection>()
+        .velocity
+        .insert(rig.capture, Vec::new());
+    world
+        .entity_mut(rig.capture)
+        .insert((Position(DVec3::ZERO), LinearVelocity::ZERO));
+    world
+        .get_mut::<CaptureComponent>(rig.capture)
+        .unwrap()
+        .current_state = "approach".to_string();
+    for node in [rig.root, rig.tail] {
+        world.entity_mut(node).insert((
+            Position(offset),
+            LinearVelocity(node_velocity(&frame, offset)),
+        ));
+    }
+
+    assert!(
+        rig_step(&mut app, &rig).is_empty(),
+        "no transition at 3,536 m"
+    );
+    let speed = app.world().resource::<DataCollection>().velocity[&rig.capture][0].1;
+    let acceleration = app
+        .world_mut()
+        .run_system_once(move |forces: Query<Forces>| {
+            forces
+                .get(rig.root)
+                .expect("root has Forces")
+                .accumulated_linear_acceleration()
+        })
+        .unwrap();
+    (speed, acceleration, offset)
+}
+
+#[test]
+fn capture_uses_lvlh_relative_velocity() {
+    // F-35: fixed in P4. Nodes at rest in the target's LVLH frame (co-rotating,
+    // `v = omega × r`): zero relative speed, so no velocity-kill term; the force
+    // points straight at the target.
+    let (speed, acceleration, offset) = lvlh_rig(|frame, offset| frame.omega.cross(offset));
+    assert!(speed < 1e-9, "LVLH rest: relative speed {speed} m/s");
+    let to_target = -offset.normalize();
+    assert!(
+        acceleration.normalize().dot(to_target) > 1.0 - 1e-12,
+        "LVLH rest: acceleration {acceleration:?} is not toward the target"
+    );
+
+    // ECI-equal velocities: the nodes move relative to the LVLH frame at
+    // |omega × r| ≈ 4 m/s > 2.0 m/s, so the velocity-kill term fires.
+    let (speed, acceleration, offset) = lvlh_rig(|_, _| DVec3::ZERO);
+    let frame = LvlhFrame::from_eci(&kepler_eci(ISS_ORBIT, fixed_epoch())).unwrap();
+    let expected = frame.omega.cross(offset).length();
+    assert!(expected > 3.5, "precondition: ECI artefact {expected} m/s");
+    assert_close(speed, expected, 1e-9, "ECI-equal: relative speed");
+    assert!(
+        acceleration.normalize().dot(-offset.normalize()) < 0.9,
+        "ECI-equal: acceleration {acceleration:?} has no velocity-kill component"
+    );
 }

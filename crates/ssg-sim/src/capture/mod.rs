@@ -9,7 +9,7 @@ use avian3d::{
         WriteRigidBodyForces,
     },
 };
-use bevy::{ecs::system::SystemParam, math::DVec3, prelude::*};
+use bevy::{ecs::system::SystemParam, log::debug_once, math::DVec3, prelude::*};
 
 use crate::SimSet;
 use crate::SimStep;
@@ -18,6 +18,8 @@ use crate::capture::plan::{
     CompiledCaptureTransition, build_capture_component,
 };
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::LvlhFrame;
+use crate::physics_bubble::body_eci_state;
 use crate::telemetry::{DataCollection, LogEvent, LogLevel};
 use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
@@ -39,12 +41,24 @@ pub struct CaptureSphereRadius {
     pub radius: f64,
 }
 
-/// The read-only resources [`capture_state_machine_update`] reads.
+/// The read-only data [`capture_state_machine_update`] reads.
 #[derive(SystemParam)]
-pub struct CaptureInputs<'w> {
+pub struct CaptureInputs<'w, 's> {
     capture_plan_lib: Res<'w, CapturePlanLibrary>,
     orbital_cache: Res<'w, OrbitalCache>,
     world_time: Res<'w, WorldTime>,
+    disabled: Query<'w, 's, (), With<RigidBodyDisabled>>,
+}
+
+/// The velocity of a tether node relative to the capture target, measured in the
+/// target's LVLH frame (F-35): `rel_v − omega × rel_r` with `rel_r = node −
+/// target` and `rel_v = node_v − target_v`, in ECI axes. Without a frame (the
+/// target has no cached state yet) the plain difference.
+fn node_relative_velocity(frame: Option<&LvlhFrame>, rel_r: DVec3, rel_v: DVec3) -> DVec3 {
+    match frame {
+        Some(frame) => frame.relative_velocity_in_frame(rel_r, rel_v),
+        None => rel_v,
+    }
 }
 
 pub fn capture_state_machine_update(
@@ -60,6 +74,7 @@ pub fn capture_state_machine_update(
         capture_plan_lib,
         orbital_cache,
         world_time,
+        disabled,
     } = inputs;
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
@@ -77,6 +92,21 @@ pub fn capture_state_machine_update(
             continue;
         }
 
+        // The capture target's own LVLH frame (F-35).
+        let frame = body_eci_state(
+            &orbital_cache,
+            capture_entity,
+            capture_entity_position.0,
+            capture_entity_linvel.0,
+            disabled.contains(capture_entity),
+        )
+        .and_then(|state| LvlhFrame::from_eci(&state));
+        if frame.is_none() {
+            debug_once!(
+                "capture target {capture_entity:?} has no cached ECI state: relative velocity in ECI axes"
+            );
+        }
+
         // Execute plan state machine
         if let Some(plan) = capture_plan_lib
             .compiled_plans
@@ -91,7 +121,11 @@ pub fn capture_state_machine_update(
                 let root_rv: Option<(f64, f64)> = nodes.first().and_then(|&root_node| {
                     rb_forces.p0().get(root_node).ok().map(|root_rb| {
                         let r = capture_entity_position.0 - root_rb.position.0;
-                        let v = root_rb.linear_velocity.0 - capture_entity_linvel.0;
+                        let v = node_relative_velocity(
+                            frame.as_ref(),
+                            -r,
+                            root_rb.linear_velocity.0 - capture_entity_linvel.0,
+                        );
                         (r.length(), v.length())
                     })
                 });
@@ -119,9 +153,16 @@ pub fn capture_state_machine_update(
                             continue;
                         };
 
+                        // `rel_r` points from the node to the target; `rel_v` is
+                        // the node's LVLH-frame velocity relative to it (F-35).
+                        let rel_r = capture_entity_position.0 - rb.position.0;
                         (
-                            capture_entity_position.0 - rb.position.0,
-                            rb.linear_velocity.0 - capture_entity_linvel.0,
+                            rel_r,
+                            node_relative_velocity(
+                                frame.as_ref(),
+                                -rel_r,
+                                rb.linear_velocity.0 - capture_entity_linvel.0,
+                            ),
                         )
                     };
                     let rel_r_len = rel_r.length();

@@ -11,8 +11,22 @@
 //! LinearVelocity)`; on **enable** from `own_state − (Position, LinearVelocity)`, the
 //! frame origin. The floating-origin reset shifts every enabled propagator by the
 //! same `(com_r, com_v)`, which keeps "enabled propagator = frame origin" true.
+//!
+//! **Relative dynamics (F-09).** The frame origin is in free fall on a Kepler
+//! orbit, so a body at bubble position `p` feels only the difference of Earth's
+//! gravity between `r_o + p` and `r_o`: [`apply_relative_gravity`] applies
+//! `differential_gravity(r_o, p)` ([`crate::orbit::lvlh`]) to every enabled
+//! dynamic body in `SimStep::RelativeDynamics`, with `r_o` the anchor's cached
+//! state (the frame origin). The bubble keeps ECI axes, so no Coriolis or
+//! centrifugal term appears: this is Clohessy-Wiltshire relative motion without
+//! its linearisation. Like the capture controller's forces, the acceleration is
+//! applied after avian's step and acts during the next one; the one-step lag in
+//! `r_o` (≈ 120 m of 6.8e6 m at 64 Hz) changes the acceleration (≈ 1e-4 m/s²) by
+//! about 2e-5 of itself, which is negligible.
 
-use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{
+    Forces, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery, WriteRigidBodyForces,
+};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::KeplerianPropagator;
@@ -22,6 +36,7 @@ use crate::SimStep;
 use crate::anchor::SimAnchor;
 use crate::orbit::Orbital;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::differential_gravity;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::{ManualPhysics, WorldTime};
 
@@ -123,13 +138,69 @@ pub fn physics_bubble_add_remove(
     }
 }
 
+/// A body's ECI state (module doc): for an enabled body its cached state (the
+/// frame origin) plus its bubble-frame `position` and `linear_velocity`; for a
+/// disabled body its cached state (its own orbit). `None` before the body has a
+/// cached state.
+pub fn body_eci_state(
+    cache: &OrbitalCache,
+    entity: Entity,
+    position: DVec3,
+    linear_velocity: DVec3,
+    disabled: bool,
+) -> Option<Vector6<f64>> {
+    let cached = *cache.eci_states.get(&entity)?;
+    if disabled {
+        return Some(cached);
+    }
+    Some(
+        cached
+            + Vector6::new(
+                position.x,
+                position.y,
+                position.z,
+                linear_velocity.x,
+                linear_velocity.y,
+                linear_velocity.z,
+            ),
+    )
+}
+
+/// Applies the differential two-body acceleration about the frame origin (the
+/// anchor's cached state) to every enabled dynamic body (F-09; module doc).
+pub fn apply_relative_gravity(
+    anchor: Single<Entity, With<SimAnchor>>,
+    cache: Res<OrbitalCache>,
+    mut bodies: Query<(Entity, &RigidBody, Forces, &Position), Without<RigidBodyDisabled>>,
+) {
+    let Some(origin) = cache.eci_states.get(&*anchor) else {
+        return;
+    };
+    let r_o = DVec3::new(origin[0], origin[1], origin[2]);
+
+    for (entity, rigid_body, mut forces, position) in &mut bodies {
+        if !rigid_body.is_dynamic() {
+            continue;
+        }
+        let acceleration = differential_gravity(r_o, position.0);
+        debug_assert!(
+            acceleration.is_finite(),
+            "non-finite relative gravity {acceleration:?} on {entity:?}"
+        );
+        forces.apply_linear_acceleration(acceleration);
+    }
+}
+
 pub struct PhysicsBubblePlugin;
 
 impl Plugin for PhysicsBubblePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             ManualPhysics,
-            physics_bubble_add_remove.in_set(SimStep::Bubble),
+            (
+                physics_bubble_add_remove.in_set(SimStep::Bubble),
+                apply_relative_gravity.in_set(SimStep::RelativeDynamics),
+            ),
         );
     }
 }

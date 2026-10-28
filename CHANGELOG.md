@@ -24,11 +24,13 @@ GitHub Release description.
 - Time warp: explicit pause state, ladder tops out at 8192×, work per update is capped and the HUD shows the effective warp (F-12)
 - Cycling the camera target is a pure viewing action: the floating origin and the physics bubble follow the simulation anchor (the tether root), not the camera (F-25)
 - Capture plan transitions: all conditions of a transition must hold, at most one transition fires per physics step, no cascades (F-24, Q14)
+- Bodies inside the physics bubble feel the differential two-body acceleration about the anchor's orbit (Clohessy-Wiltshire relative dynamics, F-09); relative velocity for the controller, transitions, HUD, plots and CSV is measured in the target's LVLH frame (F-35); HUD altitude uses the WGS-84 equatorial radius (F-28)
 
 ### Fixed
 - Simulation start epoch is an explicit input (`SimConfig`); the simulation core no longer reads the wall clock; the physics clock advances once per step (F-06, F-38)
 - Physics bubble: one body without an orbit no longer stops bubble processing, bodies entering the bubble get their orbit rebuilt, and each leaving body gets its own relative state (F-07, F-23)
 - Capture controller: zero-vector forces no longer produce NaN, a capture entity without a rigid body no longer stops the controller, the capture-sphere radius resets per capture (F-11, F-39)
+- Scene and map are drawn in ECI axes; the Earth is on the physical nadir (F-08)
 
 
 ## [v0.3.1] - 2026-10-27

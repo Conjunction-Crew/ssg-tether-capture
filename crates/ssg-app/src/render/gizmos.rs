@@ -11,9 +11,7 @@ use bevy::{
 use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::render::floating_origin_visuals::floating_origin_update_visuals;
-use crate::render::layers::{
-    MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map, orbit_frame_rotation,
-};
+use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map};
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
 use ssg_sim::capture::plan::CapturePlanLibrary;
@@ -43,7 +41,6 @@ fn draw_orbital_from_elements(
     color: Srgba,
     gizmos: &mut Gizmos,
 ) {
-    let frame_rotation = orbit_frame_rotation();
     if semi_major <= 0.0 || !(0.0..1.0).contains(&eccentricity) {
         return;
     }
@@ -52,8 +49,8 @@ fn draw_orbital_from_elements(
     let scaled_semi_major = semi_major / map_scale;
     let semi_minor = semi_major * (1.0 - eccentricity * eccentricity).sqrt() / map_scale;
 
-    let rotation = frame_rotation
-        * Quat::from_axis_angle(Vec3::Z, raan)
+    // The map is drawn in ECI axes (F-08): perifocal → ECI only.
+    let rotation = Quat::from_axis_angle(Vec3::Z, raan)
         * Quat::from_axis_angle(Vec3::X, inclination)
         * Quat::from_axis_angle(Vec3::Z, arg_of_perigee);
 

@@ -9,8 +9,8 @@ use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::telemetry::LogLevel;
 use crate::test_support::{
-    LogTap, assert_close, assert_close_dvec3, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
-    start_running, test_app, tick,
+    LogTap, assert_close, assert_close_dvec3, disable_relative_gravity, enter_sim, fixed_epoch,
+    fixed_propagator, kepler_eci, start_running, test_app, tick,
 };
 use crate::tether::TetherRoot;
 use crate::time::{PHYS_DT, WorldTime};
@@ -257,6 +257,7 @@ fn origin_requires_tether_root() {
 #[test]
 fn origin_keys_on_sim_anchor() {
     let mut app = running_app();
+    disable_relative_gravity(&mut app);
     let body_a = spawn_body(
         &mut app,
         DVec3::new(60.0, 0.0, 0.0),

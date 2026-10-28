@@ -2,6 +2,7 @@
 
 pub mod cache;
 pub mod catalog;
+pub mod lvlh;
 pub mod selection;
 
 use std::sync::PoisonError;
@@ -37,6 +38,9 @@ pub enum Orbit {
     FromTle(String),
     FromElements(Vector6<f64>),
 }
+
+/// The Earth's equatorial radius (WGS-84), for altitudes (F-28).
+pub const EARTH_EQUATORIAL_RADIUS_M: f64 = brahe::WGS84_A;
 
 // Other constants
 pub const ISS_ORBIT: Vector6<f64> = Vector6::new(

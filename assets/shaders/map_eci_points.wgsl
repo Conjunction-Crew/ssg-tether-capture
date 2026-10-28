@@ -33,7 +33,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     let tag = mesh_functions::get_tag(vertex.instance_index);
     let raw_map_pos = eci_states[tag].position.xyz / config.map_units_to_m;
-    let map_pos = vec3<f32>(raw_map_pos.x, raw_map_pos.z, -raw_map_pos.y);
+    // The map is drawn in ECI axes (F-08): no rotation.
+    let map_pos = raw_map_pos;
 
     let world_from_local = mesh_functions::get_world_from_local(vertex.instance_index);
     let local_pos = vec4(vertex.position * config.point_scale, 1.0);

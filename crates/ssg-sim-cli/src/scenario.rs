@@ -18,9 +18,11 @@ use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, SimCommand};
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::catalog::{JsonOrbital, gp_record_to_elements};
+use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
+use ssg_sim::physics_bubble::body_eci_state;
 use ssg_sim::project::{AssetsDir, SelectedProject};
 use ssg_sim::session::{SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
@@ -225,12 +227,29 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
         world.get::<Position>(root).ok_or("root Position")?.0,
         world.get::<LinearVelocity>(root).ok_or("root velocity")?.0,
     );
+    // The root's velocity relative to the debris in the debris's LVLH frame, as
+    // the controller measures it (F-35).
+    let (rel_r, rel_v) = (
+        root_position - debris_position,
+        root_velocity - debris_velocity,
+    );
+    let rel_v = body_eci_state(
+        world.resource::<OrbitalCache>(),
+        debris,
+        debris_position,
+        debris_velocity,
+        world.get::<RigidBodyDisabled>(debris).is_some(),
+    )
+    .and_then(|state| LvlhFrame::from_eci(&state))
+    .map_or(rel_v, |frame| {
+        frame.relative_velocity_in_frame(rel_r, rel_v)
+    });
     Ok(Sample {
         step: ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64,
         epoch: iso(world_time.epoch),
         state,
         range_m: (debris_position - root_position).length(),
-        rel_speed_mps: (root_velocity - debris_velocity).length(),
+        rel_speed_mps: rel_v.length(),
     })
 }
 

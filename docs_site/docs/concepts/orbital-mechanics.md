@@ -27,7 +27,9 @@ The `load_dataset_entities` system runs on `OnEnter(UiScreen::Sim)`, parses all 
 
 ## ECI state caching
 
-Rather than each system querying the `KeplerianPropagator` directly, the `cache_eci_states` system runs once per `ManualPhysics` tick (in `PhysicsSystems::First`) and writes each entity's current ECI `Vector6<f64>` into `OrbitalCache::eci_states`. All other systems — physics bubble management, capture algorithms, map view positioning — read from this cache.
+Rather than each system querying the `KeplerianPropagator` directly, the `cache_eci_states` system runs once per `ManualPhysics` tick and writes each entity's current ECI `Vector6<f64>` into `OrbitalCache::eci_states`. All other systems — physics bubble management, capture algorithms, map view positioning — read from this cache.
+
+The simulation's own systems run **after** Avian3D's step (`PhysicsSystems::Last`), chained in this order: `SimStep::CenterOfMass` → `OriginReset` → `CacheEci` → `Bubble` → `RelativeDynamics` → `Capture`. The bookkeeping describes the state after the step; the two force producers (relative gravity and the capture controller) then act during the next step from that consistent snapshot.
 
 ## Keplerian propagation
 
@@ -50,7 +52,7 @@ These are used during initialisation when an entity is spawned `FromElements`.
 
 ## Approach metrics
 
-Relative position, velocity, range, closing speed, and predicted closest-approach distance between the tether and a debris target are computed each physics tick by `capture_state_machine_update` directly from the cached ECI states in `OrbitalCache::eci_states`. These values drive the transition conditions in a `CompiledCapturePlan`: each physics step, the current state's transitions are checked in plan order, a transition fires only when all of its conditions hold, and at most one transition fires per step (the first satisfied one).
+Relative position, velocity, range, closing speed, and predicted closest-approach distance between the tether and a debris target are computed each physics tick by `capture_state_machine_update` from the bodies' bubble-frame states and the cached ECI states in `OrbitalCache::eci_states`. The relative velocity is measured in the debris target's LVLH frame (`orbit::lvlh`): a body at rest relative to the co-rotating target frame reads zero, not the few m/s that the plain ECI difference shows at kilometre range; the HUD, the plots, the CSV samples and `ssg-sim` use the same measure. These values drive the transition conditions in a `CompiledCapturePlan`: each physics step, the current state's transitions are checked in plan order, a transition fires only when all of its conditions hold, and at most one transition fires per step (the first satisfied one).
 
 ## brahe
 

@@ -153,6 +153,7 @@ impl Plugin for TimePlugin {
                     SimStep::OriginReset,
                     SimStep::CacheEci,
                     SimStep::Bubble,
+                    SimStep::RelativeDynamics,
                     SimStep::Capture,
                 )
                     .chain()

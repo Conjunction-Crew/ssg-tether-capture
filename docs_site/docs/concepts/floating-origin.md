@@ -12,6 +12,8 @@ The simulation is centred on the **simulation anchor** (`SimAnchor`), the tether
 
 The **physics bubble** is the anchor's Kepler orbit, translating, with ECI axes. Bodies within `PHYSICS_ENABLE_RADIUS` of the origin are simulated by Avian3D; their orbit propagator describes the frame origin, and their ECI state is that orbit plus their `Position`/`LinearVelocity`. Bodies beyond `PHYSICS_DISABLE_RADIUS` are disabled (`RigidBodyDisabled`) and propagated on their own orbit; their `Position`/`LinearVelocity` mirror their state relative to the anchor each step. A body leaving the bubble gets its own orbit (the frame state plus its relative state); a body entering it gets the frame origin's orbit (its own state minus its relative state).
 
+**Relative dynamics.** The frame origin is in free fall on its Kepler orbit, so a body inside the bubble at `Position` `p` feels only the difference of Earth's gravity between `r_o + p` and `r_o` (`r_o` is the anchor's ECI position): `apply_relative_gravity` applies `μ·(r_o/|r_o|³ − (r_o + p)/|r_o + p|³)` to every enabled body in `SimStep::RelativeDynamics`. Because the bubble keeps ECI axes, no Coriolis or centrifugal term appears; to first order this is the Clohessy-Wiltshire gravity-gradient term, and `orbit::lvlh` holds the LVLH frame and the closed-form CW solution it is tested against. Avian's global `Gravity` stays zero.
+
 ## Relevant constants
 
 | Constant | Description |
