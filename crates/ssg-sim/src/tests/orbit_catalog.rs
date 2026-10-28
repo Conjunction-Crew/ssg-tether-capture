@@ -726,7 +726,10 @@ fn loader_epoch_origin_is_set_once_and_offsets_are_against_it() {
 #[test]
 fn loader_logs_an_error_for_a_dataset_that_does_not_parse() {
     let dir = TempDir::new("loader-bad-json");
-    let path = dir.write("datasets/broken.json", "{ this is not json");
+    dir.write("datasets/broken.json", "{ this is not json");
+    // The loader logs the path `read_dir` yields: components joined with the
+    // platform separator (`dir.write("datasets/...")` would mix `\` and `/` on Windows).
+    let path = dir.path().join("datasets").join("broken.json");
     dir.write("datasets/good.json", &format!("[{}]", full_record(5, "")));
 
     let loaded = load(dir.path(), Vec::new(), false, None);
