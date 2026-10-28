@@ -1,12 +1,12 @@
 //! Characterization of the physics bubble (`physics_bubble_add_remove`): the
-//! enable/disable thresholds, the F-07 and F-23 fixes and the F-25 defect.
+//! enable/disable thresholds, the F-07 and F-23 fixes and the anchor (F-25).
 //!
-//! Layout: the anchor A (`CameraTarget`) sits at the origin of the floating-origin
+//! Layout: the anchor A (`SimAnchor`) sits at the origin of the floating-origin
 //! frame with an ISS orbit. Other bodies carry an orbit whose ECI state is A's plus
 //! a known offset and zero relative velocity. Distances are `rb.position.length()`
 //! (`propagation.rs:480`, `:505`).
 
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::telemetry::LogLevel;
@@ -35,10 +35,10 @@ fn iss_eci_plus(offset: DVec3) -> Vector6<f64> {
     kepler_eci(ISS_ORBIT, fixed_epoch()) + Vector6::new(offset.x, offset.y, offset.z, 0.0, 0.0, 0.0)
 }
 
-/// The anchor: `CameraTarget`, at the origin, on the ISS orbit.
+/// The anchor: `SimAnchor`, at the origin, on the ISS orbit.
 fn spawn_anchor(app: &mut App) -> Entity {
     let anchor = spawn_body(app, DVec3::ZERO, Some(DVec3::ZERO), false);
-    app.world_mut().entity_mut(anchor).insert(CameraTarget);
+    app.world_mut().entity_mut(anchor).insert(SimAnchor);
     anchor
 }
 
@@ -134,11 +134,11 @@ fn bubble_messages(events: &[(LogLevel, &'static str, String)]) -> Vec<String> {
         .collect()
 }
 
-/// Entities with an `Orbital` and no `CameraTarget`, in the order the bubble system
+/// Entities with an `Orbital` and no `SimAnchor`, in the order the bubble system
 /// iterates them.
 fn bubble_iteration_order(app: &mut App) -> Vec<Entity> {
     app.world_mut()
-        .query_filtered::<Entity, (With<Orbital>, Without<CameraTarget>)>()
+        .query_filtered::<Entity, (With<Orbital>, Without<SimAnchor>)>()
         .iter(app.world())
         .collect()
 }
@@ -430,7 +430,7 @@ fn bubble_per_body_relative_state() {
 }
 
 #[test]
-fn char_bubble_keys_on_camera_target() {
+fn bubble_keys_on_sim_anchor() {
     let mut app = running_app();
     let anchor_a = spawn_anchor(&mut app);
     // B: disabled, 300 m from A along x. T: disabled, 200 m from A along -x.
@@ -458,17 +458,16 @@ fn char_bubble_keys_on_camera_target() {
     assert!(is_disabled(&app, body_b));
     assert!(is_disabled(&app, body_t));
 
-    // Move `CameraTarget` from A to T, as `orbit_camera_switch_target` does.
-    app.world_mut()
-        .entity_mut(anchor_a)
-        .remove::<CameraTarget>();
-    app.world_mut().entity_mut(body_t).insert(CameraTarget);
+    // Move `SimAnchor` from A to T: the bubble re-centres on the anchor (F-25: fixed
+    // in P4; the camera target no longer moves it, see the app's
+    // `bubble_ignores_camera_target`).
+    app.world_mut().entity_mut(anchor_a).remove::<SimAnchor>();
+    app.world_mut().entity_mut(body_t).insert(SimAnchor);
 
     let mut tap = LogTap::new(app.world());
     tick(&mut app);
     let events = tap.drain(app.world());
 
-    // F-25: current behaviour, expected to change in P4
     // The bubble is now relative to T: B is ~500 m from T.
     assert_close_dvec3(
         position(&app, body_b),
@@ -486,11 +485,8 @@ fn char_bubble_keys_on_camera_target() {
         "B relative to T (from the cache)",
     );
 
-    // OBSERVED, differs from the plan: the plan predicted that A, "now 200 m from T
-    // and enabled", gets disabled. The bubble measures `rb.position.length()` in the
-    // frame of the old anchor, where A is still at the origin, so A stays enabled
-    // and silent.
-    // F-25: current behaviour, expected to change in P4
+    // The bubble measures `rb.position.length()` in the frame of the old anchor,
+    // where A is still at the origin, so A stays enabled and silent.
     assert!(!is_disabled(&app, anchor_a));
     assert_close_dvec3(position(&app, anchor_a), DVec3::ZERO, 1e-9, "A position");
     assert!(bubble_messages(&events).is_empty());

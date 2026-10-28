@@ -29,7 +29,6 @@ use bevy::prelude::*;
 /// before P3, now with names (F-13); P3 moves nothing relative to avian.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SimStep {
-    SyncAnchor,
     CenterOfMass,
     OriginReset,
     CacheEci,
@@ -60,7 +59,6 @@ impl PluginGroup for SimPlugins {
             .add(project::ProjectPlugin)
             .add(telemetry::TelemetryPlugin)
             .add(orbit::OrbitPlugin)
-            .add(anchor::AnchorPlugin)
             .add(floating_origin::FloatingOriginPlugin)
             .add(physics_bubble::PhysicsBubblePlugin)
             .add(tether::TetherPlugin)

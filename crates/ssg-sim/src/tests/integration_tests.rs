@@ -1,4 +1,4 @@
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::capture::CaptureComponent;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::floating_origin::MAX_ORIGIN_OFFSET;
@@ -60,7 +60,7 @@ fn apply_force_to_target() {
     let sphere_body = app
         .world_mut()
         .spawn((
-            CameraTarget,
+            SimAnchor,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(0.0, 0.0, 0.0),
@@ -145,7 +145,7 @@ fn orbit_propagation() {
     let sphere_body = app
         .world_mut()
         .spawn((
-            CameraTarget,
+            SimAnchor,
             RigidBody::Dynamic,
             Collider::convex_hull_from_mesh(&test_sphere_mesh).unwrap(),
             Transform::from_xyz(40.0, 40.0, 40.0),
@@ -191,7 +191,7 @@ fn floating_origin_resets() {
     let sphere_body = app
         .world_mut()
         .spawn((
-            CameraTarget,
+            SimAnchor,
             TetherRoot,
             RigidBody::Dynamic,
             // An analytic sphere has its centre of mass exactly at the origin; the convex

@@ -11,7 +11,7 @@ use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy::transform::TransformSystems;
 use bevy_egui::EguiPrimaryContextPass;
 
-use crate::render::camera::{cycle_camera_target, set_map_view, setup_camera};
+use crate::render::camera::{CameraTarget, cycle_camera_target, set_map_view, setup_camera};
 use crate::render::layers::UI_LAYER;
 use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
 use crate::ui::egui::{CsvExportState, egui_plots};
@@ -53,7 +53,6 @@ use crate::ui::widgets::{
     ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
 };
 use ssg_sim::SimSet;
-use ssg_sim::anchor::CameraTarget;
 use ssg_sim::capture::SimCommand;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::Orbital;

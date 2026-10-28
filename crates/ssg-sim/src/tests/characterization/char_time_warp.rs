@@ -1,7 +1,7 @@
 //! Characterization of time warp: the N-by-1 invariant, the keyboard ladder
 //! (F-12), pause, the catch-up cap, and the single physics-clock advance (F-38).
 
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::session::PauseState;
@@ -31,14 +31,14 @@ struct Scenario {
     far: Entity,
 }
 
-/// An ISS anchor (`CameraTarget` + `TetherRoot`, moving), a second dynamic body
+/// An ISS anchor (`SimAnchor` + `TetherRoot`, moving), a second dynamic body
 /// joined to it like `spawners.rs:186-195`, and a disabled orbital body 300 m away.
 fn warp_scenario(app: &mut App) -> Scenario {
     let eci = kepler_eci(ISS_ORBIT, fixed_epoch());
     let anchor = app
         .world_mut()
         .spawn((
-            CameraTarget,
+            SimAnchor,
             TetherRoot,
             RigidBody::Dynamic,
             Collider::sphere(0.5),

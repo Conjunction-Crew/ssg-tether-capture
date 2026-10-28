@@ -1,7 +1,7 @@
 //! Characterization of Kepler propagation of the cached ECI state and of the
 //! start epoch (F-06, fixed in P4).
 
-use crate::anchor::CameraTarget;
+use crate::anchor::SimAnchor;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::{ISS_ORBIT, Orbit, Orbital};
 use crate::test_support::{
@@ -45,7 +45,7 @@ fn char_orbit_iss_kepler_steps() {
     let anchor = app
         .world_mut()
         .spawn((
-            CameraTarget,
+            SimAnchor,
             RigidBody::Dynamic,
             Collider::sphere(0.5),
             Position::from_xyz(0.0, 0.0, 0.0),
