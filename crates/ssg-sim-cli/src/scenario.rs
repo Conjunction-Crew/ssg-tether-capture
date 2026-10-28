@@ -8,6 +8,7 @@ use avian3d::collision::CollisionDiagnostics;
 use avian3d::dynamics::solver::SolverDiagnostics;
 use avian3d::prelude::*;
 use bevy::ecs::message::{MessageCursor, Messages};
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
@@ -43,14 +44,20 @@ pub struct Sample {
     pub state: String,
     pub range_m: f64,
     pub rel_speed_mps: f64,
+    /// The tether root's and the debris's `Position` and `LinearVelocity` (bubble
+    /// frame), for the state hash.
+    pub root_position: DVec3,
+    pub root_velocity: DVec3,
+    pub debris_position: DVec3,
+    pub debris_velocity: DVec3,
 }
 
 pub struct Run {
     pub plan: String,
     pub epoch_mode: &'static str,
     pub start_epoch: String,
-    /// Updates run after the capture command.
-    pub updates: u64,
+    /// Fixed steps run after the capture command.
+    pub steps: u64,
     pub transitions: Vec<Transition>,
     pub samples: Vec<Sample>,
     pub last: Sample,
@@ -162,11 +169,15 @@ pub fn run(args: &Args) -> Result<Run, String> {
         .world()
         .resource::<Messages<CaptureTransition>>()
         .get_cursor_current();
+    // One update runs `--warp` fixed steps (`--warp` is at most
+    // `MAX_STEPS_PER_UPDATE`); `--steps` and `--sample-every` are multiples of it.
+    let warp = u64::from(args.warp);
+    let (total_updates, sample_every_updates) = (args.steps / warp, args.sample_every / warp);
     let mut transitions = Vec::new();
     let mut samples = Vec::new();
     let mut updates = 0;
     let mut last = sample(&app, debris, root)?;
-    while updates < args.steps {
+    while updates < total_updates {
         app.update();
         updates += 1;
         last = sample(&app, debris, root)?;
@@ -185,7 +196,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
                 eprintln!("ssg-sim: {}: {}", event.source, event.message);
             }
         }
-        if updates % args.sample_every == 0 {
+        if updates % sample_every_updates == 0 {
             samples.push(sample(&app, debris, root)?);
         }
         if args.stop_at_capture && last.state == "capture" {
@@ -194,7 +205,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
     }
     if args.stop_at_capture && last.state != "capture" {
         return Err(format!(
-            "no capture within {updates} updates (final state `{}`)",
+            "no capture within {} steps (final state `{}`)",
+            updates * warp,
             last.state
         ));
     }
@@ -206,7 +218,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
             EpochArg::At(_) => "fixed",
         },
         start_epoch: iso(start_epoch),
-        updates,
+        steps: updates * warp,
         transitions,
         samples,
         last,
@@ -256,6 +268,10 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
         state,
         range_m: (debris_position - root_position).length(),
         rel_speed_mps: rel_v.length(),
+        root_position,
+        root_velocity,
+        debris_position,
+        debris_velocity,
     })
 }
 
