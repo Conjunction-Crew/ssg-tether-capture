@@ -2,6 +2,7 @@
 
 pub mod cache;
 pub mod catalog;
+pub mod lvlh;
 pub mod selection;
 
 use std::sync::PoisonError;
