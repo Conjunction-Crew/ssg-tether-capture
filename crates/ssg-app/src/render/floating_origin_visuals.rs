@@ -7,7 +7,7 @@ use bevy::prelude::*;
 
 use crate::render::camera::CameraTarget;
 use crate::render::celestial::Earth;
-use crate::render::layers::{MAP_LAYER, eci_to_orbit_frame};
+use crate::render::layers::MAP_LAYER;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::cache::OrbitalCache;
 
@@ -52,13 +52,14 @@ pub fn floating_origin_update_visuals(
         return;
     };
 
-    // Earth translation becomes new position
+    // Earth translation becomes new position. The scene is in ECI axes (F-08),
+    // so the Earth's centre is the target's ECI position away, on its nadir side.
     let mut earth_transform = earth.into_inner();
-    let target_position = eci_to_orbit_frame(Vec3::new(
+    let target_position = Vec3::new(
         target_rv[0] as f32,
         target_rv[1] as f32,
         target_rv[2] as f32,
-    ));
+    );
     let new_translation = target_transform.translation - target_position;
     earth_transform.translation = new_translation;
     atmosphere.world_position = new_translation;

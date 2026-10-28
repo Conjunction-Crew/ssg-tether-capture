@@ -2,11 +2,17 @@
 
 use crate::render::camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::render::celestial::Earth;
-use crate::render::layers::SCENE_LAYER;
+use crate::render::floating_origin_visuals::floating_origin_update_visuals;
+use crate::render::layers::{
+    EARTH_TEXTURE_NORTH_AXIS, MAP_UNITS_TO_M, SCENE_LAYER, earth_mesh_rotation, eci_position_to_map,
+};
 use crate::tests::app_support::{enter_sim, start_running, test_app, tick};
 use avian3d::prelude::*;
 use bevy::camera::visibility::RenderLayers;
+use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
+use bevy::mesh::VertexAttributeValues;
+use bevy::pbr::Atmosphere;
 use bevy::prelude::*;
 use nalgebra::Vector6;
 use ssg_sim::anchor::SimAnchor;
@@ -211,5 +217,96 @@ fn bubble_ignores_camera_target() {
         (moved[1] - DVec3::new(300.0, 0.0, 0.0)).length() < 1e-3,
         "B relative to A is {:?}",
         moved[1]
+    );
+}
+
+#[test]
+fn frame_eci_to_scene_round_trip() {
+    // F-08: fixed in P4. The map is drawn in ECI axes: scaling only, no rotation.
+    for v in [
+        Vec3::new(6_524_834.0, -1_234_567.0, 2_345_678.0),
+        Vec3::new(-3_000_000.0, 4_000_000.0, -5_000_000.0),
+        Vec3::new(1_000.0, 2_000.0, 3_000.0),
+    ] {
+        let back = eci_position_to_map(v) * MAP_UNITS_TO_M as f32;
+        assert!(
+            (back - v).length() <= 1e-6 * v.length(),
+            "{v:?} -> map -> {back:?}"
+        );
+    }
+}
+
+#[test]
+fn scene_nadir_matches_physics_nadir() {
+    // F-08: fixed in P4. The Earth is drawn on the target's physical nadir, -r̂.
+    let mut app = test_app();
+    enter_sim(&mut app);
+    let r_t = DVec3::new(-2_801_000.0, 5_412_000.0, 3_300_000.0);
+    let earth = app.world_mut().spawn((Earth, Transform::default())).id();
+    let target = app
+        .world_mut()
+        .spawn((CameraTarget, Transform::from_xyz(3.0, -4.0, 5.0)))
+        .id();
+    app.world_mut().spawn((
+        Camera3d::default(),
+        RenderLayers::layer(SCENE_LAYER),
+        Atmosphere {
+            bottom_radius: 6_360_000.0,
+            top_radius: 6_460_000.0,
+            world_position: Vec3::ZERO,
+            ground_albedo: Vec3::splat(0.3),
+            medium: Handle::default(),
+        },
+    ));
+    app.world_mut()
+        .resource_mut::<OrbitalCache>()
+        .eci_states
+        .insert(target, Vector6::new(r_t.x, r_t.y, r_t.z, 0.0, 7_600.0, 0.0));
+
+    app.world_mut()
+        .run_system_once(floating_origin_update_visuals)
+        .expect("floating_origin_update_visuals failed to run");
+
+    let world = app.world_mut();
+    let earth_translation = world.get::<Transform>(earth).unwrap().translation;
+    let target_translation = world.get::<Transform>(target).unwrap().translation;
+    let nadir = (earth_translation - target_translation).normalize();
+    let expected = -r_t.normalize().as_vec3();
+    assert!(
+        (nadir - expected).length() < 1e-6,
+        "scene nadir {nadir:?}, physical nadir {expected:?}"
+    );
+    let atmosphere = world
+        .query::<&Atmosphere>()
+        .single(world)
+        .expect("one atmosphere")
+        .clone();
+    assert_eq!(atmosphere.world_position, earth_translation);
+}
+
+#[test]
+fn earth_mesh_pole_is_eci_z() {
+    // F-08: fixed in P4. The UV sphere's first vertex is its pole, texture row 0
+    // (north); the Earth's mesh rotation must put it on ECI +Z.
+    let mesh = Sphere::new(1.0).mesh().uv(8, 4);
+    let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        panic!("UV sphere without Float32x3 positions");
+    };
+    let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0) else {
+        panic!("UV sphere without Float32x2 UVs");
+    };
+    assert_eq!(uvs[0][1], 0.0, "vertex 0 is not on texture row 0");
+    let pole = Vec3::from(positions[0]).normalize();
+
+    assert!(
+        (pole - EARTH_TEXTURE_NORTH_AXIS).length() < 1e-6,
+        "mesh pole {pole:?}"
+    );
+    let rotated = earth_mesh_rotation() * pole;
+    assert!(
+        (rotated - Vec3::Z).length() < 1e-6,
+        "Earth pole in the scene: {rotated:?}"
     );
 }

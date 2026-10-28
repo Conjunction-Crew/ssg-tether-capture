@@ -142,6 +142,8 @@ pub fn setup_camera(
                 distance: EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32
                     + 2.0 * (EARTH_ATMOSPHERE_RADIUS / MAP_UNITS_TO_M as f32),
                 min_distance: 0.2,
+                // North (ECI +Z) up on screen; the map is in ECI axes (F-08).
+                up: Vec3::Z,
                 ..default()
             },
         },
