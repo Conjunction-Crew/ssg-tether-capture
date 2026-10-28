@@ -521,7 +521,13 @@ pub mod q13 {
     }
 
     /// Select the HST and the chaser, enter the sim, start it, and mark the HST
-    /// for capture with `example_plan`, as the app's UI does. The start epoch is
+    /// for capture with `example_plan`, as the app's UI does.
+    ///
+    /// Step offset (F-51): this ticks once more before the capture starts than the
+    /// CLI's scenario runner does, so the tick `t` after `build` is at step
+    /// `t + 3` here and the CLI's sample at that step is bit-identical (the CLI
+    /// measures from step 2). Align by absolute step; `harness_parity` in
+    /// `ssg-sim-cli` checks it. The start epoch is
     /// the app's [`SimConfig`](crate::time::SimConfig) ([`fixed_epoch`] in [`test_app`]); the wall-clock
     /// epoch mode was retired in P4 S6 (the sim has no wall-clock path, Q41).
     pub fn build(app: &mut App) -> Q13Handles {

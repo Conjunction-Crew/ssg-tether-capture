@@ -1,5 +1,12 @@
 //! The scenario: the same set-up as `ssg_sim::test_support::q13::build`, driven
 //! from files instead of the Q13 fixture.
+//!
+//! **Step offset (F-51).** This runner measures from step 2: three updates (enter
+//! the sim, start it, apply the capture command), and the first sample is step 3.
+//! `q13::build` ticks once more before the capture starts, so the harness starts the
+//! capture one step later: its checkpoint after tick `t` is at step `t + 3`. Align by
+//! absolute step, never by tick count. At the same absolute step the two are
+//! bit-identical, which `crates/ssg-sim-cli/tests/harness_parity.rs` checks.
 
 use std::time::{Duration, Instant};
 

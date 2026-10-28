@@ -81,6 +81,118 @@ fn unknown_option_exits_2() {
     assert_eq!(output.status.code(), Some(2));
 }
 
+/// `ssg-sim run <project> --target T --chaser C <extra>`, run to the end.
+fn run_cli(project: &Path, ids: (&str, &str), extra: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_ssg-sim"))
+        .arg("run")
+        .arg(project)
+        .args(["--target", ids.0, "--chaser", ids.1])
+        .args(extra)
+        .output()
+        .expect("the binary runs")
+}
+
+#[test]
+fn malformed_epoch_exits_2_and_names_the_expected_format() {
+    let output = run_cli(
+        Path::new("somewhere"),
+        ("1", "2"),
+        &["--epoch", "yesterday"],
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ssg-sim: --epoch: `yesterday` is not `now` or YYYY-MM-DDTHH:MM:SS[.fff]"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn unknown_norad_id_exits_1_and_names_the_id() {
+    let project = tempdir("unknown-id");
+    let output = run_cli(
+        &project,
+        ("424242", "99901"),
+        &[
+            "--assets",
+            repo_root().join("assets").to_str().unwrap(),
+            "--steps",
+            "64",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ssg-sim: NORAD 424242 not found in any dataset"),
+        "stderr: {stderr}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[test]
+fn project_without_datasets_exits_1_when_the_assets_have_none_either() {
+    let project = tempdir("empty-project");
+    let assets = tempdir("empty-assets");
+    let output = run_cli(
+        &project,
+        ("20580", "99901"),
+        &["--assets", assets.to_str().unwrap(), "--steps", "64"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ssg-sim: NORAD 20580 not found in any dataset"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !project.join("runs").exists(),
+        "no output folder is written"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&assets);
+}
+
+#[test]
+fn stop_at_capture_without_a_capture_exits_1_with_the_final_state() {
+    let root = repo_root();
+    let project = tempdir("no-capture");
+    std::fs::create_dir_all(project.join("datasets")).unwrap();
+    std::fs::copy(
+        root.join("crates/ssg-sim/src/test_support/fixtures/q13_hubble_pair.json"),
+        project.join("datasets/q13.json"),
+    )
+    .unwrap();
+    let out = project.join("out");
+
+    let output = run_cli(
+        &project,
+        ("20580", "99901"),
+        &[
+            "--epoch",
+            "2026-04-03T16:03:47.002464",
+            "--steps",
+            "64",
+            "--stop-at-capture",
+            "--assets",
+            root.join("assets").to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ssg-sim: no capture within 64 steps (final state `rendezvous`)"),
+        "stderr: {stderr}"
+    );
+    assert!(!out.exists(), "a failed run writes no output");
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 fn tempdir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ssg-sim-cli-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
