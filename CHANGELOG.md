@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- `ssg-sim run`: `--steps` and `--sample-every` count fixed steps and must be multiples of `--warp` (at most 64); `summary.json` carries a `state_hash`; transitions carry their exact step; determinism tests (two runs identical, 1× vs 16× identical) and the determinism contract page (F-17)
+
 ### Changed
 - Time warp: explicit pause state, ladder tops out at 8192×, work per update is capped and the HUD shows the effective warp (F-12)
 - Cycling the camera target is a pure viewing action: the floating origin and the physics bubble follow the simulation anchor (the tether root), not the camera (F-25)
