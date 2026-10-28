@@ -391,3 +391,36 @@ fn hud_relative_speed_is_lvlh() {
         "ECI-equal: closing speed {closing} m/s"
     );
 }
+
+#[test]
+fn hud_altitude_uses_wgs84_radius() {
+    // F-28: fixed in P4 (was the render radius 6,360,000 m).
+    let mut app = test_app();
+    let state = Vector6::new(6_900_000.0, 0.0, 0.0, 0.0, 7_600.0, 0.0);
+    let [target, reference] = [DVec3::ZERO, DVec3::new(0.0, 100.0, 0.0)].map(|position| {
+        app.world_mut()
+            .spawn((
+                RigidBody::Dynamic,
+                Collider::sphere(1.0),
+                Position(position),
+            ))
+            .id()
+    });
+    let mut cache = OrbitalCache::default();
+    cache.eci_states.insert(target, state);
+    cache.eci_states.insert(reference, state);
+    app.world_mut().insert_resource(cache);
+
+    let altitude = app
+        .world_mut()
+        .run_system_once(
+            move |bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
+                  cache: Res<OrbitalCache>| {
+                capture_metrics(&bodies, Some(target), Some(reference), &cache)
+                    .map(|m| m.target_altitude_m)
+            },
+        )
+        .unwrap()
+        .expect("metrics for two cached bodies");
+    assert_eq!(altitude, 521_863.0);
+}

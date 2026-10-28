@@ -3,9 +3,10 @@ use std::fmt::Write;
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
 
-use crate::render::layers::{EARTH_RADIUS, eci_position_to_map};
+use crate::render::layers::eci_position_to_map;
 use ssg_sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
 use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
+use ssg_sim::orbit::EARTH_EQUATORIAL_RADIUS_M;
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::physics_bubble::body_eci_state;
@@ -361,7 +362,8 @@ pub(crate) fn capture_metrics(
         relative_speed_m_s: relative_velocity.length(),
         closing_speed_m_s,
         target_speed_m_s: target_velocity.length(),
-        target_altitude_m: target_position.length() - EARTH_RADIUS as f64,
+        // Above the WGS-84 equatorial radius, not the render radius (F-28).
+        target_altitude_m: target_position.length() - EARTH_EQUATORIAL_RADIUS_M,
     })
 }
 
