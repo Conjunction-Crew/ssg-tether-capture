@@ -68,11 +68,7 @@ fn setup_time_resets_the_clock_to_the_configured_epoch_and_logs_it() {
     let logs = tap.drain(app.world());
     assert_eq!(
         logs,
-        [(
-            LogLevel::Info,
-            "time",
-            format!("Sim start epoch: {start}")
-        )]
+        [(LogLevel::Info, "time", format!("Sim start epoch: {start}"))]
     );
 }
 
@@ -96,7 +92,11 @@ fn change_warp_up_doubles_to_the_top_rung_and_then_stays() {
         match time.change_warp(true, false) {
             WarpChange::Multiplier(m) => seen.push(m),
             other => {
-                assert_eq!(other, WarpChange::Unchanged, "past the top: nothing changes");
+                assert_eq!(
+                    other,
+                    WarpChange::Unchanged,
+                    "past the top: nothing changes"
+                );
                 break;
             }
         }
@@ -106,7 +106,10 @@ fn change_warp_up_doubles_to_the_top_rung_and_then_stays() {
     assert_eq!(seen, expected, "2, 4, ..., 8192");
     assert_eq!(time.multiplier, MAX_TIME_WARP);
     assert_eq!(time.change_warp(true, false), WarpChange::Unchanged);
-    assert_eq!(time.multiplier, MAX_TIME_WARP, "the multiplier did not move");
+    assert_eq!(
+        time.multiplier, MAX_TIME_WARP,
+        "the multiplier did not move"
+    );
 }
 
 #[test]
@@ -126,7 +129,10 @@ fn change_warp_down_halves_to_1x_and_then_pauses() {
         WarpChange::Paused,
         "down at 1x pauses"
     );
-    assert_eq!(time.multiplier, 1, "pausing leaves the multiplier at 1, never 0");
+    assert_eq!(
+        time.multiplier, 1,
+        "pausing leaves the multiplier at 1, never 0"
+    );
 }
 
 #[test]
@@ -194,7 +200,12 @@ fn fixed_physics_step_runs_the_multiplier_in_steps_and_advances_the_clock() {
     let time = world.resource::<WorldTime>();
     assert_eq!(time.effective_multiplier, 5);
     assert_eq!(time.multiplier, 5, "the requested warp is untouched");
-    assert_close(time.epoch - time.start_epoch, 5.0 * PHYS_DT, 1e-12, "elapsed sim time");
+    assert_close(
+        time.epoch - time.start_epoch,
+        5.0 * PHYS_DT,
+        1e-12,
+        "elapsed sim time",
+    );
 }
 
 #[test]
@@ -227,7 +238,12 @@ fn fixed_physics_step_accumulates_over_runs() {
 
     assert_eq!(world.resource::<PhysicsRuns>().0, 6);
     let time = world.resource::<WorldTime>();
-    assert_close(time.epoch - time.start_epoch, 6.0 * PHYS_DT, 1e-12, "elapsed");
+    assert_close(
+        time.epoch - time.start_epoch,
+        6.0 * PHYS_DT,
+        1e-12,
+        "elapsed",
+    );
 }
 
 #[test]
@@ -366,7 +382,10 @@ fn relative_gravity_gives_each_dynamic_body_the_differential_acceleration() {
     run_gravity(&mut app);
 
     let expected_a = differential_gravity(r_o, near);
-    assert!(expected_a.length() > 1e-6, "precondition: a visible tidal term");
+    assert!(
+        expected_a.length() > 1e-6,
+        "precondition: a visible tidal term"
+    );
     assert_close_dvec3(
         accumulated_acceleration(&mut app, a),
         expected_a,
@@ -384,7 +403,10 @@ fn relative_gravity_gives_each_dynamic_body_the_differential_acceleration() {
 /// Runs the system with `body` as spawned, then turns it into an enabled dynamic
 /// body (avian's `Forces` query does not match disabled or non-dynamic bodies) and
 /// returns what the system accumulated on it.
-fn gravity_left_on(body_components: impl Bundle, make_dynamic: impl FnOnce(&mut EntityWorldMut)) -> DVec3 {
+fn gravity_left_on(
+    body_components: impl Bundle,
+    make_dynamic: impl FnOnce(&mut EntityWorldMut),
+) -> DVec3 {
     let (mut app, _anchor, _r_o) = gravity_app();
     let body = app.world_mut().spawn(body_components).id();
 
@@ -453,7 +475,11 @@ fn run_com(app: &mut App) {
 }
 
 fn com_of(app: &App, root: Entity) -> Option<(DVec3, DVec3)> {
-    app.world().resource::<OrbitalCache>().com_rv.get(&root).copied()
+    app.world()
+        .resource::<OrbitalCache>()
+        .com_rv
+        .get(&root)
+        .copied()
 }
 
 #[test]
@@ -534,7 +560,12 @@ fn com_rv_ignores_nodes_of_other_roots() {
 
     run_com(&mut app);
 
-    assert_close_dvec3(com_of(&app, root_a).unwrap().0, DVec3::new(1.0, 0.0, 0.0), 1e-12, "A");
+    assert_close_dvec3(
+        com_of(&app, root_a).unwrap().0,
+        DVec3::new(1.0, 0.0, 0.0),
+        1e-12,
+        "A",
+    );
     assert_close_dvec3(
         com_of(&app, root_b).unwrap().0,
         DVec3::new(103.0, 0.0, 0.0),

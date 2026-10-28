@@ -133,7 +133,10 @@ fn save_plan_file_writes_pretty_json_that_loads_back() {
         serde_json::to_string_pretty(&json).unwrap(),
         "the file holds exactly the pretty-printed value"
     );
-    assert!(text.contains("\n  \"name\": \"Saved plan\""), "indented:\n{text}");
+    assert!(
+        text.contains("\n  \"name\": \"Saved plan\""),
+        "indented:\n{text}"
+    );
     let plans = load_plans_from_dir(dir.path());
     assert_eq!(plans["saved"].name, "Saved plan");
 }
@@ -181,7 +184,10 @@ fn load_all_unions_example_and_user_plans_and_compiles_them() {
     examples.write("example_a.json", &plan_json("Example A"));
     examples.write("example_bad.json", "[");
     users.write("user_a.json", &plan_json("User A"));
-    users.write("user_empty.json", r#"{"name": "x", "tether": "", "states": []}"#);
+    users.write(
+        "user_empty.json",
+        r#"{"name": "x", "tether": "", "states": []}"#,
+    );
     let mut library = CapturePlanLibrary::default();
 
     let errors = library.load_all(examples.path(), users.path());
@@ -385,13 +391,19 @@ fn write_config_file_creates_the_directory_and_reads_back() {
         value,
         serde_json::json!({ "working_directory": "/projects/capture" })
     );
-    assert_eq!(read_config_file(&file).as_deref(), Some("/projects/capture"));
+    assert_eq!(
+        read_config_file(&file).as_deref(),
+        Some("/projects/capture")
+    );
 }
 
 #[test]
 fn write_config_file_replaces_the_previous_content() {
     let dir = TempDir::new("config-write-replace");
-    let file = dir.write("config.json", r#"{"working_directory": "/old", "theme": "dark"}"#);
+    let file = dir.write(
+        "config.json",
+        r#"{"working_directory": "/old", "theme": "dark"}"#,
+    );
 
     write_config_file(&file, "/new");
 

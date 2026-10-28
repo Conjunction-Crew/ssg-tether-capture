@@ -15,11 +15,11 @@ use crate::orbit::cache::OrbitalCache;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
 use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::project::SelectedProject;
+use crate::test_support::{assert_close, insert_plan_json, q13, test_app};
 use crate::tether::{
     DebrisBody, TetherNode, TetherRoot, TetherShape, spawn_debris, spawn_selected_bodies,
     spawn_tether,
 };
-use crate::test_support::{assert_close, insert_plan_json, q13, test_app};
 
 /// A plan whose `device` block (if any) is `device_json`, with tether `tether`.
 fn plan_with(tether: &str, device_json: Option<&str>) -> String {
@@ -48,8 +48,7 @@ fn run_spawn_tether(
     project_id: Option<&str>,
     selected: SelectedOrbitalObject,
 ) -> Result<(), String> {
-    app.world_mut().resource_mut::<SelectedProject>().project_id =
-        project_id.map(str::to_string);
+    app.world_mut().resource_mut::<SelectedProject>().project_id = project_id.map(str::to_string);
     app.world_mut()
         .run_system_once(
             move |mut commands: Commands,
@@ -98,14 +97,21 @@ fn spawn_tether_without_a_project_builds_the_default_20_m_tether() {
     assert_eq!(ends.len(), 2, "the cache holds the root and the tail");
     let (root, tail) = (ends[0], ends[1]);
     assert!(app.world().get::<TetherRoot>(root).is_some());
-    assert!(app.world().get::<SimAnchor>(root).is_some(), "the root is the anchor");
+    assert!(
+        app.world().get::<SimAnchor>(root).is_some(),
+        "the root is the anchor"
+    );
     assert!(app.world().get::<TetherNode>(tail).is_some());
     assert_eq!(app.world().get::<TetherNode>(tail).unwrap().root, root);
     assert_close(y_of(&app, root), 0.0, 0.0, "root y");
     assert_close(y_of(&app, tail), 20.0, 1e-3, "tail y = the tether length");
     // 19 m of interior at 0.1 m: 190 interior nodes plus the tail node.
     assert_eq!(count::<With<TetherNode>>(&mut app), 191);
-    assert_eq!(count::<With<DistanceJoint>>(&mut app), 191, "one joint per node");
+    assert_eq!(
+        count::<With<DistanceJoint>>(&mut app),
+        191,
+        "one joint per node"
+    );
     assert_eq!(count::<With<TetherRoot>>(&mut app), 1);
 }
 
@@ -121,20 +127,40 @@ fn spawn_tether_uses_the_plans_device_length_and_tether_name() {
     run_spawn_tether(&mut app, Some("short"), hst()).expect("spawn failed");
 
     let ends = registered(&app, "Rope7");
-    assert_close(y_of(&app, ends[1]), 5.0, 1e-3, "tail y = the plan's tether length");
+    assert_close(
+        y_of(&app, ends[1]),
+        5.0,
+        1e-3,
+        "tail y = the plan's tether length",
+    );
     assert!(
-        !app.world().resource::<OrbitalCache>().tethers.contains_key("Tether1"),
+        !app.world()
+            .resource::<OrbitalCache>()
+            .tethers
+            .contains_key("Tether1"),
         "the plan's tether name replaces the default"
     );
-    assert_eq!(count::<With<TetherNode>>(&mut app), 41, "4 m interior at 0.1 m, + tail");
+    assert_eq!(
+        count::<With<TetherNode>>(&mut app),
+        41,
+        "4 m interior at 0.1 m, + tail"
+    );
 }
 
 #[test]
 fn spawn_tether_falls_back_to_defaults_for_a_missing_device_a_zero_length_and_an_empty_name() {
     for (case, tether, device) in [
         ("no device", "Named", None),
-        ("zero length", "Named", Some(r#"{"type": "tether", "tether_length": 0.0}"#)),
-        ("negative length", "Named", Some(r#"{"type": "tether", "tether_length": -3.0}"#)),
+        (
+            "zero length",
+            "Named",
+            Some(r#"{"type": "tether", "tether_length": 0.0}"#),
+        ),
+        (
+            "negative length",
+            "Named",
+            Some(r#"{"type": "tether", "tether_length": -3.0}"#),
+        ),
     ] {
         let mut app = spawn_app();
         insert_plan_json(&mut app, "p", &plan_with(tether, device));
@@ -142,7 +168,12 @@ fn spawn_tether_falls_back_to_defaults_for_a_missing_device_a_zero_length_and_an
         run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
 
         let ends = registered(&app, "Named");
-        assert_close(y_of(&app, ends[1]), 20.0, 1e-3, &format!("{case}: default length"));
+        assert_close(
+            y_of(&app, ends[1]),
+            20.0,
+            1e-3,
+            &format!("{case}: default length"),
+        );
     }
 
     // An empty tether name (a plan the validator rejects, but `insert_plan_json`
@@ -159,7 +190,12 @@ fn spawn_tether_with_an_unknown_project_id_uses_the_defaults() {
 
     run_spawn_tether(&mut app, Some("not_a_plan"), hst()).expect("spawn failed");
 
-    assert_close(y_of(&app, registered(&app, "Tether1")[1]), 20.0, 1e-3, "tail y");
+    assert_close(
+        y_of(&app, registered(&app, "Tether1")[1]),
+        20.0,
+        1e-3,
+        "tail y",
+    );
 }
 
 #[test]
@@ -260,7 +296,11 @@ fn spawn_tether_starts_the_root_from_sgp4_for_a_catalog_pick() {
     run_spawn_tether(&mut app, None, pick).expect("spawn failed");
 
     let root = registered(&app, "Tether1")[0];
-    match app.world().get::<Orbit>(root).expect("the root has an Orbit") {
+    match app
+        .world()
+        .get::<Orbit>(root)
+        .expect("the root has an Orbit")
+    {
         Orbit::FromGp(gp) => assert_eq!(gp.epoch, expected_gp.epoch),
         other => panic!("expected Orbit::FromGp, got {other:?}"),
     }
@@ -278,8 +318,15 @@ fn spawn_tether_starts_an_edited_selection_from_its_elements_at_their_epoch() {
     run_spawn_tether(&mut app, None, pick).expect("spawn failed");
 
     let root = registered(&app, "Tether1")[0];
-    match app.world().get::<Orbit>(root).expect("the root has an Orbit") {
-        Orbit::FromElementsAt { elements, epoch: at } => {
+    match app
+        .world()
+        .get::<Orbit>(root)
+        .expect("the root has an Orbit")
+    {
+        Orbit::FromElementsAt {
+            elements,
+            epoch: at,
+        } => {
             assert_eq!(*elements, expected);
             assert_eq!(*at, epoch);
         }
@@ -322,7 +369,12 @@ fn spawn_debris_registers_a_disabled_dynamic_body_outside_the_bubble() {
         world.get::<RigidBodyDisabled>(debris).is_some(),
         "the debris starts outside the physics bubble"
     );
-    assert_close(world.get::<Mass>(debris).unwrap().0 as f64, 2500.0, 1e-3, "mass");
+    assert_close(
+        world.get::<Mass>(debris).unwrap().0 as f64,
+        2500.0,
+        1e-3,
+        "mass",
+    );
     let at = world.get::<Transform>(debris).unwrap().translation;
     for axis in [at.x, at.y, at.z] {
         assert_close(
@@ -345,7 +397,11 @@ fn run_spawn_selected(app: &mut App) {
         .expect("spawn_selected_bodies failed to run");
 }
 
-fn select(app: &mut App, target: Option<SelectedOrbitalObject>, chaser: Option<SelectedOrbitalObject>) {
+fn select(
+    app: &mut App,
+    target: Option<SelectedOrbitalObject>,
+    chaser: Option<SelectedOrbitalObject>,
+) {
     let mut selection = app.world_mut().resource_mut::<OrbitalSelectionState>();
     selection.target = target;
     selection.chaser = chaser;
@@ -371,7 +427,11 @@ fn spawn_selected_bodies_without_a_target_spawns_nothing() {
 
     run_spawn_selected(&mut app);
 
-    assert_eq!(count::<With<TetherRoot>>(&mut app), 0, "not even the chaser's tether");
+    assert_eq!(
+        count::<With<TetherRoot>>(&mut app),
+        0,
+        "not even the chaser's tether"
+    );
     assert_eq!(count::<With<DebrisBody>>(&mut app), 0);
 }
 

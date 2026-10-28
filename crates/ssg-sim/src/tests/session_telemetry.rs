@@ -93,7 +93,10 @@ fn entering_the_sim_resumes_a_paused_clock() {
 fn leaving_the_sim_removes_the_session_resources() {
     let mut app = test_app();
     enter_sim(&mut app);
-    assert!(app.world().get_resource::<OrbitalCache>().is_some(), "precondition");
+    assert!(
+        app.world().get_resource::<OrbitalCache>().is_some(),
+        "precondition"
+    );
 
     leave_sim(&mut app);
 
@@ -149,7 +152,11 @@ fn entering_the_sim_logs_the_start_epoch_with_an_hh_mm_ss_timestamp() {
     let log = app.world().resource::<CaptureLog>();
     let mut from_time = log.entries.iter().filter(|e| e.source == "time");
     let entry = from_time.next().expect("no log line from the clock");
-    assert!(from_time.next().is_none(), "exactly one: {:?}", log_messages(&app));
+    assert!(
+        from_time.next().is_none(),
+        "exactly one: {:?}",
+        log_messages(&app)
+    );
     assert_eq!(entry.level, LogLevel::Info);
     assert_eq!(entry.source, "time");
     assert_eq!(entry.message, format!("Sim start epoch: {}", fixed_epoch()));
@@ -195,7 +202,10 @@ fn events_are_logged_in_order_and_each_only_once() {
         .collect();
     assert_eq!(
         entries,
-        [(LogLevel::Info, "a", "first"), (LogLevel::Error, "b", "second")]
+        [
+            (LogLevel::Info, "a", "first"),
+            (LogLevel::Error, "b", "second")
+        ]
     );
 }
 
