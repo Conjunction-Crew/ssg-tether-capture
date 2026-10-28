@@ -10,6 +10,7 @@ use avian3d::{
     },
 };
 use bevy::{ecs::system::SystemParam, log::debug_once, math::DVec3, prelude::*};
+use brahe::Epoch;
 
 use crate::SimSet;
 use crate::SimStep;
@@ -41,6 +42,26 @@ pub struct CaptureSphereRadius {
     pub radius: f64,
 }
 
+/// A capture-state transition, written by the capture controller next to its
+/// `State: from → to (reason)` log line. `epoch` is the sub-step the transition
+/// fired in, so `round((epoch − start_epoch) / PHYS_DT)` is its exact fixed step,
+/// also when one update runs several steps (warp, F-17).
+#[derive(Message, Debug, Clone, PartialEq)]
+pub struct CaptureTransition {
+    pub entity: Entity,
+    pub from: String,
+    pub to: String,
+    pub epoch: Epoch,
+    pub reason: String,
+}
+
+/// The messages [`capture_state_machine_update`] writes.
+#[derive(SystemParam)]
+pub struct CaptureMessages<'w> {
+    log_events: MessageWriter<'w, LogEvent>,
+    transitions: MessageWriter<'w, CaptureTransition>,
+}
+
 /// The read-only data [`capture_state_machine_update`] reads.
 #[derive(SystemParam)]
 pub struct CaptureInputs<'w, 's> {
@@ -68,7 +89,7 @@ pub fn capture_state_machine_update(
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
     mut data_collection: ResMut<DataCollection>,
-    mut log_events: MessageWriter<LogEvent>,
+    mut messages: CaptureMessages,
 ) {
     let CaptureInputs {
         capture_plan_lib,
@@ -117,7 +138,7 @@ pub fn capture_state_machine_update(
 
                 // Compute root-relative position/velocity first so that the
                 // rb_forces.p0() borrow is fully released before calling
-                // resolve_root_state (which needs &mut log_events).
+                // resolve_root_state (which needs &mut messages).
                 let root_rv: Option<(f64, f64)> = nodes.first().and_then(|&root_node| {
                     rb_forces.p0().get(root_node).ok().map(|root_rb| {
                         let r = capture_entity_position.0 - root_rb.position.0;
@@ -132,13 +153,13 @@ pub fn capture_state_machine_update(
 
                 let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
                     resolve_root_state(
+                        capture_entity,
                         &mut capture_component,
                         plan,
-                        r_len,
-                        v_len,
-                        world_time.epoch - world_time.start_epoch,
+                        (r_len, v_len),
+                        &world_time,
                         &mut capture_sphere_radius,
-                        &mut log_events,
+                        &mut messages,
                     )
                 } else {
                     current_state_parameters(plan, &capture_component.current_state)
@@ -237,7 +258,7 @@ pub fn capture_state_machine_update(
                         );
                         node_forces.apply_force(force);
                     } else {
-                        log_events.write(LogEvent {
+                        messages.log_events.write(LogEvent {
                             level: LogLevel::Warn,
                             source: "capture",
                             message: format!(
@@ -255,7 +276,7 @@ pub fn capture_state_machine_update(
                     plan.tether,
                     orbital_cache.tethers.keys().collect::<Vec<_>>()
                 );
-                log_events.write(LogEvent {
+                messages.log_events.write(LogEvent {
                     level: LogLevel::Error,
                     source: "capture",
                     message: format!(
@@ -270,7 +291,7 @@ pub fn capture_state_machine_update(
                 capture_component.plan_id
             );
             commands.entity(capture_entity).remove::<CaptureComponent>();
-            log_events.write(LogEvent {
+            messages.log_events.write(LogEvent {
                 level: LogLevel::Error,
                 source: "capture",
                 message: format!(
@@ -299,13 +320,13 @@ fn current_state_parameters(
 /// capture sphere once, so when a transition fires, the new state's limits and
 /// shrink rate already apply to this step's forces.
 fn resolve_root_state(
+    capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     plan: &CompiledCapturePlan,
-    rel_r_length: f64,
-    rel_v_length: f64,
-    sim_time_s: f64,
+    (rel_r_length, rel_v_length): (f64, f64),
+    world_time: &WorldTime,
     capture_sphere_radius: &mut CaptureSphereRadius,
-    log_events: &mut MessageWriter<LogEvent>,
+    messages: &mut CaptureMessages,
 ) -> CompiledCaptureStateParameters {
     let Some(state) = plan.state(&capture_component.current_state) else {
         return CompiledCaptureStateParameters::default();
@@ -316,7 +337,14 @@ fn resolve_root_state(
             .map(|reason| (transition.to.clone(), reason))
     });
     if let Some((to, reason)) = fired {
-        transition_to(capture_component, &to, sim_time_s, reason, log_events);
+        transition_to(
+            capture_entity,
+            capture_component,
+            &to,
+            world_time,
+            reason,
+            messages,
+        );
     }
 
     let parameters = current_state_parameters(plan, &capture_component.current_state);
@@ -374,15 +402,17 @@ fn transition_satisfied(
     (!reasons.is_empty()).then(|| reasons.join(", "))
 }
 
-/// Enters `new_state` at `sim_time_s` (sim seconds since the start epoch).
+/// Enters `new_state` at the current sim time (`state_enter_time_s` is sim seconds
+/// since the start epoch) and reports it as a log line and a [`CaptureTransition`].
 fn transition_to(
+    capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     new_state: &str,
-    sim_time_s: f64,
+    world_time: &WorldTime,
     reason: String,
-    log_events: &mut MessageWriter<LogEvent>,
+    messages: &mut CaptureMessages,
 ) {
-    log_events.write(LogEvent {
+    messages.log_events.write(LogEvent {
         level: LogLevel::Info,
         source: "capture",
         message: format!(
@@ -390,8 +420,15 @@ fn transition_to(
             capture_component.current_state, new_state, reason
         ),
     });
+    messages.transitions.write(CaptureTransition {
+        entity: capture_entity,
+        from: capture_component.current_state.clone(),
+        to: String::from(new_state),
+        epoch: world_time.epoch,
+        reason,
+    });
     capture_component.current_state = String::from(new_state);
-    capture_component.state_enter_time_s = sim_time_s;
+    capture_component.state_enter_time_s = world_time.epoch - world_time.start_epoch;
     capture_component.state_elapsed_time_s = 0.0;
 }
 
@@ -529,6 +566,7 @@ pub struct CapturePlugin;
 impl Plugin for CapturePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SimCommand>()
+            .add_message::<CaptureTransition>()
             .configure_sets(Last, SimSet::ApplyCommands)
             .add_systems(
                 ManualPhysics,

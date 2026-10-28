@@ -358,16 +358,14 @@ pub mod q13 {
     use std::time::{Duration, Instant};
 
     use avian3d::prelude::*;
+    use bevy::ecs::message::Messages;
     use bevy::math::DVec3;
     use bevy::prelude::*;
     use brahe::Epoch;
 
-    use super::{
-        LogTap, enter_sim, fixed_epoch, load_example_plans, parse_transition, start_running,
-        test_app, tick,
-    };
-    use crate::capture::CaptureComponent;
+    use super::{enter_sim, fixed_epoch, load_example_plans, start_running, test_app, tick};
     use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
+    use crate::capture::{CaptureComponent, CaptureTransition};
     use crate::orbit::cache::OrbitalCache;
     use crate::orbit::catalog::{JsonOrbital, JsonOrbitalData, gp_record_to_elements};
     use crate::orbit::selection::{
@@ -435,7 +433,8 @@ pub mod q13 {
     }
 
     pub struct Q13Run {
-        /// `(step, from, to)` per logged transition; a cascade shares one step.
+        /// `(step, from, to)` per [`CaptureTransition`], `step` being the fixed step
+        /// it fired in.
         pub transitions: Vec<(u64, String, String)>,
         /// One sample every [`CHECKPOINT_EVERY`] ticks.
         pub checkpoints: Vec<Q13Sample>,
@@ -566,7 +565,10 @@ pub mod q13 {
             "precondition: no transition before the run starts"
         );
 
-        let mut tap = LogTap::new(app.world());
+        let mut cursor = app
+            .world()
+            .resource::<Messages<CaptureTransition>>()
+            .get_cursor_current();
         let mut transitions = Vec::new();
         let mut checkpoints = Vec::new();
         let mut ticks = 0;
@@ -575,12 +577,10 @@ pub mod q13 {
             tick(&mut app);
             ticks += 1;
             final_sample = sample(&app, &handles);
-            for (_, source, message) in tap.drain(app.world()) {
-                if source == "capture"
-                    && let Some((from, to, _)) = parse_transition(&message)
-                {
-                    transitions.push((final_sample.step, from, to));
-                }
+            let start_epoch = app.world().resource::<WorldTime>().start_epoch;
+            for transition in cursor.read(app.world().resource::<Messages<CaptureTransition>>()) {
+                let step = ((transition.epoch - start_epoch) / PHYS_DT).round() as u64;
+                transitions.push((step, transition.from.clone(), transition.to.clone()));
             }
             if ticks % CHECKPOINT_EVERY == 0 {
                 checkpoints.push(final_sample.clone());
