@@ -377,6 +377,6 @@ fn collect_log_events_respects_ring_buffer_limit() {
 /// `assert_finite_state` and the controller's `debug_assert!` would panic.
 #[test]
 fn sim_state_is_finite() {
-    let run = crate::test_support::q13::run(crate::test_support::q13::EpochMode::Fixed, 640, false);
+    let run = crate::test_support::q13::run(640, false);
     assert!(run.final_sample.range_m.is_finite());
 }

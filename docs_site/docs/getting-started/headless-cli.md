@@ -23,19 +23,26 @@ options:
                        <project-dir>/datasets/*.json and <assets>/datasets/*.json)
   --assets DIR         assets directory (default ./assets)
   --epoch now|ISO      start epoch: `now` (default, the app path) or YYYY-MM-DDTHH:MM:SS[.fff]
-  --steps N            number of updates to run (default 200000)
-  --warp N             time-warp multiplier (default 1)
-  --sample-every N     trajectory sample interval in updates (default 64)
+  --steps N            fixed steps to run after the capture starts (default 200000;
+                       a multiple of --warp)
+  --warp N             time warp: fixed steps per update (default 1, at most 64)
+  --sample-every N     trajectory sample interval in fixed steps (default 64; a multiple
+                       of --warp)
   --out DIR            output directory (default <project-dir>/runs/<utc-timestamp>)
-  --stop-at-capture    stop as soon as the state is `capture`
+  --stop-at-capture    stop at the end of the update in which the state becomes `capture`
 ```
+
+A fixed step is 1/64 s of simulation time. `--steps` and `--sample-every` count fixed steps, whatever the warp, so runs at different warps sample the same steps and write the same `trajectory.csv`. One update runs `--warp` fixed steps (at most 64, the simulation's per-update cap). `--stop-at-capture` stops at the end of the update in which `capture` was reached, so at `--warp 16` the run may go on up to 15 steps past the capture step; the transition steps in `summary.json` are exact at any warp.
 
 `<project-dir>` holds your own capture plans (`*.json`) and, optionally, a `datasets/` folder. The example plans in `<assets>/example_capture_plans` are always loaded.
 
 ## Output
 
-- `summary.json`: the plan, target, chaser, epoch mode and start epoch, the number of updates, the warp, every state transition (`step`, `from`, `to`), the final state and range, and the wall-clock time.
-- `trajectory.csv`: `step,epoch,state,range_m,rel_speed_mps`, one row every `--sample-every` updates.
+- `summary.json`: the plan, target, chaser, epoch mode and start epoch, the number of fixed steps run (`steps`), the warp, every state transition (`step`, the fixed step it fired in; `from`; `to`), the final state and range, the `state_hash` and the wall-clock time (`wall_s`).
+- `trajectory.csv`: `step,epoch,state,range_m,rel_speed_mps`, one row every `--sample-every` fixed steps.
+- `state_hash`: a 64-bit FNV-1a hash (16 hex digits) of the sampled state: per sample, the step and the tether root's and the debris's position and velocity, bit for bit. Two runs with the same hash sampled bit-identical states.
+
+What a fixed `--epoch` guarantees, and what differs between platforms, is described in [Determinism](../concepts/determinism).
 - One summary line on stdout.
 
 The exit code is 0 on success, 1 on a failure (missing plan, NORAD id not found, no capture with `--stop-at-capture`) and 2 for a usage error.

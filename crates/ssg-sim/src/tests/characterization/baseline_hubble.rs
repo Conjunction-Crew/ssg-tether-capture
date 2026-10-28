@@ -4,9 +4,7 @@
 
 use crate::orbit::catalog::SpaceObjectCatalog;
 use crate::orbit::selection::EditableOrbitalElements;
-use crate::test_support::q13::{
-    self, CHASER_NORAD_ID, EpochMode, HST_NORAD_ID, Q13Run, catalog_pick,
-};
+use crate::test_support::q13::{self, CHASER_NORAD_ID, HST_NORAD_ID, Q13Run, catalog_pick};
 use crate::test_support::{assert_close, enter_sim, fixed_epoch, repo_root, test_app};
 
 fn element_bits(elements: &EditableOrbitalElements) -> [u64; 6] {
@@ -146,9 +144,10 @@ const SHORT_TICKS: u64 = 6_400;
 const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
 
 // Golden values captured at a465ece on macos/aarch64 (P4 S5: SGP4 initial states, F-10/F-27)
-// They hold on macOS/aarch64 only: Linux and Windows CI reach `approach` 5-6 steps
-// later (F-17), so only `baseline_q13_to_capture` checks them (operator decision,
-// 2026-10-26).
+// They hold on macOS/aarch64 only: Linux and Windows CI reach `approach` at step
+// 4315 with different ranges (P4 S6 lever run, F-17; the measured tolerance is in
+// docs_site/docs/concepts/determinism.md), so only `baseline_q13_to_capture` checks
+// them (operator decision, 2026-10-26).
 /// `(step, state, range_m)` every 640 ticks, the first 6,400 ticks of a
 /// fixed-epoch run.
 const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
@@ -186,8 +185,8 @@ fn transition_order(run: &Q13Run) -> Vec<(&str, &str)> {
 /// ranges are platform-specific (F-17) and are checked by `baseline_q13_to_capture`.
 #[test]
 fn baseline_q13_fixed_epoch_short() {
-    let first = q13::run(EpochMode::Fixed, SHORT_TICKS, false);
-    let second = q13::run(EpochMode::Fixed, SHORT_TICKS, false);
+    let first = q13::run(SHORT_TICKS, false);
+    let second = q13::run(SHORT_TICKS, false);
 
     // Precondition: the whole horizon ran.
     assert_eq!(first.ticks, SHORT_TICKS);
@@ -195,9 +194,9 @@ fn baseline_q13_fixed_epoch_short() {
     assert_eq!(transition_order(&first), SHORT_ORDER);
 }
 
-fn run_json(mode: EpochMode, index: usize, run: &Q13Run) -> serde_json::Value {
+fn run_json(index: usize, run: &Q13Run) -> serde_json::Value {
     serde_json::json!({
-        "mode": mode.name(),
+        "mode": "fixed",
         "run": index,
         "transitions": run
             .transitions
@@ -241,45 +240,33 @@ fn spread(runs: &[Q13Run]) -> serde_json::Value {
     })
 }
 
-/// Opt-in measurement (E1): the scenario to `capture`, `P2_BASELINE_RUNS` times
-/// on the app path (default 2, Q17) and twice with the fixed epoch. It also
-/// checks the fixed-epoch goldens, which hold on macOS/aarch64 only.
+/// Opt-in measurement: the fixed-epoch scenario to `capture`, twice in one
+/// process. Both runs must reach `capture`, be bit-identical and match the
+/// macOS/aarch64 goldens. The P2/P3 app-path runs (wall-clock start epoch, a
+/// configurable run count) were retired in P4 S6: the sim has no wall-clock path
+/// and the app-path band is retired (Q41).
 #[test]
-#[ignore = "P2/P3 baseline measurement (~5 min): cargo test --locked baseline_q13_to_capture -- --ignored --nocapture; see plans/stage-2/52-p2-testing-baseline.md"]
+#[ignore = "P4 baseline measurement (~7 min): cargo test -p ssg-sim --locked baseline_q13_to_capture -- --ignored --nocapture; see plans/stage-4/results/p4-baseline.md"]
 fn baseline_q13_to_capture() {
     const MAX_TICKS: u64 = 200_000;
-    let app_runs: usize = std::env::var("P2_BASELINE_RUNS")
-        .ok()
-        .map(|runs| runs.parse().expect("P2_BASELINE_RUNS is a count"))
-        .unwrap_or(2);
+    let fixed: Vec<Q13Run> = (0..2)
+        .map(|index| {
+            let run = q13::run(MAX_TICKS, true);
+            println!("{}", run_json(index, &run));
+            run
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::json!({ "summary": "fixed", "spread": spread(&fixed) })
+    );
 
-    let mut results = Vec::new();
-    for (mode, count) in [(EpochMode::AppPath, app_runs), (EpochMode::Fixed, 2)] {
-        let runs: Vec<Q13Run> = (0..count)
-            .map(|index| {
-                let run = q13::run(mode, MAX_TICKS, true);
-                println!("{}", run_json(mode, index, &run));
-                run
-            })
-            .collect();
-        println!(
-            "{}",
-            serde_json::json!({ "summary": mode.name(), "spread": spread(&runs) })
+    for (index, run) in fixed.iter().enumerate() {
+        assert_eq!(
+            run.final_sample.state, "capture",
+            "fixed run {index} did not reach capture in {MAX_TICKS} ticks"
         );
-        results.push((mode, runs));
     }
-
-    for (mode, runs) in &results {
-        for (index, run) in runs.iter().enumerate() {
-            assert_eq!(
-                run.final_sample.state,
-                "capture",
-                "{} run {index} did not reach capture in {MAX_TICKS} ticks",
-                mode.name()
-            );
-        }
-    }
-    let fixed = &results[1].1;
     assert_runs_identical(&fixed[0], &fixed[1], "fixed epoch, to capture");
 
     // The macOS/aarch64 goldens (P3's exact fixed-epoch check, baseline doc §4).
