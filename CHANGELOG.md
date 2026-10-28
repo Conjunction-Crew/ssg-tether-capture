@@ -24,6 +24,7 @@ GitHub Release description.
 - CI: a report-only `coverage` job runs the workspace tests under `cargo-llvm-cov`, prints per-area line coverage against the Q7 thresholds to the job summary and uploads a `coverage-report` artifact; the inline test modules of `orbit/lvlh.rs` and `ssg-sim-cli` `output.rs` moved to `tests/` files so coverage counts production code only (F-14)
 
 ### Changed
+- CI: the long determinism-to-capture tests (`cli_three_runs_to_capture_identical` on Linux, macOS and Windows; `baseline_q13_to_capture` on macOS only) now run on the weekday schedule, manual runs and `full-ci` PRs, so the release PR checks them before a release
 - CI: only the pinned Rust toolchain is installed before the cache step, so the Rust cache key no longer alternates with the runner image's preinstalled toolchains and PR runs stop missing the cache; Windows and macOS use separate check and build keys; the Linux and full cross-platform test jobs print "Test execution time" to the job summary (Q39)
 
 ## [v0.3.2] - 2026-10-28
