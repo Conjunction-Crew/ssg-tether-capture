@@ -6,4 +6,5 @@ pub mod integration_tests;
 pub mod orbit_catalog;
 pub mod orbit_core;
 pub mod project_files;
+pub mod tether_spawn;
 pub mod unit_tests;
