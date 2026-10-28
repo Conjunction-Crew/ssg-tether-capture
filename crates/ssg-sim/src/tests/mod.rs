@@ -5,4 +5,5 @@ pub mod characterization;
 pub mod integration_tests;
 pub mod orbit_catalog;
 pub mod orbit_core;
+pub mod project_files;
 pub mod unit_tests;
