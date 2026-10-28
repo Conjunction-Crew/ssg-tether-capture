@@ -361,7 +361,6 @@ pub mod q13 {
     use bevy::ecs::message::Messages;
     use bevy::math::DVec3;
     use bevy::prelude::*;
-    use brahe::Epoch;
 
     use super::{enter_sim, fixed_epoch, load_example_plans, start_running, test_app, tick};
     use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
@@ -374,7 +373,7 @@ pub mod q13 {
     };
     use crate::orbit::{Orbit, Orbital};
     use crate::project::SelectedProject;
-    use crate::time::{PHYS_DT, SimConfig, WorldTime};
+    use crate::time::{PHYS_DT, WorldTime};
 
     /// The HST record (verbatim from `assets/datasets/dataset_2026_04_03.json`)
     /// and the P0 chaser record, as a GP JSON array.
@@ -395,25 +394,6 @@ pub mod q13 {
                 record.norad_cat_id.as_ref().and_then(|id| id.as_u64()) == Some(norad_id)
             })
             .unwrap_or_else(|| panic!("NORAD {norad_id} is not in the Q13 fixture"))
-    }
-
-    /// How the two spacecraft get their initial epoch.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum EpochMode {
-        /// As in the app: the start epoch is the wall clock, read once by the test
-        /// and passed in as [`SimConfig`] (the app does the same on OpenProject).
-        AppPath,
-        /// The start epoch is [`fixed_epoch`].
-        Fixed,
-    }
-
-    impl EpochMode {
-        pub fn name(self) -> &'static str {
-            match self {
-                Self::AppPath => "app_path",
-                Self::Fixed => "fixed",
-            }
-        }
     }
 
     pub struct Q13Handles {
@@ -463,8 +443,10 @@ pub mod q13 {
     }
 
     /// Select the HST and the chaser, enter the sim, start it, and mark the HST
-    /// for capture with `example_plan`, as the app's UI does.
-    pub fn build(app: &mut App, epoch_mode: EpochMode) -> Q13Handles {
+    /// for capture with `example_plan`, as the app's UI does. The start epoch is
+    /// the app's [`SimConfig`](crate::time::SimConfig) ([`fixed_epoch`] in [`test_app`]); the wall-clock
+    /// epoch mode was retired in P4 S6 (the sim has no wall-clock path, Q41).
+    pub fn build(app: &mut App) -> Q13Handles {
         load_example_plans(app);
         app.world_mut().resource_mut::<SelectedProject>().project_id = Some(PLAN_ID.to_string());
         {
@@ -473,14 +455,6 @@ pub mod q13 {
             selection.chaser = Some(catalog_pick("P0 HST CHASER", CHASER_NORAD_ID));
         }
 
-        if epoch_mode == EpochMode::AppPath {
-            // The app's start epoch: the wall clock when the project is opened. The
-            // only wall-clock read under `crates/ssg-sim/src` until S6 retires
-            // `AppPath` (operator decision, P4 Run 1).
-            app.insert_resource(SimConfig {
-                start_epoch: Epoch::now(),
-            });
-        }
         enter_sim(app);
         start_running(app);
 
@@ -555,10 +529,10 @@ pub mod q13 {
 
     /// Build the scenario in a fresh harness app and tick it up to `max_ticks`
     /// times (stopping once the state is `capture` if `stop_at_capture`).
-    pub fn run(epoch_mode: EpochMode, max_ticks: u64, stop_at_capture: bool) -> Q13Run {
+    pub fn run(max_ticks: u64, stop_at_capture: bool) -> Q13Run {
         let started = Instant::now();
         let mut app = test_app();
-        let handles = build(&mut app, epoch_mode);
+        let handles = build(&mut app);
         assert_eq!(
             sample(&app, &handles).state,
             "rendezvous",
