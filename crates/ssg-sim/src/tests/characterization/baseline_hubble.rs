@@ -307,3 +307,46 @@ fn baseline_q13_to_capture() {
         );
     }
 }
+
+/// TEMPORARY (P4 S6 lever protocol, draft PR only, never merged): the macOS/aarch64
+/// fixed-epoch goldens for the first 6,400 ticks, asserted on every platform so the
+/// Linux and Windows CI logs show their own values (the P2 method). It prints
+/// every value as one JSON line before asserting, so one failing run shows them all.
+#[test]
+fn levers_cross_platform_goldens() {
+    let run = q13::run(EpochMode::Fixed, SHORT_TICKS, false);
+    let checkpoints: Vec<_> = run
+        .checkpoints
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "step": c.step,
+                "state": c.state,
+                "range_m": c.range_m,
+                "bits": format!("{:016x}", c.range_m.to_bits()),
+            })
+        })
+        .collect();
+    println!(
+        "LEVERS {}",
+        serde_json::json!({
+            "platform": format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
+            "first_transition": run.transitions.first().map(|t| t.0),
+            "checkpoints": checkpoints,
+        })
+    );
+    assert_eq!(
+        run.transitions.first().map(|t| t.0),
+        Some(CAPTURE_TRANSITIONS[0].0)
+    );
+    let actual: Vec<_> = run
+        .checkpoints
+        .iter()
+        .map(|c| (c.step, c.state.as_str(), c.range_m.to_bits()))
+        .collect();
+    let expected: Vec<_> = SHORT_CHECKPOINTS
+        .iter()
+        .map(|&(step, state, range_m)| (step, state, range_m.to_bits()))
+        .collect();
+    assert_eq!(actual, expected);
+}
