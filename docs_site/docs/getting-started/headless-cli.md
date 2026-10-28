@@ -41,6 +41,8 @@ A fixed step is 1/64 s of simulation time. `--steps` and `--sample-every` count 
 - `summary.json`: the plan, target, chaser, epoch mode and start epoch, the number of fixed steps run (`steps`), the warp, every state transition (`step`, the fixed step it fired in; `from`; `to`), the final state and range, the `state_hash` and the wall-clock time (`wall_s`).
 - `trajectory.csv`: `step,epoch,state,range_m,rel_speed_mps`, one row every `--sample-every` fixed steps.
 - `state_hash`: a 64-bit FNV-1a hash (16 hex digits) of the sampled state: per sample, the step and the tether root's and the debris's position and velocity, bit for bit. Two runs with the same hash sampled bit-identical states.
+
+What a fixed `--epoch` guarantees, and what differs between platforms, is described in [Determinism](../concepts/determinism).
 - One summary line on stdout.
 
 The exit code is 0 on success, 1 on a failure (missing plan, NORAD id not found, no capture with `--stop-at-capture`) and 2 for a usage error.
