@@ -65,7 +65,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
     };
     let (target, chaser) = find_records(args)?;
     let pick = |record: &JsonOrbital, id: u64| -> Result<SelectedOrbitalObject, String> {
-        let (_, gpu) = gp_record_to_elements(record, reference_epoch)
+        let (_, gp, _) = gp_record_to_elements(record, reference_epoch)
             .ok_or_else(|| format!("NORAD {id}: the record is missing an orbital element"))?;
         Ok(SelectedOrbitalObject {
             source: OrbitalSelectionSource::Custom {
@@ -74,8 +74,9 @@ pub fn run(args: &Args) -> Result<Run, String> {
                     .clone()
                     .unwrap_or_else(|| format!("NORAD {id}")),
             },
-            // The f32 round trip the app performs (F-27).
-            elements: EditableOrbitalElements::from_gpu(&gpu),
+            // A catalog pick, as the app makes it (F-27): SGP4 at the start epoch.
+            elements: EditableOrbitalElements::from_gp(&gp),
+            gp: Some(gp),
         })
     };
     let target = pick(&target, args.target)?;

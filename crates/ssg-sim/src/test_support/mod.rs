@@ -34,7 +34,6 @@ use crate::SimStep;
 use crate::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
 use crate::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::orbit::cache::OrbitalCache;
-use crate::orbit::catalog::GpuElements;
 use crate::project::{AssetsDir, load_plans_from_dir};
 use crate::session::{SimState, UiScreen};
 use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
@@ -83,9 +82,6 @@ pub fn test_app() -> App {
     .insert_resource(SimConfig {
         start_epoch: fixed_epoch(),
     })
-    // P3: normally provided by the app's GpuComputePlugin; kept so
-    // baseline_q13_elements_match_app_loader can compare the loader's output.
-    .init_resource::<GpuElements>()
     .insert_resource(AssetsDir(repo_root().join("assets"))) // P3: the dataset directory
     // One `app.update()` = one `Time<Fixed>` step (see above).
     .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
@@ -359,13 +355,12 @@ fn parse_transition(message: &str) -> Option<(String, String, String)> {
 /// Headless only (A-6): no glTF loader, so the HST has no collider, and no
 /// render, camera or GPU systems run. See plans/stage-2/52-p2-testing-baseline.md.
 pub mod q13 {
-    use std::f64::consts::PI;
     use std::time::{Duration, Instant};
 
     use avian3d::prelude::*;
     use bevy::math::DVec3;
     use bevy::prelude::*;
-    use brahe::{Epoch, GM_EARTH, TimeSystem};
+    use brahe::Epoch;
 
     use super::{
         LogTap, enter_sim, fixed_epoch, load_example_plans, parse_transition, start_running,
@@ -374,7 +369,7 @@ pub mod q13 {
     use crate::capture::CaptureComponent;
     use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
     use crate::orbit::cache::OrbitalCache;
-    use crate::orbit::catalog::{GpuOrbitalElements, JsonOrbital, JsonOrbitalData};
+    use crate::orbit::catalog::{JsonOrbital, JsonOrbitalData, gp_record_to_elements};
     use crate::orbit::selection::{
         EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
         SelectedOrbitalObject,
@@ -402,86 +397,6 @@ pub mod q13 {
                 record.norad_cat_id.as_ref().and_then(|id| id.as_u64()) == Some(norad_id)
             })
             .unwrap_or_else(|| panic!("NORAD {norad_id} is not in the Q13 fixture"))
-    }
-
-    /// The elements the app stores in `OrbitalSelectionState` when the user picks
-    /// `record` from the catalog: `load_dataset_entities` (mean motion → semi-major
-    /// axis, degrees → radians, then the f32 `GpuOrbitalElements` buffer), then
-    /// back to f64 as `project_detail.rs` does ([`gpu_to_editable`]).
-    ///
-    /// The epoch offset is taken against [`fixed_epoch`], the dataset reference
-    /// epoch in a harness app; the app uses the wall clock there (F-06).
-    pub fn app_elements(record: &JsonOrbital) -> EditableOrbitalElements {
-        let value = |field: &Option<serde_json::Value>, name: &str| {
-            field
-                .as_ref()
-                .and_then(|value| value.as_f64())
-                .unwrap_or_else(|| panic!("record has no numeric {name}"))
-        };
-        let mean_motion = value(&record.mean_motion, "MEAN_MOTION");
-        let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
-        let semi_major_axis = (GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s)).powf(1.0 / 3.0);
-        let object_epoch =
-            parse_dataset_epoch(record.epoch.as_deref().expect("record has no EPOCH"));
-
-        let gpu = GpuOrbitalElements {
-            id: value(&record.norad_cat_id, "NORAD_CAT_ID") as u32,
-            a: semi_major_axis as f32,
-            e: value(&record.eccentricity, "ECCENTRICITY") as f32,
-            i: value(&record.inclination, "INCLINATION").to_radians() as f32,
-            raan: value(&record.ra_of_asc_node, "RA_OF_ASC_NODE").to_radians() as f32,
-            argp: value(&record.arg_of_pericenter, "ARG_OF_PERICENTER").to_radians() as f32,
-            mean_anomaly: value(&record.mean_anomaly, "MEAN_ANOMALY").to_radians() as f32,
-            epoch_offset_seconds: (object_epoch - fixed_epoch()) as f32,
-        };
-        gpu_to_editable(&gpu)
-    }
-
-    /// `project_detail.rs`'s f32 → f64 conversion of a catalog entry.
-    /// `epoch_offset_seconds` is kept here but `to_vec6()` drops it.
-    // F-27: current behaviour, expected to change in P4
-    pub fn gpu_to_editable(elements: &GpuOrbitalElements) -> EditableOrbitalElements {
-        EditableOrbitalElements {
-            semi_major_axis_m: elements.a as f64,
-            eccentricity: elements.e as f64,
-            inclination_rad: elements.i as f64,
-            raan_rad: elements.raan as f64,
-            arg_perigee_rad: elements.argp as f64,
-            mean_anomaly_rad: elements.mean_anomaly as f64,
-            epoch_offset_seconds: elements.epoch_offset_seconds as f64,
-        }
-    }
-
-    /// The fixed-format branch of `parse_dataset_epoch_fast` (`propagation.rs`),
-    /// the format every fixture record uses.
-    fn parse_dataset_epoch(raw: &str) -> Epoch {
-        let field = |range: std::ops::Range<usize>| -> u32 {
-            raw.get(range)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or_else(|| panic!("bad EPOCH {raw}"))
-        };
-        assert!(
-            raw.len() >= 19 && &raw[4..5] == "-" && &raw[10..11] == "T",
-            "EPOCH {raw} is not in the fixed format"
-        );
-        let whole_seconds = field(17..19) as f64;
-        let digits = raw.get(20..).unwrap_or_default();
-        let fractional_seconds = if raw.get(19..20) == Some(".") && !digits.is_empty() {
-            digits.parse::<u32>().expect("bad EPOCH fraction") as f64
-                / 10_f64.powi(digits.len() as i32)
-        } else {
-            0.0
-        };
-        Epoch::from_datetime(
-            field(0..4),
-            field(5..7) as u8,
-            field(8..10) as u8,
-            field(11..13) as u8,
-            field(14..16) as u8,
-            whole_seconds + fractional_seconds,
-            0.0,
-            TimeSystem::UTC,
-        )
     }
 
     /// How the two spacecraft get their initial epoch.
@@ -533,12 +448,18 @@ pub mod q13 {
         pub wall: Duration,
     }
 
-    fn catalog_pick(label: &str, norad_id: u64) -> SelectedOrbitalObject {
+    /// The selection the app makes when the user picks `norad_id` from the catalog
+    /// (F-27: fixed in P4): the record's full-precision elements at its own epoch,
+    /// and the record itself, so the body starts from SGP4.
+    pub fn catalog_pick(label: &str, norad_id: u64) -> SelectedOrbitalObject {
+        let (_, gp, _) = gp_record_to_elements(&fixture_record(norad_id), fixed_epoch())
+            .unwrap_or_else(|| panic!("NORAD {norad_id}: the fixture record is incomplete"));
         SelectedOrbitalObject {
             source: OrbitalSelectionSource::Custom {
                 label: label.to_string(),
             },
-            elements: app_elements(&fixture_record(norad_id)),
+            elements: EditableOrbitalElements::from_gp(&gp),
+            gp: Some(gp),
         }
     }
 
@@ -565,8 +486,8 @@ pub mod q13 {
         start_running(app);
 
         // `spawn_selected_bodies` has spawned the tether root and the debris with
-        // `Orbit::FromElements`; `init_orbitals` turns them into propagators at the
-        // start epoch on the next update.
+        // `Orbit::FromGp`; `init_orbitals` turns them into propagators at the start
+        // epoch (SGP4 state there) on the next update.
         let pending = app.world_mut().query::<&Orbit>().iter(app.world()).count();
         assert_eq!(
             pending, 2,

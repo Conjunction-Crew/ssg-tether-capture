@@ -88,12 +88,10 @@ fn draw_orbital_selection_from_elements(
         raan: elements.raan_rad as f32,
         argp: elements.arg_perigee_rad as f32,
         mean_anomaly: elements.mean_anomaly_rad as f32,
-        epoch_offset_seconds: elements.epoch_offset_seconds as f32,
+        epoch_offset_seconds: 0.0,
     };
 
-    if let Some((position_eci, _velocity_eci)) =
-        propagate_catalog_eci_state(&orbital_point, elements.epoch_offset_seconds as f32)
-    {
+    if let Some((position_eci, _velocity_eci)) = propagate_catalog_eci_state(&orbital_point, 0.0) {
         gizmos.sphere(
             Isometry3d::new(eci_position_to_map(position_eci), Quat::IDENTITY),
             1.5,

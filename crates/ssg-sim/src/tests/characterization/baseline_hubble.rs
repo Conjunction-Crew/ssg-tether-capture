@@ -2,15 +2,14 @@
 //! `test_support::q13`; the measurement and P3's tolerance are in
 //! plans/stage-2/52-p2-testing-baseline.md.
 
-use crate::orbit::catalog::{GpuComputeEpochOrigin, GpuElements, SpaceObjectCatalog};
+use crate::orbit::catalog::SpaceObjectCatalog;
 use crate::orbit::selection::EditableOrbitalElements;
 use crate::test_support::q13::{
-    self, CHASER_NORAD_ID, EpochMode, HST_NORAD_ID, Q13Run, app_elements, fixture_record,
-    gpu_to_editable,
+    self, CHASER_NORAD_ID, EpochMode, HST_NORAD_ID, Q13Run, catalog_pick,
 };
 use crate::test_support::{assert_close, enter_sim, fixed_epoch, repo_root, test_app};
 
-fn element_bits(elements: &EditableOrbitalElements) -> [u64; 7] {
+fn element_bits(elements: &EditableOrbitalElements) -> [u64; 6] {
     [
         elements.semi_major_axis_m.to_bits(),
         elements.eccentricity.to_bits(),
@@ -18,7 +17,6 @@ fn element_bits(elements: &EditableOrbitalElements) -> [u64; 7] {
         elements.raan_rad.to_bits(),
         elements.arg_perigee_rad.to_bits(),
         elements.mean_anomaly_rad.to_bits(),
-        elements.epoch_offset_seconds.to_bits(),
     ]
 }
 
@@ -65,18 +63,11 @@ fn assert_runs_identical(a: &Q13Run, b: &Q13Run, what: &str) {
 }
 
 #[test]
-fn baseline_q13_elements_match_app_loader() {
+fn catalog_entry_keeps_f64_record() {
+    // F-27: fixed in P4 (was baseline_q13_elements_match_app_loader, the f32 round trip)
     let mut app = test_app();
-    app.insert_resource(GpuElements::default());
-    app.insert_resource(GpuComputeEpochOrigin(None));
     enter_sim(&mut app);
 
-    // Precondition: the loader ran and took its reference epoch from the fixed
-    // `WorldTime`, the reference `app_elements` uses.
-    assert_eq!(
-        app.world().resource::<GpuComputeEpochOrigin>().0,
-        Some(fixed_epoch())
-    );
     let hst: Vec<_> = app
         .world()
         .resource::<SpaceObjectCatalog>()
@@ -85,15 +76,53 @@ fn baseline_q13_elements_match_app_loader() {
         .filter(|entry| u64::from(entry.norad_id) == HST_NORAD_ID)
         .collect();
     assert_eq!(hst.len(), 1, "HST appears once in the catalog");
-    let gpu = app.world().resource::<GpuElements>().0[hst[0].gpu_index];
-    assert_eq!(u64::from(gpu.id), HST_NORAD_ID);
+    let gp = &hst[0].gp;
 
-    // F-27: current behaviour, expected to change in P4
+    // The entry keeps the record's numbers and epoch verbatim (f64, no rounding).
+    let fixture: Vec<serde_json::Value> =
+        serde_json::from_str(q13::FIXTURE).expect("fixture parses");
+    let record = &fixture[0];
+    let number = |field: &str| record[field].as_f64().unwrap().to_bits();
+    assert_eq!(u64::from(gp.norad_id), HST_NORAD_ID);
+    assert_eq!(gp.epoch_str, record["EPOCH"].as_str().unwrap());
+    assert_eq!(gp.epoch, fixed_epoch(), "the record's own epoch");
     assert_eq!(
-        element_bits(&app_elements(&fixture_record(HST_NORAD_ID))),
-        element_bits(&gpu_to_editable(&gpu)),
-        "app_elements(HST) vs the loaded catalog entry"
+        [
+            gp.mean_motion_rev_per_day.to_bits(),
+            gp.eccentricity.to_bits(),
+            gp.inclination_deg.to_bits(),
+            gp.raan_deg.to_bits(),
+            gp.arg_perigee_deg.to_bits(),
+            gp.mean_anomaly_deg.to_bits(),
+        ],
+        [
+            number("MEAN_MOTION"),
+            number("ECCENTRICITY"),
+            number("INCLINATION"),
+            number("RA_OF_ASC_NODE"),
+            number("ARG_OF_PERICENTER"),
+            number("MEAN_ANOMALY"),
+        ],
+        "mean elements"
     );
+    assert_eq!(
+        [gp.bstar, gp.mean_motion_dot, gp.mean_motion_ddot].map(|v| v.map(f64::to_bits)),
+        [
+            Some(number("BSTAR")),
+            Some(number("MEAN_MOTION_DOT")),
+            Some(number("MEAN_MOTION_DDOT")),
+        ],
+        "drag terms"
+    );
+    assert_eq!(gp.ephemeris_type, Some(0));
+    assert_eq!(gp.classification, Some('U'));
+
+    // A catalog pick is what the harness (and the app) selects.
+    let pick = catalog_pick("HST", HST_NORAD_ID);
+    let from_entry = EditableOrbitalElements::from_gp(gp);
+    assert_eq!(element_bits(&from_entry), element_bits(&pick.elements));
+    assert_eq!(from_entry.epoch, pick.elements.epoch);
+    assert_eq!(pick.gp.as_ref(), Some(gp));
 
     // The fixture's HST record is the dataset's, verbatim.
     let dataset: Vec<serde_json::Value> = serde_json::from_str(
@@ -101,8 +130,6 @@ fn baseline_q13_elements_match_app_loader() {
             .expect("dataset is readable"),
     )
     .expect("dataset parses");
-    let fixture: Vec<serde_json::Value> =
-        serde_json::from_str(q13::FIXTURE).expect("fixture parses");
     let norad = |record: &serde_json::Value| record["NORAD_CAT_ID"].as_u64();
     let dataset_hst: Vec<_> = dataset
         .iter()
@@ -118,31 +145,31 @@ const SHORT_TICKS: u64 = 6_400;
 /// The transition order every platform logs in the first 6,400 ticks.
 const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
 
-// Golden values captured at 3369a3a on macos/aarch64 (P4 S4: relative dynamics and LVLH velocity, F-09/F-35)
+// Golden values captured at a465ece on macos/aarch64 (P4 S5: SGP4 initial states, F-10/F-27)
 // They hold on macOS/aarch64 only: Linux and Windows CI reach `approach` 5-6 steps
 // later (F-17), so only `baseline_q13_to_capture` checks them (operator decision,
 // 2026-10-26).
 /// `(step, state, range_m)` every 640 ticks, the first 6,400 ticks of a
 /// fixed-epoch run.
 const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
-    (643, "rendezvous", 3431.047008487971),
-    (1_283, "rendezvous", 3184.419069275464),
-    (1_923, "rendezvous", 2934.688970841489),
-    (2_563, "rendezvous", 2684.60751014994),
-    (3_203, "rendezvous", 2434.834817199054),
-    (3_843, "rendezvous", 2185.184423735223),
-    (4_483, "approach", 1938.1291044962209),
-    (5_123, "approach", 1706.4027837179738),
-    (5_763, "approach", 1501.845758355041),
-    (6_403, "approach", 1325.6073130387854),
+    (643, "rendezvous", 3432.4996012584393),
+    (1_283, "rendezvous", 3185.0703447915175),
+    (1_923, "rendezvous", 2935.0054350755054),
+    (2_563, "rendezvous", 2684.9178989882676),
+    (3_203, "rendezvous", 2434.914064423956),
+    (3_843, "rendezvous", 2184.9201163227362),
+    (4_483, "approach", 1939.1233616820625),
+    (5_123, "approach", 1709.44125926763),
+    (5_763, "approach", 1508.3059241292256),
+    (6_403, "approach", 1334.4098855460968),
 ];
 /// The fixed-epoch run to `capture`: every transition, and the final range.
 const CAPTURE_TRANSITIONS: &[(u64, &str, &str)] = &[
     (4_318, "rendezvous", "approach"),
-    (34_112, "approach", "terminal"),
-    (156_811, "terminal", "capture"),
+    (34_755, "approach", "terminal"),
+    (162_745, "terminal", "capture"),
 ];
-const CAPTURE_FINAL_RANGE_M: f64 = 4.999946993667034;
+const CAPTURE_FINAL_RANGE_M: f64 = 4.999972839403157;
 /// Baseline ranges carry 1e-6 m (A-3).
 const RANGE_TOL_M: f64 = 1e-6;
 

@@ -109,6 +109,8 @@ pub struct SpaceCatalogEntry {
     pub object_name: String,
     pub object_id: String,
     pub search_blob: String,
+    /// The full-precision GP record the entry was loaded from (F-27).
+    pub gp: GpElements,
 }
 
 impl SpaceCatalogEntry {
@@ -141,6 +143,50 @@ impl SpaceCatalogEntry {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SpaceObjectCatalog {
     pub entries: Vec<SpaceCatalogEntry>,
+}
+
+/// One GP (OMM) record's mean elements at full precision, with the record's own
+/// epoch (F-27). Catalog picks carry it so the sim starts the body from SGP4
+/// (F-10); the f32 [`GpuOrbitalElements`] are derived from it for the map.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpElements {
+    pub norad_id: u32,
+    /// The record's `EPOCH` verbatim; brahe's SGP4 parses it. Empty when the
+    /// record has none (SGP4 then fails at init and logs it).
+    pub epoch_str: String,
+    /// The record's epoch, or the loader's reference epoch when it has none.
+    pub epoch: Epoch,
+    pub mean_motion_rev_per_day: f64,
+    pub eccentricity: f64,
+    pub inclination_deg: f64,
+    pub raan_deg: f64,
+    pub arg_perigee_deg: f64,
+    pub mean_anomaly_deg: f64,
+    pub bstar: Option<f64>,
+    pub mean_motion_dot: Option<f64>,
+    pub mean_motion_ddot: Option<f64>,
+    pub ephemeris_type: Option<u8>,
+    pub classification: Option<char>,
+}
+
+impl GpElements {
+    /// The semi-major axis from the mean motion (two-body, `GM_EARTH`).
+    pub fn semi_major_axis_m(&self) -> f64 {
+        let mean_motion_rad_s = self.mean_motion_rev_per_day * 2.0 * PI / 86400.0;
+        (GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s)).powf(1.0 / 3.0)
+    }
+
+    /// `[a, e, i, raan, argp, mean anomaly]`, metres and radians.
+    pub fn kepler_elements_rad(&self) -> Vector6<f64> {
+        Vector6::new(
+            self.semi_major_axis_m(),
+            self.eccentricity,
+            self.inclination_deg.to_radians(),
+            self.raan_deg.to_radians(),
+            self.arg_perigee_deg.to_radians(),
+            self.mean_anomaly_deg.to_radians(),
+        )
+    }
 }
 
 /// One catalog object's elements as stored in the catalog buffer (f32).
@@ -313,7 +359,7 @@ pub fn load_dataset_entities(
             if let Ok(dataset) = serde_json::from_str(&raw_json) {
                 let data: JsonOrbitalData = dataset;
                 for object in data.data {
-                    let Some((id, elements)) = gp_record_to_elements(&object, reference_epoch)
+                    let Some((id, gp, elements)) = gp_record_to_elements(&object, reference_epoch)
                     else {
                         if let Some(event) = missing_field_event(&object) {
                             log_events.write(event);
@@ -344,6 +390,7 @@ pub fn load_dataset_entities(
                         ),
                         object_name,
                         object_id,
+                        gp,
                     });
 
                     if let Some(gpu_elements) = gpu_elements.as_deref_mut() {
@@ -373,55 +420,65 @@ pub fn load_dataset_entities(
     }
 }
 
-/// The catalog buffer entry for one GP `record`: mean motion to semi-major axis,
-/// degrees to radians, values stored as f32, the epoch offset taken against
-/// `reference_epoch` (which a missing or unparsable `EPOCH` defaults to). `None`
-/// if a field is missing or not a number.
+/// The full-precision elements of one GP `record` and the catalog buffer entry
+/// derived from them: mean motion to semi-major axis, degrees to radians, values
+/// stored as f32, the epoch offset taken against `reference_epoch` (which a
+/// missing or unparsable `EPOCH` defaults to). `None` if a field is missing or
+/// not a number.
 pub fn gp_record_to_elements(
     record: &JsonOrbital,
     reference_epoch: Epoch,
-) -> Option<(u64, GpuOrbitalElements)> {
+) -> Option<(u64, GpElements, GpuOrbitalElements)> {
     let id = record.norad_cat_id.as_ref()?.as_u64()?;
     let mean_motion = record.mean_motion.as_ref()?.as_f64()?;
-    let mean_motion_rad_s = mean_motion * 2.0 * PI / 86400.0;
-    let semi_major_axis = (GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s)).powf(1.0 / 3.0);
     let eccentricity = record.eccentricity.as_ref()?.as_f64()?;
     let inclination = record.inclination.as_ref()?.as_f64()?;
-    let inclination = inclination.to_radians();
     let raan = record.ra_of_asc_node.as_ref()?.as_f64()?;
-    let raan = raan.to_radians();
     let argp = record.arg_of_pericenter.as_ref()?.as_f64()?;
-    let argp = argp.to_radians();
     let mean_anomaly = record.mean_anomaly.as_ref()?.as_f64()?;
-    let mean_anomaly = mean_anomaly.to_radians();
     let object_epoch = record
         .epoch
         .as_deref()
         .and_then(parse_dataset_epoch_fast)
         .unwrap_or(reference_epoch);
+    let optional_f64 = |field: &Option<Value>| field.as_ref().and_then(Value::as_f64);
 
-    let elements = Vector6::new(
-        semi_major_axis,
+    let gp = GpElements {
+        norad_id: id as u32,
+        epoch_str: record.epoch.clone().unwrap_or_default(),
+        epoch: object_epoch,
+        mean_motion_rev_per_day: mean_motion,
         eccentricity,
-        inclination,
-        raan,
-        argp,
-        mean_anomaly,
-    );
+        inclination_deg: inclination,
+        raan_deg: raan,
+        arg_perigee_deg: argp,
+        mean_anomaly_deg: mean_anomaly,
+        bstar: optional_f64(&record.bstar),
+        mean_motion_dot: optional_f64(&record.mean_motion_dot),
+        mean_motion_ddot: optional_f64(&record.mean_motion_ddot),
+        ephemeris_type: record
+            .ephemeris_type
+            .as_ref()
+            .and_then(Value::as_u64)
+            .and_then(|value| u8::try_from(value).ok()),
+        classification: record
+            .classification_type
+            .as_deref()
+            .and_then(|value| value.chars().next()),
+    };
+    let elements = gp.kepler_elements_rad();
+    let gpu = GpuOrbitalElements {
+        id: id as u32,
+        a: elements[0] as f32,
+        e: elements[1] as f32,
+        i: elements[2] as f32,
+        raan: elements[3] as f32,
+        argp: elements[4] as f32,
+        mean_anomaly: elements[5] as f32,
+        epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
+    };
 
-    Some((
-        id,
-        GpuOrbitalElements {
-            id: id as u32,
-            a: elements[0] as f32,
-            e: elements[1] as f32,
-            i: elements[2] as f32,
-            raan: elements[3] as f32,
-            argp: elements[4] as f32,
-            mean_anomaly: elements[5] as f32,
-            epoch_offset_seconds: (object_epoch - reference_epoch) as f32,
-        },
-    ))
+    Some((id, gp, gpu))
 }
 
 /// The log line the loader writes for a record that [`gp_record_to_elements`]

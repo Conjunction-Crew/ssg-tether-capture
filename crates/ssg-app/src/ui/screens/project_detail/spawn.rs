@@ -1545,6 +1545,8 @@ fn orbital_element_slider_changed(
 
     if let Some(selected) = selected_orbital_object_mut(&mut selection, slider.role) {
         write_slider_value_to_elements(&mut selected.elements, slider.field, value_change.value);
+        // Edited elements are no longer the catalog record (F-27).
+        selected.gp = None;
     }
 
     commands
