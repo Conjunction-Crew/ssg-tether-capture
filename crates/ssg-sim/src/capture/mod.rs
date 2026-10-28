@@ -250,6 +250,13 @@ fn current_state_parameters(
         .unwrap_or_default()
 }
 
+/// One step of the capture state machine (Q14, F-24). Only the current state's
+/// transitions are checked, in plan order. A transition is satisfied when every
+/// condition it carries holds; one without a condition never fires. The first
+/// satisfied transition fires and nothing more happens this step (no cascade).
+/// The state current after this check sets this step's parameters and shrinks the
+/// capture sphere once, so when a transition fires, the new state's limits and
+/// shrink rate already apply to this step's forces.
 fn resolve_root_state(
     capture_component: &mut CaptureComponent,
     plan: &CompiledCapturePlan,
@@ -259,95 +266,71 @@ fn resolve_root_state(
     capture_sphere_radius: &mut CaptureSphereRadius,
     log_events: &mut MessageWriter<LogEvent>,
 ) -> CompiledCaptureStateParameters {
-    let Some(&start_index) = plan.state_indices.get(&capture_component.current_state) else {
+    let Some(state) = plan.state(&capture_component.current_state) else {
         return CompiledCaptureStateParameters::default();
     };
 
-    let mut parameters = CompiledCaptureStateParameters::default();
+    let fired = state.transitions.iter().find_map(|transition| {
+        transition_satisfied(transition, rel_r_length, rel_v_length)
+            .map(|reason| (transition.to.clone(), reason))
+    });
+    if let Some((to, reason)) = fired {
+        transition_to(capture_component, &to, sim_time_s, reason, log_events);
+    }
 
-    for state in &plan.states[start_index..] {
-        if state.id != capture_component.current_state {
-            continue;
-        }
-
-        parameters = state.parameters;
-
-        if let Some(shrink_rate) = state.parameters.shrink_rate
-            && capture_sphere_radius.radius > 0.1
-        {
-            capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
-        }
-
-        for transition in &state.transitions {
-            apply_transition(
-                capture_component,
-                transition,
-                rel_r_length,
-                rel_v_length,
-                sim_time_s,
-                log_events,
-            );
-        }
+    let parameters = current_state_parameters(plan, &capture_component.current_state);
+    if let Some(shrink_rate) = parameters.shrink_rate
+        && capture_sphere_radius.radius > 0.1
+    {
+        capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
     }
 
     parameters
 }
 
-fn apply_transition(
-    capture_component: &mut CaptureComponent,
+/// The reason string if every condition of `transition` holds (`None` if one does
+/// not, or if it has no condition), e.g. `distance 1500.0 m < 2000.0 m, rel vel
+/// 1.00 m/s < 5.00 m/s`.
+fn transition_satisfied(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
-    sim_time_s: f64,
-    log_events: &mut MessageWriter<LogEvent>,
-) {
-    if let Some(limit) = transition.distance_less_than
-        && rel_r_length < limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            sim_time_s,
-            format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
-            log_events,
-        );
-    }
+) -> Option<String> {
+    let checks = [
+        transition.distance_less_than.map(|limit| {
+            (
+                rel_r_length < limit,
+                format!("distance {:.1} m < {:.1} m", rel_r_length, limit),
+            )
+        }),
+        transition.distance_greater_than.map(|limit| {
+            (
+                rel_r_length > limit,
+                format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
+            )
+        }),
+        transition.relative_velocity_less_than.map(|limit| {
+            (
+                rel_v_length < limit,
+                format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
+            )
+        }),
+        transition.relative_velocity_greater_than.map(|limit| {
+            (
+                rel_v_length > limit,
+                format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
+            )
+        }),
+    ];
 
-    if let Some(limit) = transition.distance_greater_than
-        && rel_r_length > limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            sim_time_s,
-            format!("distance {:.1} m > {:.1} m", rel_r_length, limit),
-            log_events,
-        );
+    let mut reasons = Vec::new();
+    for (holds, reason) in checks.into_iter().flatten() {
+        if !holds {
+            return None;
+        }
+        reasons.push(reason);
     }
-
-    if let Some(limit) = transition.relative_velocity_less_than
-        && rel_v_length < limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            sim_time_s,
-            format!("rel vel {:.2} m/s < {:.2} m/s", rel_v_length, limit),
-            log_events,
-        );
-    }
-
-    if let Some(limit) = transition.relative_velocity_greater_than
-        && rel_v_length > limit
-    {
-        transition_to(
-            capture_component,
-            &transition.to,
-            sim_time_s,
-            format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
-            log_events,
-        );
-    }
+    (!reasons.is_empty()).then(|| reasons.join(", "))
 }
 
 /// Enters `new_state` at `sim_time_s` (sim seconds since the start epoch).

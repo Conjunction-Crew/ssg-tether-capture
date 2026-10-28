@@ -1,13 +1,11 @@
 //! Characterization of the capture state machine (`capture_state_machine_update`).
 //!
 //! Every test scripts `(range, relative speed)` rows through the rig from
-//! `test_support` and compares the logged transitions with the timeline that the
-//! P0 oracle (`plans/stage-0/52-p0-tools/compare_runs.py`) computes for the same
-//! rows. No avian stepping happens between rows, so the scripted values are exact.
-//!
-//! F-24 (conditions are OR-ed, transitions cascade within one step, stale states
-//! are not revisited in a step) is pinned here as it is today; P4 (Q14) owns any
-//! change.
+//! `test_support` and compares the logged transitions with a timeline derived by
+//! hand from the Q14 semantics: all conditions of a transition must hold, the
+//! current state's transitions are checked in plan order, the first satisfied one
+//! fires, and at most one transition fires per step (Q14, fixed in P4). No avian
+//! stepping happens between rows, so the scripted values are exact.
 
 use crate::capture::CaptureSphereRadius;
 use crate::capture::plan::CapturePlanLibrary;
@@ -26,8 +24,9 @@ use avian3d::prelude::{Forces, LinearVelocity, Position, ReadRigidBodyForces};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
 
-// Oracle plans (the `compare_runs.py --selftest` plans, with the `name`/`tether`
-// fields the app requires added).
+// Plans from the P0 oracle's self-test (`compare_runs.py --selftest`, with the
+// `name`/`tether` fields the app requires added). The oracle itself encodes the
+// pre-Q14 semantics and is historical.
 const CHAIN_PLAN: &str = r#"{"name": "selftest", "tether": "T", "states": [
   {"id": "a", "parameters": {"max_velocity": 1.0, "max_force": 1.0},
    "transitions": [{"to": "b", "distance": {"less_than": 1000.0}}]},
@@ -125,7 +124,7 @@ fn radius(app: &App) -> f64 {
 }
 
 #[test]
-fn char_capture_example_plan_timeline() {
+fn capture_example_plan_timeline() {
     let mut app = example_app();
     let rig = capture_rig(&mut app, "example_plan");
     assert_eq!(state_of(&app, &rig), "rendezvous");
@@ -139,7 +138,8 @@ fn char_capture_example_plan_timeline() {
         (4.0, 1.0),
     ];
 
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
+    // Each row satisfies exactly one transition, so the timeline is one transition
+    // per row from row 1.
     let expected: [Expected; 3] = [
         (1, "rendezvous", "approach", "distance 1500.0 m < 2000.0 m"),
         (2, "approach", "terminal", "distance 40.0 m < 50.0 m"),
@@ -155,195 +155,167 @@ fn char_capture_example_plan_timeline() {
         }
         radii.push(radius(&app));
     }
-    // F-24: current behaviour, expected to change in P4
+    // Q14: fixed in P4
     assert_timeline(&events, &expected);
     assert_eq!(state_of(&app, &rig), "capture");
 
-    // The sphere shrinks only in states with a shrink rate. `approach -> terminal`
-    // happens in row 2 and the scan then reaches `terminal` in the same row.
+    // One shrink per row, at the rate of the state current after the row's check:
+    // `terminal` from row 2 (the row it is entered), `capture` from row 3.
     let terminal_step = 0.01 * PHYS_DT;
     let capture_step = 0.005 * PHYS_DT;
     assert_eq!(radii[0], 25.0);
     assert_eq!(radii[1], 25.0);
     assert_close(radii[2], 25.0 - terminal_step, 1e-12, "radius after row 2");
-    // Row 3: terminal shrinks, then `terminal -> capture` and `capture` shrinks.
     assert_close(
         radii[3],
-        25.0 - 2.0 * terminal_step - capture_step,
+        25.0 - terminal_step - capture_step,
         1e-12,
         "radius after row 3",
     );
     assert_close(
         radii[4],
-        25.0 - 2.0 * terminal_step - 2.0 * capture_step,
+        25.0 - terminal_step - 2.0 * capture_step,
         1e-12,
         "radius after row 4",
     );
 }
 
 #[test]
-fn char_capture_cascade_within_step() {
+fn transition_requires_all_conditions() {
+    // `far -> near` needs distance < 2000 m AND relative velocity < 5 m/s.
+    let mut app = inline_app("q10", Q10_PLAN);
+    let rig = capture_rig(&mut app, "q10");
+    assert_eq!(state_of(&app, &rig), "far");
+
+    // Row 0: only the velocity holds; row 1: only the distance holds; row 2: both.
+    let events = play(
+        &mut app,
+        &rig,
+        &[(3000.0, 1.0), (1000.0, 10.0), (1000.0, 1.0)],
+    );
+    // Q14: fixed in P4
+    assert_timeline(
+        &events,
+        &[(
+            2,
+            "far",
+            "near",
+            "distance 1000.0 m < 2000.0 m, rel vel 1.00 m/s < 5.00 m/s",
+        )],
+    );
+    assert_eq!(state_of(&app, &rig), "near");
+}
+
+#[test]
+fn transition_one_per_step() {
+    // At 10 m every chain state's first transition holds; one fires per row.
+    let mut app = inline_app("chain", CHAIN_PLAN);
+    let rig = capture_rig(&mut app, "chain");
+    assert_eq!(state_of(&app, &rig), "a");
+
+    let events = play(&mut app, &rig, &[(10.0, 9.0), (10.0, 9.0), (10.0, 9.0)]);
+    // Q14: fixed in P4
+    assert_timeline(
+        &events,
+        &[
+            (0, "a", "b", "distance 10.0 m < 1000.0 m"),
+            (1, "b", "c", "distance 10.0 m < 500.0 m"),
+            (2, "c", "d", "distance 10.0 m < 50.0 m"),
+        ],
+    );
+    assert_eq!(state_of(&app, &rig), "d");
+}
+
+#[test]
+fn transition_no_cascade() {
+    // At 4 m every example-plan transition towards `capture` holds; one fires per
+    // row, and the sphere shrinks only from the row `terminal` is entered.
     let mut app = example_app();
     let rig = capture_rig(&mut app, "example_plan");
     assert_eq!(state_of(&app, &rig), "rendezvous");
 
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let expected: [Expected; 3] = [
-        (0, "rendezvous", "approach", "distance 4.0 m < 2000.0 m"),
-        (0, "approach", "terminal", "distance 4.0 m < 50.0 m"),
-        (0, "terminal", "capture", "distance 4.0 m < 5.0 m"),
-    ];
-    let events = play(&mut app, &rig, &[(4.0, 1.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(&events, &expected);
+    let mut events = Vec::new();
+    let mut radii = Vec::new();
+    for row in 0..3 {
+        rig_set(&mut app, &rig, 4.0, 1.0);
+        for (from, to, reason) in rig_step(&mut app, &rig) {
+            events.push((row, from, to, reason));
+        }
+        radii.push(radius(&app));
+    }
+    // Q14: fixed in P4
+    assert_timeline(
+        &events,
+        &[
+            (0, "rendezvous", "approach", "distance 4.0 m < 2000.0 m"),
+            (1, "approach", "terminal", "distance 4.0 m < 50.0 m"),
+            (2, "terminal", "capture", "distance 4.0 m < 5.0 m"),
+        ],
+    );
     assert_eq!(state_of(&app, &rig), "capture");
-    // Both the terminal and the capture shrink run inside that one step.
+
+    let terminal_step = 0.01 * PHYS_DT;
+    let capture_step = 0.005 * PHYS_DT;
+    assert_eq!(radii[0], 25.0);
+    assert_close(radii[1], 25.0 - terminal_step, 1e-12, "radius after row 1");
     assert_close(
-        radius(&app),
-        25.0 - (0.01 + 0.005) * PHYS_DT,
+        radii[2],
+        25.0 - terminal_step - capture_step,
         1e-12,
-        "radius after the cascade",
+        "radius after row 2",
     );
-
-    // Hysteresis row: fresh rig.
-    let mut app = example_app();
-    let rig = capture_rig(&mut app, "example_plan");
-
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let expected: [Expected; 3] = [
-        (0, "rendezvous", "approach", "distance 40.0 m < 2000.0 m"),
-        (0, "approach", "terminal", "distance 40.0 m < 50.0 m"),
-        (1, "terminal", "approach", "distance 60.0 m > 50.0 m"),
-    ];
-    // Row 0 reaches `terminal`; row 1 sends it back to `approach`, which precedes
-    // `terminal` in the scan so it is not re-scanned in that step; row 2 has no
-    // event.
-    let events = play(&mut app, &rig, &[(40.0, 1.0), (60.0, 1.0), (60.0, 1.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(&events, &expected);
-    assert_eq!(state_of(&app, &rig), "approach");
 }
 
 #[test]
-fn char_capture_or_within_transition() {
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    // Rows (3000, 1): only the velocity condition holds.
-    let mut app = inline_app("q10", Q10_PLAN);
-    let rig = capture_rig(&mut app, "q10");
-    assert_eq!(state_of(&app, &rig), "far");
-    let events = play(&mut app, &rig, &[(3000.0, 1.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(
-        &events,
-        &[(0, "far", "near", "rel vel 1.00 m/s < 5.00 m/s")],
-    );
-    assert_eq!(state_of(&app, &rig), "near");
-
-    // Fresh rig, rows (1000, 10): only the distance condition holds.
-    let mut app = inline_app("q10", Q10_PLAN);
-    let rig = capture_rig(&mut app, "q10");
-    assert_eq!(state_of(&app, &rig), "far");
-    let events = play(&mut app, &rig, &[(1000.0, 10.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(
-        &events,
-        &[(0, "far", "near", "distance 1000.0 m < 2000.0 m")],
-    );
-    assert_eq!(state_of(&app, &rig), "near");
-}
-
-#[test]
-fn char_capture_condition_overwrite() {
+fn transition_first_satisfied_wins() {
+    // At 5 m both of `x`'s transitions hold; the first in plan order fires, and `y`
+    // has no transitions, so it stays.
     let mut app = inline_app("overwrite", OVERWRITE_PLAN);
     let rig = capture_rig(&mut app, "overwrite");
     assert_eq!(state_of(&app, &rig), "x");
 
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let expected: [Expected; 3] = [
-        (0, "x", "y", "distance 5.0 m < 10.0 m"),
-        (0, "y", "y", "distance 5.0 m > 1.0 m"),
-        (0, "y", "z", "distance 5.0 m < 10.0 m"),
-    ];
-    let events = play(&mut app, &rig, &[(5.0, 0.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(&events, &expected);
-    assert_eq!(state_of(&app, &rig), "z");
+    let events = play(&mut app, &rig, &[(5.0, 0.0), (5.0, 0.0)]);
+    // Q14: fixed in P4
+    assert_timeline(
+        &events,
+        &[(
+            0,
+            "x",
+            "y",
+            "distance 5.0 m < 10.0 m, distance 5.0 m > 1.0 m",
+        )],
+    );
+    assert_eq!(state_of(&app, &rig), "y");
 }
 
 #[test]
-fn char_capture_earlier_state_not_revisited() {
-    // Each case is a fresh rig. They start from the plan's first state `a`; the
-    // oracle always starts there, so cases that begin later first drive to that
-    // state with an earlier row.
-
-    // Forward cascade a -> b -> c at 55 m.
+fn transition_hysteresis_next_step() {
+    // `c -> b` above 60 m and `b -> c` below 500 m: at 70 m the pair alternates one
+    // transition per row.
     let mut app = inline_app("chain", CHAIN_PLAN);
     let rig = capture_rig(&mut app, "chain");
     assert_eq!(state_of(&app, &rig), "a");
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let events = play(&mut app, &rig, &[(55.0, 9.0)]);
-    // F-24: current behaviour, expected to change in P4
+
+    let events = play(
+        &mut app,
+        &rig,
+        &[
+            (55.0, 9.0),
+            (55.0, 9.0),
+            (70.0, 9.0),
+            (70.0, 9.0),
+            (70.0, 9.0),
+        ],
+    );
+    // Q14: fixed in P4
     assert_timeline(
         &events,
         &[
             (0, "a", "b", "distance 55.0 m < 1000.0 m"),
-            (0, "b", "c", "distance 55.0 m < 500.0 m"),
-        ],
-    );
-    assert_eq!(state_of(&app, &rig), "c");
-
-    // Full cascade a -> b -> c -> d at 10 m.
-    let mut app = inline_app("chain", CHAIN_PLAN);
-    let rig = capture_rig(&mut app, "chain");
-    assert_eq!(state_of(&app, &rig), "a");
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let events = play(&mut app, &rig, &[(10.0, 9.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(
-        &events,
-        &[
-            (0, "a", "b", "distance 10.0 m < 1000.0 m"),
-            (0, "b", "c", "distance 10.0 m < 500.0 m"),
-            (0, "c", "d", "distance 10.0 m < 50.0 m"),
-        ],
-    );
-    assert_eq!(state_of(&app, &rig), "d");
-
-    // OR trigger from `d` at (100, 0.05): the velocity condition fires while the
-    // distance condition does not.
-    let mut app = inline_app("chain", CHAIN_PLAN);
-    let rig = capture_rig(&mut app, "chain");
-    assert_eq!(state_of(&app, &rig), "a");
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let events = play(&mut app, &rig, &[(10.0, 9.0), (100.0, 0.05)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(
-        &events,
-        &[
-            (0, "a", "b", "distance 10.0 m < 1000.0 m"),
-            (0, "b", "c", "distance 10.0 m < 500.0 m"),
-            (0, "c", "d", "distance 10.0 m < 50.0 m"),
-            (1, "d", "e", "rel vel 0.05 m/s < 0.10 m/s"),
-        ],
-    );
-    assert_eq!(state_of(&app, &rig), "e");
-
-    // Hysteresis c -> b at 70 m: `b` precedes `c` so it is not re-scanned in that
-    // step (row 1). On the next row (row 2) `b` fires -> c, then `c` fires -> b.
-    let mut app = inline_app("chain", CHAIN_PLAN);
-    let rig = capture_rig(&mut app, "chain");
-    assert_eq!(state_of(&app, &rig), "a");
-    // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
-    let events = play(&mut app, &rig, &[(55.0, 9.0), (70.0, 9.0), (70.0, 9.0)]);
-    // F-24: current behaviour, expected to change in P4
-    assert_timeline(
-        &events,
-        &[
-            (0, "a", "b", "distance 55.0 m < 1000.0 m"),
-            (0, "b", "c", "distance 55.0 m < 500.0 m"),
-            (1, "c", "b", "distance 70.0 m > 60.0 m"),
-            (2, "b", "c", "distance 70.0 m < 500.0 m"),
+            (1, "b", "c", "distance 55.0 m < 500.0 m"),
             (2, "c", "b", "distance 70.0 m > 60.0 m"),
+            (3, "b", "c", "distance 70.0 m < 500.0 m"),
+            (4, "c", "b", "distance 70.0 m > 60.0 m"),
         ],
     );
     assert_eq!(state_of(&app, &rig), "b");
@@ -358,9 +330,9 @@ fn char_capture_unknown_target_sticks() {
 
     // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca
     let events = play(&mut app, &rig, &[(1.0, 0.0), (1.0, 0.0), (1.0, 0.0)]);
-    // F-32: current behaviour, expected to change in P4
+    // F-32: current behaviour, expected to change in P6
     assert_timeline(&events, &[(0, "p", "nowhere", "distance 1.0 m < 5.0 m")]);
-    // F-32: current behaviour, expected to change in P4
+    // F-32: current behaviour, expected to change in P6
     assert_eq!(state_of(&app, &rig), "nowhere");
 }
 
@@ -372,9 +344,9 @@ fn char_capture_transition_without_to_skipped() {
 
     // Expected timeline from compare_runs.py (P0 oracle) at c4b8cca: no transitions.
     let events = play(&mut app, &rig, &[(1.0, 0.0)]);
-    // F-32: current behaviour, expected to change in P4
+    // F-32: current behaviour, expected to change in P6
     assert_timeline(&events, &[]);
-    // F-32: current behaviour, expected to change in P4
+    // F-32: current behaviour, expected to change in P6
     assert_eq!(state_of(&app, &rig), "q");
 }
 
