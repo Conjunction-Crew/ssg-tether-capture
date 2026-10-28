@@ -108,6 +108,24 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
+      - name: Remove other preinstalled toolchains
+        # rust-cache hashes every installed toolchain into its key.  The set
+        # preinstalled on the runner image changes between images (1.99.0 present
+        # or not), so the key alternated and most PR runs missed the cache.  Only
+        # the toolchain pinned by rust-toolchain.toml is kept (Q39, P5).
+        shell: bash
+        run: |
+          set -eu
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          echo "Active toolchain: $active"
+          echo "Installed before:"
+          rustup toolchain list
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            if [ "$tc" != "$active" ]; then rustup toolchain uninstall "$tc"; fi
+          done
+          echo "Installed after:"
+          rustup toolchain list
+
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # PR caches are not shared between PRs and would evict the main-branch
@@ -161,7 +179,18 @@ jobs:
           exit 0
 
       - name: Run tests
-        run: cargo test --workspace --locked
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+
+      - name: Test execution time
+        # Sum of the `finished in` lines of every test binary, printed to the job
+        # summary and as an annotation (visible in `gh run view <id>`).
+        if: success() || failure()
+        run: |
+          line=$(sh scripts/ci_test_time.sh "$RUNNER_TEMP/cargo-test.log" "$GITHUB_STEP_SUMMARY")
+          echo "$line"
+          echo "::notice title=Test execution time (Linux)::$line"
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
@@ -192,9 +221,30 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
+      - name: Remove other preinstalled toolchains
+        # rust-cache hashes every installed toolchain into its key.  The set
+        # preinstalled on the runner image changes between images (1.99.0 present
+        # or not), so the key alternated and most PR runs missed the cache.  Only
+        # the toolchain pinned by rust-toolchain.toml is kept (Q39, P5).
+        shell: bash
+        run: |
+          set -eu
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          echo "Active toolchain: $active"
+          echo "Installed before:"
+          rustup toolchain list
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            if [ "$tc" != "$active" ]; then rustup toolchain uninstall "$tc"; fi
+          done
+          echo "Installed after:"
+          rustup toolchain list
+
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # `cargo check` runs and full build-and-test runs need different
+          # artifacts; with one key the check cache shadowed the build cache.
+          key: ${{ needs.changes.outputs.full == 'true' && 'build' || 'check' }}
 
       - name: cargo check
         if: needs.changes.outputs.full != 'true'
@@ -206,7 +256,18 @@ jobs:
 
       - name: cargo test
         if: needs.changes.outputs.full == 'true'
-        run: cargo test --workspace --locked
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+
+      - name: Test execution time
+        if: needs.changes.outputs.full == 'true' && (success() || failure())
+        shell: bash
+        run: |
+          line=$(sh scripts/ci_test_time.sh "$RUNNER_TEMP/cargo-test.log" "$GITHUB_STEP_SUMMARY")
+          echo "$line"
+          echo "::notice title=Test execution time (${{ matrix.name }})::$line"
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docusaurus build — catches broken links / build errors, and enforces the
