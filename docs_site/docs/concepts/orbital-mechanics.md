@@ -52,7 +52,7 @@ These are used during initialisation when an entity is spawned `FromElements`.
 
 ## Approach metrics
 
-Relative position, velocity, range, closing speed, and predicted closest-approach distance between the tether and a debris target are computed each physics tick by `capture_state_machine_update` directly from the cached ECI states in `OrbitalCache::eci_states`. These values drive the transition conditions in a `CompiledCapturePlan`: each physics step, the current state's transitions are checked in plan order, a transition fires only when all of its conditions hold, and at most one transition fires per step (the first satisfied one).
+Relative position, velocity, range, closing speed, and predicted closest-approach distance between the tether and a debris target are computed each physics tick by `capture_state_machine_update` from the bodies' bubble-frame states and the cached ECI states in `OrbitalCache::eci_states`. The relative velocity is measured in the debris target's LVLH frame (`orbit::lvlh`): a body at rest relative to the co-rotating target frame reads zero, not the few m/s that the plain ECI difference shows at kilometre range; the HUD, the plots, the CSV samples and `ssg-sim` use the same measure. These values drive the transition conditions in a `CompiledCapturePlan`: each physics step, the current state's transitions are checked in plan order, a transition fires only when all of its conditions hold, and at most one transition fires per step (the first satisfied one).
 
 ## brahe
 
