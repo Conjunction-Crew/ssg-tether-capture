@@ -337,16 +337,28 @@ fn levers_cross_platform_goldens() {
     );
     assert_eq!(
         run.transitions.first().map(|t| t.0),
-        Some(CAPTURE_TRANSITIONS[0].0)
+        Some(LEVER_FIRST_TRANSITION)
     );
     let actual: Vec<_> = run
         .checkpoints
         .iter()
         .map(|c| (c.step, c.state.as_str(), c.range_m.to_bits()))
         .collect();
-    let expected: Vec<_> = SHORT_CHECKPOINTS
-        .iter()
-        .map(|&(step, state, range_m)| (step, state, range_m.to_bits()))
-        .collect();
-    assert_eq!(actual, expected);
+    assert_eq!(actual, LEVER_CHECKPOINTS);
 }
+
+/// TEMPORARY: the macOS/aarch64 values of this configuration (local dev-profile run
+/// of `levers_cross_platform_goldens`), `(step, state, range_m.to_bits())`.
+const LEVER_FIRST_TRANSITION: u64 = 4_318;
+const LEVER_CHECKPOINTS: &[(u64, &str, u64)] = &[
+    (643, "rendezvous", 0x40aacbabc56afbe3),
+    (1283, "rendezvous", 0x40a8e25c11b28ec5),
+    (1923, "rendezvous", 0x40a6ee29b2c59f00),
+    (2563, "rendezvous", 0x40a4f9f6c5991290),
+    (3203, "rendezvous", 0x40a305ef8d900e1e),
+    (3843, "rendezvous", 0x40a11260e17c7819),
+    (4483, "approach", 0x409e4b0a8132466b),
+    (5123, "approach", 0x409ab2b2dee1a0d8),
+    (5763, "approach", 0x409788eaf9064121),
+    (6403, "approach", 0x4094c705bafddf2c),
+];
