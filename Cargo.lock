@@ -7326,7 +7326,7 @@ dependencies = [
 
 [[package]]
 name = "ssg-app"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "arboard",
  "avian3d",
@@ -7346,7 +7346,7 @@ dependencies = [
 
 [[package]]
 name = "ssg-sim"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "avian3d",
  "bevy",
@@ -7359,7 +7359,7 @@ dependencies = [
 
 [[package]]
 name = "ssg-sim-cli"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "avian3d",
  "bevy",

@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.3.2] - 2026-10-28
+
 ### Added
 - `ssg-sim run`: `--steps` and `--sample-every` count fixed steps and must be multiples of `--warp` (at most 64); `summary.json` carries a `state_hash`; transitions carry their exact step; determinism tests (two runs identical, 1× vs 16× identical) and the determinism contract page (F-17)
 
