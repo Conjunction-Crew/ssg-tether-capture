@@ -28,6 +28,9 @@ pub struct CaptureComponent {
     pub state_elapsed_time_s: f64,
 }
 
+/// The capture-sphere radius at the start of every capture (F-11).
+pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
+
 #[derive(Resource, Debug, Default)]
 pub struct CaptureSphereRadius {
     pub radius: f64,
@@ -67,7 +70,8 @@ pub fn capture_state_machine_update(
             capture_entity_linvel = *capture_entity_rb.linear_velocity;
             capture_entity_rotation = *capture_entity_rb.rotation;
         } else {
-            return;
+            // F-39: one capture entity without a rigid body does not stop the others.
+            continue;
         }
 
         // Execute plan state machine
@@ -181,7 +185,8 @@ pub fn capture_state_machine_update(
 
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        node_forces.apply_force(force_vec.normalize() * max_force);
+                        // F-11: a zero vector gives a zero force, not NaN.
+                        node_forces.apply_force(force_vec.normalize_or_zero() * max_force);
                     } else {
                         log_events.write(LogEvent {
                             level: LogLevel::Warn,
@@ -378,7 +383,11 @@ pub fn apply_sim_commands(
     // Absent outside the sim screen, where no capture target exists.
     world_time: Option<Res<WorldTime>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
-    mut data_collection: ResMut<DataCollection>,
+    // The radius is absent outside the sim screen, like `WorldTime`.
+    (mut data_collection, mut capture_sphere_radius): (
+        ResMut<DataCollection>,
+        Option<ResMut<CaptureSphereRadius>>,
+    ),
     mut log: MessageWriter<LogEvent>,
 ) {
     for command in sim_commands.read() {
@@ -403,6 +412,10 @@ pub fn apply_sim_commands(
                                 world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                                // F-11: every capture starts with the initial radius.
+                                if let Some(radius) = capture_sphere_radius.as_mut() {
+                                    radius.radius = INITIAL_CAPTURE_SPHERE_RADIUS_M;
+                                }
                                 log.write(LogEvent {
                                     level: LogLevel::Info,
                                     source: "ui",

@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use crate::SimSet;
-use crate::capture::CaptureSphereRadius;
+use crate::capture::{CaptureSphereRadius, INITIAL_CAPTURE_SPHERE_RADIUS_M};
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::load_dataset_entities;
 use crate::time::{SimConfig, WorldTime, setup_time};
@@ -57,7 +57,9 @@ fn init_sim_resources(
     pause.set(PauseState::Running);
     commands.init_resource::<OrbitalCache>();
     commands.insert_resource(WorldTime::starting_at(config.start_epoch));
-    commands.insert_resource(CaptureSphereRadius { radius: 25.0 });
+    commands.insert_resource(CaptureSphereRadius {
+        radius: INITIAL_CAPTURE_SPHERE_RADIUS_M,
+    });
 }
 
 fn remove_sim_resources(mut commands: Commands) {
