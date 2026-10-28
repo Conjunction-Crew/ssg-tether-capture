@@ -18,7 +18,7 @@ use nalgebra::Vector6;
 use ssg_sim::anchor::SimAnchor;
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::{ISS_ORBIT, Orbital};
-use ssg_sim::test_support::{fixed_epoch, fixed_propagator, kepler_eci};
+use ssg_sim::test_support::{disable_relative_gravity, fixed_epoch, fixed_propagator, kepler_eci};
 use ssg_sim::tether::TetherRoot;
 
 #[test]
@@ -140,6 +140,7 @@ fn scene_focus(app: &App, camera: Entity) -> Vec3 {
 /// after the second tick, and the camera focus before and after the move.
 fn origin_scenario(move_camera: bool) -> (Vec<DVec3>, Vec<(DVec3, DVec3)>, Vec3, Vec3) {
     let (mut app, camera) = running_app_with_camera();
+    disable_relative_gravity(&mut app);
     let root = spawn_body(&mut app, DVec3::new(10.0, 0.0, 0.0), false);
     let body_b = spawn_body(&mut app, DVec3::new(60.0, 0.0, 0.0), false);
     app.world_mut()

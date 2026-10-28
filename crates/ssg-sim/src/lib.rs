@@ -25,14 +25,20 @@ use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 
 /// The steps of one `ManualPhysics` run, chained in this order and all after
-/// avian's step (`PhysicsSystems::Last`). This is the order the systems had
-/// before P3, now with names (F-13); P3 moves nothing relative to avian.
+/// avian's step (`PhysicsSystems::Last`). F-13, decided in P4: the bookkeeping
+/// (centre of mass, origin reset, the ECI cache at the new epoch, bubble
+/// membership) describes the state after the step; the two force producers
+/// (relative gravity, the capture controller) then act on the next step from that
+/// consistent snapshot. Before the step, the forces would read a cache one step
+/// old.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SimStep {
     CenterOfMass,
     OriginReset,
     CacheEci,
     Bubble,
+    /// Differential two-body gravity on the enabled bodies (F-09).
+    RelativeDynamics,
     Capture,
 }
 

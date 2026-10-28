@@ -3,13 +3,14 @@ use crate::capture::CaptureComponent;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::floating_origin::MAX_ORIGIN_OFFSET;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::differential_gravity;
 use crate::orbit::{ISS_ORBIT, Orbit, Orbital};
 use crate::test_support::{
-    assert_close, assert_close_dvec3, enter_sim, load_example_plans, log_test_app, start_running,
-    test_app, tick,
+    assert_close, assert_close_dvec3, disable_relative_gravity, enter_sim, load_example_plans,
+    log_test_app, start_running, test_app, tick,
 };
 use crate::tether::TetherRoot;
-use crate::time::WorldTime;
+use crate::time::{PHYS_DT, WorldTime};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -179,9 +180,63 @@ fn orbit_propagation() {
     assert_ne!(params_before, params_after);
 }
 
+/// F-09: fixed in P4. An enabled body 100 m radially out from the anchor gains
+/// `differential_gravity(r_o, p) * PHYS_DT` over the next step (avian applies the
+/// acceleration set after a step during the following one); the anchor itself, at
+/// the frame origin, gets none.
+#[test]
+fn relative_gravity_accelerates_enabled_bodies() {
+    let mut app = test_app();
+    enter_sim(&mut app);
+    start_running(&mut app);
+
+    let anchor = app
+        .world_mut()
+        .spawn((
+            SimAnchor,
+            RigidBody::Dynamic,
+            Collider::sphere(1.0),
+            Position::default(),
+            Orbit::FromElements(ISS_ORBIT),
+        ))
+        .id();
+    tick(&mut app);
+    let state = app.world().resource::<OrbitalCache>().eci_states[&anchor];
+    let r_o = DVec3::new(state[0], state[1], state[2]);
+    let p = r_o.normalize() * 100.0;
+    let body = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Collider::sphere(1.0), Position(p)))
+        .id();
+
+    // The acceleration is set from this tick's state and acts in the next step.
+    tick(&mut app);
+    let state = app.world().resource::<OrbitalCache>().eci_states[&anchor];
+    let r_o = DVec3::new(state[0], state[1], state[2]);
+    let expected = differential_gravity(r_o, p) * PHYS_DT;
+    assert_eq!(
+        app.world().get::<LinearVelocity>(body).unwrap().0,
+        DVec3::ZERO
+    );
+    tick(&mut app);
+
+    let velocity = app.world().get::<LinearVelocity>(body).unwrap().0;
+    assert_close_dvec3(velocity, expected, 1e-12, "body velocity after one step");
+    // Radially outward (the tidal stretch, ≈ 2n²·100 m): the sign check.
+    assert!(
+        velocity.dot(r_o) > 0.0,
+        "velocity {velocity:?} points inward"
+    );
+    assert_eq!(
+        app.world().get::<LinearVelocity>(anchor).unwrap().0,
+        DVec3::ZERO
+    );
+}
+
 #[test]
 fn floating_origin_resets() {
     let mut app = test_app();
+    disable_relative_gravity(&mut app);
 
     enter_sim(&mut app);
     start_running(&mut app);

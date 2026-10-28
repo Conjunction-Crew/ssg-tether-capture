@@ -27,7 +27,9 @@ The `load_dataset_entities` system runs on `OnEnter(UiScreen::Sim)`, parses all 
 
 ## ECI state caching
 
-Rather than each system querying the `KeplerianPropagator` directly, the `cache_eci_states` system runs once per `ManualPhysics` tick (in `PhysicsSystems::First`) and writes each entity's current ECI `Vector6<f64>` into `OrbitalCache::eci_states`. All other systems — physics bubble management, capture algorithms, map view positioning — read from this cache.
+Rather than each system querying the `KeplerianPropagator` directly, the `cache_eci_states` system runs once per `ManualPhysics` tick and writes each entity's current ECI `Vector6<f64>` into `OrbitalCache::eci_states`. All other systems — physics bubble management, capture algorithms, map view positioning — read from this cache.
+
+The simulation's own systems run **after** Avian3D's step (`PhysicsSystems::Last`), chained in this order: `SimStep::CenterOfMass` → `OriginReset` → `CacheEci` → `Bubble` → `RelativeDynamics` → `Capture`. The bookkeeping describes the state after the step; the two force producers (relative gravity and the capture controller) then act during the next step from that consistent snapshot.
 
 ## Keplerian propagation
 

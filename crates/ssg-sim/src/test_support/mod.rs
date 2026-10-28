@@ -30,6 +30,7 @@ use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
 use nalgebra::Vector6;
 
 use crate::SimPlugins;
+use crate::SimStep;
 use crate::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
 use crate::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::orbit::cache::OrbitalCache;
@@ -37,7 +38,7 @@ use crate::orbit::catalog::GpuElements;
 use crate::project::{AssetsDir, load_plans_from_dir};
 use crate::session::{SimState, UiScreen};
 use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
-use crate::time::{PHYS_DT, SimConfig, WorldTime};
+use crate::time::{ManualPhysics, PHYS_DT, SimConfig, WorldTime};
 
 /// Deterministic sim epoch for tests; never read the wall clock in tests (F-06).
 ///
@@ -113,6 +114,14 @@ pub fn start_running(app: &mut App) {
 /// One `app.update()`: exactly one fixed step (times the warp multiplier).
 pub fn tick(app: &mut App) {
     app.update();
+}
+
+/// Turns the relative gravity (`SimStep::RelativeDynamics`, F-09) off in `app`.
+/// For the floating-origin and camera tests that pin positions to 1e-9 m with
+/// bodies 50-60 m from the anchor, where one step of differential gravity moves
+/// them by about 1.5e-8 m (operator decision, P4 Run 3).
+pub fn disable_relative_gravity(app: &mut App) {
+    app.configure_sets(ManualPhysics, SimStep::RelativeDynamics.run_if(|| false));
 }
 
 /// `n` calls to [`tick`].
