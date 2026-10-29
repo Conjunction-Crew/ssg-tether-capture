@@ -72,7 +72,7 @@ impl Migrator<'_> {
         }
         for (key, v) in object {
             if !matches!(key.as_str(), "less_than" | "greater_than") || !v.is_number() {
-                self.ignore(format!("{pointer}/{key}"), v);
+                self.ignore(format!("{pointer}/{}", token(key)), v);
             }
         }
         Some(bounds)
@@ -90,12 +90,15 @@ impl Migrator<'_> {
                     Some(l) => out.tether_length_m = Some(l),
                     None => hard.push(self.typed("/device/tether_length", "must be a number")),
                 },
-                _ => self.ignore(format!("/device/{key}"), value),
+                _ => self.ignore(format!("/device/{}", token(key)), value),
             }
         }
         if out.tether_length_m.is_none() && !device.contains_key("tether_length") {
             // v0 read a missing length as 0, which its validation refused.
-            self.error("/device/tether_length", "missing (v0 requires it in a device block)");
+            self.error(
+                "/device/tether_length",
+                "missing (v0 requires it in a device block)",
+            );
         }
         out
     }
@@ -142,7 +145,7 @@ impl Migrator<'_> {
             match (key.as_str(), value.as_f64()) {
                 ("max_velocity" | "max_force", _) => {}
                 ("shrink_rate", Some(rate)) => phase.shrink_rate_mps = Some(rate),
-                _ => self.ignore(at(&format!("parameters/{key}")), value),
+                _ => self.ignore(at(&format!("parameters/{}", token(key))), value),
             }
         }
 
@@ -156,10 +159,10 @@ impl Migrator<'_> {
                     Value::Array(transitions) => {
                         phase.transitions = Some(self.transitions(i, transitions));
                     }
-                    Value::Null => self.ignore(at(key), value),
+                    Value::Null => self.ignore(at("transitions"), value),
                     _ => hard.push(self.typed(&at(key), "must be an array")),
                 },
-                _ => self.ignore(at(key), value),
+                _ => self.ignore(at(&token(key)), value),
             }
         }
         phase
@@ -197,7 +200,7 @@ impl Migrator<'_> {
                     _ => false,
                 };
                 if !mapped {
-                    self.ignore(format!("{at}/{key}"), value);
+                    self.ignore(format!("{at}/{}", token(key)), value);
                 }
             }
             out.push(Transition {
@@ -210,6 +213,11 @@ impl Migrator<'_> {
         }
         out
     }
+}
+
+/// `key` as a JSON Pointer reference token (RFC 6901).
+fn token(key: &str) -> String {
+    key.replace('~', "~0").replace('/', "~1")
 }
 
 /// Migrates the v0 document `doc` of plan `plan_id`. `Err` holds what v0 could
@@ -256,7 +264,7 @@ pub(crate) fn migrate(plan_id: &str, doc: &Value) -> Result<Migration, Vec<Strin
                 }
             }
             ("states", _) => hard.push(m.typed("/states", "must be an array")),
-            _ => m.ignore(format!("/{key}"), value),
+            _ => m.ignore(format!("/{}", token(key)), value),
         }
     }
     if !root.contains_key("states") {
