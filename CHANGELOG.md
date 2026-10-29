@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Changed
+- Docs: every non-dry-run release now deploys the docs site. Patch and release-candidate releases appear as two rolling versions (latest patch, latest pre-release) built from the release tags at deploy time, outside the 10-version cap; stable X.Y.0 releases keep their permanent snapshot. The default docs version is now the newest stable one computed from `versions.json` (it was hard-coded to 0.2.0 while 0.3.0 existed, F-54). `scripts/docs_versions.sh plan <version>` shows what a release publishes; the Release run summary prints it, dry runs included. `deploy-docs.yml` gains `version` and `deploy` inputs (a build-only run uploads the site as an artifact).
 
 ## [v0.3.3] - 2026-10-29
 

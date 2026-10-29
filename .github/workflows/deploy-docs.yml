@@ -2,10 +2,19 @@ name: Deploy to GitHub Pages
 
 # Builds the Docusaurus site and deploys it to GitHub Pages.
 #
-# Called by release.yml after a stable major/minor release (the versioned docs
-# snapshot is committed by the release itself, so the tag already contains it).
-# Can also be run by hand to redeploy an existing release:
-#   Actions → Deploy to GitHub Pages → Run workflow → ref = vX.Y.0
+# Called by release.yml after every non-dry-run release. The permanent X.Y.0
+# snapshots are committed by their releases; the two rolling versions (latest
+# patch, latest pre-release) are built here from the release tags by
+# scripts/docs_versions.sh and never committed (Q48).
+#
+# Manual redeploy of an existing release (dispatch from main: the github-pages
+# environment only accepts deployments from main and release tags):
+#   Actions → Deploy to GitHub Pages → Run workflow (branch: main) → ref = vX.Y.Z
+# Build-only run, e.g. to check a branch: set deploy = false and, if ref is a
+# branch, version = the release to plan for. The site is uploaded as the
+# docs-site-preview artifact and the Pages deployment is skipped:
+#   gh workflow run deploy-docs.yml --ref <branch> -f ref=<branch> \
+#     -f version=0.4.0-rc.1 -f deploy=false
 
 on:
   workflow_call:
@@ -14,12 +23,28 @@ on:
         description: Git ref (normally the release tag, e.g. v0.4.0) to build the site from.
         type: string
         required: true
+      version:
+        description: Release version the docs are built for (default is ref without a leading "v").
+        type: string
+        required: false
+      deploy:
+        description: Deploy to GitHub Pages. False builds only and uploads the site as an artifact.
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       ref:
         description: Git ref (normally the release tag, e.g. v0.4.0) to build the site from.
         type: string
         required: true
+      version:
+        description: Release version the docs are built for (default is ref without a leading "v").
+        type: string
+        required: false
+      deploy:
+        description: Deploy to GitHub Pages. False builds only and uploads the site as an artifact.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -33,6 +58,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
+          fetch-depth: 0 # tags: the rolling versions are built from them
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -50,47 +76,70 @@ jobs:
         # browsing it see the matching changelog.
         env:
           REF: ${{ inputs.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           cp CHANGELOG.md ./docs_site/docs/release-notes.md
 
-          VERSION="${REF#v}"
+          VERSION="${INPUT_VERSION:-${REF#v}}"
           VERSIONED_DIR="docs_site/versioned_docs/version-${VERSION}"
           if [ -d "$VERSIONED_DIR" ]; then
             cp CHANGELOG.md "${VERSIONED_DIR}/release-notes.md"
             echo "Synced changelog to ${VERSIONED_DIR}/release-notes.md"
           fi
 
+      - name: Rolling docs versions
+        # Latest patch and latest pre-release docs, built from the release tags
+        # (never committed). Writes the version table to the run summary.
+        env:
+          REF: ${{ inputs.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          VERSION="${INPUT_VERSION:-${REF#v}}"
+          sh scripts/docs_versions.sh apply "$VERSION" "$GITHUB_STEP_SUMMARY"
+
       - name: Verify versioned docs integrity
         env:
           REF: ${{ inputs.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -eu
-          VERSION="${REF#v}"
-          VERSIONED_DIR="docs_site/versioned_docs/version-${VERSION}"
-          if [ ! -d "$VERSIONED_DIR" ]; then
-            echo "ERROR: No versioned docs snapshot found at ${VERSIONED_DIR}." >&2
-            echo "       Only stable major/minor releases (vX.Y.0) have one." >&2
+          VERSION="${INPUT_VERSION:-${REF#v}}"
+          if ! node -e "process.exit(require('./docs_site/versions.json').includes('${VERSION}') ? 0 : 1)"; then
+            echo "ERROR: ${VERSION} is not in the final docs_site/versions.json." >&2
             exit 1
           fi
-          COUNT=$(node -e "const v=require('./docs_site/versions.json'); console.log(v.length)")
+          # The cap applies to the committed list (permanent snapshots), not to
+          # the two rolling versions added above.
+          COUNT=$(git show HEAD:docs_site/versions.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).length))")
           if [ "$COUNT" -gt 10 ]; then
-            echo "ERROR: versions.json has $COUNT entries (max 10)." >&2
+            echo "ERROR: the committed versions.json has $COUNT entries (max 10)." >&2
             exit 1
           fi
-          echo "Versioned docs integrity check passed (v${VERSION}, ${COUNT} versioned sets)."
+          echo "Versioned docs integrity check passed (${VERSION}, ${COUNT} committed versioned sets)."
 
       - name: Build website
         run: npm run build
         working-directory: ./docs_site
 
       - name: Upload Build Artifact
+        if: ${{ inputs.deploy }}
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./docs_site/build
 
+      - name: Upload preview (build-only run)
+        if: ${{ !inputs.deploy }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-site-preview
+          path: ./docs_site/build
+          retention-days: 7
+
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    if: ${{ inputs.deploy }}
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
     permissions:
       pages: write # to deploy to Pages
