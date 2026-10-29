@@ -160,7 +160,13 @@ pub fn egui_plots(
                 }
             } else {
                 ui.horizontal(|ui| {
+                    let csv_clicked = ui.button("Export to CSV").clicked();
+                    let oem_clicked = ui.button("Export OEM").clicked();
+                    if !(csv_clicked || oem_clicked) {
+                        return;
+                    }
                     let Some(project_id) = selected_project.project_id.clone() else {
+                        warn!("No project selected, when one should always be when in Sim state");
                         return;
                     };
                     // `<plan-id>-<stamp>`, sanitised (F-33's CSV part).
@@ -169,7 +175,7 @@ pub fn egui_plots(
                         sanitize_file_stem(&project_id),
                         chrono::Local::now().format("%d-%m-%Y_%H-%M-%S")
                     );
-                    if ui.button("Export to CSV").clicked() {
+                    if csv_clicked {
                         selected_filename = format!("{stem}.csv");
                         export_clicked = true;
                         info!(
@@ -178,7 +184,7 @@ pub fn egui_plots(
                             "Preparing egui data collection CSV export"
                         );
                     }
-                    if ui.button("Export OEM").clicked() {
+                    if oem_clicked {
                         export_oem(
                             &working_directory,
                             &format!("{stem}.oem"),
