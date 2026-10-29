@@ -1,6 +1,5 @@
 //! The tether and the debris: the two bodies a capture run spawns.
 
-use avian3d::math::Scalar;
 use avian3d::prelude::*;
 use bevy::{math::DVec3, prelude::*};
 
@@ -124,8 +123,8 @@ pub fn spawn_tether(
     let segment_mass = device.segment_mass_kg() as f32;
     let end_mass = device.end_mass_kg() as f32;
     let joint_damping = JointDamping {
-        linear: device.joint_damping_linear() as Scalar,
-        angular: device.joint_damping_angular() as Scalar,
+        linear: device.joint_damping_linear(),
+        angular: device.joint_damping_angular(),
     };
 
     let interior_node_count: u32 =

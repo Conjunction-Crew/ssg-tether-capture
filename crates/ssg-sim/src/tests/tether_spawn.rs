@@ -498,7 +498,7 @@ fn tether_bodies(app: &mut App) -> (Vec<(f64, f64)>, Vec<(f64, f64)>) {
     let damping = world
         .query::<&JointDamping>()
         .iter(world)
-        .map(|d| (d.linear as f64, d.angular as f64))
+        .map(|d| (d.linear, d.angular))
         .collect();
     (bodies, damping)
 }
