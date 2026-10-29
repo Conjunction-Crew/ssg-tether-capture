@@ -11,6 +11,7 @@ pub mod plan_schema_v1;
 pub mod plan_v0_oracle;
 pub mod project_epoch;
 pub mod project_files;
+pub mod project_manifest;
 pub mod session_telemetry;
 pub mod tether_spawn;
 pub mod unit_tests;

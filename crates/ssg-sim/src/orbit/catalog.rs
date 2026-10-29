@@ -7,7 +7,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::{Epoch, GM_EARTH, TimeSystem};
 use nalgebra::Vector6;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::project::AssetsDir;
@@ -16,57 +16,61 @@ use crate::time::WorldTime;
 
 // unused today; the P3 component/resource audit decides
 #[allow(dead_code)]
-#[derive(Deserialize, Debug, Clone)]
+/// One Space-Track GP (OMM JSON) record: the keys the sim reads. Other keys of a
+/// record are ignored on read and not written back. `project.json` carries it as the
+/// snapshot a body starts from.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct JsonOrbital {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "OBJECT_NAME")]
     pub object_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "OBJECT_ID")]
     pub object_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "EPOCH")]
     pub epoch: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_MOTION")]
     pub mean_motion: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ECCENTRICITY")]
     pub eccentricity: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "INCLINATION")]
     pub inclination: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "RA_OF_ASC_NODE")]
     pub ra_of_asc_node: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ARG_OF_PERICENTER")]
     pub arg_of_pericenter: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_ANOMALY")]
     pub mean_anomaly: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "EPHEMERIS_TYPE")]
     pub ephemeris_type: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "CLASSIFICATION_TYPE")]
     pub classification_type: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "NORAD_CAT_ID")]
     pub norad_cat_id: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ELEMENT_SET_NO")]
     pub element_set_no: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "REV_AT_EPOCH")]
     pub rev_at_epoch: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "BSTAR")]
     pub bstar: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_MOTION_DOT")]
     pub mean_motion_dot: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_MOTION_DDOT")]
     pub mean_motion_ddot: Option<Value>,
 }

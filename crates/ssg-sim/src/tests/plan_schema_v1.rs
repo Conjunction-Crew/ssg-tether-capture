@@ -549,7 +549,7 @@ const SCHEMA_BASE: &str = "https://conjunction-crew.github.io/ssg-tether-capture
 
 /// Compares the schema generated from `T` with the committed file; with
 /// `SSG_UPDATE_SCHEMAS=1` it rewrites the file first.
-fn check_schema<T: schemars::JsonSchema>(file: &str) {
+pub(crate) fn check_schema<T: schemars::JsonSchema>(file: &str) {
     let mut schema = serde_json::to_value(schemars::schema_for!(T)).unwrap();
     schema["$id"] = json!(format!("{SCHEMA_BASE}/{file}"));
     let generated = serde_json::to_string_pretty(&schema).unwrap() + "\n";
