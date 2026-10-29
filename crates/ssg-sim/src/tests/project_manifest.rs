@@ -529,6 +529,7 @@ fn catalog_pick(norad_id: u64, label: &str) -> SelectedOrbitalObject {
         },
         elements: EditableOrbitalElements::from_gp(&gp),
         gp: Some(gp),
+        mass_kg: None,
     }
 }
 
@@ -909,6 +910,7 @@ fn generated_selections_survive_from_selection_and_sim_inputs() {
             },
             elements: EditableOrbitalElements::from_gp(&gp),
             gp: Some(gp.clone()),
+            mass_kg: None,
         };
         let edited = SelectedOrbitalObject {
             source: OrbitalSelectionSource::Custom {
@@ -927,6 +929,7 @@ fn generated_selections_survive_from_selection_and_sim_inputs() {
                 }
             },
             gp: None,
+            mass_kg: None,
         };
         let selection = OrbitalSelectionState {
             target: Some(picked),

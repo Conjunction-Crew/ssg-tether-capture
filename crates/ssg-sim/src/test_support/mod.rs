@@ -519,6 +519,7 @@ pub mod q13 {
             },
             elements: EditableOrbitalElements::from_gp(&gp),
             gp: Some(gp),
+            mass_kg: None,
         }
     }
 
