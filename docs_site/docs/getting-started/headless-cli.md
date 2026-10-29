@@ -79,8 +79,9 @@ The exit code is 0 without errors, 1 with errors and 2 for a usage error (no dir
 
 ## Output
 
-- `summary.json`: the plan, target and chaser (NORAD ids), epoch mode and start epoch, the number of fixed steps run (`steps`), the warp, every state transition (`step`, the fixed step it fired in; `from`; `to`), the final state and range, the `state_hash` and the wall-clock time (`wall_s`).
-- `trajectory.csv`: `step,epoch,state,range_m,rel_speed_mps`, one row every `--sample-every` fixed steps.
+- `summary.json`: the plan, target and chaser (NORAD ids), epoch mode and start epoch, the number of fixed steps run (`steps`), the warp, every phase transition (`step`, the fixed step it fired in; `from`; `to`), the final sample (`final`: `step`, `phase`, `range_m`), the `state_hash` and the wall-clock time (`wall_s`).
+- `trajectory.csv`: one row every `--sample-every` fixed steps with the columns `step` (fixed step), `epoch_utc` (`YYYY-MM-DDTHH:MM:SS.ffffffZ`, UTC, the format of `project.json`), `phase` (the capture phase), `range_m` (distance between the tether root and the target, m) and `rel_speed_mps` (the root's speed relative to the target in the target's LVLH frame, m/s). Before v0.4.0-rc.1 the columns were `step,epoch,state,range_m,rel_speed_mps` and `final` had `state` instead of `phase`.
+- `ephemeris.oem`: a CCSDS Orbit Ephemeris Message (OEM 2.0, KVN text) with two segments, the target and then the chaser (the tether root), one state at every `--sample-every` fixed step. `REF_FRAME = GCRF`, `CENTER_NAME = EARTH`, `TIME_SYSTEM = UTC`; `OBJECT_NAME` and `OBJECT_ID` are the body's label; `CREATION_DATE` is the run's start epoch, so the same run writes the same bytes. Positions are in km with 6 decimals (1 mm), velocities in km/s with 9 decimals (1 µm/s). The tests read it back with brahe's OEM parser. A run that stops before its first sample writes no `ephemeris.oem`.
 - `state_hash`: a 64-bit FNV-1a hash (16 hex digits) of the sampled state: per sample, the step and the tether root's and the debris's position and velocity, bit for bit. Two runs with the same hash sampled bit-identical states.
 
 What a fixed `--epoch` guarantees, and what differs between platforms, is described in [Determinism](../concepts/determinism).

@@ -10,6 +10,7 @@ pub mod plan_migration_v0;
 pub mod plan_schema_v1;
 pub mod plan_v0_oracle;
 pub mod project_epoch;
+pub mod project_export;
 pub mod project_files;
 pub mod project_manifest;
 pub mod session_telemetry;

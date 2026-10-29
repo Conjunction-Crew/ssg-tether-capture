@@ -24,7 +24,7 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// One `trajectory.csv` row: `step,epoch,state,range_m,rel_speed_mps`.
+/// One `trajectory.csv` row: `step,epoch_utc,phase,range_m,rel_speed_mps`.
 struct Row {
     step: u64,
     state: String,
@@ -35,7 +35,7 @@ fn parse_rows(csv: &str) -> Vec<Row> {
     let mut lines = csv.lines();
     assert_eq!(
         lines.next(),
-        Some("step,epoch,state,range_m,rel_speed_mps"),
+        Some("step,epoch_utc,phase,range_m,rel_speed_mps"),
         "trajectory.csv header"
     );
     lines

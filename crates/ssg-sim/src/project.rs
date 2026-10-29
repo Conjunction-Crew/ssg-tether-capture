@@ -1,6 +1,8 @@
-//! Project files: the selected plan, the working directory and plan file I/O.
+//! Project files: the selected plan, the working directory, plan file I/O and
+//! the export writers.
 
 pub mod epoch;
+pub mod export;
 pub mod manifest;
 pub(crate) mod migrate_v0;
 pub mod plan_files;

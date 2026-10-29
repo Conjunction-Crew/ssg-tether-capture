@@ -21,7 +21,7 @@ use crate::capture::plan::{
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::lvlh::LvlhFrame;
 use crate::physics_bubble::body_eci_state;
-use crate::telemetry::{DataCollection, LogEvent, LogLevel};
+use crate::telemetry::{DataCollection, EphemerisSample, LogEvent, LogLevel};
 use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 // Component to add to an entity to attempt a capture.
@@ -36,6 +36,10 @@ pub struct CaptureComponent {
 
 /// The capture-sphere radius at the start of every capture (F-11).
 pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
+
+/// A running capture records an [`EphemerisSample`] at every step since the sim
+/// start that is a multiple of this (64 steps = 1 s), for the app's OEM export.
+pub const EPHEMERIS_EVERY_STEPS: u64 = 64;
 
 #[derive(Resource, Debug, Default)]
 pub struct CaptureSphereRadius {
@@ -114,14 +118,14 @@ pub fn capture_state_machine_update(
         }
 
         // The capture target's own LVLH frame (F-35).
-        let frame = body_eci_state(
+        let target_eci = body_eci_state(
             &orbital_cache,
             capture_entity,
             capture_entity_position.0,
             capture_entity_linvel.0,
             disabled.contains(capture_entity),
-        )
-        .and_then(|state| LvlhFrame::from_eci(&state));
+        );
+        let frame = target_eci.and_then(|state| LvlhFrame::from_eci(&state));
         if frame.is_none() {
             debug_once!(
                 "capture target {capture_entity:?} has no cached ECI state: relative velocity in ECI axes"
@@ -150,6 +154,31 @@ pub fn capture_state_machine_update(
                         (r.length(), v.length())
                     })
                 });
+
+                // The ephemeris sample (read-only: no force or transition depends on
+                // it). The cache and the positions describe this step's end state.
+                let step = ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64;
+                if step.is_multiple_of(EPHEMERIS_EVERY_STEPS)
+                    && let Some(samples) = data_collection.ephemeris.get_mut(&capture_entity)
+                    && let Some(target) = target_eci
+                    && let Some(chaser) = nodes.first().and_then(|&root_node| {
+                        let rb_query = rb_forces.p0();
+                        let root_rb = rb_query.get(root_node).ok()?;
+                        body_eci_state(
+                            &orbital_cache,
+                            root_node,
+                            root_rb.position.0,
+                            root_rb.linear_velocity.0,
+                            disabled.contains(root_node),
+                        )
+                    })
+                {
+                    samples.push(EphemerisSample {
+                        epoch: world_time.epoch,
+                        target,
+                        chaser,
+                    });
+                }
 
                 let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
                     resolve_root_state(
@@ -532,6 +561,9 @@ pub fn apply_sim_commands(
                             data_collection
                                 .velocity
                                 .insert(*capture_entity, Vec::<(f64, f64)>::new());
+                            data_collection
+                                .ephemeris
+                                .insert(*capture_entity, Vec::new());
                         } else {
                             log.write(LogEvent {
                                 level: LogLevel::Error,

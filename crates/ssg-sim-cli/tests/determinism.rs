@@ -90,6 +90,10 @@ fn cli_two_runs_bit_identical() {
     assert_eq!(csv_a.len(), csv_b.len(), "trajectory.csv length");
     assert!(csv_a == csv_b, "trajectory.csv bytes differ");
     assert_eq!(without_wall(summary_a), without_wall(summary_b));
+    let oem = |out: &str| std::fs::read(project.join(out).join("ephemeris.oem")).unwrap();
+    let (oem_a, oem_b) = (oem("a"), oem("b"));
+    assert!(!oem_a.is_empty(), "ephemeris.oem is written");
+    assert!(oem_a == oem_b, "ephemeris.oem bytes differ");
     let _ = std::fs::remove_dir_all(&project);
 }
 
@@ -152,7 +156,7 @@ fn cli_three_runs_to_capture_identical() {
     }
     let (csv_0, summary_0) = &results[0];
     assert_eq!(
-        summary_0["final"]["state"], "capture",
+        summary_0["final"]["phase"], "capture",
         "the scenario reaches capture"
     );
     for ((out, _), (csv, summary)) in runs.iter().zip(&results).skip(1) {

@@ -7,9 +7,9 @@ use bevy_egui::{
     egui::{self, Color32, RichText},
 };
 
-use crate::ui::form::NewCapturePlanForm;
 use crate::ui::log_ui::CaptureLogUiState;
-use ssg_sim::project::WorkingDirectory;
+use ssg_sim::project::export::write_log_jsonl;
+use ssg_sim::project::{SelectedProject, WorkingDirectory};
 use ssg_sim::telemetry::{CaptureLog, LogEntry, LogEvent, LogLevel};
 use ssg_sim::time::WorldTime;
 
@@ -20,7 +20,7 @@ pub struct TerminalParams<'w> {
     pub capture_log: ResMut<'w, CaptureLog>,
     pub log_ui: ResMut<'w, CaptureLogUiState>,
     pub working_directory: Res<'w, WorkingDirectory>,
-    pub form: Res<'w, NewCapturePlanForm>,
+    pub selected_project: Res<'w, SelectedProject>,
     pub world_time: Option<Res<'w, WorldTime>>,
     pub log_writer: MessageWriter<'w, LogEvent>,
 }
@@ -131,11 +131,13 @@ pub fn egui_terminal_panel(mut contexts: EguiContexts, mut p: TerminalParams) {
                         .map(|wt| format!("{}", wt.epoch))
                         .unwrap_or_else(|| "unknown_time".to_string());
 
-                    match write_log_to_file(
-                        &p.capture_log,
-                        &p.working_directory.path,
-                        &p.form.plan_name,
+                    // Named after the active plan id (F-26: it was the plan form's
+                    // name, empty outside the editor).
+                    match write_log_jsonl(
+                        Path::new(&p.working_directory.path),
+                        p.selected_project.project_id.as_deref().unwrap_or_default(),
                         &epoch_str,
+                        &p.capture_log.entries,
                     ) {
                         Ok(filename) => {
                             p.log_writer.write(LogEvent {
@@ -272,57 +274,4 @@ fn level_color(level: LogLevel) -> Color32 {
         LogLevel::Info => Color32::from_rgb(239, 242, 249),
         LogLevel::Debug => Color32::from_rgb(153, 168, 199),
     }
-}
-
-fn write_log_to_file(
-    capture_log: &CaptureLog,
-    working_dir: &str,
-    plan_name: &str,
-    epoch_str: &str,
-) -> Result<String, String> {
-    let logs_dir = Path::new(working_dir).join("logs");
-    std::fs::create_dir_all(&logs_dir)
-        .map_err(|e| format!("could not create logs directory: {e}"))?;
-
-    let sanitized_plan: String = plan_name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let sanitized_plan = if sanitized_plan.is_empty() {
-        "unnamed".to_string()
-    } else {
-        sanitized_plan
-    };
-
-    let sanitized_epoch: String = epoch_str
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-
-    let filename = format!("{sanitized_plan}_{sanitized_epoch}.jsonl");
-    let filepath = logs_dir.join(&filename);
-
-    let lines: Result<Vec<String>, _> = capture_log
-        .entries
-        .iter()
-        .map(serde_json::to_string)
-        .collect();
-    let content = lines.map_err(|e| format!("serialization error: {e}"))?;
-    let content = content.join("\n");
-
-    std::fs::write(&filepath, content).map_err(|e| format!("write error: {e}"))?;
-
-    Ok(filename)
 }

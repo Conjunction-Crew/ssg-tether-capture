@@ -3,8 +3,11 @@
 use std::collections::VecDeque;
 
 use bevy::{platform::collections::HashMap, prelude::*};
+use brahe::Epoch;
+use nalgebra::Vector6;
 use serde::Serialize;
 
+use crate::project::format_utc;
 use crate::session::UiScreen;
 use crate::time::WorldTime;
 
@@ -35,6 +38,8 @@ impl LogLevel {
 pub struct LogEntry {
     /// Simulation timestamp formatted as "HH:MM:SS" (UTC).
     pub timestamp: String,
+    /// The simulation epoch in the project-file format (`format_utc`, µs).
+    pub epoch_utc: String,
     pub level: LogLevel,
     /// Short identifier for the subsystem that emitted this entry.
     pub source: &'static str,
@@ -99,6 +104,7 @@ pub fn collect_log_events(
             .unwrap_or_else(|| full_ts.clone());
         capture_log.push(LogEntry {
             timestamp,
+            epoch_utc: format_utc(world_time.epoch),
             level: event.level,
             source: event.source,
             message: event.message.clone(),
@@ -106,12 +112,25 @@ pub fn collect_log_events(
     }
 }
 
+/// One ephemeris sample of a capture: the ECI (GCRF) states of the capture
+/// target and of the tether root (position in m, velocity in m/s) at `epoch`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EphemerisSample {
+    pub epoch: Epoch,
+    pub target: Vector6<f64>,
+    pub chaser: Vector6<f64>,
+}
+
 /// Relative range and speed samples per capture entity (the plots and the CSV
-/// export read them; the export settings are the app's `CsvExportState`).
+/// export read them; the export settings are the app's `CsvExportState`), and the
+/// ephemeris samples the OEM export reads.
 #[derive(Resource, Debug, Default)]
 pub struct DataCollection {
     pub velocity: HashMap<Entity, Vec<(f64, f64)>>,
     pub position: HashMap<Entity, Vec<(f64, f64)>>,
+    /// One sample every [`EPHEMERIS_EVERY_STEPS`](crate::capture::EPHEMERIS_EVERY_STEPS)
+    /// steps of a running capture.
+    pub ephemeris: HashMap<Entity, Vec<EphemerisSample>>,
     // unused today; the P3 component/resource audit decides
     #[allow(dead_code)]
     pub forces: HashMap<Entity, Vec<(f64, f64)>>,
