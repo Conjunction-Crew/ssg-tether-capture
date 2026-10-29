@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
-use brahe::{Epoch, TimeSystem};
+use brahe::Epoch;
 use ssg_sim::SimPlugins;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, CaptureTransition, SimCommand};
@@ -31,7 +31,7 @@ use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
 use ssg_sim::physics_bubble::body_eci_state;
-use ssg_sim::project::{AssetsDir, SelectedProject};
+use ssg_sim::project::{AssetsDir, SelectedProject, format_utc};
 use ssg_sim::session::{SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
@@ -224,7 +224,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
             EpochArg::Now => "now",
             EpochArg::At(_) => "fixed",
         },
-        start_epoch: iso(start_epoch),
+        start_epoch: format_utc(start_epoch),
         steps: updates * warp,
         transitions,
         samples,
@@ -271,7 +271,7 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
     });
     Ok(Sample {
         step: ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64,
-        epoch: iso(world_time.epoch),
+        epoch: format_utc(world_time.epoch),
         state,
         range_m: (debris_position - root_position).length(),
         rel_speed_mps: rel_v.length(),
@@ -280,13 +280,4 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
         debris_position,
         debris_velocity,
     })
-}
-
-/// `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC). brahe's own `isostring_with_decimals`
-/// drops the leading zeros of the fraction.
-fn iso(epoch: Epoch) -> String {
-    let (year, month, day, hour, minute, second, nanoseconds) =
-        epoch.to_datetime_as_time_system(TimeSystem::UTC);
-    let seconds = second + nanoseconds / 1e9;
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{seconds:09.6}Z")
 }

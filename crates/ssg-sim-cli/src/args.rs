@@ -2,7 +2,8 @@
 
 use std::path::PathBuf;
 
-use brahe::{Epoch, TimeSystem};
+use brahe::Epoch;
+use ssg_sim::project::parse_utc;
 use ssg_sim::time::MAX_STEPS_PER_UPDATE;
 
 pub const USAGE: &str = "usage: ssg-sim run <project-dir> [options]
@@ -129,38 +130,12 @@ fn number<T: std::str::FromStr>(name: &str, raw: &str) -> Result<T, String> {
         .map_err(|_| format!("{name}: `{raw}` is not a valid number"))
 }
 
-/// `now`, or `YYYY-MM-DDTHH:MM:SS[.fff]` read as UTC. The seconds field is parsed
-/// as one number, so `47.002464` is the same `f64` as the literal in the harness.
+/// `now`, or `YYYY-MM-DDTHH:MM:SS[.fff]` read as UTC (see `ssg_sim::project::parse_utc`).
 fn parse_epoch(raw: &str) -> Result<EpochArg, String> {
     if raw == "now" {
         return Ok(EpochArg::Now);
     }
-    let bad = || format!("--epoch: `{raw}` is not `now` or YYYY-MM-DDTHH:MM:SS[.fff]");
-    let (date, time) = raw.split_once('T').ok_or_else(bad)?;
-    let mut date = date.split('-');
-    let mut time = time.splitn(3, ':');
-    let field = |part: Option<&str>| part.and_then(|p| p.parse::<u32>().ok()).ok_or_else(bad);
-    let (year, month, day) = (
-        field(date.next())?,
-        field(date.next())?,
-        field(date.next())?,
-    );
-    let (hour, minute) = (field(time.next())?, field(time.next())?);
-    let seconds: f64 = time.next().and_then(|s| s.parse().ok()).ok_or_else(bad)?;
-    if date.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(bad());
-    }
-    if hour > 23 || minute > 59 || !(0.0..61.0).contains(&seconds) {
-        return Err(bad());
-    }
-    Ok(EpochArg::At(Epoch::from_datetime(
-        year,
-        month as u8,
-        day as u8,
-        hour as u8,
-        minute as u8,
-        seconds,
-        0.0,
-        TimeSystem::UTC,
-    )))
+    parse_utc(raw)
+        .map(EpochArg::At)
+        .ok_or_else(|| format!("--epoch: `{raw}` is not `now` or YYYY-MM-DDTHH:MM:SS[.fff]"))
 }

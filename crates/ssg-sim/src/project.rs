@@ -1,7 +1,10 @@
 //! Project files: the selected plan, the working directory and plan file I/O.
 
+pub mod epoch;
 pub(crate) mod migrate_v0;
 pub mod plan_files;
+
+pub use epoch::{format_utc, parse_utc};
 
 use std::fs;
 use std::path::{Path, PathBuf};
