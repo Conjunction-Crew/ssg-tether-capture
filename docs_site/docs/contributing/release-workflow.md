@@ -20,8 +20,11 @@ Release candidates use an `-rc.N` suffix:
 
 | Version | Purpose | Builds? | Docs deployed? |
 |---|---|---|---|
-| `X.Y.Z-rc.N` | Release candidate, ready for final validation | ✅ Yes (marked pre-release) | ❌ No |
-| `X.Y.Z` | Stable release | ✅ Yes (marked latest) | ✅ Major/minor only |
+| `X.Y.Z-rc.N` | Release candidate, ready for final validation | ✅ Yes (marked pre-release) | ✅ Rolling *latest pre-release* version |
+| `X.Y.Z` (`Z > 0`) | Patch release | ✅ Yes (marked latest) | ✅ Rolling *latest patch* version |
+| `X.Y.0` | Major/minor release | ✅ Yes (marked latest) | ✅ Permanent snapshot |
+
+See [Versioned Docs Policy](./versioned-docs-policy.md) for what the rolling versions are and when they are replaced.
 
 `Cargo.toml` always holds the version of the **last release**. It only changes when the Release workflow runs.
 
@@ -62,10 +65,10 @@ Tip: do a **`dry_run`** first. The run summary shows the next version, the relea
 The workflow then:
 
 1. **Verifies** `cargo fmt` and `cargo test` on `main`.
-2. **Prepares one release commit** on a scratch branch `release-staging/vX.Y.Z`: bumps `Cargo.toml` and `Cargo.lock`, renames `## [Unreleased]` to `## [vX.Y.Z] - date` (leaving a new empty `[Unreleased]`), and, for stable major/minor releases, snapshots the versioned docs. The release fails here if `[Unreleased]` is empty.
+2. **Prepares one release commit** on a scratch branch `release-staging/vX.Y.Z`: bumps `Cargo.toml` and `Cargo.lock`, renames `## [Unreleased]` to `## [vX.Y.Z] - date` (leaving a new empty `[Unreleased]`), and, for stable major/minor releases, snapshots the versioned docs. It also prints which docs versions the release gets (`scripts/docs_versions.sh plan`) to the run summary. The release fails here if `[Unreleased]` is empty.
 3. **Builds** the Linux, Windows and macOS packages from that commit.
 4. **Publishes**, only if everything above is green: fast-forwards `main` to the release commit, pushes the `vX.Y.Z` tag and creates the GitHub Release. The release description is the changelog section.
-5. **Deploys the docs** for stable major/minor releases.
+5. **Deploys the docs** for every release: a permanent snapshot for `X.Y.0`, the rolling *latest patch* or *latest pre-release* version otherwise. A dry run skips this step but prints the plan.
 
 If any step fails before step 4, `main` is untouched. Fix the problem and run the workflow again. If step 4 or 5 fails part-way, use **Re-run failed jobs**; the publish step is safe to repeat.
 
