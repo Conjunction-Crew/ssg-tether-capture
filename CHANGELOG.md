@@ -7,6 +7,7 @@ Versions adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Contributors:** add a bullet for your change under `## [Unreleased]` in every
 PR, grouped under `### Added`, `### Changed`, `### Fixed` or `### Removed`. The CI
+- Tests: `harness_parity` runs the CLI binary and the in-process harness at the same time, so the test costs the slower run instead of the sum (about 3 s locally, about 13 s on Linux CI), keeping the Linux test execution time down (Q45)
 `Changelog entry` check fails PRs that do not change that section (docs-only PRs
 and PRs labelled `no-changelog` are exempt). Do not bump the version or add
 version headings by hand.
