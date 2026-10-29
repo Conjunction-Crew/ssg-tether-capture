@@ -1,7 +1,11 @@
 //! Project files: the selected plan, the working directory and plan file I/O.
 
+pub mod epoch;
+pub mod manifest;
 pub(crate) mod migrate_v0;
 pub mod plan_files;
+
+pub use epoch::{format_utc, now_utc, parse_utc};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -45,11 +49,25 @@ pub fn load_from_config() -> Option<String> {
     read_config_file(&config_path()?)
 }
 
+/// The `schema_version` of the config file this build writes and reads.
+const CONFIG_SCHEMA_VERSION: u64 = 1;
+
 /// The `working_directory` entry of the config file at `path`; `None` when the file
-/// is missing, is not JSON or has no string entry.
+/// is missing, is not JSON, has no string entry or was written by a newer version
+/// (a warning is logged then). A file without `schema_version` is read as before.
 pub(crate) fn read_config_file(path: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    if let Some(version) = value.get("schema_version").and_then(|v| v.as_u64())
+        && version > CONFIG_SCHEMA_VERSION
+    {
+        warn!(
+            "{}: schema_version {version} was written by a newer version (this one reads \
+             {CONFIG_SCHEMA_VERSION}); the file is ignored",
+            path.display()
+        );
+        return None;
+    }
     value
         .get("working_directory")
         .and_then(|v| v.as_str())
@@ -72,7 +90,10 @@ pub(crate) fn write_config_file(path: &Path, working_dir: &str) {
         warn!("Failed to create config directory: {e}");
         return;
     }
-    let value = serde_json::json!({ "working_directory": working_dir });
+    let value = serde_json::json!({
+        "schema_version": CONFIG_SCHEMA_VERSION,
+        "working_directory": working_dir,
+    });
     if let Err(e) = std::fs::write(path, value.to_string()) {
         warn!("Failed to save config: {e}");
     }

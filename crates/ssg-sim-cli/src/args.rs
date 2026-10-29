@@ -1,27 +1,37 @@
-//! Hand-rolled argument parsing for `ssg-sim run` (no argument-parser dependency).
+//! Hand-rolled argument parsing for `ssg-sim run` and `ssg-sim validate` (no
+//! argument-parser dependency).
 
 use std::path::PathBuf;
 
-use brahe::{Epoch, TimeSystem};
+use brahe::Epoch;
+use ssg_sim::project::manifest::MANIFEST_FILE;
+use ssg_sim::project::parse_utc;
 use ssg_sim::time::MAX_STEPS_PER_UPDATE;
 
 pub const USAGE: &str = "usage: ssg-sim run <project-dir> [options]
+       ssg-sim validate <project-dir> [--assets DIR]
 
-options:
-  --plan ID            capture plan id (default: the only plan in <project-dir>, else example_plan)
-  --target NORAD       NORAD id of the capture target (required)
-  --chaser NORAD       NORAD id of the chaser (required)
+run options:
+  --plan ID            capture plan id (default: project.json's active_plan, else the only
+                       plan in <project-dir>, else example_plan)
+  --target NORAD       NORAD id of the capture target (required without <project-dir>/project.json;
+                       overrides it otherwise)
+  --chaser NORAD       NORAD id of the chaser (required without project.json; overrides it)
   --dataset FILE       GP JSON dataset to search for the ids (repeatable; searched after
                        <project-dir>/datasets/*.json and <assets>/datasets/*.json)
   --assets DIR         assets directory (default ./assets)
-  --epoch now|ISO      start epoch: `now` (default, the app path) or YYYY-MM-DDTHH:MM:SS[.fff]
+  --epoch now|ISO      start epoch: `now` (default without project.json, the app path) or
+                       YYYY-MM-DDTHH:MM:SS[.fff][Z]; overrides project.json's start_epoch_utc
   --steps N            fixed steps to run after the capture starts (default 200000;
                        a multiple of --warp)
   --warp N             time warp: fixed steps per update (default 1, at most 64)
   --sample-every N     trajectory sample interval in fixed steps (default 64; a multiple
                        of --warp)
   --out DIR            output directory (default <project-dir>/runs/<utc-timestamp>)
-  --stop-at-capture    stop at the end of the update in which the state becomes `capture`";
+  --stop-at-capture    stop at the end of the update in which the state becomes `capture`
+
+validate checks project.json, every plan file, the active plan and the orbits; it prints
+`error:`, `warning:` and `info:` lines and exits 0 without errors, 1 with errors.";
 
 pub const DEFAULT_PLAN: &str = "example_plan";
 
@@ -32,15 +42,33 @@ pub enum EpochArg {
     At(Epoch),
 }
 
+/// What the command line asks for.
+#[derive(Debug)]
+pub enum Command {
+    Run(Args),
+    Validate(ValidateArgs),
+}
+
+/// `ssg-sim validate <project-dir> [--assets DIR]`.
+#[derive(Debug)]
+pub struct ValidateArgs {
+    pub project_dir: PathBuf,
+    pub assets: PathBuf,
+}
+
 #[derive(Debug)]
 pub struct Args {
     pub project_dir: PathBuf,
+    /// `--plan`; `None`: `project.json`'s active plan, else the default rules.
     pub plan: Option<String>,
-    pub target: u64,
-    pub chaser: u64,
+    /// `--target`; `None` reads the target from `project.json`.
+    pub target: Option<u64>,
+    /// `--chaser`; `None` reads the chaser from `project.json`.
+    pub chaser: Option<u64>,
     pub datasets: Vec<PathBuf>,
     pub assets: PathBuf,
-    pub epoch: EpochArg,
+    /// `--epoch`; `None`: `project.json`'s start epoch, else `now`.
+    pub epoch: Option<EpochArg>,
     /// Fixed steps to run after the capture starts; a multiple of `warp`.
     pub steps: u64,
     /// Fixed steps per update, at most [`MAX_STEPS_PER_UPDATE`].
@@ -53,21 +81,46 @@ pub struct Args {
 
 /// Parse the arguments after the program name. `Err` carries the message to
 /// print above the usage text (empty for a bare invocation); the caller exits 2.
-pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
+pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
-        Some("run") => {}
-        Some(other) => return Err(format!("unknown command `{other}`")),
-        None => return Err(String::new()),
+        Some("run") => parse_run(args).map(Command::Run),
+        Some("validate") => parse_validate(args).map(Command::Validate),
+        Some(other) => Err(format!("unknown command `{other}`")),
+        None => Err(String::new()),
     }
+}
+
+fn parse_validate(args: impl Iterator<Item = String>) -> Result<ValidateArgs, String> {
+    let mut args = args;
+    let mut assets = PathBuf::from("assets");
+    let mut project_dir = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--assets" => {
+                assets = PathBuf::from(args.next().ok_or("--assets needs a value")?);
+            }
+            flag if flag.starts_with("--") => return Err(format!("unknown option `{flag}`")),
+            dir if project_dir.is_none() => project_dir = Some(PathBuf::from(dir)),
+            extra => return Err(format!("unexpected argument `{extra}`")),
+        }
+    }
+    Ok(ValidateArgs {
+        project_dir: project_dir.ok_or("missing <project-dir>")?,
+        assets,
+    })
+}
+
+fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut args = args;
     let mut parsed = Args {
         project_dir: PathBuf::new(),
         plan: None,
-        target: 0,
-        chaser: 0,
+        target: None,
+        chaser: None,
         datasets: Vec::new(),
         assets: PathBuf::from("assets"),
-        epoch: EpochArg::Now,
+        epoch: None,
         steps: 200_000,
         warp: 1,
         sample_every: 64,
@@ -75,16 +128,15 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         stop_at_capture: false,
     };
     let mut project_dir = None;
-    let (mut target, mut chaser) = (None, None);
     while let Some(arg) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
         match arg.as_str() {
             "--plan" => parsed.plan = Some(value("--plan")?),
-            "--target" => target = Some(number("--target", &value("--target")?)?),
-            "--chaser" => chaser = Some(number("--chaser", &value("--chaser")?)?),
+            "--target" => parsed.target = Some(number("--target", &value("--target")?)?),
+            "--chaser" => parsed.chaser = Some(number("--chaser", &value("--chaser")?)?),
             "--dataset" => parsed.datasets.push(PathBuf::from(value("--dataset")?)),
             "--assets" => parsed.assets = PathBuf::from(value("--assets")?),
-            "--epoch" => parsed.epoch = parse_epoch(&value("--epoch")?)?,
+            "--epoch" => parsed.epoch = Some(parse_epoch(&value("--epoch")?)?),
             "--steps" => parsed.steps = number("--steps", &value("--steps")?)?,
             "--warp" => parsed.warp = number("--warp", &value("--warp")?)?,
             "--sample-every" => {
@@ -98,8 +150,15 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         }
     }
     parsed.project_dir = project_dir.ok_or("missing <project-dir>")?;
-    parsed.target = target.ok_or("missing --target")?;
-    parsed.chaser = chaser.ok_or("missing --chaser")?;
+    // With a `project.json` the bodies come from it; the flags override it.
+    if !parsed.project_dir.join(MANIFEST_FILE).is_file() {
+        if parsed.target.is_none() {
+            return Err("missing --target".to_string());
+        }
+        if parsed.chaser.is_none() {
+            return Err("missing --chaser".to_string());
+        }
+    }
     if parsed.sample_every == 0 {
         return Err("--sample-every must be at least 1".to_string());
     }
@@ -129,38 +188,12 @@ fn number<T: std::str::FromStr>(name: &str, raw: &str) -> Result<T, String> {
         .map_err(|_| format!("{name}: `{raw}` is not a valid number"))
 }
 
-/// `now`, or `YYYY-MM-DDTHH:MM:SS[.fff]` read as UTC. The seconds field is parsed
-/// as one number, so `47.002464` is the same `f64` as the literal in the harness.
+/// `now`, or `YYYY-MM-DDTHH:MM:SS[.fff]` read as UTC (see `ssg_sim::project::parse_utc`).
 fn parse_epoch(raw: &str) -> Result<EpochArg, String> {
     if raw == "now" {
         return Ok(EpochArg::Now);
     }
-    let bad = || format!("--epoch: `{raw}` is not `now` or YYYY-MM-DDTHH:MM:SS[.fff]");
-    let (date, time) = raw.split_once('T').ok_or_else(bad)?;
-    let mut date = date.split('-');
-    let mut time = time.splitn(3, ':');
-    let field = |part: Option<&str>| part.and_then(|p| p.parse::<u32>().ok()).ok_or_else(bad);
-    let (year, month, day) = (
-        field(date.next())?,
-        field(date.next())?,
-        field(date.next())?,
-    );
-    let (hour, minute) = (field(time.next())?, field(time.next())?);
-    let seconds: f64 = time.next().and_then(|s| s.parse().ok()).ok_or_else(bad)?;
-    if date.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(bad());
-    }
-    if hour > 23 || minute > 59 || !(0.0..61.0).contains(&seconds) {
-        return Err(bad());
-    }
-    Ok(EpochArg::At(Epoch::from_datetime(
-        year,
-        month as u8,
-        day as u8,
-        hour as u8,
-        minute as u8,
-        seconds,
-        0.0,
-        TimeSystem::UTC,
-    )))
+    parse_utc(raw)
+        .map(EpochArg::At)
+        .ok_or_else(|| format!("--epoch: `{raw}` is not `now` or YYYY-MM-DDTHH:MM:SS[.fff]"))
 }

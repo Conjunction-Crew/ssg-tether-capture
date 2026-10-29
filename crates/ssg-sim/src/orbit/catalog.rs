@@ -2,71 +2,76 @@
 
 use std::f64::consts::PI;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::{Epoch, GM_EARTH, TimeSystem};
 use nalgebra::Vector6;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::project::AssetsDir;
+use crate::project::{AssetsDir, WorkingDirectory};
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::WorldTime;
 
 // unused today; the P3 component/resource audit decides
 #[allow(dead_code)]
-#[derive(Deserialize, Debug, Clone)]
+/// One Space-Track GP (OMM JSON) record: the keys the sim reads. Other keys of a
+/// record are ignored on read and not written back. `project.json` carries it as the
+/// snapshot a body starts from.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct JsonOrbital {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "OBJECT_NAME")]
     pub object_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "OBJECT_ID")]
     pub object_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "EPOCH")]
     pub epoch: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_MOTION")]
     pub mean_motion: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ECCENTRICITY")]
     pub eccentricity: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "INCLINATION")]
     pub inclination: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "RA_OF_ASC_NODE")]
     pub ra_of_asc_node: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ARG_OF_PERICENTER")]
     pub arg_of_pericenter: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_ANOMALY")]
     pub mean_anomaly: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "EPHEMERIS_TYPE")]
     pub ephemeris_type: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "CLASSIFICATION_TYPE")]
     pub classification_type: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "NORAD_CAT_ID")]
     pub norad_cat_id: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ELEMENT_SET_NO")]
     pub element_set_no: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "REV_AT_EPOCH")]
     pub rev_at_epoch: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "BSTAR")]
     pub bstar: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_MOTION_DOT")]
     pub mean_motion_dot: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "MEAN_MOTION_DDOT")]
     pub mean_motion_ddot: Option<Value>,
 }
@@ -324,6 +329,7 @@ pub fn load_dataset_entities(
     world_time: Res<WorldTime>,
     gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
     assets_dir: Res<AssetsDir>,
+    working_directory: Option<Res<WorkingDirectory>>,
     mut log_events: MessageWriter<LogEvent>,
 ) {
     let plans_dir = assets_dir.0.join("datasets");
@@ -342,15 +348,24 @@ pub fn load_dataset_entities(
         gpu_elements.0.clear();
     }
 
-    let dir_iter = match fs::read_dir(&plans_dir) {
-        Ok(iter) => iter,
-        Err(e) => {
-            warn!("Could not read dataset directory {plans_dir:?}: {e}");
-            return;
-        }
-    };
-    for dataset_file in dir_iter.flatten() {
-        let path = dataset_file.path();
+    // The project's own datasets first (sorted by name), then the assets' (P6).
+    let mut dataset_files: Vec<PathBuf> = Vec::new();
+    if let Some(working_directory) = working_directory.as_deref() {
+        let mut project_files: Vec<PathBuf> =
+            fs::read_dir(Path::new(&working_directory.path).join("datasets"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.path())
+                .collect();
+        project_files.sort();
+        dataset_files.extend(project_files);
+    }
+    match fs::read_dir(&plans_dir) {
+        Ok(iter) => dataset_files.extend(iter.flatten().map(|entry| entry.path())),
+        Err(e) => warn!("Could not read dataset directory {plans_dir:?}: {e}"),
+    }
+    for path in dataset_files {
         if path
             .extension()
             .is_some_and(|extension| extension == "json")

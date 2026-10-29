@@ -397,11 +397,42 @@ fn write_config_file_creates_the_directory_and_reads_back() {
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({ "working_directory": "/projects/capture" })
+        // P6 (D6): the config carries its schema version.
+        serde_json::json!({ "schema_version": 1, "working_directory": "/projects/capture" })
     );
     assert_eq!(
         read_config_file(&file).as_deref(),
         Some("/projects/capture")
+    );
+}
+
+#[test]
+fn read_config_file_reads_files_with_or_without_a_schema_version() {
+    let dir = TempDir::new("config-read-version");
+    for (name, contents) in [
+        ("old.json", r#"{"working_directory": "/a"}"#),
+        (
+            "v1.json",
+            r#"{"schema_version": 1, "working_directory": "/a"}"#,
+        ),
+    ] {
+        let file = dir.write(name, contents);
+        assert_eq!(read_config_file(&file).as_deref(), Some("/a"), "{name}");
+    }
+}
+
+#[test]
+fn read_config_file_is_none_for_a_newer_schema_version() {
+    let dir = TempDir::new("config-read-newer");
+    let file = dir.write(
+        "config.json",
+        r#"{"schema_version": 2, "working_directory": "/a", "theme": "dark"}"#,
+    );
+
+    assert_eq!(
+        read_config_file(&file),
+        None,
+        "a config written by a newer version is not read (a warning is logged)"
     );
 }
 
@@ -419,7 +450,7 @@ fn write_config_file_replaces_the_previous_content() {
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({ "working_directory": "/new" }),
+        serde_json::json!({ "schema_version": 1, "working_directory": "/new" }),
         "the whole file is rewritten, other entries are not kept"
     );
 }

@@ -13,10 +13,8 @@ use crate::capture::plan::{
     PLAN_SCHEMA_VERSION, Phase, Transition, TransitionConditions, capture_plan_warnings,
     validate_capture_plan,
 };
+use crate::project::manifest::MANIFEST_FILE;
 use crate::project::migrate_v0;
-
-/// The manifest's file name; the plan loader skips it.
-const MANIFEST_FILE: &str = "project.json";
 
 /// What reading one plan file gave: the plan when it loads (validated, id set),
 /// and the errors and warnings, each `[<plan-id>] <json-pointer>: <message>`.
