@@ -1,0 +1,2 @@
+{"name": "zero tether", "tether": "Tether1", "device": {"type": "tether", "tether_length": 0.0},
+ "states": [{"id": "approach", "parameters": {"max_velocity": 2.0, "max_force": 3.0}}]}

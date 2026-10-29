@@ -1,0 +1,10 @@
+{"name": "Q10 Ignored Fields", "tether": "Tether1",
+ "device": {"type": "tether", "tether_length": 20.0, "segments": 10, "segment_mass": 0.5, "damping": 0.2},
+ "chaser": {"mass": 500.0}, "target": {"mass": 1200.0}, "start_epoch": "2026-04-03T21:00:00Z",
+ "states": [
+  {"id": "approach", "parameters": {"max_velocity": 2.0, "max_force": 3.0, "kp": 0.4},
+   "transitions": [{"to": "terminal", "time_in_state": {"greater_than": 10.0}},
+                   {"to": "terminal", "closing_rate": {"less_than": 0.1}}]},
+  {"id": "terminal", "parameters": {"max_velocity": 0.5, "max_force": 2.0, "shrink_rate": 0.01},
+   "transitions": [{"to": "approach", "distance": {"greater_than": 50.0, "units": "ft"}}]}
+]}
