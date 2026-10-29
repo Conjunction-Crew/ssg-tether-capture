@@ -308,7 +308,7 @@ fn reload_user_plans_recompiles_an_edited_plan() {
 }
 
 #[test]
-fn reload_user_plans_drops_a_deleted_plan_but_keeps_its_compiled_entry() {
+fn reload_user_plans_drops_a_deleted_plan_and_its_compiled_entry() {
     let examples = TempDir::new("reload-delete-ex");
     let users = TempDir::new("reload-delete-us");
     users.write("gone.json", &plan_json("Gone"));
@@ -320,11 +320,14 @@ fn reload_user_plans_drops_a_deleted_plan_but_keeps_its_compiled_entry() {
 
     assert!(library.user_plans.is_empty());
     assert!(library.plans.is_empty(), "the union no longer has the plan");
-    // Proposed finding (P5), low: `reload_user_plans` rebuilds `plans` but never
-    // removes entries from `compiled_plans`, so a deleted (or no longer valid) user
-    // plan stays compiled until the next `load_all` replaces the library's maps.
-    // `compiled_plans` is not cleared by `load_all` either. Pinned as it is today.
-    assert_eq!(sorted_keys(&library.compiled_plans), ["gone"]);
+    // F-53 (P6): `reload_user_plans` (and `load_all`) rebuild `compiled_plans`
+    // from scratch, so a deleted (or no longer valid) user plan is no longer
+    // compiled. Until P6 its compiled entry stayed (pinned in P5).
+    assert!(
+        library.compiled_plans.is_empty(),
+        "compiled plans: {:?}",
+        sorted_keys(&library.compiled_plans)
+    );
 }
 
 // ---------------------------------------------------------------------------

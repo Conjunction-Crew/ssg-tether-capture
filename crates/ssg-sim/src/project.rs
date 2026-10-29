@@ -157,7 +157,9 @@ impl CapturePlanLibrary {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        // Compile capture plans
+        // F-53 (P6): rebuild the compiled plans from scratch, so a plan that is
+        // gone or no longer valid has no compiled entry.
+        self.compiled_plans.clear();
         for (name, plan) in self.plans.clone() {
             self.insert_plan(name.clone(), plan.clone());
         }
@@ -166,7 +168,7 @@ impl CapturePlanLibrary {
     }
 
     /// Reloads the user plans after a plan file was saved, rebuilds the union and
-    /// recompiles every plan so `compiled_plans` stays in sync.
+    /// recompiles every plan so `compiled_plans` holds exactly the union's plans.
     pub fn reload_user_plans(&mut self, user_dir: &Path) {
         let new_user_plans = load_plans_from_dir(user_dir);
         self.user_plans = new_user_plans;
@@ -181,6 +183,8 @@ impl CapturePlanLibrary {
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        // F-53 (P6): as in `load_all`.
+        self.compiled_plans.clear();
         for (id, plan) in refreshed {
             self.insert_plan(id, plan);
         }
