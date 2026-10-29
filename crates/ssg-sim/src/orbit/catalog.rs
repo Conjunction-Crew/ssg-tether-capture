@@ -2,6 +2,7 @@
 
 use std::f64::consts::PI;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -10,7 +11,7 @@ use nalgebra::Vector6;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::project::AssetsDir;
+use crate::project::{AssetsDir, WorkingDirectory};
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::WorldTime;
 
@@ -328,6 +329,7 @@ pub fn load_dataset_entities(
     world_time: Res<WorldTime>,
     gpu_epoch_origin: Option<ResMut<GpuComputeEpochOrigin>>,
     assets_dir: Res<AssetsDir>,
+    working_directory: Option<Res<WorkingDirectory>>,
     mut log_events: MessageWriter<LogEvent>,
 ) {
     let plans_dir = assets_dir.0.join("datasets");
@@ -346,15 +348,24 @@ pub fn load_dataset_entities(
         gpu_elements.0.clear();
     }
 
-    let dir_iter = match fs::read_dir(&plans_dir) {
-        Ok(iter) => iter,
-        Err(e) => {
-            warn!("Could not read dataset directory {plans_dir:?}: {e}");
-            return;
-        }
-    };
-    for dataset_file in dir_iter.flatten() {
-        let path = dataset_file.path();
+    // The project's own datasets first (sorted by name), then the assets' (P6).
+    let mut dataset_files: Vec<PathBuf> = Vec::new();
+    if let Some(working_directory) = working_directory.as_deref() {
+        let mut project_files: Vec<PathBuf> =
+            fs::read_dir(Path::new(&working_directory.path).join("datasets"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.path())
+                .collect();
+        project_files.sort();
+        dataset_files.extend(project_files);
+    }
+    match fs::read_dir(&plans_dir) {
+        Ok(iter) => dataset_files.extend(iter.flatten().map(|entry| entry.path())),
+        Err(e) => warn!("Could not read dataset directory {plans_dir:?}: {e}"),
+    }
+    for path in dataset_files {
         if path
             .extension()
             .is_some_and(|extension| extension == "json")
