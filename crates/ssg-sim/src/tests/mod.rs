@@ -6,6 +6,7 @@ pub mod core_systems;
 pub mod integration_tests;
 pub mod orbit_catalog;
 pub mod orbit_core;
+pub mod plan_v0_oracle;
 pub mod project_files;
 pub mod session_telemetry;
 pub mod tether_spawn;
