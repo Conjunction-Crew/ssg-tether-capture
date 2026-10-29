@@ -6,6 +6,7 @@ pub mod export;
 pub mod manifest;
 pub(crate) mod migrate_v0;
 pub mod plan_files;
+pub mod recording;
 
 pub use epoch::{format_utc, now_utc, parse_utc};
 

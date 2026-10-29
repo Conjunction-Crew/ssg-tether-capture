@@ -13,6 +13,7 @@ pub mod project_epoch;
 pub mod project_export;
 pub mod project_files;
 pub mod project_manifest;
+pub mod project_recording;
 pub mod session_telemetry;
 pub mod tether_spawn;
 pub mod unit_tests;
