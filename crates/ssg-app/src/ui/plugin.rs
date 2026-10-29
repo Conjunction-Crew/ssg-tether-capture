@@ -57,9 +57,9 @@ use ssg_sim::capture::SimCommand;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::selection::OrbitalSelectionState;
+use ssg_sim::project::plan_files::{read_plan_value, save_plan};
 use ssg_sim::project::{
-    SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, save_plan_file,
-    set_working_directory,
+    SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, set_working_directory,
 };
 use ssg_sim::session::{PauseState, SimState, UiScreen};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
@@ -378,6 +378,24 @@ fn update_sim_screen_bottom_padding(
     }
 }
 
+/// Saves the plan form's JSON (v0-shaped) as a v1 plan file: migrated in memory,
+/// validated, then written by the v1 writer. The error lists why it was not saved.
+fn save_form_plan(
+    dir: &std::path::Path,
+    filename: &str,
+    json: &serde_json::Value,
+) -> Result<(), String> {
+    let plan_id = filename.strip_suffix(".json").unwrap_or(filename);
+    let report = read_plan_value(plan_id, json);
+    let plan = report.plan.ok_or_else(|| report.errors.join("; "))?;
+    save_plan(dir, filename, &plan).map_err(|e| e.to_string())
+}
+
+/// A plan value as the form shows it (as JSON writes it, e.g. `2.0`).
+fn number_text(value: f64) -> String {
+    serde_json::Value::from(value).to_string()
+}
+
 fn handle_ui_events(
     mut commands: Commands,
     mut ui_events: MessageReader<UiEvent>,
@@ -549,7 +567,7 @@ fn handle_ui_events(
                             form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
                         } else {
                             let json = build_capture_plan_json(&form);
-                            if let Err(e) = save_plan_file(
+                            if let Err(e) = save_form_plan(
                                 std::path::Path::new(&working_directory.path),
                                 &filename,
                                 &json,
@@ -607,7 +625,7 @@ fn handle_ui_events(
             UiEvent::ConfirmOverwriteCapturePlan => {
                 let filename = generate_filename(&form.plan_name);
                 let json = build_capture_plan_json(&form);
-                if let Err(e) = save_plan_file(
+                if let Err(e) = save_form_plan(
                     std::path::Path::new(&working_directory.path),
                     &filename,
                     &json,
@@ -641,83 +659,50 @@ fn handle_ui_events(
                     form.plan_name = plan.name.clone();
                     form.tether_name = plan.tether.clone();
                     if let Some(device) = &plan.device {
-                        form.tether_type = device.device_type.clone();
-                        if device.tether_length > 0.0 {
-                            form.tether_length = device.tether_length.to_string();
+                        form.tether_type = device.device_type.clone().unwrap_or_default();
+                        if let Some(length) = device.tether_length_m.filter(|l| *l > 0.0) {
+                            form.tether_length = number_text(length);
                         }
                     }
-                    for state in &plan.states {
-                        let transitions: Vec<TransitionForm> = state
+                    for phase in &plan.phases {
+                        let transitions: Vec<TransitionForm> = phase
                             .transitions
-                            .as_ref()
-                            .map(|trans| {
-                                trans
-                                    .iter()
-                                    .filter_map(|t| {
-                                        let to = t.get("to")?.as_str()?.to_string();
-                                        let dist = t.get("distance")?;
-                                        let (kind, val) = if let Some(v) = dist.get("less_than") {
-                                            ("less_than".to_string(), v.to_string())
-                                        } else {
-                                            let v = dist.get("greater_than")?;
-                                            ("greater_than".to_string(), v.to_string())
-                                        };
-                                        Some(TransitionForm {
-                                            to,
-                                            distance_kind: kind,
-                                            distance_value: val,
-                                        })
-                                    })
-                                    .collect()
+                            .iter()
+                            .flatten()
+                            .filter_map(|t| {
+                                let dist = t.all_of.distance_m?;
+                                let (kind, val) = if let Some(v) = dist.less_than {
+                                    ("less_than".to_string(), number_text(v))
+                                } else {
+                                    ("greater_than".to_string(), number_text(dist.greater_than?))
+                                };
+                                Some(TransitionForm {
+                                    to: t.to.clone(),
+                                    distance_kind: kind,
+                                    distance_value: val,
+                                })
                             })
-                            .unwrap_or_default();
+                            .collect();
+                        let max_velocity = number_text(phase.max_velocity_mps);
+                        let max_force = number_text(phase.max_force_n);
+                        let shrink_rate = phase.shrink_rate_mps.map(number_text).unwrap_or_default();
 
-                        match state.id.as_str() {
+                        match phase.id.as_str() {
                             "approach" => {
-                                if let Some(params) = &state.parameters {
-                                    form.approach_max_velocity = params
-                                        .get("max_velocity")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.approach_max_force = params
-                                        .get("max_force")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                }
+                                form.approach_max_velocity = max_velocity;
+                                form.approach_max_force = max_force;
                                 form.approach_transitions = transitions;
                             }
                             "terminal" => {
-                                if let Some(params) = &state.parameters {
-                                    form.terminal_max_velocity = params
-                                        .get("max_velocity")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.terminal_max_force = params
-                                        .get("max_force")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.terminal_shrink_rate = params
-                                        .get("shrink_rate")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                }
+                                form.terminal_max_velocity = max_velocity;
+                                form.terminal_max_force = max_force;
+                                form.terminal_shrink_rate = shrink_rate;
                                 form.terminal_transitions = transitions;
                             }
                             "capture" => {
-                                if let Some(params) = &state.parameters {
-                                    form.capture_max_velocity = params
-                                        .get("max_velocity")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.capture_max_force = params
-                                        .get("max_force")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.capture_shrink_rate = params
-                                        .get("shrink_rate")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                }
+                                form.capture_max_velocity = max_velocity;
+                                form.capture_max_force = max_force;
+                                form.capture_shrink_rate = shrink_rate;
                             }
                             _ => {}
                         }

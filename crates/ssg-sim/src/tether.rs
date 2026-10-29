@@ -107,15 +107,15 @@ pub fn spawn_tether(
     let device = active_plan.and_then(|plan| plan.device.as_ref());
 
     let tether_length = device
-        .filter(|d| d.tether_length > 0.0)
-        .map(|d| d.tether_length)
+        .and_then(|d| d.tether_length_m)
+        .filter(|l| *l > 0.0)
         .unwrap_or(DEFAULT_TETHER_LENGTH);
 
     let interior_node_count: u32 = device
-        .filter(|d| d.tether_length > 0.0)
-        .map(|d| {
-            ((d.tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0)
-                as u32
+        .and_then(|d| d.tether_length_m)
+        .filter(|l| *l > 0.0)
+        .map(|l| {
+            ((l - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
         })
         .unwrap_or_else(|| {
             ((tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32

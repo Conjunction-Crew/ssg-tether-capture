@@ -70,9 +70,10 @@ fn load_plans_from_dir_with_errors_separates_plans_from_errors() {
         "a parse error says 'Invalid JSON: ...': {:?}",
         errors["broken"]
     );
+    // F-32 (P6): validation messages are `[<plan-id>] <json-pointer>: <message>`.
     assert_eq!(
         errors["empty_name"],
-        ["[empty_name] 'name' field is empty."],
+        ["[empty_name] /name: must not be blank"],
         "a validation error is the validator's message"
     );
     assert!(
@@ -90,7 +91,7 @@ fn load_plans_from_dir_returns_only_the_valid_plans() {
 
     assert_eq!(sorted_keys(&plans), ["good"]);
     assert_eq!(plans["good"].tether, "T");
-    assert_eq!(plans["good"].states.len(), 1);
+    assert_eq!(plans["good"].phases.len(), 1);
 }
 
 #[test]
@@ -206,11 +207,13 @@ fn load_all_unions_example_and_user_plans_and_compiles_them() {
         "the load errors of both directories are merged"
     );
     assert!(errors["example_bad"][0].starts_with("Invalid JSON: "));
+    // F-32 (P6): typed `[<plan-id>] <json-pointer>: <message>` messages; a v0
+    // file's `states` are checked as the migrated plan's `phases`.
     assert_eq!(
         errors["user_empty"],
         [
-            "[user_empty] 'tether' field is empty.",
-            "[user_empty] 'states' array is empty — at least one state is required."
+            "[user_empty] /tether: must not be blank",
+            "[user_empty] /phases: at least one phase is required"
         ]
     );
 }

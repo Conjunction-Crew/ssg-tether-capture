@@ -23,3 +23,5 @@ dirs = { workspace = true }
 
 [dev-dependencies]
 ssg-sim = { path = ".", features = ["test-support"] }
+# Generates the published JSON Schema files from the plan types (design D10); test only.
+schemars = "=1.2.3"

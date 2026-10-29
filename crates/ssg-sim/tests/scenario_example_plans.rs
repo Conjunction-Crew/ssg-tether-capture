@@ -63,11 +63,11 @@ fn every_example_plan_loads_validates_and_compiles() {
             .compiled_plans
             .get(id)
             .unwrap_or_else(|| panic!("plan `{id}` is not compiled"));
-        for state in &plan.states {
+        for phase in &plan.phases {
             assert!(
-                compiled.state(&state.id).is_some(),
+                compiled.state(&phase.id).is_some(),
                 "`{id}`: compiled plan lacks state `{}`",
-                state.id
+                phase.id
             );
         }
     }
@@ -107,7 +107,7 @@ fn every_example_plan_runs_on_the_q13_pair_without_a_non_finite_state() {
                 plan_id: id.clone(),
             });
         tick(&mut app);
-        let first = &plan.states[0].id;
+        let first = &plan.phases[0].id;
         assert_eq!(
             &app.world()
                 .get::<CaptureComponent>(debris)
@@ -132,7 +132,7 @@ fn every_example_plan_runs_on_the_q13_pair_without_a_non_finite_state() {
                 .unwrap()
                 .current_state;
             assert!(
-                plan.states.iter().any(|s| &s.id == state),
+                plan.phases.iter().any(|p| &p.id == state),
                 "`{id}`: state `{state}` is not one of the plan's states"
             );
         }

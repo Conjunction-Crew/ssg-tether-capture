@@ -1,71 +1,72 @@
 {
+  "schema_version": 1,
   "name": "example_plan",
   "tether": "Tether1",
   "device": {
     "type": "tether",
-    "tether_length": 20.0
+    "tether_length_m": 20.0
   },
-  "states": [
+  "phases": [
     {
       "id": "rendezvous",
-      "parameters": {
-        "max_velocity": 25.0,
-        "max_force": 25.0
-      },
+      "max_velocity_mps": 25.0,
+      "max_force_n": 25.0,
       "transitions": [
         {
           "to": "approach",
-          "distance": {
-            "less_than": 2000.0
+          "all_of": {
+            "distance_m": {
+              "less_than": 2000.0
+            }
           }
         }
       ]
     },
     {
       "id": "approach",
-      "parameters": {
-        "max_velocity": 2.0,
-        "max_force": 3.0
-      },
+      "max_velocity_mps": 2.0,
+      "max_force_n": 3.0,
       "transitions": [
         {
           "to": "terminal",
-          "distance": {
-            "less_than": 50.0
+          "all_of": {
+            "distance_m": {
+              "less_than": 50.0
+            }
           }
         }
       ]
     },
     {
       "id": "terminal",
-      "parameters": {
-        "max_velocity": 0.5,
-        "max_force": 2.0,
-        "shrink_rate": 0.01
-      },
+      "max_velocity_mps": 0.5,
+      "max_force_n": 2.0,
+      "shrink_rate_mps": 0.01,
       "transitions": [
         {
           "to": "capture",
-          "distance": {
-            "less_than": 5.0,
-            "units": "m"
+          "all_of": {
+            "distance_m": {
+              "less_than": 5.0
+            }
           }
         },
         {
           "to": "approach",
-          "distance": {
-            "greater_than": 50.0
+          "all_of": {
+            "distance_m": {
+              "greater_than": 50.0
+            }
           }
         }
       ]
     },
     {
       "id": "capture",
-      "parameters": {
-        "max_velocity": 0.5,
-        "max_force": 2.0,
-        "shrink_rate": 0.005
-      }
+      "max_velocity_mps": 0.5,
+      "max_force_n": 2.0,
+      "shrink_rate_mps": 0.005,
+      "end": "success"
     }
   ]
 }

@@ -122,7 +122,8 @@ fn char_plans_every_example_plan_round_trips() {
             !compiled.states.is_empty(),
             "{stem}: compiled plan is empty"
         );
-        assert_eq!(compiled.states.len(), plan.states.len());
+        // F-15 (P6): the file model's `states` are `phases`.
+        assert_eq!(compiled.states.len(), plan.phases.len());
 
         // The loader returned the same plan.
         let loaded = plans.get(&stem).expect("loader returned the plan");
@@ -135,29 +136,21 @@ fn char_plans_every_example_plan_round_trips() {
         assert_same_compiled(&compile_capture_plan(&reparsed), &compiled, &stem);
         assert_eq!(reparsed.name, plan.name);
         assert_eq!(reparsed.tether, plan.tether);
-        assert_eq!(reparsed.states.len(), plan.states.len());
+        // F-15 (P6): the file model's `states` are `phases`.
+        assert_eq!(reparsed.phases.len(), plan.phases.len());
 
         // Pin the serde key differences between the file and its round trip.
         let mut diff = Vec::new();
         key_diff("", &file_value, &round_value, &mut diff);
         diff.sort();
         if stem == "example_plan" {
-            // Observed: every state gains `next: null` and `next_conditions: null`,
-            // and the last state (`capture`, which has no transitions in the file)
-            // also gains `transitions: null`. Nothing is removed and no value changes.
+            // F-15 (P6): the example is a v1 file and the v1 model writes back only
+            // the keys the file has, so the round trip adds nothing (v0 added
+            // `next: null` and `next_conditions: null` to every state and
+            // `transitions: null` to the last).
             assert_eq!(
                 diff,
-                vec![
-                    "+.states[0].next",
-                    "+.states[0].next_conditions",
-                    "+.states[1].next",
-                    "+.states[1].next_conditions",
-                    "+.states[2].next",
-                    "+.states[2].next_conditions",
-                    "+.states[3].next",
-                    "+.states[3].next_conditions",
-                    "+.states[3].transitions",
-                ],
+                Vec::<String>::new(),
                 "{stem}: serde key differences"
             );
         }
@@ -226,9 +219,9 @@ fn char_plans_example_compiled_shape() {
         })
         .collect();
     let limits = |to: &str, d_lt, d_gt| -> Limits { (to.to_string(), d_lt, d_gt, None, None) };
-    // F-15: current behaviour, expected to change in P6
-    // (`units: "m"` on the terminal -> capture transition is ignored: only
-    // `distance_less_than` is set.)
+    // F-15 (P6): the v1 example has no unit key (metres only); the v0 file's
+    // `units: "m"` on the terminal -> capture transition was never applied, so
+    // the compiled limits are the same: only `distance_less_than` is set.
     assert_eq!(
         transitions,
         vec![

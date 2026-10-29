@@ -1,11 +1,14 @@
 //! Project files: the selected plan, the working directory and plan file I/O.
 
+pub(crate) mod migrate_v0;
+pub mod plan_files;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use bevy::{platform::collections::HashMap, prelude::*};
 
-use crate::capture::plan::{CapturePlan, CapturePlanLibrary, validate_capture_plan};
+use crate::capture::plan::{CapturePlan, CapturePlanLibrary};
 use crate::orbit::catalog::SpaceObjectCatalog;
 use crate::orbit::selection::OrbitalSelectionState;
 
@@ -93,51 +96,23 @@ pub fn load_plans_from_dir(dir: &Path) -> HashMap<String, CapturePlan> {
     plans
 }
 
-/// Like [`load_plans_from_dir`] but also returns a map of file stems to validation
-/// error messages for any files that could not be parsed or failed validation. The
-/// first return value contains only the successfully loaded plans.
+/// Like [`load_plans_from_dir`] but also returns a map of file stems to error
+/// messages for any files that could not be read, parsed, migrated or validated.
+/// The first return value contains only the successfully loaded plans (v0 files
+/// migrated to v1 in memory; nothing is written). `project.json` is not a plan.
 pub fn load_plans_from_dir_with_errors(
     dir: &Path,
 ) -> (HashMap<String, CapturePlan>, HashMap<String, Vec<String>>) {
     let mut plans = HashMap::new();
     let mut errors: HashMap<String, Vec<String>> = HashMap::new();
-
-    if !dir.exists() {
-        return (plans, errors);
-    }
-    let read_dir = match fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return (plans, errors),
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "json") {
-            continue;
-        }
-        let stem = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-        let raw_json = match fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.insert(stem, vec![format!("Could not read file: {e}")]);
-                continue;
+    for (stem, report) in plan_files::plan_file_reports(dir) {
+        match report.plan {
+            Some(plan) => {
+                plans.insert(stem, plan);
             }
-        };
-        let mut plan = match serde_json::from_str::<CapturePlan>(&raw_json) {
-            Ok(p) => p,
-            Err(e) => {
-                errors.insert(stem, vec![format!("Invalid JSON: {e}")]);
-                continue;
+            None => {
+                errors.insert(stem, report.errors);
             }
-        };
-        let validation_errors = validate_capture_plan(&stem, &plan);
-        if validation_errors.is_empty() {
-            plan.id = stem.clone();
-            plans.insert(stem, plan);
-        } else {
-            errors.insert(stem, validation_errors);
         }
     }
     (plans, errors)
