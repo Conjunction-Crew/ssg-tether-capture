@@ -176,12 +176,20 @@ fn spawn_tether_falls_back_to_defaults_for_a_missing_device_a_zero_length_and_an
         );
     }
 
-    // An empty tether name (a plan the validator rejects, but `insert_plan_json`
-    // does not validate) falls back to "Tether1".
+    // F-43 (P6): an empty tether name (a plan the validator rejects, but
+    // `insert_plan_json` does not validate) is registered under the plan's own id,
+    // the one the sidebar looks up; "Tether1" is only for no active plan (it fell
+    // back to "Tether1" before P6).
     let mut app = spawn_app();
     insert_plan_json(&mut app, "p", &plan_with("", None));
     run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
-    assert_eq!(registered(&app, "Tether1").len(), 2);
+    assert_eq!(registered(&app, "").len(), 2);
+    assert!(
+        !app.world()
+            .resource::<OrbitalCache>()
+            .tethers
+            .contains_key("Tether1")
+    );
 }
 
 #[test]

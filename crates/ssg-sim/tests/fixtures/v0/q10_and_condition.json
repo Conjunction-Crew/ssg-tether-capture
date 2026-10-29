@@ -1,0 +1,6 @@
+{"name": "Q10 And Condition", "tether": "Tether1", "device": {"type": "tether", "tether_length": 20.0},
+ "states": [
+  {"id": "far", "parameters": {"max_velocity": 25.0, "max_force": 25.0},
+   "transitions": [{"to": "near", "distance": {"less_than": 2000.0}, "relative_velocity": {"less_than": 5.0}}]},
+  {"id": "near", "parameters": {"max_velocity": 2.0, "max_force": 3.0}}
+]}

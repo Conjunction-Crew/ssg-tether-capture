@@ -1,0 +1,3 @@
+{"name": "string number", "tether": "Tether1", "states": [
+  {"id": "approach", "parameters": {"max_velocity": "fast", "max_force": 3.0}}
+]}

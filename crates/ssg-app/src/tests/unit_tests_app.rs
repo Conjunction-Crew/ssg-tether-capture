@@ -267,6 +267,32 @@ mod tests {
         assert!((f - 4.44822).abs() < 1e-4);
     }
 
+    // The form still builds v0-shaped JSON; saving migrates it to a v1 plan
+    // (F-15, P6): no warning, nothing unmapped, the same limits and transitions.
+    #[test]
+    fn form_json_migrates_to_a_v1_plan_without_warnings() {
+        use ssg_sim::project::plan_files::{plan_to_json, read_plan_value};
+        let mut form = valid_form();
+        form.terminal_transitions.push(TransitionForm {
+            to: "capture".to_string(),
+            distance_kind: "less_than".to_string(),
+            distance_value: "5.0".to_string(),
+        });
+        let report = read_plan_value("my_plan", &build_capture_plan_json(&form));
+        assert_eq!(report.errors, Vec::<String>::new());
+        assert_eq!(report.warnings, Vec::<String>::new());
+        let plan = report.plan.unwrap();
+        assert_eq!(plan.migrated_from_v0, None);
+        let ids: Vec<&str> = plan.phases.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["approach", "terminal", "capture"]);
+        assert_eq!(plan.phases[1].shrink_rate_mps, Some(0.125));
+        let transition = &plan.phases[1].transitions.as_ref().unwrap()[0];
+        assert_eq!(transition.to, "capture");
+        assert_eq!(transition.all_of.distance_m.unwrap().less_than, Some(5.0));
+        assert_eq!(plan.device.as_ref().unwrap().tether_length_m, Some(20.0));
+        assert!(plan_to_json(&plan).starts_with("{\n  \"schema_version\": 1,"));
+    }
+
     // -------------------------------------------------------------------------
     // CaptureLogUiState defaults (A3)
     // -------------------------------------------------------------------------
