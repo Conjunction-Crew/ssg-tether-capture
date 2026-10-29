@@ -23,8 +23,8 @@ pub fn write(args: &Args, run: &Run) -> Result<(), String> {
         .collect();
     let summary = json!({
         "plan": run.plan,
-        "target": args.target,
-        "chaser": args.chaser,
+        "target": run.target,
+        "chaser": run.chaser,
         "epoch_mode": run.epoch_mode,
         "epoch": run.start_epoch,
         "steps": run.steps,

@@ -96,7 +96,7 @@ pub struct ManifestBody {
 pub enum ManifestOrbit {
     /// The Space-Track GP (OMM JSON) record verbatim. The body starts from SGP4, as
     /// an unedited catalog pick does.
-    Gp(JsonOrbital),
+    Gp(Box<JsonOrbital>),
     /// Osculating Keplerian elements in metres and radians.
     Elements(ManifestElements),
     /// Chaser only: an offset from the target along V-bar or R-bar. Refused until
@@ -504,7 +504,7 @@ impl ManifestBody {
             | OrbitalSelectionSource::Custom { label } => label.clone(),
         };
         let orbit = match &selected.gp {
-            Some(gp) => ManifestOrbit::Gp(gp_to_record(&label, gp)),
+            Some(gp) => ManifestOrbit::Gp(Box::new(gp_to_record(&label, gp))),
             None => {
                 let e = &selected.elements;
                 ManifestOrbit::Elements(ManifestElements {

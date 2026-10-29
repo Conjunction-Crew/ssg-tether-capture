@@ -762,7 +762,7 @@ fn generated_gp_records_give_the_same_elements_through_a_project_json() {
         let mut manifest = read(&doc()).manifest.unwrap();
         manifest.target = ManifestBody {
             label: format!("Body {case}"),
-            orbit: ManifestOrbit::Gp(record.clone()),
+            orbit: ManifestOrbit::Gp(Box::new(record.clone())),
             source: rng.chance(0.5).then(|| ManifestSource {
                 dataset: "datasets/x.json".to_string(),
                 norad_id: 1,
