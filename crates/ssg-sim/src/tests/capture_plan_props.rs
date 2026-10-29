@@ -444,10 +444,7 @@ fn validator_reports_independent_errors_in_field_order() {
             "three field errors and two parameter errors: {ctx}"
         );
         // The parameter errors name the phase that broke them.
-        assert!(
-            expected[3].contains(&format!("/phases/{picked}/")),
-            "{ctx}"
-        );
+        assert!(expected[3].contains(&format!("/phases/{picked}/")), "{ctx}");
 
         let plan = CapturePlan::deserialize(&doc).unwrap();
         assert_eq!(validate_capture_plan(PLAN_ID, &plan), expected, "{ctx}");

@@ -685,7 +685,8 @@ fn handle_ui_events(
                             .collect();
                         let max_velocity = number_text(phase.max_velocity_mps);
                         let max_force = number_text(phase.max_force_n);
-                        let shrink_rate = phase.shrink_rate_mps.map(number_text).unwrap_or_default();
+                        let shrink_rate =
+                            phase.shrink_rate_mps.map(number_text).unwrap_or_default();
 
                         match phase.id.as_str() {
                             "approach" => {

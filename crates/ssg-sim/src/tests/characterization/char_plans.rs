@@ -148,11 +148,7 @@ fn char_plans_every_example_plan_round_trips() {
             // the keys the file has, so the round trip adds nothing (v0 added
             // `next: null` and `next_conditions: null` to every state and
             // `transitions: null` to the last).
-            assert_eq!(
-                diff,
-                Vec::<String>::new(),
-                "{stem}: serde key differences"
-            );
+            assert_eq!(diff, Vec::<String>::new(), "{stem}: serde key differences");
         }
         assert!(
             diff.iter().all(|d| d.starts_with('+')),

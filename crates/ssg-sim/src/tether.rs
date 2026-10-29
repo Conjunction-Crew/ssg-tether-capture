@@ -114,9 +114,7 @@ pub fn spawn_tether(
     let interior_node_count: u32 = device
         .and_then(|d| d.tether_length_m)
         .filter(|l| *l > 0.0)
-        .map(|l| {
-            ((l - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
-        })
+        .map(|l| ((l - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32)
         .unwrap_or_else(|| {
             ((tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
         });

@@ -119,9 +119,9 @@ impl CapturePlanDevice {
 
     /// Root + tail + interior nodes, as the spawner counts them.
     fn tether_body_count(&self) -> u64 {
-        let interior =
-            ((self.tether_length_m() - 2.0 * END_SPHERE_RADIUS_M) / self.segment_spacing_m())
-                .max(0.0) as u64;
+        let interior = ((self.tether_length_m() - 2.0 * END_SPHERE_RADIUS_M)
+            / self.segment_spacing_m())
+        .max(0.0) as u64;
         interior.saturating_add(2)
     }
 }
@@ -343,7 +343,10 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
         }
         for (pointer, value) in [
             ("/device/joint_damping_linear", device.joint_damping_linear),
-            ("/device/joint_damping_angular", device.joint_damping_angular),
+            (
+                "/device/joint_damping_angular",
+                device.joint_damping_angular,
+            ),
         ] {
             if value.is_some_and(|v| v < 0.0) {
                 error(pointer, NOT_NEGATIVE);

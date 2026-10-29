@@ -42,7 +42,10 @@ pub(crate) fn plan_from_value(
                 .map(|plan| (plan, Vec::new(), Vec::new()))
                 .map_err(|e| vec![format!("[{plan_id}] {}: {e}", v1_error_pointer(value))])
         }
-        Some(v) if v.as_u64().is_some_and(|n| n > u64::from(PLAN_SCHEMA_VERSION)) => {
+        Some(v)
+            if v.as_u64()
+                .is_some_and(|n| n > u64::from(PLAN_SCHEMA_VERSION)) =>
+        {
             Err(vec![format!(
                 "[{plan_id}] /schema_version: {v} is not supported; this version reads \
                  schema_version {PLAN_SCHEMA_VERSION} (the file was written by a newer version)"

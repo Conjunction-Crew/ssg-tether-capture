@@ -4,8 +4,7 @@ mod tests {
 
     use crate::capture::plan::{
         CapturePlan, CapturePlanDevice, CapturePlanLibrary, ConditionBounds, Phase, Transition,
-        TransitionConditions, build_capture_component, compile_capture_plan,
-        validate_capture_plan,
+        TransitionConditions, build_capture_component, compile_capture_plan, validate_capture_plan,
     };
     use crate::project::load_plans_from_dir_with_errors;
     use crate::project::plan_files::read_plan_value;
@@ -174,10 +173,7 @@ mod tests {
     fn compile_plan_indexes_states_by_id() {
         let mut capture = phase("capture", 0.5, 2.0);
         capture.shrink_rate_mps = Some(0.01);
-        let plan = plan_with_phases(
-            "Compiled Plan",
-            vec![phase("approach", 1.0, 2.0), capture],
-        );
+        let plan = plan_with_phases("Compiled Plan", vec![phase("approach", 1.0, 2.0), capture]);
         let compiled = compile_capture_plan(&plan);
         assert!(compiled.state("approach").is_some());
         assert!(compiled.state("capture").is_some());

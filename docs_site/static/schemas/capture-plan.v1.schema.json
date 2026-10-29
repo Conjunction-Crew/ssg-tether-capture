@@ -1,0 +1,319 @@
+{
+  "$defs": {
+    "CapturePlanDevice": {
+      "additionalProperties": false,
+      "description": "The capture device. Every field is optional; an absent field takes its default.",
+      "properties": {
+        "end_mass_kg": {
+          "description": "Mass of the root and of the tail in kg. Default 2.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "joint_damping_angular": {
+          "description": "Angular damping of each tether joint. Default 1.0; not negative.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "joint_damping_linear": {
+          "description": "Linear damping of each tether joint. Default 1.0; not negative.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "segment_mass_kg": {
+          "description": "Mass of each interior tether node in kg. Default 0.1; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "segment_spacing_m": {
+          "description": "Distance between tether joints in metres. Default 0.1; greater than 0, and the\ntether may have at most 1,000 bodies (a warning above 200).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tether_length_m": {
+          "description": "Physical length of the tether in metres. Default 20.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Device kind, free text. Default `\"tether\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "CaptureSphere": {
+      "additionalProperties": false,
+      "description": "The capture sphere around the target.",
+      "properties": {
+        "initial_radius_m": {
+          "description": "Radius in metres at the start of every capture. Default 25.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ConditionBounds": {
+      "additionalProperties": false,
+      "description": "Bounds on one quantity; at least one, neither negative. Both strict.",
+      "properties": {
+        "greater_than": {
+          "description": "Holds while the quantity is above this value.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "less_than": {
+          "description": "Holds while the quantity is below this value.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "MigratedFromV0": {
+      "additionalProperties": false,
+      "description": "The v0 content a migration could not map, so the file can be written back\nwithout losing it.",
+      "properties": {
+        "unmapped": {
+          "description": "Every unmapped v0 value with its JSON Pointer into the v0 document.",
+          "items": {
+            "$ref": "#/$defs/UnmappedValue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "unmapped"
+      ],
+      "type": "object"
+    },
+    "Phase": {
+      "additionalProperties": false,
+      "description": "One phase of the plan: the controller's limits while in it and its transitions.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseEnd"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Marks an end phase (`success` or `abort`); an end phase has no transitions."
+        },
+        "id": {
+          "description": "Phase id, unique in the plan and not blank.",
+          "type": "string"
+        },
+        "max_force_n": {
+          "description": "Force applied to each tether node in N; not negative.",
+          "format": "double",
+          "type": "number"
+        },
+        "max_velocity_mps": {
+          "description": "Speed limit of the tether nodes in m/s; not negative.",
+          "format": "double",
+          "type": "number"
+        },
+        "shrink_rate_mps": {
+          "description": "Rate at which the capture sphere shrinks in m/s; not negative. Absent: no shrink.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "transitions": {
+          "description": "Checked in order every step; the first whose conditions all hold fires.",
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "max_velocity_mps",
+        "max_force_n"
+      ],
+      "type": "object"
+    },
+    "PhaseEnd": {
+      "description": "How an end phase ends the capture.",
+      "enum": [
+        "success",
+        "abort"
+      ],
+      "type": "string"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "description": "A transition to another phase.",
+      "properties": {
+        "all_of": {
+          "$ref": "#/$defs/TransitionConditions",
+          "description": "The conditions; all must hold (AND). At least one."
+        },
+        "to": {
+          "description": "Id of the phase to enter.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to",
+        "all_of"
+      ],
+      "type": "object"
+    },
+    "TransitionConditions": {
+      "additionalProperties": false,
+      "description": "The conditions of a transition.",
+      "properties": {
+        "distance_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Range between the tether root and the target in metres."
+        },
+        "relative_speed_mps": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Magnitude of the LVLH relative velocity in m/s."
+        }
+      },
+      "type": "object"
+    },
+    "UnmappedValue": {
+      "additionalProperties": false,
+      "description": "One unmapped v0 value.",
+      "properties": {
+        "pointer": {
+          "description": "JSON Pointer into the v0 document, e.g. `/states/2/transitions/0/distance/units`.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The value as the v0 file had it."
+        }
+      },
+      "required": [
+        "pointer",
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://conjunction-crew.github.io/ssg-tether-capture/schemas/capture-plan.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A capture plan file, schema v1. Lengths are metres, speeds m/s, forces N,\nmasses kg; there is no unit key.",
+  "properties": {
+    "capture_sphere": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CaptureSphere"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The capture sphere. Absent: every default applies."
+    },
+    "device": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CapturePlanDevice"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The capture device. Absent: every device default applies."
+    },
+    "migrated_from_v0": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MigratedFromV0"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What a migrated v0 file held that v1 has no field for (written back unchanged)."
+    },
+    "name": {
+      "description": "Display name shown to the user. Not used as a lookup key. Must not be blank.",
+      "type": "string"
+    },
+    "phases": {
+      "description": "The phases in order; a capture starts in the first. At least one.",
+      "items": {
+        "$ref": "#/$defs/Phase"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "description": "File format version; `1`. A file without it is a v0 plan and is migrated on load.",
+      "format": "uint32",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "tether": {
+      "description": "Id the tether is registered under. Must not be blank.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "name",
+    "tether",
+    "phases"
+  ],
+  "title": "CapturePlan",
+  "type": "object"
+}
