@@ -386,7 +386,10 @@ fn the_writer_puts_schema_version_first_and_only_the_keys_the_plan_has() {
         assert!(!text.contains(absent), "{absent} in\n{text}");
     }
     let example = repo_root().join("assets/example_capture_plans/example_plan.json");
-    let raw = std::fs::read_to_string(&example).unwrap();
+    // A Windows checkout may turn the file's line feeds into CR LF.
+    let raw = std::fs::read_to_string(&example)
+        .unwrap()
+        .replace("\r\n", "\n");
     let loaded = read_plan_value("example_plan", &serde_json::from_str(&raw).unwrap());
     assert_eq!(
         plan_to_json(&loaded.plan.unwrap()),
@@ -557,7 +560,10 @@ pub(crate) fn check_schema<T: schemars::JsonSchema>(file: &str) {
     if std::env::var_os("SSG_UPDATE_SCHEMAS").is_some() {
         std::fs::write(&path, &generated).unwrap();
     }
-    let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    // A Windows checkout may turn the file's line feeds into CR LF.
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
     if committed != generated {
         let diff: Vec<String> = committed
             .lines()
