@@ -468,6 +468,7 @@ impl ManifestBody {
                     source,
                     elements: EditableOrbitalElements::from_gp(&gp),
                     gp: Some(gp),
+                    mass_kg: self.mass_kg,
                 })
             }
             ManifestOrbit::Elements(e) => {
@@ -489,6 +490,7 @@ impl ManifestBody {
                         epoch,
                     },
                     gp: None,
+                    mass_kg: self.mass_kg,
                 })
             }
             ManifestOrbit::RelativeToTarget(_) => Err(vec![message(
@@ -522,7 +524,7 @@ impl ManifestBody {
             label,
             orbit,
             source: None,
-            mass_kg: None,
+            mass_kg: selected.mass_kg,
             inertia_kg_m2: None,
         }
     }

@@ -67,6 +67,9 @@ pub struct SelectedOrbitalObject {
     /// The catalog record a pick came from; `None` for a custom orbit or once
     /// the elements are edited. `Some` starts the body from SGP4 (F-10).
     pub gp: Option<GpElements>,
+    /// Mass in kg from `project.json`; `None` takes the body's default. Only the
+    /// target's is applied (2,500 kg by default); the chaser's is refused until P9.
+    pub mass_kg: Option<f64>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]

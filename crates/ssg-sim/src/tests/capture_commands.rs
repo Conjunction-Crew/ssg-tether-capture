@@ -65,6 +65,38 @@ fn marked_entities(app: &mut App) -> Vec<Entity> {
 }
 
 #[test]
+fn start_capture_starts_the_sphere_at_the_plans_initial_radius() {
+    let mut app = commands_app();
+    insert_plan_json(
+        &mut app,
+        "wide",
+        r#"{"schema_version": 1, "name": "wide", "tether": "T",
+            "capture_sphere": {"initial_radius_m": 40.5},
+            "phases": [{"id": "first", "max_velocity_mps": 1.0, "max_force_n": 1.0}]}"#,
+    );
+    app.world_mut()
+        .insert_resource(WorldTime::starting_at(fixed_epoch()));
+    app.world_mut()
+        .insert_resource(CaptureSphereRadius { radius: 3.0 });
+    let target = app.world_mut().spawn_empty().id();
+
+    apply(&mut app, vec![start(Some(target), "wide")]);
+    assert_eq!(
+        app.world().resource::<CaptureSphereRadius>().radius,
+        40.5,
+        "the plan's radius"
+    );
+
+    // A plan without a capture sphere keeps the 25 m default (F-11).
+    let other = app.world_mut().spawn_empty().id();
+    apply(&mut app, vec![start(Some(other), "good")]);
+    assert_eq!(
+        app.world().resource::<CaptureSphereRadius>().radius,
+        INITIAL_CAPTURE_SPHERE_RADIUS_M
+    );
+}
+
+#[test]
 fn start_capture_marks_the_target_and_starts_data_collection() {
     let mut app = commands_app();
     app.world_mut()
