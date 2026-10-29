@@ -158,7 +158,7 @@ pub fn capture_state_machine_update(
                 // The ephemeris sample (read-only: no force or transition depends on
                 // it). The cache and the positions describe this step's end state.
                 let step = ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64;
-                if step % EPHEMERIS_EVERY_STEPS == 0
+                if step.is_multiple_of(EPHEMERIS_EVERY_STEPS)
                     && let Some(samples) = data_collection.ephemeris.get_mut(&capture_entity)
                     && let Some(target) = target_eci
                     && let Some(chaser) = nodes.first().and_then(|&root_node| {

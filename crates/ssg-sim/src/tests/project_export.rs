@@ -318,7 +318,7 @@ fn q13_with_ephemeris(collect: bool, min_ticks: u64) -> (bevy::app::App, q13::Q1
         ((t.epoch - t.start_epoch) / PHYS_DT).round() as u64
     };
     let mut ticks = 0;
-    while ticks < min_ticks || step(&app) % EPHEMERIS_EVERY_STEPS != 0 {
+    while ticks < min_ticks || !step(&app).is_multiple_of(EPHEMERIS_EVERY_STEPS) {
         tick(&mut app);
         ticks += 1;
     }
@@ -351,7 +351,11 @@ fn a_running_capture_samples_the_ephemeris_every_64_steps_without_changing_the_r
     for pair in steps.windows(2) {
         assert_eq!(pair[1] - pair[0], EPHEMERIS_EVERY_STEPS, "steps {steps:?}");
     }
-    assert!(steps.iter().all(|s| s % EPHEMERIS_EVERY_STEPS == 0));
+    assert!(
+        steps
+            .iter()
+            .all(|s| s.is_multiple_of(EPHEMERIS_EVERY_STEPS))
+    );
     assert!(
         (samples[1].epoch - samples[0].epoch - 1.0).abs() < 1e-9,
         "64 steps = 1 s"
