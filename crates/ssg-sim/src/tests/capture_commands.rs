@@ -137,6 +137,7 @@ fn start_capture_marks_the_target_and_starts_data_collection() {
     let data = app.world().resource::<DataCollection>();
     assert_eq!(data.position.get(&target), Some(&Vec::new()));
     assert_eq!(data.velocity.get(&target), Some(&Vec::new()));
+    assert_eq!(data.ephemeris.get(&target), Some(&Vec::new()));
 }
 
 #[test]

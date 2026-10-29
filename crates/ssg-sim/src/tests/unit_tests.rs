@@ -356,6 +356,7 @@ mod tests {
     fn make_entry(msg: &str) -> LogEntry {
         LogEntry {
             timestamp: "00:00:00".to_string(),
+            epoch_utc: "2026-04-03T00:00:00.000000Z".to_string(),
             level: LogLevel::Info,
             source: "test",
             message: msg.to_string(),

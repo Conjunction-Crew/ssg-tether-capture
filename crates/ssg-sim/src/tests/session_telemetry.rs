@@ -164,6 +164,7 @@ fn entering_the_sim_logs_the_start_epoch_with_an_hh_mm_ss_timestamp() {
         entry.timestamp, "16:03:47",
         "the time of day of the fixed epoch (2026-04-03 16:03:47 UTC)"
     );
+    assert_eq!(entry.epoch_utc, "2026-04-03T16:03:47.002464Z");
 }
 
 #[test]
@@ -180,6 +181,7 @@ fn the_log_timestamp_follows_the_sim_clock() {
     assert_eq!(entry.message, "an hour later");
     assert_eq!(entry.level, LogLevel::Warn);
     assert_eq!(entry.timestamp, "17:05:50", "16:03:47 + 1 h 2 min 3 s");
+    assert_eq!(entry.epoch_utc, "2026-04-03T17:05:50.002464Z");
 }
 
 #[test]

@@ -7407,6 +7407,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "brahe",
+ "csv",
  "dirs 7.0.0",
  "nalgebra",
  "schemars",
