@@ -99,9 +99,9 @@ pub fn spawn_tether(
         .as_deref()
         .and_then(|id| capture_plan_lib.plans.get(id));
 
+    // F-43 (P6): the plan's tether id is validated non-blank; "Tether1" only without an active plan
     let tether_name = active_plan
         .map(|plan| plan.tether.clone())
-        .filter(|t| !t.is_empty())
         .unwrap_or_else(|| "Tether1".to_string());
 
     let device = active_plan.and_then(|plan| plan.device.as_ref());
