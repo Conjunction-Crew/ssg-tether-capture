@@ -20,3 +20,6 @@ nalgebra = { workspace = true }
 bevy = { workspace = true, features = ["std", "bevy_log", "bevy_state", "bevy_asset", "bevy_scene", "bevy_mesh", "multi_threaded", "async_executor"] }
 serde_json = { workspace = true }
 csv = { workspace = true }
+
+[dev-dependencies]
+ssg-sim = { workspace = true, features = ["test-support"] }
