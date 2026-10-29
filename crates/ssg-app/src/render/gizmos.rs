@@ -284,10 +284,10 @@ pub fn capture_gizmos(
         let Some(plan) = capture_plan_lib.plans.get(&capture_component.plan_id) else {
             continue;
         };
-        let Some(state) = plan
-            .states
+        let Some(phase) = plan
+            .phases
             .iter()
-            .find(|state| state.id == capture_component.current_state)
+            .find(|phase| phase.id == capture_component.current_state)
         else {
             continue;
         };
@@ -312,15 +312,8 @@ pub fn capture_gizmos(
             Srgba::new(0.0, 0.8, 0.4, 0.2),
         );
 
-        let (base_max_velocity, capture_state) = if let Some(parameters) = &state.parameters {
-            let max_velocity = parameters
-                .get("max_velocity")
-                .and_then(|value| value.as_f64())
-                .unwrap_or(0.0);
-            (max_velocity, capture_component.current_state == "capture")
-        } else {
-            (0.0, capture_component.current_state == "capture")
-        };
+        let base_max_velocity = phase.max_velocity_mps;
+        let capture_state = capture_component.current_state == "capture";
 
         for (idx, &node) in nodes.iter().enumerate() {
             let Ok(rb) = rigidbodies.get(node) else {

@@ -1,8 +1,53 @@
+import {existsSync, readFileSync} from 'fs';
+import path from 'path';
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+
+// Docs versions (Q48). versions.json lists the permanent X.Y.0 snapshots. At
+// deploy time scripts/docs_versions.sh also writes rolling-versions.json (never
+// committed) naming the two rolling versions (latest patch, latest
+// pre-release) and the default; without it (PR builds, local dev) the default
+// is the newest stable entry of versions.json.
+const readJson = (file: string): any =>
+  existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+
+const versionList: string[] = readJson(path.join(__dirname, 'versions.json')) ?? [];
+const rolling: {patch: string | null; prerelease: string | null; default: string} | null =
+  readJson(path.join(__dirname, 'rolling-versions.json'));
+
+// X.Y.Z or X.Y.Z-pre.N -> comparable [major, minor, patch]; a pre-release sorts
+// below its release, which is irrelevant here because only stable entries are compared.
+const semver = (v: string): number[] => v.split('-')[0].split('.').map(Number);
+const compareSemver = (a: string, b: string): number => {
+  const [x, y] = [semver(a), semver(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+};
+const newestStable = versionList
+  .filter((v) => !v.includes('-'))
+  .sort(compareSemver)
+  .pop();
+
+const defaultVersion = rolling?.default ?? newestStable;
+
+const versionLabel = (v: string): string =>
+  v === rolling?.prerelease
+    ? `${v} (pre-release)`
+    : v === rolling?.patch
+      ? `${v} (latest patch)`
+      : v;
+
+const docsVersions = Object.fromEntries(
+  versionList.map((v) => [
+    v,
+    v === rolling?.prerelease
+      ? {label: versionLabel(v), banner: 'unreleased' as const}
+      : {label: versionLabel(v)},
+  ]),
+);
 
 const config: Config = {
   title: 'SSG Tether Capture',
@@ -40,8 +85,8 @@ const config: Config = {
       'classic',
       {
         docs: {
-          // Make the last released version the default shown to users
-          lastVersion: '0.2.0',
+          // The default version shown to users: the newest stable docs version
+          lastVersion: defaultVersion,
           // Expose the working (unreleased) docs under `next` so you can preview them
           versions: {
             current: {
@@ -50,9 +95,7 @@ const config: Config = {
               banner: 'unreleased',
               badge: true,
             },
-            '0.2.0': {
-              label: '0.2.0',
-            },
+            ...docsVersions,
           },
           sidebarPath: './sidebars.ts',
         },

@@ -44,7 +44,7 @@ fn run_writes_summary_and_trajectory() {
             .expect("summary.json parses");
     assert_eq!(summary["transitions"][0]["from"], "rendezvous");
     assert_eq!(summary["transitions"][0]["to"], "approach");
-    assert_eq!(summary["final"]["state"], "approach");
+    assert_eq!(summary["final"]["phase"], "approach");
     // `--steps` counts fixed steps (A-12); the sampled state is hashed.
     assert_eq!(summary["steps"], 6400);
     let hash = summary["state_hash"]
@@ -58,7 +58,17 @@ fn run_writes_summary_and_trajectory() {
     assert_eq!(csv.lines().count(), 101, "header + 6400 / 64 samples");
     assert_eq!(
         csv.lines().next(),
-        Some("step,epoch,state,range_m,rel_speed_mps")
+        Some("step,epoch_utc,phase,range_m,rel_speed_mps")
+    );
+    // The OEM: target then chaser, one state per sample each.
+    let oem = std::fs::read_to_string(out.join("ephemeris.oem")).unwrap();
+    assert!(oem.starts_with("CCSDS_OEM_VERS = 2.0\n"), "{oem}");
+    assert_eq!(oem.matches("META_START").count(), 2);
+    assert!(oem.contains("OBJECT_NAME = HST\n") && oem.contains("OBJECT_NAME = P0 HST CHASER\n"));
+    assert_eq!(
+        oem.lines().filter(|l| l.starts_with("2026-")).count(),
+        200,
+        "2 x 6400 / 64 states"
     );
     let _ = std::fs::remove_dir_all(&project);
 }

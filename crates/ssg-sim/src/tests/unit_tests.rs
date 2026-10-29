@@ -3,30 +3,58 @@ mod tests {
     use serde_json::json;
 
     use crate::capture::plan::{
-        CapturePlan, CapturePlanLibrary, State, build_capture_component, compile_capture_plan,
-        parameter_value, validate_capture_plan,
+        CapturePlan, CapturePlanDevice, CapturePlanLibrary, ConditionBounds, Phase, Transition,
+        TransitionConditions, build_capture_component, compile_capture_plan, validate_capture_plan,
     };
     use crate::project::load_plans_from_dir_with_errors;
+    use crate::project::plan_files::read_plan_value;
     use crate::test_support::repo_root;
 
     // -------------------------------------------------------------------------
     // validate_capture_plan
     // -------------------------------------------------------------------------
 
-    fn minimal_valid_plan() -> CapturePlan {
+    // F-15 (P6): the plans below are the typed v1 model (phases, unit-suffixed
+    // fields) instead of v0 `State`s with `Option<Value>` parameters.
+    fn phase(id: &str, max_velocity_mps: f64, max_force_n: f64) -> Phase {
+        Phase {
+            id: id.to_string(),
+            max_velocity_mps,
+            max_force_n,
+            shrink_rate_mps: None,
+            transitions: None,
+            end: None,
+        }
+    }
+
+    fn plan_with_phases(name: &str, phases: Vec<Phase>) -> CapturePlan {
         CapturePlan {
-            name: "Test Plan".to_string(),
+            schema_version: 1,
+            name: name.to_string(),
             id: String::new(),
             tether: "Tether1".to_string(),
-            states: vec![State {
-                id: "approach".to_string(),
-                next: None,
-                parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
-                transitions: None,
-                next_conditions: None,
-            }],
             device: None,
+            capture_sphere: None,
+            phases,
+            migrated_from_v0: None,
         }
+    }
+
+    fn distance_below(to: &str, less_than: f64) -> Transition {
+        Transition {
+            to: to.to_string(),
+            all_of: TransitionConditions {
+                distance_m: Some(ConditionBounds {
+                    less_than: Some(less_than),
+                    greater_than: None,
+                }),
+                relative_speed_mps: None,
+            },
+        }
+    }
+
+    fn minimal_valid_plan() -> CapturePlan {
+        plan_with_phases("Test Plan", vec![phase("approach", 1.0, 2.0)])
     }
 
     #[test]
@@ -40,7 +68,7 @@ mod tests {
         let mut plan = minimal_valid_plan();
         plan.name = "  ".to_string();
         let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("'name'")));
+        assert!(errors.iter().any(|e| e.contains("/name")));
     }
 
     #[test]
@@ -48,111 +76,79 @@ mod tests {
         let mut plan = minimal_valid_plan();
         plan.tether = String::new();
         let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("'tether'")));
+        assert!(errors.iter().any(|e| e.contains("/tether")));
     }
 
     #[test]
     fn validate_plan_errors_on_empty_states() {
         let mut plan = minimal_valid_plan();
-        plan.states.clear();
+        plan.phases.clear();
         let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("'states'")));
+        assert!(errors.iter().any(|e| e.contains("/phases")));
     }
 
+    // F-15 (P6): a v1 phase cannot lack its limits, so a missing one is refused when
+    // the file is read (the serde message names the field).
     #[test]
     fn validate_plan_errors_on_missing_max_velocity() {
-        let mut plan = minimal_valid_plan();
-        plan.states[0].parameters = Some(json!({ "max_force": 2.0 }));
-        let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("max_velocity")));
+        let doc = json!({"schema_version": 1, "name": "p", "tether": "T",
+            "phases": [{"id": "approach", "max_force_n": 2.0}]});
+        let errors = read_plan_value("test_plan", &doc).errors;
+        assert!(errors.iter().any(|e| e.contains("max_velocity_mps")));
     }
 
     #[test]
     fn validate_plan_errors_on_missing_max_force() {
-        let mut plan = minimal_valid_plan();
-        plan.states[0].parameters = Some(json!({ "max_velocity": 1.0 }));
-        let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("max_force")));
+        let doc = json!({"schema_version": 1, "name": "p", "tether": "T",
+            "phases": [{"id": "approach", "max_velocity_mps": 1.0}]});
+        let errors = read_plan_value("test_plan", &doc).errors;
+        assert!(errors.iter().any(|e| e.contains("max_force_n")));
     }
 
     #[test]
     fn validate_plan_errors_on_transition_to_unknown_state() {
         let mut plan = minimal_valid_plan();
-        plan.states[0].transitions = Some(vec![json!({ "to": "nonexistent" })]);
+        plan.phases[0].transitions = Some(vec![distance_below("nonexistent", 10.0)]);
         let errors = validate_capture_plan("test_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("nonexistent")));
     }
 
+    // F-15 (P6): `to` is required by the v1 type; a v0 file without it is refused by
+    // the migration.
     #[test]
     fn validate_plan_errors_on_transition_missing_to_field() {
-        let mut plan = minimal_valid_plan();
-        plan.states[0].transitions = Some(vec![json!({ "distance": { "less_than": 10.0 } })]);
-        let errors = validate_capture_plan("test_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("'to' field")));
+        let doc = json!({"name": "p", "tether": "T", "states": [{"id": "approach",
+            "parameters": {"max_velocity": 1.0, "max_force": 2.0},
+            "transitions": [{"distance": {"less_than": 10.0}}]}]});
+        let errors = read_plan_value("test_plan", &doc).errors;
+        assert!(errors.iter().any(|e| e.contains("/transitions/0/to")));
     }
 
     #[test]
     fn validate_plan_accepts_valid_internal_transition() {
-        let plan = CapturePlan {
-            name: "Two State Plan".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![
-                State {
-                    id: "approach".to_string(),
-                    next: None,
-                    parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
-                    transitions: Some(vec![json!({ "to": "capture" })]),
-                    next_conditions: None,
-                },
-                State {
-                    id: "capture".to_string(),
-                    next: None,
-                    parameters: Some(json!({ "max_velocity": 0.5, "max_force": 2.0 })),
-                    transitions: None,
-                    next_conditions: None,
-                },
-            ],
-            device: None,
-        };
+        let mut approach = phase("approach", 1.0, 2.0);
+        approach.transitions = Some(vec![distance_below("capture", 5.0)]);
+        let plan = plan_with_phases("Two State Plan", vec![approach, phase("capture", 0.5, 2.0)]);
         assert!(validate_capture_plan("two_state_plan", &plan).is_empty());
     }
 
     #[test]
     fn validate_plan_errors_on_duplicate_state_ids() {
-        let plan = CapturePlan {
-            name: "Bad Plan".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![
-                State {
-                    id: "approach".to_string(),
-                    next: None,
-                    parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
-                    transitions: None,
-                    next_conditions: None,
-                },
-                State {
-                    id: "approach".to_string(), // duplicate
-                    next: None,
-                    parameters: Some(json!({ "max_velocity": 0.5, "max_force": 2.0 })),
-                    transitions: None,
-                    next_conditions: None,
-                },
-            ],
-            device: None,
-        };
+        let plan = plan_with_phases(
+            "Bad Plan",
+            vec![phase("approach", 1.0, 2.0), phase("approach", 0.5, 2.0)],
+        );
         let errors = validate_capture_plan("bad_plan", &plan);
-        assert!(errors.iter().any(|e| e.contains("Duplicate")));
+        assert!(errors.iter().any(|e| e.contains("duplicate")));
     }
 
     #[test]
     fn validate_plan_errors_on_zero_tether_length_in_device() {
-        use crate::capture::plan::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
-            device_type: "tether".to_string(),
-            tether_length: 0.0,
+            device_type: Some("tether".to_string()),
+            tether_length_m: Some(0.0),
+            ..CapturePlanDevice::default()
         });
         let errors = validate_capture_plan("test_plan", &plan);
         assert!(errors.iter().any(|e| e.contains("tether_length")));
@@ -160,11 +156,11 @@ mod tests {
 
     #[test]
     fn validate_plan_passes_with_valid_device_block() {
-        use crate::capture::plan::CapturePlanDevice;
         let mut plan = minimal_valid_plan();
         plan.device = Some(CapturePlanDevice {
-            device_type: "tether".to_string(),
-            tether_length: 20.0,
+            device_type: Some("tether".to_string()),
+            tether_length_m: Some(20.0),
+            ..CapturePlanDevice::default()
         });
         assert!(validate_capture_plan("test_plan", &plan).is_empty());
     }
@@ -175,30 +171,9 @@ mod tests {
 
     #[test]
     fn compile_plan_indexes_states_by_id() {
-        let plan = CapturePlan {
-            name: "Compiled Plan".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![
-                State {
-                    id: "approach".to_string(),
-                    next: None,
-                    parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
-                    transitions: None,
-                    next_conditions: None,
-                },
-                State {
-                    id: "capture".to_string(),
-                    next: None,
-                    parameters: Some(
-                        json!({ "max_velocity": 0.5, "max_force": 2.0, "shrink_rate": 0.01 }),
-                    ),
-                    transitions: None,
-                    next_conditions: None,
-                },
-            ],
-            device: None,
-        };
+        let mut capture = phase("capture", 0.5, 2.0);
+        capture.shrink_rate_mps = Some(0.01);
+        let plan = plan_with_phases("Compiled Plan", vec![phase("approach", 1.0, 2.0), capture]);
         let compiled = compile_capture_plan(&plan);
         assert!(compiled.state("approach").is_some());
         assert!(compiled.state("capture").is_some());
@@ -207,21 +182,9 @@ mod tests {
 
     #[test]
     fn compile_plan_parses_parameters_correctly() {
-        let plan = CapturePlan {
-            name: "Param Plan".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![State {
-                id: "terminal".to_string(),
-                next: None,
-                parameters: Some(
-                    json!({ "max_velocity": 0.3, "max_force": 1.5, "shrink_rate": 0.005 }),
-                ),
-                transitions: None,
-                next_conditions: None,
-            }],
-            device: None,
-        };
+        let mut terminal = phase("terminal", 0.3, 1.5);
+        terminal.shrink_rate_mps = Some(0.005);
+        let plan = plan_with_phases("Param Plan", vec![terminal]);
         let compiled = compile_capture_plan(&plan);
         let state = compiled.state("terminal").unwrap();
         assert!((state.parameters.max_velocity - 0.3).abs() < f64::EPSILON);
@@ -231,21 +194,9 @@ mod tests {
 
     #[test]
     fn compile_plan_parses_distance_transition_conditions() {
-        let plan = CapturePlan {
-            name: "Transition Plan".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![State {
-                id: "approach".to_string(),
-                next: None,
-                parameters: Some(json!({ "max_velocity": 1.0, "max_force": 2.0 })),
-                transitions: Some(vec![
-                    json!({ "to": "approach", "distance": { "less_than": 50.0 } }),
-                ]),
-                next_conditions: None,
-            }],
-            device: None,
-        };
+        let mut approach = phase("approach", 1.0, 2.0);
+        approach.transitions = Some(vec![distance_below("approach", 50.0)]);
+        let plan = plan_with_phases("Transition Plan", vec![approach]);
         let compiled = compile_capture_plan(&plan);
         let transition = &compiled.state("approach").unwrap().transitions[0];
         assert_eq!(transition.to, "approach");
@@ -268,28 +219,10 @@ mod tests {
 
     #[test]
     fn build_capture_component_sets_first_state() {
-        let plan = CapturePlan {
-            name: "Plan".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![
-                State {
-                    id: "approach".to_string(),
-                    next: None,
-                    parameters: None,
-                    transitions: None,
-                    next_conditions: None,
-                },
-                State {
-                    id: "capture".to_string(),
-                    next: None,
-                    parameters: None,
-                    transitions: None,
-                    next_conditions: None,
-                },
-            ],
-            device: None,
-        };
+        let plan = plan_with_phases(
+            "Plan",
+            vec![phase("approach", 0.0, 0.0), phase("capture", 0.0, 0.0)],
+        );
         let component = build_capture_component("plan", &plan, 123.0).unwrap();
         assert_eq!(component.current_state, "approach");
         assert!((component.state_enter_time_s - 123.0).abs() < f64::EPSILON);
@@ -297,13 +230,7 @@ mod tests {
 
     #[test]
     fn build_capture_component_returns_none_for_empty_states() {
-        let plan = CapturePlan {
-            name: "Empty".to_string(),
-            id: String::new(),
-            tether: "Tether1".to_string(),
-            states: vec![],
-            device: None,
-        };
+        let plan = plan_with_phases("Empty", vec![]);
         assert!(build_capture_component("empty", &plan, 0.0).is_none());
     }
 
@@ -332,27 +259,6 @@ mod tests {
         let (plans, errors) = load_plans_from_dir_with_errors(&dir);
         assert!(plans.is_empty());
         assert!(errors.is_empty());
-    }
-
-    // -------------------------------------------------------------------------
-    // parameter_value helper
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn parameter_value_extracts_f64() {
-        let params = Some(json!({ "max_velocity": 2.5 }));
-        assert_eq!(parameter_value(&params, "max_velocity"), Some(2.5));
-    }
-
-    #[test]
-    fn parameter_value_returns_none_for_missing_key() {
-        let params = Some(json!({ "max_force": 1.0 }));
-        assert_eq!(parameter_value(&params, "max_velocity"), None);
-    }
-
-    #[test]
-    fn parameter_value_returns_none_for_none_params() {
-        assert_eq!(parameter_value(&None, "max_velocity"), None);
     }
 
     // -------------------------------------------------------------------------
@@ -428,11 +334,13 @@ mod tests {
         // When a plan is deserialized from JSON (no "id" key present), plan.id
         // must default to "" — the loader sets it to the file stem afterwards.
         let json = json!({
+            "schema_version": 1,
             "name": "Test Plan",
             "tether": "Tether1",
-            "states": [{
+            "phases": [{
                 "id": "approach",
-                "parameters": { "max_velocity": 1.0, "max_force": 2.0 }
+                "max_velocity_mps": 1.0,
+                "max_force_n": 2.0
             }]
         });
         let plan: CapturePlan = serde_json::from_value(json).unwrap();
@@ -448,6 +356,7 @@ mod tests {
     fn make_entry(msg: &str) -> LogEntry {
         LogEntry {
             timestamp: "00:00:00".to_string(),
+            epoch_utc: "2026-04-03T00:00:00.000000Z".to_string(),
             level: LogLevel::Info,
             source: "test",
             message: msg.to_string(),

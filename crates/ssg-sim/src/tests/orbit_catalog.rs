@@ -14,7 +14,7 @@ use crate::orbit::catalog::{
     GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements, JsonOrbital, SpaceCatalogEntry,
     SpaceObjectCatalog, gp_record_to_elements, load_dataset_entities, propagate_catalog_eci_state,
 };
-use crate::project::AssetsDir;
+use crate::project::{AssetsDir, WorkingDirectory};
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::test_support::{Lcg, LogTap, TempDir, assert_close, fixed_epoch, q13, repo_root};
 use crate::time::WorldTime;
@@ -545,7 +545,25 @@ fn load(
     gpu_buffer: bool,
     origin: Option<Option<Epoch>>,
 ) -> Loaded {
+    load_in_project(assets, None, existing, gpu_buffer, origin)
+}
+
+/// [`load`] with the project folder `project` (the working directory) set.
+fn load_in_project(
+    assets: &std::path::Path,
+    project: Option<&std::path::Path>,
+    existing: Vec<SpaceCatalogEntry>,
+    gpu_buffer: bool,
+    origin: Option<Option<Epoch>>,
+) -> Loaded {
     let mut app = App::new();
+    if let Some(project) = project {
+        let path = project.to_string_lossy().into_owned();
+        app.insert_resource(WorkingDirectory {
+            path: path.clone(),
+            pending_path: path,
+        });
+    }
     app.add_message::<LogEvent>()
         .insert_resource(SpaceObjectCatalog { entries: existing })
         .insert_resource(WorldTime::starting_at(fixed_epoch()))
@@ -617,6 +635,74 @@ fn loader_reads_json_datasets_in_both_formats_and_skips_other_files() {
         )]
     );
     assert!(loaded.gpu.is_none(), "no buffer resource, none created");
+}
+
+#[test]
+fn loader_also_reads_the_projects_datasets_before_the_assets() {
+    let assets = TempDir::new("loader-project-assets");
+    let project = TempDir::new("loader-project-folder");
+    assets.write(
+        "datasets/shipped.json",
+        &format!("[{}]", full_record(100, "")),
+    );
+    project.write(
+        "datasets/b_mine.json",
+        &format!("[{}]", full_record(300, "")),
+    );
+    project.write(
+        "datasets/a_mine.json",
+        &format!("[{}]", full_record(200, "")),
+    );
+    project.write("datasets/notes.txt", &format!("[{}]", full_record(400, "")));
+    // A plan next to the datasets folder is not a dataset.
+    project.write("plan.json", "[]");
+
+    let loaded = load_in_project(assets.path(), Some(project.path()), Vec::new(), true, None);
+
+    // The gpu buffer keeps load order: the project's files by name, then the assets'.
+    let order: Vec<u32> = loaded.gpu.unwrap().iter().map(|g| g.id).collect();
+    assert_eq!(order, vec![200, 300, 100]);
+    let mut ids: Vec<u32> = loaded.catalog.iter().map(|e| e.norad_id).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![100, 200, 300]);
+    assert_eq!(
+        loaded.logs,
+        vec![(
+            LogLevel::Info,
+            "propagation",
+            "Dataset loaded: 3 objects".to_string()
+        )]
+    );
+}
+
+#[test]
+fn loader_reads_the_projects_datasets_when_the_assets_have_none() {
+    let assets = TempDir::new("loader-project-only-assets");
+    let project = TempDir::new("loader-project-only");
+    project.write("datasets/mine.json", &format!("[{}]", full_record(200, "")));
+
+    let loaded = load_in_project(assets.path(), Some(project.path()), Vec::new(), false, None);
+
+    let ids: Vec<u32> = loaded.catalog.iter().map(|e| e.norad_id).collect();
+    assert_eq!(
+        ids,
+        vec![200],
+        "no assets/datasets folder: the project's file still loads"
+    );
+}
+
+#[test]
+fn loader_ignores_a_project_without_a_datasets_folder() {
+    let assets = TempDir::new("loader-project-none-assets");
+    let project = TempDir::new("loader-project-none");
+    assets.write(
+        "datasets/shipped.json",
+        &format!("[{}]", full_record(100, "")),
+    );
+
+    let loaded = load_in_project(assets.path(), Some(project.path()), Vec::new(), false, None);
+
+    assert_eq!(loaded.catalog.len(), 1);
 }
 
 #[test]

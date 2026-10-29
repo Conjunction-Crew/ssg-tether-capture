@@ -295,10 +295,12 @@ pub fn load_example_plans(app: &mut App) {
     }
 }
 
-/// Parse `json` as a [`CapturePlan`] and insert it under `id` **without**
-/// validation: some characterization plans are invalid on purpose.
+/// Parse `json` (v0 or v1) as a [`CapturePlan`] and insert it under `id`
+/// **without** validation: some characterization plans are invalid on purpose.
 pub fn insert_plan_json(app: &mut App, id: &str, json: &str) {
-    let plan: CapturePlan = serde_json::from_str(json).expect("plan JSON did not parse");
+    let value: serde_json::Value = serde_json::from_str(json).expect("plan JSON did not parse");
+    let (plan, _, _): (CapturePlan, _, _) = crate::project::plan_files::plan_from_value(id, &value)
+        .unwrap_or_else(|e| panic!("plan JSON is not a plan: {e:?}"));
     app.world_mut()
         .resource_mut::<CapturePlanLibrary>()
         .insert_plan(id.to_string(), plan);
@@ -517,6 +519,7 @@ pub mod q13 {
             },
             elements: EditableOrbitalElements::from_gp(&gp),
             gp: Some(gp),
+            mass_kg: None,
         }
     }
 

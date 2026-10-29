@@ -70,9 +70,10 @@ fn load_plans_from_dir_with_errors_separates_plans_from_errors() {
         "a parse error says 'Invalid JSON: ...': {:?}",
         errors["broken"]
     );
+    // F-32 (P6): validation messages are `[<plan-id>] <json-pointer>: <message>`.
     assert_eq!(
         errors["empty_name"],
-        ["[empty_name] 'name' field is empty."],
+        ["[empty_name] /name: must not be blank"],
         "a validation error is the validator's message"
     );
     assert!(
@@ -90,7 +91,7 @@ fn load_plans_from_dir_returns_only_the_valid_plans() {
 
     assert_eq!(sorted_keys(&plans), ["good"]);
     assert_eq!(plans["good"].tether, "T");
-    assert_eq!(plans["good"].states.len(), 1);
+    assert_eq!(plans["good"].phases.len(), 1);
 }
 
 #[test]
@@ -206,11 +207,13 @@ fn load_all_unions_example_and_user_plans_and_compiles_them() {
         "the load errors of both directories are merged"
     );
     assert!(errors["example_bad"][0].starts_with("Invalid JSON: "));
+    // F-32 (P6): typed `[<plan-id>] <json-pointer>: <message>` messages; a v0
+    // file's `states` are checked as the migrated plan's `phases`.
     assert_eq!(
         errors["user_empty"],
         [
-            "[user_empty] 'tether' field is empty.",
-            "[user_empty] 'states' array is empty — at least one state is required."
+            "[user_empty] /tether: must not be blank",
+            "[user_empty] /phases: at least one phase is required"
         ]
     );
 }
@@ -249,6 +252,8 @@ fn load_all_replaces_what_the_library_held_before() {
 
     assert_eq!(sorted_keys(&library.example_plans), ["other"]);
     assert_eq!(sorted_keys(&library.plans), ["other"]);
+    // F-53 (P6): the compiled plans are replaced too.
+    assert_eq!(sorted_keys(&library.compiled_plans), ["other"]);
 }
 
 #[test]
@@ -305,7 +310,7 @@ fn reload_user_plans_recompiles_an_edited_plan() {
 }
 
 #[test]
-fn reload_user_plans_drops_a_deleted_plan_but_keeps_its_compiled_entry() {
+fn reload_user_plans_drops_a_deleted_plan_and_its_compiled_entry() {
     let examples = TempDir::new("reload-delete-ex");
     let users = TempDir::new("reload-delete-us");
     users.write("gone.json", &plan_json("Gone"));
@@ -317,11 +322,14 @@ fn reload_user_plans_drops_a_deleted_plan_but_keeps_its_compiled_entry() {
 
     assert!(library.user_plans.is_empty());
     assert!(library.plans.is_empty(), "the union no longer has the plan");
-    // Proposed finding (P5), low: `reload_user_plans` rebuilds `plans` but never
-    // removes entries from `compiled_plans`, so a deleted (or no longer valid) user
-    // plan stays compiled until the next `load_all` replaces the library's maps.
-    // `compiled_plans` is not cleared by `load_all` either. Pinned as it is today.
-    assert_eq!(sorted_keys(&library.compiled_plans), ["gone"]);
+    // F-53 (P6): `reload_user_plans` (and `load_all`) rebuild `compiled_plans`
+    // from scratch, so a deleted (or no longer valid) user plan is no longer
+    // compiled. Until P6 its compiled entry stayed (pinned in P5).
+    assert!(
+        library.compiled_plans.is_empty(),
+        "compiled plans: {:?}",
+        sorted_keys(&library.compiled_plans)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -389,11 +397,42 @@ fn write_config_file_creates_the_directory_and_reads_back() {
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({ "working_directory": "/projects/capture" })
+        // P6 (D6): the config carries its schema version.
+        serde_json::json!({ "schema_version": 1, "working_directory": "/projects/capture" })
     );
     assert_eq!(
         read_config_file(&file).as_deref(),
         Some("/projects/capture")
+    );
+}
+
+#[test]
+fn read_config_file_reads_files_with_or_without_a_schema_version() {
+    let dir = TempDir::new("config-read-version");
+    for (name, contents) in [
+        ("old.json", r#"{"working_directory": "/a"}"#),
+        (
+            "v1.json",
+            r#"{"schema_version": 1, "working_directory": "/a"}"#,
+        ),
+    ] {
+        let file = dir.write(name, contents);
+        assert_eq!(read_config_file(&file).as_deref(), Some("/a"), "{name}");
+    }
+}
+
+#[test]
+fn read_config_file_is_none_for_a_newer_schema_version() {
+    let dir = TempDir::new("config-read-newer");
+    let file = dir.write(
+        "config.json",
+        r#"{"schema_version": 2, "working_directory": "/a", "theme": "dark"}"#,
+    );
+
+    assert_eq!(
+        read_config_file(&file),
+        None,
+        "a config written by a newer version is not read (a warning is logged)"
     );
 }
 
@@ -411,7 +450,7 @@ fn write_config_file_replaces_the_previous_content() {
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({ "working_directory": "/new" }),
+        serde_json::json!({ "schema_version": 1, "working_directory": "/new" }),
         "the whole file is rewritten, other entries are not kept"
     );
 }

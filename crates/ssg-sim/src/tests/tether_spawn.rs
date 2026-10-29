@@ -9,7 +9,7 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 
 use crate::anchor::SimAnchor;
-use crate::capture::plan::CapturePlanLibrary;
+use crate::capture::plan::{CapturePlanLibrary, capture_plan_warnings, validate_capture_plan};
 use crate::orbit::Orbit;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
@@ -176,12 +176,20 @@ fn spawn_tether_falls_back_to_defaults_for_a_missing_device_a_zero_length_and_an
         );
     }
 
-    // An empty tether name (a plan the validator rejects, but `insert_plan_json`
-    // does not validate) falls back to "Tether1".
+    // F-43 (P6): an empty tether name (a plan the validator rejects, but
+    // `insert_plan_json` does not validate) is registered under the plan's own id,
+    // the one the sidebar looks up; "Tether1" is only for no active plan (it fell
+    // back to "Tether1" before P6).
     let mut app = spawn_app();
     insert_plan_json(&mut app, "p", &plan_with("", None));
     run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
-    assert_eq!(registered(&app, "Tether1").len(), 2);
+    assert_eq!(registered(&app, "").len(), 2);
+    assert!(
+        !app.world()
+            .resource::<OrbitalCache>()
+            .tethers
+            .contains_key("Tether1")
+    );
 }
 
 #[test]
@@ -460,4 +468,250 @@ fn spawn_selected_bodies_spawns_the_chasers_tether_and_the_targets_debris() {
     let cache = app.world().resource::<OrbitalCache>();
     assert!(cache.debris.contains_key("Satellite1"));
     assert_close(y_of(&app, registered(&app, "Rope")[1]), 2.0, 1e-3, "tail y");
+}
+
+// ---------------------------------------------------------------------------
+// P6 S4: the plan's physical parameters reach the spawned bodies
+// ---------------------------------------------------------------------------
+
+/// A v1 plan whose `device` block is `device`.
+fn plan_v1(device: serde_json::Value) -> String {
+    serde_json::json!({
+        "schema_version": 1,
+        "name": "p",
+        "tether": "T",
+        "device": device,
+        "phases": [{"id": "s", "max_velocity_mps": 1.0, "max_force_n": 1.0}]
+    })
+    .to_string()
+}
+
+/// Every tether body as `(y, mass)` sorted by y, and every joint's `(linear, angular)` damping.
+fn tether_bodies(app: &mut App) -> (Vec<(f64, f64)>, Vec<(f64, f64)>) {
+    let world = app.world_mut();
+    let mut bodies: Vec<(f64, f64)> = world
+        .query_filtered::<(&Transform, &Mass), Or<(With<TetherRoot>, With<TetherNode>)>>()
+        .iter(world)
+        .map(|(t, m)| (t.translation.y as f64, m.0 as f64))
+        .collect();
+    bodies.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let damping = world
+        .query::<&JointDamping>()
+        .iter(world)
+        .map(|d| (d.linear, d.angular))
+        .collect();
+    (bodies, damping)
+}
+
+#[test]
+fn spawn_tether_applies_the_plans_spacing_masses_and_damping() {
+    let mut app = spawn_app();
+    insert_plan_json(
+        &mut app,
+        "p",
+        &plan_v1(serde_json::json!({
+            "tether_length_m": 11.0,
+            "segment_spacing_m": 0.5,
+            "segment_mass_kg": 0.3,
+            "end_mass_kg": 4.0,
+            "joint_damping_linear": 2.5,
+            "joint_damping_angular": 0.75
+        })),
+    );
+
+    run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
+
+    let (bodies, damping) = tether_bodies(&mut app);
+    // 10 m of interior at 0.5 m: 20 interior nodes, plus the root and the tail.
+    assert_eq!(bodies.len(), 22, "root + 20 interior + tail");
+    assert_close(bodies[0].1, 4.0, 1e-6, "root mass");
+    assert_close(bodies[21].1, 4.0, 1e-6, "tail mass");
+    for (index, (_, mass)) in bodies[1..21].iter().enumerate() {
+        assert_close(*mass, 0.3, 1e-6, &format!("interior node {index} mass"));
+    }
+    assert_close(bodies[21].0, 11.0, 1e-3, "tail y = the tether length");
+    assert_eq!(damping.len(), 21, "one joint per node");
+    for (linear, angular) in damping {
+        assert_eq!((linear, angular), (2.5, 0.75));
+    }
+    let interior_length = (11.0 - 1.0) / 20.0;
+    let world = app.world_mut();
+    let lengths: Vec<f64> = world
+        .query::<&TetherShape>()
+        .iter(world)
+        .filter_map(|shape| match shape {
+            TetherShape::Cylinder { length, .. } => Some(*length),
+            TetherShape::Sphere { .. } => None,
+        })
+        .collect();
+    assert_eq!(lengths.len(), 20);
+    for length in lengths {
+        assert_close(length, interior_length, 1e-9, "segment length");
+    }
+}
+
+#[test]
+fn a_plan_that_spells_out_the_defaults_spawns_the_same_tether_as_a_plan_without_a_device() {
+    let spawn = |device: Option<serde_json::Value>| {
+        let mut app = spawn_app();
+        let plan = match device {
+            Some(device) => plan_v1(device),
+            None => plan_with("T", None),
+        };
+        insert_plan_json(&mut app, "p", &plan);
+        run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
+        let (bodies, damping) = tether_bodies(&mut app);
+        assert_eq!(bodies.len(), 192, "root + 190 interior + tail");
+        (bodies, damping)
+    };
+
+    let literal = spawn(None);
+    let spelled_out = spawn(Some(serde_json::json!({
+        "type": "tether",
+        "tether_length_m": 20.0,
+        "segment_spacing_m": 0.1,
+        "segment_mass_kg": 0.1,
+        "end_mass_kg": 2.0,
+        "joint_damping_linear": 1.0,
+        "joint_damping_angular": 1.0
+    })));
+
+    assert_eq!(
+        literal, spelled_out,
+        "defaults are the literals the spawner used before P6"
+    );
+    assert!(
+        literal.1.iter().all(|d| *d == (1.0, 1.0)),
+        "the default joint damping is 1.0 / 1.0"
+    );
+}
+
+#[test]
+fn spawn_tether_builds_as_many_bodies_as_the_validator_counts() {
+    // The 1,000-body limit (error) and the 200-body warning are computed from the
+    // plan; the spawner must build exactly that many.
+    for (length, spacing, bodies) in [
+        (100.0, 0.5, 200),
+        (100.5, 0.5, 201),
+        (500.0, 0.5, 1000),
+        (20.0, 0.1, 192),
+    ] {
+        let mut app = spawn_app();
+        let document = plan_v1(serde_json::json!({
+            "tether_length_m": length, "segment_spacing_m": spacing
+        }));
+        insert_plan_json(&mut app, "p", &document);
+        let plan = app
+            .world()
+            .resource::<CapturePlanLibrary>()
+            .plans
+            .get("p")
+            .unwrap()
+            .clone();
+        assert_eq!(validate_capture_plan("p", &plan), Vec::<String>::new());
+        let warned = !capture_plan_warnings("p", &plan).is_empty();
+        assert_eq!(warned, bodies > 200, "{length} m at {spacing} m");
+
+        run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
+
+        assert_eq!(
+            tether_bodies(&mut app).0.len(),
+            bodies,
+            "{length} m at {spacing} m"
+        );
+    }
+    // One more is refused by the validator and never reaches the spawner.
+    let mut app = spawn_app();
+    insert_plan_json(
+        &mut app,
+        "p",
+        &plan_v1(serde_json::json!({"tether_length_m": 500.5, "segment_spacing_m": 0.5})),
+    );
+    let plan = app
+        .world()
+        .resource::<CapturePlanLibrary>()
+        .plans
+        .get("p")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        validate_capture_plan("p", &plan),
+        ["[p] /device/segment_spacing_m: gives 1001 tether bodies; at most 1000 are allowed"]
+    );
+}
+
+#[test]
+fn spawn_tether_falls_back_to_the_default_spacing_for_a_plan_the_validator_rejects() {
+    // `insert_plan_json` does not validate; a spacing of 0 or less must not
+    // divide by zero.
+    for spacing in [0.0, -0.1] {
+        let mut app = spawn_app();
+        insert_plan_json(
+            &mut app,
+            "p",
+            &plan_v1(serde_json::json!({"segment_spacing_m": spacing})),
+        );
+
+        run_spawn_tether(&mut app, Some("p"), hst()).expect("spawn failed");
+
+        assert_eq!(tether_bodies(&mut app).0.len(), 192, "spacing {spacing}");
+    }
+}
+
+#[test]
+fn spawn_debris_takes_the_targets_mass_from_the_selection() {
+    let spawn = |mass_kg: Option<f64>| {
+        let mut app = spawn_app();
+        let mut pick = hst();
+        pick.mass_kg = mass_kg;
+        app.world_mut()
+            .run_system_once(
+                move |mut commands: Commands, mut cache: ResMut<OrbitalCache>| {
+                    spawn_debris(&mut commands, &mut cache, &pick).map_err(|e| e.to_string())
+                },
+            )
+            .expect("the spawn system failed to run")
+            .expect("spawn failed");
+        let debris = *app
+            .world()
+            .resource::<OrbitalCache>()
+            .debris
+            .get("Satellite1")
+            .unwrap();
+        app.world().get::<Mass>(debris).unwrap().0 as f64
+    };
+
+    assert_close(spawn(None), 2500.0, 1e-3, "default target mass");
+    assert_close(spawn(Some(3200.0)), 3200.0, 1e-3, "mass from project.json");
+}
+
+#[test]
+fn spawn_selected_bodies_gives_the_debris_the_targets_mass_and_not_the_tether() {
+    let mut app = spawn_app();
+    let mut target = q13::catalog_pick("HST", q13::HST_NORAD_ID);
+    target.mass_kg = Some(3200.0);
+    let chaser = q13::catalog_pick("CHASER", q13::CHASER_NORAD_ID);
+    select(&mut app, Some(target), Some(chaser));
+
+    run_spawn_selected(&mut app);
+
+    let debris = *app
+        .world()
+        .resource::<OrbitalCache>()
+        .debris
+        .get("Satellite1")
+        .unwrap();
+    assert_close(
+        app.world().get::<Mass>(debris).unwrap().0 as f64,
+        3200.0,
+        1e-3,
+        "debris mass",
+    );
+    let root = registered(&app, "Tether1")[0];
+    assert_close(
+        app.world().get::<Mass>(root).unwrap().0 as f64,
+        2.0,
+        1e-6,
+        "the tether root keeps the plan's end mass",
+    );
 }

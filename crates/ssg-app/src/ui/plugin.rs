@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use avian3d::prelude::RigidBody;
 use bevy::camera::CameraOutputMode;
@@ -56,9 +56,13 @@ use ssg_sim::SimSet;
 use ssg_sim::capture::SimCommand;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::Orbital;
-use ssg_sim::orbit::selection::OrbitalSelectionState;
+use ssg_sim::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
+use ssg_sim::project::manifest::{
+    MANIFEST_FILE, ProjectManifest, read_manifest_file, read_sim_inputs, save_and_reload,
+};
+use ssg_sim::project::plan_files::{read_plan_value, save_plan};
 use ssg_sim::project::{
-    SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, save_plan_file,
+    SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, now_utc,
     set_working_directory,
 };
 use ssg_sim::session::{PauseState, SimState, UiScreen};
@@ -378,6 +382,120 @@ fn update_sim_screen_bottom_padding(
     }
 }
 
+/// Saves the plan form's JSON (v0-shaped) as a v1 plan file: migrated in memory,
+/// validated, then written by the v1 writer. The error lists why it was not saved.
+fn save_form_plan(
+    dir: &std::path::Path,
+    filename: &str,
+    json: &serde_json::Value,
+) -> Result<(), String> {
+    let plan_id = filename.strip_suffix(".json").unwrap_or(filename);
+    let report = read_plan_value(plan_id, json);
+    let plan = report.plan.ok_or_else(|| report.errors.join("; "))?;
+    save_plan(dir, filename, &plan).map_err(|e| e.to_string())
+}
+
+/// A plan value as the form shows it (as JSON writes it, e.g. `2.0`).
+fn number_text(value: f64) -> String {
+    serde_json::Value::from(value).to_string()
+}
+
+/// `UiEvent::OpenProject`: the project's own scenario, when it has a `project.json`
+/// (the start epoch and the two bodies; a restored body starts from SGP4 as a
+/// catalog pick does, and the map highlight of a restored catalog object is P8's).
+/// Otherwise a new scenario starts at the wall clock, rounded as the manifest writes
+/// it (F-06). A manifest that cannot be used is logged and the project opens as new.
+fn restore_project_scenario(
+    dir: &Path,
+    sim_config: &mut SimConfig,
+    selection: &mut OrbitalSelectionState,
+    log: &mut MessageWriter<LogEvent>,
+) {
+    match read_sim_inputs(dir) {
+        Some(Ok(inputs)) => {
+            sim_config.start_epoch = inputs.start_epoch;
+            selection.target = Some(inputs.target);
+            selection.chaser = Some(inputs.chaser);
+            return;
+        }
+        Some(Err(errors)) => {
+            for message in errors {
+                log.write(LogEvent {
+                    level: LogLevel::Error,
+                    source: "project",
+                    message: format!("{MANIFEST_FILE} not used: {message}"),
+                });
+            }
+        }
+        None => {}
+    }
+    sim_config.start_epoch = now_utc();
+}
+
+/// `UiEvent::StartSim`: writes `project.json` from the selection, reads it back and
+/// starts from what was read, so the app and the CLI take their inputs from the
+/// same file. A body keeps its selection source (the map highlight is the UI's). A
+/// file that cannot be written is logged and the run starts from the selection in
+/// memory; a selection that is not complete or not valid is logged too.
+fn start_from_project_file(
+    dir: &Path,
+    active_plan: Option<&str>,
+    sim_config: &mut SimConfig,
+    selection: &mut OrbitalSelectionState,
+    log: &mut MessageWriter<LogEvent>,
+) {
+    let mut error = |message: String| {
+        log.write(LogEvent {
+            level: LogLevel::Error,
+            source: "project",
+            message,
+        });
+    };
+    let name = read_manifest_file(dir)
+        .and_then(|report| report.manifest)
+        .map(|manifest| manifest.name)
+        .or_else(|| {
+            dir.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "project".to_string());
+    let manifest = match ProjectManifest::from_selection(
+        &name,
+        sim_config.start_epoch,
+        active_plan,
+        selection,
+    ) {
+        Ok(manifest) => manifest,
+        // Nothing to write; the sim reports the missing body as before.
+        Err(_) => return,
+    };
+    match save_and_reload(dir, &manifest) {
+        Ok((inputs, write_error)) => {
+            if let Some(message) = write_error {
+                error(message);
+            }
+            sim_config.start_epoch = inputs.start_epoch;
+            for (slot, read) in [
+                (&mut selection.target, inputs.target),
+                (&mut selection.chaser, inputs.chaser),
+            ] {
+                if let Some(previous) = slot.as_ref() {
+                    *slot = Some(SelectedOrbitalObject {
+                        source: previous.source.clone(),
+                        ..read
+                    });
+                }
+            }
+        }
+        Err(errors) => {
+            for message in errors {
+                error(format!("{MANIFEST_FILE} not used: {message}"));
+            }
+        }
+    }
+}
+
 fn handle_ui_events(
     mut commands: Commands,
     mut ui_events: MessageReader<UiEvent>,
@@ -399,12 +517,13 @@ fn handle_ui_events(
         ResMut<NextState<SimState>>,
         MessageWriter<SimCommand>,
         ResMut<NewCapturePlanForm>,
+        ResMut<SimConfig>,
     ),
     mut flow: UiFlowState,
     mut log: MessageWriter<LogEvent>,
     (pause, mut next_pause): (Res<State<PauseState>>, ResMut<NextState<PauseState>>),
 ) {
-    let (mut settings, mut next_sim_state, mut sim_commands, mut form) = ui_runtime;
+    let (mut settings, mut next_sim_state, mut sim_commands, mut form, mut sim_config) = ui_runtime;
 
     for event in ui_events.read() {
         match event {
@@ -412,16 +531,24 @@ fn handle_ui_events(
                 if capture_plan_lib.plans.contains_key(project_id.as_str()) {
                     selected_project.project_id = Some(project_id.clone());
                     *orbital_selection = OrbitalSelectionState::default();
-                    // The sim start epoch: "the epoch at project creation" until
-                    // P6 persists it, so re-running the project reuses it (F-06).
-                    commands.insert_resource(SimConfig {
-                        start_epoch: brahe::Epoch::now(),
-                    });
+                    restore_project_scenario(
+                        Path::new(&working_directory.path),
+                        &mut sim_config,
+                        &mut orbital_selection,
+                        &mut log,
+                    );
                     next_sim_state.set(SimState::Setup);
                     next_screen.set(UiScreen::Sim);
                 }
             }
             UiEvent::StartSim => {
+                start_from_project_file(
+                    Path::new(&working_directory.path),
+                    selected_project.project_id.as_deref(),
+                    &mut sim_config,
+                    &mut orbital_selection,
+                    &mut log,
+                );
                 next_sim_state.set(SimState::Running);
             }
             UiEvent::BackToHome => {
@@ -549,7 +676,7 @@ fn handle_ui_events(
                             form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
                         } else {
                             let json = build_capture_plan_json(&form);
-                            if let Err(e) = save_plan_file(
+                            if let Err(e) = save_form_plan(
                                 std::path::Path::new(&working_directory.path),
                                 &filename,
                                 &json,
@@ -607,7 +734,7 @@ fn handle_ui_events(
             UiEvent::ConfirmOverwriteCapturePlan => {
                 let filename = generate_filename(&form.plan_name);
                 let json = build_capture_plan_json(&form);
-                if let Err(e) = save_plan_file(
+                if let Err(e) = save_form_plan(
                     std::path::Path::new(&working_directory.path),
                     &filename,
                     &json,
@@ -641,83 +768,51 @@ fn handle_ui_events(
                     form.plan_name = plan.name.clone();
                     form.tether_name = plan.tether.clone();
                     if let Some(device) = &plan.device {
-                        form.tether_type = device.device_type.clone();
-                        if device.tether_length > 0.0 {
-                            form.tether_length = device.tether_length.to_string();
+                        form.tether_type = device.device_type.clone().unwrap_or_default();
+                        if let Some(length) = device.tether_length_m.filter(|l| *l > 0.0) {
+                            form.tether_length = number_text(length);
                         }
                     }
-                    for state in &plan.states {
-                        let transitions: Vec<TransitionForm> = state
+                    for phase in &plan.phases {
+                        let transitions: Vec<TransitionForm> = phase
                             .transitions
-                            .as_ref()
-                            .map(|trans| {
-                                trans
-                                    .iter()
-                                    .filter_map(|t| {
-                                        let to = t.get("to")?.as_str()?.to_string();
-                                        let dist = t.get("distance")?;
-                                        let (kind, val) = if let Some(v) = dist.get("less_than") {
-                                            ("less_than".to_string(), v.to_string())
-                                        } else {
-                                            let v = dist.get("greater_than")?;
-                                            ("greater_than".to_string(), v.to_string())
-                                        };
-                                        Some(TransitionForm {
-                                            to,
-                                            distance_kind: kind,
-                                            distance_value: val,
-                                        })
-                                    })
-                                    .collect()
+                            .iter()
+                            .flatten()
+                            .filter_map(|t| {
+                                let dist = t.all_of.distance_m?;
+                                let (kind, val) = if let Some(v) = dist.less_than {
+                                    ("less_than".to_string(), number_text(v))
+                                } else {
+                                    ("greater_than".to_string(), number_text(dist.greater_than?))
+                                };
+                                Some(TransitionForm {
+                                    to: t.to.clone(),
+                                    distance_kind: kind,
+                                    distance_value: val,
+                                })
                             })
-                            .unwrap_or_default();
+                            .collect();
+                        let max_velocity = number_text(phase.max_velocity_mps);
+                        let max_force = number_text(phase.max_force_n);
+                        let shrink_rate =
+                            phase.shrink_rate_mps.map(number_text).unwrap_or_default();
 
-                        match state.id.as_str() {
+                        match phase.id.as_str() {
                             "approach" => {
-                                if let Some(params) = &state.parameters {
-                                    form.approach_max_velocity = params
-                                        .get("max_velocity")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.approach_max_force = params
-                                        .get("max_force")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                }
+                                form.approach_max_velocity = max_velocity;
+                                form.approach_max_force = max_force;
                                 form.approach_transitions = transitions;
                             }
                             "terminal" => {
-                                if let Some(params) = &state.parameters {
-                                    form.terminal_max_velocity = params
-                                        .get("max_velocity")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.terminal_max_force = params
-                                        .get("max_force")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.terminal_shrink_rate = params
-                                        .get("shrink_rate")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                }
+                                form.terminal_max_velocity = max_velocity;
+                                form.terminal_max_force = max_force;
+                                form.terminal_shrink_rate = shrink_rate;
                                 form.terminal_transitions = transitions;
                             }
                             "capture" => {
-                                if let Some(params) = &state.parameters {
-                                    form.capture_max_velocity = params
-                                        .get("max_velocity")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.capture_max_force = params
-                                        .get("max_force")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                    form.capture_shrink_rate = params
-                                        .get("shrink_rate")
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default();
-                                }
+                                form.capture_max_velocity = max_velocity;
+                                form.capture_max_force = max_force;
+                                form.capture_shrink_rate = shrink_rate;
                             }
                             _ => {}
                         }
@@ -772,4 +867,261 @@ fn poll_home_plan_refresh(
         &capture_plan_load_errors,
     );
     user_plans_dirty.0 = false;
+}
+
+#[cfg(test)]
+mod start_from_project_file_tests {
+    use bevy::ecs::message::Messages;
+    use bevy::ecs::system::RunSystemOnce;
+    use ssg_sim::orbit::catalog::gp_record_to_elements;
+    use ssg_sim::orbit::selection::EditableOrbitalElements;
+    use ssg_sim::test_support::{TempDir, fixed_epoch, q13};
+
+    use super::*;
+
+    fn catalog_pick(norad_id: u64, label: &str) -> SelectedOrbitalObject {
+        let (_, gp, _) =
+            gp_record_to_elements(&q13::fixture_record(norad_id), fixed_epoch()).unwrap();
+        SelectedOrbitalObject {
+            source: ssg_sim::orbit::selection::OrbitalSelectionSource::Catalog {
+                catalog_index: 7,
+                gpu_index: 7,
+                label: label.to_string(),
+            },
+            elements: EditableOrbitalElements::from_gp(&gp),
+            gp: Some(gp),
+            mass_kg: None,
+        }
+    }
+
+    /// Runs [`start_from_project_file`] on `dir`; returns what it left and the
+    /// messages it logged.
+    fn start(
+        dir: &Path,
+        mut config: SimConfig,
+        mut selection: OrbitalSelectionState,
+    ) -> (SimConfig, OrbitalSelectionState, Vec<String>) {
+        let mut app = App::new();
+        app.add_message::<LogEvent>();
+        let dir = dir.to_path_buf();
+        let (config, selection) = app
+            .world_mut()
+            .run_system_once(move |mut log: MessageWriter<LogEvent>| {
+                start_from_project_file(
+                    &dir,
+                    Some("example_plan"),
+                    &mut config,
+                    &mut selection,
+                    &mut log,
+                );
+                (config.clone(), selection.clone())
+            })
+            .unwrap();
+        let logged = app
+            .world()
+            .resource::<Messages<LogEvent>>()
+            .iter_current_update_messages()
+            .map(|event| event.message.clone())
+            .collect();
+        (config, selection, logged)
+    }
+
+    /// Runs [`restore_project_scenario`] on `dir`.
+    fn open(dir: &Path) -> (SimConfig, OrbitalSelectionState, Vec<String>) {
+        let mut app = App::new();
+        app.add_message::<LogEvent>();
+        let dir = dir.to_path_buf();
+        let (config, selection) = app
+            .world_mut()
+            .run_system_once(move |mut log: MessageWriter<LogEvent>| {
+                let mut config = SimConfig {
+                    start_epoch: fixed_epoch(),
+                };
+                let mut selection = OrbitalSelectionState::default();
+                restore_project_scenario(&dir, &mut config, &mut selection, &mut log);
+                (config, selection)
+            })
+            .unwrap();
+        let logged = app
+            .world()
+            .resource::<Messages<LogEvent>>()
+            .iter_current_update_messages()
+            .map(|event| event.message.clone())
+            .collect();
+        (config, selection, logged)
+    }
+
+    #[test]
+    fn open_restores_the_epoch_and_the_bodies_from_project_json() {
+        let dir = TempDir::new("app-open");
+        let selection = both_bodies();
+        let epoch = ssg_sim::project::parse_utc("2026-04-03T16:03:47.002464Z").unwrap();
+        start(
+            dir.path(),
+            SimConfig { start_epoch: epoch },
+            selection.clone(),
+        );
+
+        let (config, restored, logged) = open(dir.path());
+
+        assert!(logged.is_empty(), "{logged:?}");
+        assert_eq!(config.start_epoch, epoch);
+        assert_eq!(restored.target.unwrap().gp, selection.target.unwrap().gp);
+        assert_eq!(restored.chaser.unwrap().gp, selection.chaser.unwrap().gp);
+    }
+
+    #[test]
+    fn open_without_project_json_starts_a_new_scenario_at_a_rounded_now() {
+        let dir = TempDir::new("app-open-new");
+
+        let (config, restored, logged) = open(dir.path());
+
+        assert!(logged.is_empty());
+        assert!(restored.target.is_none() && restored.chaser.is_none());
+        assert_ne!(
+            config.start_epoch,
+            fixed_epoch(),
+            "the wall clock, not the old epoch"
+        );
+        assert_eq!(
+            ssg_sim::project::parse_utc(&ssg_sim::project::format_utc(config.start_epoch)),
+            Some(config.start_epoch),
+            "a whole number of microseconds"
+        );
+    }
+
+    #[test]
+    fn open_with_an_unusable_project_json_logs_and_opens_as_new() {
+        let dir = TempDir::new("app-open-bad");
+        dir.write("project.json", "{ not json");
+
+        let (config, restored, logged) = open(dir.path());
+
+        assert_eq!(logged.len(), 1, "{logged:?}");
+        assert!(
+            logged[0].starts_with("project.json not used: [project.json] Invalid JSON: "),
+            "{logged:?}"
+        );
+        assert!(restored.target.is_none());
+        assert_ne!(config.start_epoch, fixed_epoch());
+    }
+
+    fn both_bodies() -> OrbitalSelectionState {
+        OrbitalSelectionState {
+            target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
+            chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+        }
+    }
+
+    #[test]
+    fn start_writes_project_json_and_starts_from_what_it_read() {
+        let dir = TempDir::new("app-start");
+        let selection = both_bodies();
+
+        let (config, after, logged) = start(
+            dir.path(),
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            selection.clone(),
+        );
+
+        assert!(logged.is_empty(), "{logged:?}");
+        let written = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+        assert!(
+            written.contains("\"active_plan\": \"example_plan\""),
+            "{written}"
+        );
+        assert_eq!(config.start_epoch, fixed_epoch());
+        let target = after.target.unwrap();
+        assert_eq!(target.gp, selection.target.as_ref().unwrap().gp);
+        assert!(
+            matches!(
+                target.source,
+                ssg_sim::orbit::selection::OrbitalSelectionSource::Catalog { gpu_index: 7, .. }
+            ),
+            "the selection keeps its source for the map highlight"
+        );
+    }
+
+    #[test]
+    fn start_keeps_the_name_of_an_existing_project_json() {
+        let dir = TempDir::new("app-start-name");
+        let first = start(
+            dir.path(),
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            both_bodies(),
+        );
+        let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+        let renamed = text.replacen(
+            &format!(
+                "\"name\": \"{}\"",
+                dir.path().file_name().unwrap().to_string_lossy()
+            ),
+            "\"name\": \"Hubble study\"",
+            1,
+        );
+        assert_ne!(
+            text, renamed,
+            "the folder name was the default project name"
+        );
+        std::fs::write(dir.path().join("project.json"), renamed).unwrap();
+        drop(first);
+
+        start(
+            dir.path(),
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            both_bodies(),
+        );
+
+        let text = std::fs::read_to_string(dir.path().join("project.json")).unwrap();
+        assert!(text.contains("\"name\": \"Hubble study\""), "{text}");
+    }
+
+    #[test]
+    fn start_without_both_bodies_writes_nothing() {
+        let dir = TempDir::new("app-start-incomplete");
+        let selection = OrbitalSelectionState {
+            target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
+            chaser: None,
+        };
+
+        let (_, after, logged) = start(
+            dir.path(),
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            selection,
+        );
+
+        assert!(logged.is_empty());
+        assert!(!dir.path().join("project.json").exists());
+        assert!(after.target.is_some() && after.chaser.is_none());
+    }
+
+    #[test]
+    fn start_in_a_folder_that_cannot_be_written_logs_and_keeps_the_selection() {
+        let dir = TempDir::new("app-start-unwritable");
+        let missing = dir.path().join("not").join("there");
+        let selection = both_bodies();
+
+        let (_, after, logged) = start(
+            &missing,
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            selection.clone(),
+        );
+
+        assert_eq!(logged.len(), 1, "{logged:?}");
+        assert!(
+            logged[0].starts_with("could not write project.json: "),
+            "{logged:?}"
+        );
+        assert_eq!(after.target.unwrap().gp, selection.target.unwrap().gp);
+    }
 }

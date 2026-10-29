@@ -1,11 +1,21 @@
-//! Project files: the selected plan, the working directory and plan file I/O.
+//! Project files: the selected plan, the working directory, plan file I/O and
+//! the export writers.
+
+pub mod epoch;
+pub mod export;
+pub mod manifest;
+pub(crate) mod migrate_v0;
+pub mod plan_files;
+pub mod recording;
+
+pub use epoch::{format_utc, now_utc, parse_utc};
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use bevy::{platform::collections::HashMap, prelude::*};
 
-use crate::capture::plan::{CapturePlan, CapturePlanLibrary, validate_capture_plan};
+use crate::capture::plan::{CapturePlan, CapturePlanLibrary};
 use crate::orbit::catalog::SpaceObjectCatalog;
 use crate::orbit::selection::OrbitalSelectionState;
 
@@ -42,11 +52,25 @@ pub fn load_from_config() -> Option<String> {
     read_config_file(&config_path()?)
 }
 
+/// The `schema_version` of the config file this build writes and reads.
+const CONFIG_SCHEMA_VERSION: u64 = 1;
+
 /// The `working_directory` entry of the config file at `path`; `None` when the file
-/// is missing, is not JSON or has no string entry.
+/// is missing, is not JSON, has no string entry or was written by a newer version
+/// (a warning is logged then). A file without `schema_version` is read as before.
 pub(crate) fn read_config_file(path: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    if let Some(version) = value.get("schema_version").and_then(|v| v.as_u64())
+        && version > CONFIG_SCHEMA_VERSION
+    {
+        warn!(
+            "{}: schema_version {version} was written by a newer version (this one reads \
+             {CONFIG_SCHEMA_VERSION}); the file is ignored",
+            path.display()
+        );
+        return None;
+    }
     value
         .get("working_directory")
         .and_then(|v| v.as_str())
@@ -69,7 +93,10 @@ pub(crate) fn write_config_file(path: &Path, working_dir: &str) {
         warn!("Failed to create config directory: {e}");
         return;
     }
-    let value = serde_json::json!({ "working_directory": working_dir });
+    let value = serde_json::json!({
+        "schema_version": CONFIG_SCHEMA_VERSION,
+        "working_directory": working_dir,
+    });
     if let Err(e) = std::fs::write(path, value.to_string()) {
         warn!("Failed to save config: {e}");
     }
@@ -93,51 +120,23 @@ pub fn load_plans_from_dir(dir: &Path) -> HashMap<String, CapturePlan> {
     plans
 }
 
-/// Like [`load_plans_from_dir`] but also returns a map of file stems to validation
-/// error messages for any files that could not be parsed or failed validation. The
-/// first return value contains only the successfully loaded plans.
+/// Like [`load_plans_from_dir`] but also returns a map of file stems to error
+/// messages for any files that could not be read, parsed, migrated or validated.
+/// The first return value contains only the successfully loaded plans (v0 files
+/// migrated to v1 in memory; nothing is written). `project.json` is not a plan.
 pub fn load_plans_from_dir_with_errors(
     dir: &Path,
 ) -> (HashMap<String, CapturePlan>, HashMap<String, Vec<String>>) {
     let mut plans = HashMap::new();
     let mut errors: HashMap<String, Vec<String>> = HashMap::new();
-
-    if !dir.exists() {
-        return (plans, errors);
-    }
-    let read_dir = match fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return (plans, errors),
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "json") {
-            continue;
-        }
-        let stem = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-        let raw_json = match fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(e) => {
-                errors.insert(stem, vec![format!("Could not read file: {e}")]);
-                continue;
+    for (stem, report) in plan_files::plan_file_reports(dir) {
+        match report.plan {
+            Some(plan) => {
+                plans.insert(stem, plan);
             }
-        };
-        let mut plan = match serde_json::from_str::<CapturePlan>(&raw_json) {
-            Ok(p) => p,
-            Err(e) => {
-                errors.insert(stem, vec![format!("Invalid JSON: {e}")]);
-                continue;
+            None => {
+                errors.insert(stem, report.errors);
             }
-        };
-        let validation_errors = validate_capture_plan(&stem, &plan);
-        if validation_errors.is_empty() {
-            plan.id = stem.clone();
-            plans.insert(stem, plan);
-        } else {
-            errors.insert(stem, validation_errors);
         }
     }
     (plans, errors)
@@ -182,7 +181,9 @@ impl CapturePlanLibrary {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        // Compile capture plans
+        // F-53 (P6): rebuild the compiled plans from scratch, so a plan that is
+        // gone or no longer valid has no compiled entry.
+        self.compiled_plans.clear();
         for (name, plan) in self.plans.clone() {
             self.insert_plan(name.clone(), plan.clone());
         }
@@ -191,7 +192,7 @@ impl CapturePlanLibrary {
     }
 
     /// Reloads the user plans after a plan file was saved, rebuilds the union and
-    /// recompiles every plan so `compiled_plans` stays in sync.
+    /// recompiles every plan so `compiled_plans` holds exactly the union's plans.
     pub fn reload_user_plans(&mut self, user_dir: &Path) {
         let new_user_plans = load_plans_from_dir(user_dir);
         self.user_plans = new_user_plans;
@@ -206,6 +207,8 @@ impl CapturePlanLibrary {
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        // F-53 (P6): as in `load_all`.
+        self.compiled_plans.clear();
         for (id, plan) in refreshed {
             self.insert_plan(id, plan);
         }

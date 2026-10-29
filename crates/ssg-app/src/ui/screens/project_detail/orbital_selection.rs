@@ -133,6 +133,7 @@ pub fn orbital_selection_interactions(
                         },
                         elements: EditableOrbitalElements::from_gp(&entry.gp),
                         gp: Some(entry.gp.clone()),
+                        mass_kg: None,
                     };
 
                     match button.role {
@@ -158,6 +159,7 @@ pub fn orbital_selection_interactions(
                             epoch: sim_config.start_epoch,
                         },
                         gp: None,
+                        mass_kg: None,
                     };
 
                     match button.role {

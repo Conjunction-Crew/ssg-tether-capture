@@ -1,0 +1,4 @@
+{"name": "duplicate state", "tether": "Tether1", "states": [
+  {"id": "approach", "parameters": {"max_velocity": 2.0, "max_force": 3.0}},
+  {"id": "approach", "parameters": {"max_velocity": 1.0, "max_force": 1.0}}
+]}

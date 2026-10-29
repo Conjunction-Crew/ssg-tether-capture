@@ -5,7 +5,9 @@ use bevy::{math::DVec3, prelude::*};
 
 use crate::SimSet;
 use crate::anchor::SimAnchor;
-use crate::capture::plan::CapturePlanLibrary;
+use crate::capture::plan::{
+    CapturePlanLibrary, DEFAULT_SEGMENT_SPACING_M, DEFAULT_TETHER_LENGTH_M,
+};
 use crate::orbit::Orbit;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
@@ -48,6 +50,9 @@ fn initial_orbit(selected: &SelectedOrbitalObject) -> Orbit {
     }
 }
 
+/// The target's mass when `project.json` gives none, in kg.
+const DEFAULT_TARGET_MASS_KG: f64 = 2500.0;
+
 pub fn spawn_debris(
     commands: &mut Commands,
     orbital_cache: &mut ResMut<OrbitalCache>,
@@ -66,7 +71,7 @@ pub fn spawn_debris(
                 initial_orbit(selected),
                 ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
                 CenterOfMass(Vec3::ZERO),
-                Mass::from(2500.0),
+                Mass::from(selected.mass_kg.unwrap_or(DEFAULT_TARGET_MASS_KG) as f32),
                 Transform::from_xyz(
                     PHYSICS_DISABLE_RADIUS as f32 + 10.0,
                     PHYSICS_DISABLE_RADIUS as f32 + 10.0,
@@ -90,42 +95,46 @@ pub fn spawn_tether(
     let rope_radius: f64 = 0.25;
 
     // Resolve tether parameters from the active capture plan's device block.
-    // Fall back to the legacy constant-derived values when unspecified.
-    const DEFAULT_TETHER_LENGTH: f64 = 20.0;
-    const DEFAULT_DIST_BETWEEN_JOINTS: f64 = 0.1;
+    // Anything the plan leaves out takes the plan's own default (D3), which are
+    // the values this spawner used as literals before P6.
 
     let active_plan = selected_project
         .project_id
         .as_deref()
         .and_then(|id| capture_plan_lib.plans.get(id));
 
+    // F-43 (P6): the plan's tether id is validated non-blank; "Tether1" only without an active plan
     let tether_name = active_plan
         .map(|plan| plan.tether.clone())
-        .filter(|t| !t.is_empty())
         .unwrap_or_else(|| "Tether1".to_string());
 
-    let device = active_plan.and_then(|plan| plan.device.as_ref());
+    let device = active_plan
+        .and_then(|plan| plan.device.clone())
+        .unwrap_or_default();
 
-    let tether_length = device
-        .filter(|d| d.tether_length > 0.0)
-        .map(|d| d.tether_length)
-        .unwrap_or(DEFAULT_TETHER_LENGTH);
+    // A plan the validator rejects (`insert_plan` does not validate) falls back
+    // to the default length and spacing instead of building nothing or dividing by zero.
+    let tether_length = Some(device.tether_length_m())
+        .filter(|l| *l > 0.0)
+        .unwrap_or(DEFAULT_TETHER_LENGTH_M);
+    let segment_spacing = Some(device.segment_spacing_m())
+        .filter(|s| *s > 0.0)
+        .unwrap_or(DEFAULT_SEGMENT_SPACING_M);
+    let segment_mass = device.segment_mass_kg() as f32;
+    let end_mass = device.end_mass_kg() as f32;
+    let joint_damping = JointDamping {
+        linear: device.joint_damping_linear(),
+        angular: device.joint_damping_angular(),
+    };
 
-    let interior_node_count: u32 = device
-        .filter(|d| d.tether_length > 0.0)
-        .map(|d| {
-            ((d.tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0)
-                as u32
-        })
-        .unwrap_or_else(|| {
-            ((tether_length - 2.0 * root_tail_radius) / DEFAULT_DIST_BETWEEN_JOINTS).max(0.0) as u32
-        });
+    let interior_node_count: u32 =
+        ((tether_length - 2.0 * root_tail_radius) / segment_spacing).max(0.0) as u32;
 
     // Segment length is derived: distribute the interior length evenly across joints.
     let tether_node_length = if interior_node_count > 0 {
         (tether_length - 2.0 * root_tail_radius) / interior_node_count as f64
     } else {
-        DEFAULT_DIST_BETWEEN_JOINTS
+        segment_spacing
     };
     let tether_node_half_length = tether_node_length * 0.5;
 
@@ -149,7 +158,7 @@ pub fn spawn_tether(
             sphere_shape,
             RigidBody::Dynamic,
             sphere_collider.clone(),
-            Mass::from(2.0),
+            Mass::from(end_mass),
             Transform::from_xyz(0.0, 0.0, 0.0),
             initial_orbit(selected),
         ))
@@ -173,12 +182,17 @@ pub fn spawn_tether(
 
     for i in 1..=tail_index {
         let (shape, collider, mass, curr_half_extent) = if i == tail_index {
-            (sphere_shape, sphere_collider.clone(), 2.0, root_tail_radius)
+            (
+                sphere_shape,
+                sphere_collider.clone(),
+                end_mass,
+                root_tail_radius,
+            )
         } else {
             (
                 tether_node_shape,
                 tether_node_collider.clone(),
-                0.1,
+                segment_mass,
                 tether_node_half_length,
             )
         };
@@ -204,10 +218,7 @@ pub fn spawn_tether(
             DespawnOnExit(UiScreen::Sim),
             // SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor),
             DistanceJoint::new(prev_sphere, sphere).with_anchor(anchor),
-            JointDamping {
-                linear: 1.0,  // Linear damping
-                angular: 1.0, // Angular damping
-            },
+            joint_damping,
             JointCollisionDisabled,
         ));
 

@@ -1,0 +1,336 @@
+{
+  "$defs": {
+    "BuiltWith": {
+      "additionalProperties": false,
+      "description": "The build that wrote the manifest (the determinism settings: nothing here is\nconfigurable at run time).",
+      "properties": {
+        "app_version": {
+          "description": "The application version.",
+          "type": "string"
+        },
+        "avian_features": {
+          "description": "The avian3d features the physics was built with.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target": {
+          "description": "The platform, `<arch>-<os>`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app_version",
+        "target",
+        "avian_features"
+      ],
+      "type": "object"
+    },
+    "JsonOrbital": {
+      "description": "One Space-Track GP (OMM JSON) record: the keys the sim reads. Other keys of a\nrecord are ignored on read and not written back. `project.json` carries it as the\nsnapshot a body starts from.",
+      "properties": {
+        "ARG_OF_PERICENTER": true,
+        "BSTAR": true,
+        "CLASSIFICATION_TYPE": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ECCENTRICITY": true,
+        "ELEMENT_SET_NO": true,
+        "EPHEMERIS_TYPE": true,
+        "EPOCH": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "INCLINATION": true,
+        "MEAN_ANOMALY": true,
+        "MEAN_MOTION": true,
+        "MEAN_MOTION_DDOT": true,
+        "MEAN_MOTION_DOT": true,
+        "NORAD_CAT_ID": true,
+        "OBJECT_ID": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "OBJECT_NAME": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "RA_OF_ASC_NODE": true,
+        "REV_AT_EPOCH": true
+      },
+      "type": "object"
+    },
+    "ManifestBody": {
+      "additionalProperties": false,
+      "description": "One body of the scenario.",
+      "properties": {
+        "inertia_kg_m2": {
+          "description": "Inertia tensor in kg m², row-major. Refused until v0.4.0-rc.4.",
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "label": {
+          "description": "Display name. Must not be blank.",
+          "type": "string"
+        },
+        "mass_kg": {
+          "description": "Mass in kg; greater than 0. The target's is applied from v0.4.0-rc.1; the\nchaser's is refused until v0.4.0-rc.4.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "orbit": {
+          "$ref": "#/$defs/ManifestOrbit",
+          "description": "Where the body starts."
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ManifestSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the orbit came from. Provenance only: the orbit is the source of truth."
+        }
+      },
+      "required": [
+        "label",
+        "orbit"
+      ],
+      "type": "object"
+    },
+    "ManifestElements": {
+      "additionalProperties": false,
+      "description": "Osculating Keplerian elements, metres and radians (degrees would not round-trip\nbit for bit), valid at `epoch_utc`.",
+      "properties": {
+        "arg_perigee_rad": {
+          "description": "Argument of perigee in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "eccentricity": {
+          "description": "Eccentricity; at least 0 and below 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "epoch_utc": {
+          "description": "The epoch the six elements are valid at, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC).",
+          "type": "string"
+        },
+        "inclination_rad": {
+          "description": "Inclination in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "mean_anomaly_rad": {
+          "description": "Mean anomaly in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "raan_rad": {
+          "description": "Right ascension of the ascending node in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "semi_major_axis_m": {
+          "description": "Semi-major axis in metres; greater than 0.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "semi_major_axis_m",
+        "eccentricity",
+        "inclination_rad",
+        "raan_rad",
+        "arg_perigee_rad",
+        "mean_anomaly_rad",
+        "epoch_utc"
+      ],
+      "type": "object"
+    },
+    "ManifestOrbit": {
+      "description": "How a body's initial state is given: exactly one key.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The Space-Track GP (OMM JSON) record verbatim. The body starts from SGP4, as\nan unedited catalog pick does.",
+          "properties": {
+            "gp": {
+              "$ref": "#/$defs/JsonOrbital"
+            }
+          },
+          "required": [
+            "gp"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Osculating Keplerian elements in metres and radians.",
+          "properties": {
+            "elements": {
+              "$ref": "#/$defs/ManifestElements"
+            }
+          },
+          "required": [
+            "elements"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.4.",
+          "properties": {
+            "relative_to_target": {
+              "$ref": "#/$defs/RelativeToTarget"
+            }
+          },
+          "required": [
+            "relative_to_target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ManifestSource": {
+      "additionalProperties": false,
+      "description": "Where a body's orbit was taken from.",
+      "properties": {
+        "dataset": {
+          "description": "Path of the dataset file, relative to the project folder.",
+          "type": "string"
+        },
+        "norad_id": {
+          "description": "NORAD catalog id of the record.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset",
+        "norad_id"
+      ],
+      "type": "object"
+    },
+    "RelativePreset": {
+      "description": "The approach line of a chaser placed relative to the target.",
+      "oneOf": [
+        {
+          "const": "v_bar",
+          "description": "Along the velocity vector.",
+          "type": "string"
+        },
+        {
+          "const": "r_bar",
+          "description": "Along the radial vector.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelativeToTarget": {
+      "additionalProperties": false,
+      "description": "A chaser placed relative to the target.",
+      "properties": {
+        "offset_m": {
+          "description": "Distance from the target in metres.",
+          "format": "double",
+          "type": "number"
+        },
+        "preset": {
+          "$ref": "#/$defs/RelativePreset",
+          "description": "The approach line."
+        }
+      },
+      "required": [
+        "preset",
+        "offset_m"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://conjunction-crew.github.io/ssg-tether-capture/schemas/project.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The project manifest, schema v1. Lengths are metres, angles radians, masses kg,\nepochs UTC strings with microseconds.",
+  "properties": {
+    "active_plan": {
+      "description": "Id (file stem) of the capture plan to run. Absent: the project's only plan,\nelse `example_plan`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "built_with": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BuiltWith"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The build that wrote the file; read only by `ssg-sim validate`."
+    },
+    "chaser": {
+      "$ref": "#/$defs/ManifestBody",
+      "description": "The chaser (the tether root's carrier)."
+    },
+    "name": {
+      "description": "Display name of the project. Must not be blank.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "File format version; `1`.",
+      "format": "uint32",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "start_epoch_utc": {
+      "description": "The simulation start epoch, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC, microseconds).\nThe simulation always starts from exactly this string.",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/ManifestBody",
+      "description": "The capture target."
+    }
+  },
+  "required": [
+    "schema_version",
+    "name",
+    "start_epoch_utc",
+    "target",
+    "chaser"
+  ],
+  "title": "ProjectManifest",
+  "type": "object"
+}

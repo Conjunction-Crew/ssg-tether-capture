@@ -20,24 +20,21 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
-use brahe::{Epoch, TimeSystem};
+use brahe::Epoch;
 use ssg_sim::SimPlugins;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, CaptureTransition, SimCommand};
 use ssg_sim::orbit::cache::OrbitalCache;
-use ssg_sim::orbit::catalog::{JsonOrbital, gp_record_to_elements};
 use ssg_sim::orbit::lvlh::LvlhFrame;
-use ssg_sim::orbit::selection::{
-    EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
-};
+use ssg_sim::orbit::selection::{OrbitalSelectionSource, OrbitalSelectionState};
 use ssg_sim::physics_bubble::body_eci_state;
-use ssg_sim::project::{AssetsDir, SelectedProject};
+use ssg_sim::project::{AssetsDir, SelectedProject, format_utc};
 use ssg_sim::session::{SimState, UiScreen};
-use ssg_sim::telemetry::{LogEvent, LogLevel};
+use ssg_sim::telemetry::{EphemerisSample, LogEvent, LogLevel};
 use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
 
-use crate::args::{Args, EpochArg};
-use crate::inputs::{find_records, load_plans};
+use crate::args::Args;
+use crate::inputs::{load_plans, resolve};
 
 pub struct Transition {
     pub step: u64,
@@ -61,40 +58,37 @@ pub struct Sample {
 
 pub struct Run {
     pub plan: String,
+    /// The NORAD ids of the two bodies, when they have them.
+    pub target: Option<u64>,
+    pub chaser: Option<u64>,
+    /// The labels of the two bodies (`OBJECT_NAME` in `ephemeris.oem`).
+    pub target_label: String,
+    pub chaser_label: String,
     pub epoch_mode: &'static str,
+    /// The start epoch as an `Epoch` (`CREATION_DATE` of `ephemeris.oem`) and as
+    /// its `format_utc` string.
+    pub start: Epoch,
     pub start_epoch: String,
     /// Fixed steps run after the capture command.
     pub steps: u64,
     pub transitions: Vec<Transition>,
     pub samples: Vec<Sample>,
+    /// The debris's (target) and the root's (chaser) ECI states at each sample.
+    pub ephemeris: Vec<EphemerisSample>,
     pub last: Sample,
     pub wall: Duration,
 }
 
 pub fn run(args: &Args) -> Result<Run, String> {
     let started = Instant::now();
-    let reference_epoch = match args.epoch {
-        EpochArg::Now => Epoch::now(),
-        EpochArg::At(epoch) => epoch,
+    let inputs = resolve(args)?;
+    let reference_epoch = inputs.start_epoch;
+    let (target, chaser) = (inputs.target.clone(), inputs.chaser.clone());
+    let label = |source: &OrbitalSelectionSource| match source {
+        OrbitalSelectionSource::Catalog { label, .. }
+        | OrbitalSelectionSource::Custom { label } => label.clone(),
     };
-    let (target, chaser) = find_records(args)?;
-    let pick = |record: &JsonOrbital, id: u64| -> Result<SelectedOrbitalObject, String> {
-        let (_, gp, _) = gp_record_to_elements(record, reference_epoch)
-            .ok_or_else(|| format!("NORAD {id}: the record is missing an orbital element"))?;
-        Ok(SelectedOrbitalObject {
-            source: OrbitalSelectionSource::Custom {
-                label: record
-                    .object_name
-                    .clone()
-                    .unwrap_or_else(|| format!("NORAD {id}")),
-            },
-            // A catalog pick, as the app makes it (F-27): SGP4 at the start epoch.
-            elements: EditableOrbitalElements::from_gp(&gp),
-            gp: Some(gp),
-        })
-    };
-    let target = pick(&target, args.target)?;
-    let chaser = pick(&chaser, args.chaser)?;
+    let (target_label, chaser_label) = (label(&target.source), label(&chaser.source));
 
     let mut app = App::new();
     app.add_plugins((
@@ -120,7 +114,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
         PHYS_DT,
     )));
 
-    let plan = load_plans(&mut app, args)?;
+    let plan = load_plans(&mut app, args, inputs.plan.as_deref())?;
     app.world_mut().resource_mut::<SelectedProject>().project_id = Some(plan.clone());
     {
         let mut selection = app.world_mut().resource_mut::<OrbitalSelectionState>();
@@ -182,6 +176,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
     let (total_updates, sample_every_updates) = (args.steps / warp, args.sample_every / warp);
     let mut transitions = Vec::new();
     let mut samples = Vec::new();
+    let mut ephemeris = Vec::new();
     let mut updates = 0;
     let mut last = sample(&app, debris, root)?;
     while updates < total_updates {
@@ -205,6 +200,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
         }
         if updates % sample_every_updates == 0 {
             samples.push(sample(&app, debris, root)?);
+            ephemeris.push(ephemeris_sample(&app, debris, root)?);
         }
         if args.stop_at_capture && last.state == "capture" {
             break;
@@ -220,14 +216,17 @@ pub fn run(args: &Args) -> Result<Run, String> {
 
     Ok(Run {
         plan,
-        epoch_mode: match args.epoch {
-            EpochArg::Now => "now",
-            EpochArg::At(_) => "fixed",
-        },
-        start_epoch: iso(start_epoch),
+        epoch_mode: inputs.epoch_mode,
+        target: inputs.target_id,
+        chaser: inputs.chaser_id,
+        target_label,
+        chaser_label,
+        start: start_epoch,
+        start_epoch: format_utc(start_epoch),
         steps: updates * warp,
         transitions,
         samples,
+        ephemeris,
         last,
         wall: started.elapsed(),
     })
@@ -271,7 +270,7 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
     });
     Ok(Sample {
         step: ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64,
-        epoch: iso(world_time.epoch),
+        epoch: format_utc(world_time.epoch),
         state,
         range_m: (debris_position - root_position).length(),
         rel_speed_mps: rel_v.length(),
@@ -282,11 +281,30 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
     })
 }
 
-/// `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC). brahe's own `isostring_with_decimals`
-/// drops the leading zeros of the fraction.
-fn iso(epoch: Epoch) -> String {
-    let (year, month, day, hour, minute, second, nanoseconds) =
-        epoch.to_datetime_as_time_system(TimeSystem::UTC);
-    let seconds = second + nanoseconds / 1e9;
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{seconds:09.6}Z")
+/// The debris's and the root's ECI states now (bubble offset added for enabled
+/// bodies), as the app's capture controller samples them.
+fn ephemeris_sample(app: &App, debris: Entity, root: Entity) -> Result<EphemerisSample, String> {
+    let world = app.world();
+    let cache = world.resource::<OrbitalCache>();
+    let eci = |entity: Entity, what: &str| {
+        let position = world
+            .get::<Position>(entity)
+            .ok_or(format!("{what} Position"))?;
+        let velocity = world
+            .get::<LinearVelocity>(entity)
+            .ok_or(format!("{what} velocity"))?;
+        body_eci_state(
+            cache,
+            entity,
+            position.0,
+            velocity.0,
+            world.get::<RigidBodyDisabled>(entity).is_some(),
+        )
+        .ok_or(format!("the {what} has no ECI state"))
+    };
+    Ok(EphemerisSample {
+        epoch: world.resource::<WorldTime>().epoch,
+        target: eci(debris, "debris")?,
+        chaser: eci(root, "root")?,
+    })
 }

@@ -1,0 +1,6 @@
+{"name": "negative force", "tether": "Tether1", "device": {"type": "tether", "tether_length": 20.0},
+ "states": [
+  {"id": "rendezvous", "parameters": {"max_velocity": 25.0, "max_force": -5.0},
+   "transitions": [{"to": "approach", "distance": {"less_than": 2000.0}}]},
+  {"id": "approach", "parameters": {"max_velocity": 2.0, "max_force": -5.0}}
+]}

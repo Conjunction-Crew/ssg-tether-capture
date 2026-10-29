@@ -28,7 +28,7 @@ Release (manual: Actions → Release → Run workflow)
            ├─ Prepare release commit   → pushes release-staging/vX.Y.Z
            ├─ Build packages ──── build-packages.yml (Linux / Windows / macOS)
            ├─ Publish GitHub Release   → fast-forwards main, pushes tag, creates release
-           └─ Deploy docs ─────── deploy-docs.yml (stable major/minor only)
+           └─ Deploy docs ─────── deploy-docs.yml (every non-dry-run release)
 
 Packaging Test (manual) ──── build-packages.yml
 ```
@@ -84,10 +84,10 @@ This needs `cargo-llvm-cov` 0.9.1 and `rustup component add llvm-tools-preview`.
 | Job | Purpose |
 |---|---|
 | `verify` | `cargo fmt --check` and `cargo test` on the commit being released |
-| `prepare` | Computes the next version (`scripts/next_version.sh`), bumps `Cargo.toml` and `Cargo.lock`, promotes `## [Unreleased]` in `CHANGELOG.md` (`scripts/prepare_changelog.sh`), snapshots the versioned docs for stable major/minor releases, and pushes the single result to a scratch branch `release-staging/vX.Y.Z`. `main` is **not** modified |
+| `prepare` | Computes the next version (`scripts/next_version.sh`), bumps `Cargo.toml` and `Cargo.lock`, promotes `## [Unreleased]` in `CHANGELOG.md` (`scripts/prepare_changelog.sh`), snapshots the versioned docs for stable major/minor releases, prints the docs versions plan (`scripts/docs_versions.sh plan`) to the run summary, and pushes the single result to a scratch branch `release-staging/vX.Y.Z`. `main` is **not** modified |
 | `build` | Calls `build-packages.yml` on the staged commit |
 | `publish` | Only if everything above succeeded: fast-forwards `main` to the staged commit, pushes the `vX.Y.Z` tag, creates the GitHub Release (using the changelog section as its description) and deletes the staging branch. Safe to re-run after a partial failure |
-| `docs` | Calls `deploy-docs.yml` for stable major/minor releases |
+| `docs` | Calls `deploy-docs.yml` for every release that is not a dry run |
 
 Because `main` only moves after all platform builds are green, a failed build leaves no half-released state behind. If `main` moved while the release was building, `publish` refuses to continue; run the workflow again.
 
@@ -109,14 +109,25 @@ Artifacts are uploaded as `linux`, `windows` and `macos`.
 
 ### `deploy-docs.yml` — Docusaurus deployment to GitHub Pages
 
-**Triggers**: `workflow_call` (from `release.yml`, stable major/minor releases only) and `workflow_dispatch` (re-deploy an existing release by giving its tag as `ref`).
+**Triggers**: `workflow_call` (from `release.yml`, every release that is not a dry run) and `workflow_dispatch` (re-deploy an existing release by giving its tag as `ref`; dispatch it from `main`, because the `github-pages` environment only accepts deployments from `main` and release tags).
+
+| Input | Purpose |
+|---|---|
+| `ref` | Git ref to build the site from (normally the release tag) |
+| `version` | The release the docs are built for. Default: `ref` without a leading `v`. Needed when `ref` is a branch |
+| `deploy` | Default `true`. `false` builds only: the site is uploaded as the `docs-site-preview` artifact (7 days) and the Pages deployment is skipped |
 
 | Job | Purpose |
 |---|---|
-| `build` | Builds the site from the release tag, syncs `CHANGELOG.md` into `docs/release-notes.md` and the matching versioned snapshot, and verifies that the snapshot exists and `versions.json` has at most 10 entries |
-| `deploy` | Deploys the artifact to the `github-pages` environment |
+| `build` | Checks out `ref` with all tags, syncs `CHANGELOG.md` into `docs/release-notes.md`, builds the rolling docs versions (`scripts/docs_versions.sh apply`, which writes the version table to the run summary), verifies that the release's version is in the final `versions.json` and that the committed `versions.json` has at most 10 entries, then builds the site |
+| `deploy` | Deploys the artifact to the `github-pages` environment. Skipped when `deploy` is `false` |
 
-Patch releases and release candidates do not add a versioned docs set, so the live site is left unchanged for them. The versioned docs snapshot itself is created by `release.yml` as part of the release commit, so the tag always contains it.
+The permanent `X.Y.0` snapshots are created by `release.yml` as part of the release commit, so the tag always contains them. The two rolling versions (latest patch, latest pre-release) are built from the release tags during this workflow and never committed, so they do not count towards the 10-version cap. To check a branch without deploying anything:
+
+```bash
+gh workflow run deploy-docs.yml --ref <branch> -f ref=<branch> -f version=0.4.0-rc.1 -f deploy=false
+gh run download <run-id> -n docs-site-preview -D /tmp/docs-preview && ls /tmp/docs-preview/docs
+```
 
 ---
 

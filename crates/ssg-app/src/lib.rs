@@ -52,7 +52,7 @@ pub fn run() {
     // The sim start epoch until a project is opened (`UiEvent::OpenProject` sets
     // it again); the sim itself never reads the wall clock (F-06).
     .insert_resource(SimConfig {
-        start_epoch: brahe::Epoch::now(),
+        start_epoch: ssg_sim::project::now_utc(),
     })
     .add_plugins(SimPlugins)
     .add_plugins(RenderPlugins)

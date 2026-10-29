@@ -23,3 +23,6 @@ yarn-error.log*
 # Written locally by scripts/post_release.sh when snapshotting versioned docs.
 # Do not commit the live copy — it is always regenerated from source.
 docs/release-notes.md
+
+# Written by scripts/docs_versions.sh apply at deploy time; never committed.
+rolling-versions.json

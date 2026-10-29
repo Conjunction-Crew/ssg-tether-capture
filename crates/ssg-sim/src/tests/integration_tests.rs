@@ -109,7 +109,7 @@ fn apply_force_to_target() {
         .insert(CaptureComponent {
             plan_id: plan.id.clone(),
             current_state: plan
-                .states
+                .phases
                 .first()
                 .expect("No states in the desired plan!")
                 .id
