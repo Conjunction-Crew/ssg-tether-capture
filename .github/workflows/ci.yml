@@ -108,6 +108,24 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
+      - name: Remove other preinstalled toolchains
+        # rust-cache hashes every installed toolchain into its key.  The set
+        # preinstalled on the runner image changes between images (1.99.0 present
+        # or not), so the key alternated and most PR runs missed the cache.  Only
+        # the toolchain pinned by rust-toolchain.toml is kept (Q39, P5).
+        shell: bash
+        run: |
+          set -eu
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          echo "Active toolchain: $active"
+          echo "Installed before:"
+          rustup toolchain list
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            if [ "$tc" != "$active" ]; then rustup toolchain uninstall "$tc"; fi
+          done
+          echo "Installed after:"
+          rustup toolchain list
+
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # PR caches are not shared between PRs and would evict the main-branch
@@ -161,11 +179,100 @@ jobs:
           exit 0
 
       - name: Run tests
-        run: cargo test --workspace --locked
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+
+      - name: Test execution time
+        # Sum of the `finished in` lines of every test binary, printed to the job
+        # summary and as an annotation (visible in `gh run view <id>`).
+        if: success() || failure()
+        run: |
+          line=$(sh scripts/ci_test_time.sh "$RUNNER_TEMP/cargo-test.log" "$GITHUB_STEP_SUMMARY")
+          echo "$line"
+          echo "::notice title=Test execution time (Linux)::$line"
+
+      - name: Determinism to capture (ignored tests)
+        # `full` is true on the weekday schedule, manual runs and `full-ci` PRs
+        # (the release PR always carries it), so these long tests check the code
+        # before it is released.  Runs on every platform: it compares runs on the
+        # same platform (see docs_site/docs/concepts/determinism.md).
+        if: needs.changes.outputs.full == 'true'
+        run: cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
         run: cargo build --workspace --locked
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Line coverage of the workspace tests (cargo-llvm-cov), in parallel with
+  # rust-linux so the uninstrumented test time stays the timing number.  Report
+  # only until the gates are enforced (P5 S8); the report is uploaded as an
+  # artifact.  Production code only: see scripts/coverage_gate.sh.
+  # ───────────────────────────────────────────────────────────────────────────
+  coverage:
+    name: Coverage (Linux)
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libasound2-dev libudev-dev
+
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustup component add llvm-tools-preview
+
+      - name: Remove other preinstalled toolchains
+        # Keeps the rust-cache key stable (see rust-linux).
+        shell: bash
+        run: |
+          set -eu
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          echo "Active toolchain: $active"
+          echo "Installed before:"
+          rustup toolchain list
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            if [ "$tc" != "$active" ]; then rustup toolchain uninstall "$tc"; fi
+          done
+          echo "Installed after:"
+          rustup toolchain list
+
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-llvm-cov@0.9.1
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The instrumented build lives in target/llvm-cov-target, not target.
+          workspaces: ". -> target/llvm-cov-target"
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --workspace --locked --no-report
+
+      - name: Coverage reports
+        run: |
+          mkdir -p target/coverage
+          cargo llvm-cov report --json --summary-only --output-path target/coverage/summary.json
+          cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
+          cargo llvm-cov report --html --output-dir target/coverage
+
+      - name: Coverage gates
+        run: sh scripts/coverage_gate.sh target/coverage/summary.json "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage-report
+          path: target/coverage/
+          retention-days: 14
 
   # ───────────────────────────────────────────────────────────────────────────
   # Windows / macOS.  PRs only run `cargo check` (compile errors, platform-
@@ -192,9 +299,30 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
 
+      - name: Remove other preinstalled toolchains
+        # rust-cache hashes every installed toolchain into its key.  The set
+        # preinstalled on the runner image changes between images (1.99.0 present
+        # or not), so the key alternated and most PR runs missed the cache.  Only
+        # the toolchain pinned by rust-toolchain.toml is kept (Q39, P5).
+        shell: bash
+        run: |
+          set -eu
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          echo "Active toolchain: $active"
+          echo "Installed before:"
+          rustup toolchain list
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            if [ "$tc" != "$active" ]; then rustup toolchain uninstall "$tc"; fi
+          done
+          echo "Installed after:"
+          rustup toolchain list
+
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # `cargo check` runs and full build-and-test runs need different
+          # artifacts; with one key the check cache shadowed the build cache.
+          key: ${{ needs.changes.outputs.full == 'true' && 'build' || 'check' }}
 
       - name: cargo check
         if: needs.changes.outputs.full != 'true'
@@ -206,7 +334,30 @@ jobs:
 
       - name: cargo test
         if: needs.changes.outputs.full == 'true'
-        run: cargo test --workspace --locked
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+
+      - name: Test execution time
+        if: needs.changes.outputs.full == 'true' && (success() || failure())
+        shell: bash
+        run: |
+          line=$(sh scripts/ci_test_time.sh "$RUNNER_TEMP/cargo-test.log" "$GITHUB_STEP_SUMMARY")
+          echo "$line"
+          echo "::notice title=Test execution time (${{ matrix.name }})::$line"
+
+      - name: Determinism to capture (ignored tests)
+        # Per-platform identity everywhere: three runs at 1x and one at 16x must
+        # be bit-identical on the same platform.
+        if: needs.changes.outputs.full == 'true'
+        run: cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
+
+      - name: macOS goldens to capture
+        # The goldens hold on macOS/aarch64 only (Q29 as replaced, F-48): there
+        # are no cross-platform goldens and no cfg branches in the tests.
+        if: needs.changes.outputs.full == 'true' && runner.os == 'macOS'
+        run: cargo test -p ssg-sim --locked baseline_q13_to_capture -- --ignored --nocapture
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docusaurus build — catches broken links / build errors, and enforces the
@@ -274,7 +425,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, rust-linux, cross-platform, docs-build, changelog]
+    needs: [changes, rust-linux, coverage, cross-platform, docs-build, changelog]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

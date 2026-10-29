@@ -20,6 +20,19 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- CI: a report-only `coverage` job runs the workspace tests under `cargo-llvm-cov`, prints per-area line coverage against the Q7 thresholds to the job summary and uploads a `coverage-report` artifact; the inline test modules of `orbit/lvlh.rs` and `ssg-sim-cli` `output.rs` moved to `tests/` files so coverage counts production code only (F-14)
+- Tests: branch tests for the capture controller (force direction and magnitude per branch, the missing-root, tether and plan paths), for `apply_sim_commands` and for `assert_finite_state`, and property-style tests (fixed-seed generator, 300 plans per property) for capture-plan validation and compilation; `capture/` coverage reaches the 85 % gate; `plans/stage-5/results/pub-fn-inventory.md` starts the one-test-per-public-function inventory (F-14)
+- Tests: `orbit/` tests for the catalog propagation (against brahe Kepler, with the F-50 mu difference bounded), display names, record conversion, every dataset-loader branch and log line, `init_orbitals`' SGP4 failure path, `cache_eci_states`, the selection types and the LVLH frame, with property-style element-conversion tests; `orbit/` coverage reaches the 85 % gate (F-14)
+- Tests: every remaining public function of `ssg-sim` has a test (`plans/stage-5/results/pub-fn-inventory.md` is complete): plan loading and saving, `load_all` / `reload_user_plans` and the config-file helpers in temporary directories, the tether and debris spawners, the session lifecycle and capture-log wiring, the warp ladder and fixed-step loop, relative gravity and the centre-of-mass edge cases; `project.rs` gains two path-taking helpers (`read_config_file`, `write_config_file`) that `load_from_config` / `save_to_config` call, with no change in behaviour (F-14)
+- Tests: out-of-crate scenario tests in `crates/ssg-sim/tests/` (the Q13 run, every example capture plan on the Q13 pair, pause and warp), `ssg-sim-cli`'s `harness_parity` test that closes F-51 (the CLI trajectory and the harness checkpoints are bit-identical at the same absolute step; the step offset is documented in `scenario.rs` and `q13::build`) and four CLI error-path tests; `ssg-sim` and `ssg-sim-cli` get a `test-support` dev-dependency on `ssg-sim` (F-51)
+
+### Changed
+- CI: the coverage gates are enforced (the `--report-only` flag is gone): a PR that drops `ssg-sim` below 80 %, `capture/`, `orbit/`, `physics_bubble`, `floating_origin` or `time` below 85 %, or `ssg-sim-cli` below 70 % fails the `coverage` job (F-14, Q7)
+- Docs: the testing page is rewritten as the testing strategy (layers, the `test_support` harness, property-style tests, determinism in tests and the F-51 offset, coverage gates, test-time budget) and no longer mentions `create_app` (F-16)
+- Tests: `harness_parity` runs the CLI binary and the in-process harness at the same time, so the test costs the slower run instead of the sum (about 3 s locally, about 13 s on Linux CI), keeping the Linux test execution time down (Q45)
+- CI: the long determinism-to-capture tests (`cli_three_runs_to_capture_identical` on Linux, macOS and Windows; `baseline_q13_to_capture` on macOS only) now run on the weekday schedule, manual runs and `full-ci` PRs, so the release PR checks them before a release
+- CI: only the pinned Rust toolchain is installed before the cache step, so the Rust cache key no longer alternates with the runner image's preinstalled toolchains and PR runs stop missing the cache; Windows and macOS use separate check and build keys; the Linux and full cross-platform test jobs print "Test execution time" to the job summary (Q39)
 
 ## [v0.3.2] - 2026-10-28
 

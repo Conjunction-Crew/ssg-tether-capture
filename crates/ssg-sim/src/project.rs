@@ -39,7 +39,12 @@ fn config_path() -> Option<PathBuf> {
 }
 
 pub fn load_from_config() -> Option<String> {
-    let path = config_path()?;
+    read_config_file(&config_path()?)
+}
+
+/// The `working_directory` entry of the config file at `path`; `None` when the file
+/// is missing, is not JSON or has no string entry.
+pub(crate) fn read_config_file(path: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
     value
@@ -52,6 +57,12 @@ pub fn save_to_config(working_dir: &str) {
     let Some(path) = config_path() else {
         return;
     };
+    write_config_file(&path, working_dir);
+}
+
+/// Writes the config file at `path` (creating its directory) with `working_dir` as
+/// the `working_directory` entry; failures are logged, not returned.
+pub(crate) fn write_config_file(path: &Path, working_dir: &str) {
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
@@ -59,7 +70,7 @@ pub fn save_to_config(working_dir: &str) {
         return;
     }
     let value = serde_json::json!({ "working_directory": working_dir });
-    if let Err(e) = std::fs::write(&path, value.to_string()) {
+    if let Err(e) = std::fs::write(path, value.to_string()) {
         warn!("Failed to save config: {e}");
     }
 }

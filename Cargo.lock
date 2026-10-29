@@ -7355,6 +7355,7 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_json",
+ "ssg-sim",
 ]
 
 [[package]]

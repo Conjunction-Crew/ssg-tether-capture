@@ -169,6 +169,84 @@ pub fn assert_close_vec6(actual: &Vector6<f64>, expected: &Vector6<f64>, tol: f6
     }
 }
 
+/// A fresh directory under `std::env::temp_dir()`, named after the process id and
+/// `tag`, removed on drop. Tests that need files use this and never touch the
+/// user's config, home or working directory (P5 rule 19).
+pub struct TempDir {
+    path: std::path::PathBuf,
+}
+
+impl TempDir {
+    pub fn new(tag: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("ssg-sim-test-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("could not create the test directory");
+        Self { path }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Writes `contents` to `relative` (creating parent directories) and returns
+    /// the full path.
+    pub fn write(&self, relative: &str, contents: &str) -> std::path::PathBuf {
+        let file = self.path.join(relative);
+        std::fs::create_dir_all(file.parent().expect("a file path has a parent"))
+            .expect("could not create the parent directory");
+        std::fs::write(&file, contents).expect("could not write the test file");
+        file
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// A fixed-seed linear congruential generator (Knuth's MMIX constants) for the
+/// property-style tests (P5, A-4): the same seed gives the same cases on every
+/// platform, and a failing case is reproduced from the printed seed and index.
+/// Not for anything that needs statistical quality.
+#[derive(Clone, Debug)]
+pub struct Lcg(u64);
+
+impl Lcg {
+    pub fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    pub fn next_u64(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        // The high bits are the better ones: rotate them to the bottom.
+        self.0.rotate_right(11)
+    }
+
+    /// Uniform in `[0, 1)` with 53 random bits.
+    pub fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// Uniform in `[lo, hi)`.
+    pub fn range(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + (hi - lo) * self.next_f64()
+    }
+
+    /// Uniform in `0..n` (`n > 0`).
+    pub fn below(&mut self, n: usize) -> usize {
+        (self.next_u64() % n as u64) as usize
+    }
+
+    /// `true` with probability `p`.
+    pub fn chance(&mut self, p: f64) -> bool {
+        self.next_f64() < p
+    }
+}
+
 /// Reads [`LogEvent`] messages from a cursor.
 ///
 /// `app.update()` swaps message buffers each frame, so drain after **every**
@@ -443,7 +521,13 @@ pub mod q13 {
     }
 
     /// Select the HST and the chaser, enter the sim, start it, and mark the HST
-    /// for capture with `example_plan`, as the app's UI does. The start epoch is
+    /// for capture with `example_plan`, as the app's UI does.
+    ///
+    /// Step offset (F-51): this ticks once more before the capture starts than the
+    /// CLI's scenario runner does, so the tick `t` after `build` is at step
+    /// `t + 3` here and the CLI's sample at that step is bit-identical (the CLI
+    /// measures from step 2). Align by absolute step; `harness_parity` in
+    /// `ssg-sim-cli` checks it. The start epoch is
     /// the app's [`SimConfig`](crate::time::SimConfig) ([`fixed_epoch`] in [`test_app`]); the wall-clock
     /// epoch mode was retired in P4 S6 (the sim has no wall-clock path, Q41).
     pub fn build(app: &mut App) -> Q13Handles {
@@ -612,6 +696,49 @@ mod self_tests {
         tick(&mut app);
         let after = app.world().resource::<WorldTime>().epoch;
         assert_close(after - before, 8.0 * PHYS_DT, 1e-12, "one tick at x8");
+    }
+
+    #[test]
+    fn lcg_same_seed_gives_the_same_sequence() {
+        let mut a = Lcg::new(42);
+        let mut b = Lcg::new(42);
+        let first: Vec<u64> = (0..8).map(|_| a.next_u64()).collect();
+        let second: Vec<u64> = (0..8).map(|_| b.next_u64()).collect();
+        assert_eq!(first, second);
+        let other: Vec<u64> = {
+            let mut c = Lcg::new(43);
+            (0..8).map(|_| c.next_u64()).collect()
+        };
+        assert_ne!(
+            first, other,
+            "a different seed must give a different sequence"
+        );
+    }
+
+    #[test]
+    fn lcg_draws_stay_in_their_ranges() {
+        let mut rng = Lcg::new(7);
+        let mut below_seen = [false; 5];
+        let (mut min, mut max) = (f64::MAX, f64::MIN);
+        for _ in 0..2_000 {
+            let unit = rng.next_f64();
+            assert!((0.0..1.0).contains(&unit), "next_f64 gave {unit}");
+            let x = rng.range(-3.0, 9.0);
+            assert!((-3.0..9.0).contains(&x), "range gave {x}");
+            min = min.min(x);
+            max = max.max(x);
+            below_seen[rng.below(5)] = true;
+        }
+        assert!(
+            below_seen.iter().all(|&seen| seen),
+            "below(5) missed a value"
+        );
+        assert!(min < -2.5 && max > 8.5, "range covers {min}..{max}");
+        let hits = (0..2_000).filter(|_| rng.chance(0.25)).count();
+        assert!(
+            (350..650).contains(&hits),
+            "chance(0.25) hit {hits} of 2000"
+        );
     }
 
     #[test]
