@@ -684,3 +684,34 @@ fn spawn_debris_takes_the_targets_mass_from_the_selection() {
     assert_close(spawn(None), 2500.0, 1e-3, "default target mass");
     assert_close(spawn(Some(3200.0)), 3200.0, 1e-3, "mass from project.json");
 }
+
+#[test]
+fn spawn_selected_bodies_gives_the_debris_the_targets_mass_and_not_the_tether() {
+    let mut app = spawn_app();
+    let mut target = q13::catalog_pick("HST", q13::HST_NORAD_ID);
+    target.mass_kg = Some(3200.0);
+    let chaser = q13::catalog_pick("CHASER", q13::CHASER_NORAD_ID);
+    select(&mut app, Some(target), Some(chaser));
+
+    run_spawn_selected(&mut app);
+
+    let debris = *app
+        .world()
+        .resource::<OrbitalCache>()
+        .debris
+        .get("Satellite1")
+        .unwrap();
+    assert_close(
+        app.world().get::<Mass>(debris).unwrap().0 as f64,
+        3200.0,
+        1e-3,
+        "debris mass",
+    );
+    let root = registered(&app, "Tether1")[0];
+    assert_close(
+        app.world().get::<Mass>(root).unwrap().0 as f64,
+        2.0,
+        1e-6,
+        "the tether root keeps the plan's end mass",
+    );
+}
