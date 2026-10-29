@@ -1,10 +1,12 @@
-//! `summary.json`, `trajectory.csv` and the one-line stdout summary.
+//! `summary.json`, `trajectory.csv`, `ephemeris.oem` and the one-line stdout
+//! summary.
 
 use std::fs;
 use std::path::PathBuf;
 
 use brahe::Epoch;
 use serde_json::json;
+use ssg_sim::project::export::{OemObject, TrajectoryRow, write_oem, write_trajectory_csv};
 
 use crate::args::Args;
 use crate::scenario::{Run, Sample};
@@ -30,7 +32,7 @@ pub fn write(args: &Args, run: &Run) -> Result<(), String> {
         "steps": run.steps,
         "warp": args.warp,
         "transitions": transitions,
-        "final": { "step": run.last.step, "state": run.last.state, "range_m": run.last.range_m },
+        "final": { "step": run.last.step, "phase": run.last.state, "range_m": run.last.range_m },
         "state_hash": format!("{:016x}", state_hash(&run.samples)),
         "wall_s": run.wall.as_secs_f64(),
     });
@@ -38,22 +40,37 @@ pub fn write(args: &Args, run: &Run) -> Result<(), String> {
     let text = serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?;
     fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
 
-    let path = out.join("trajectory.csv");
-    let mut csv = csv::Writer::from_path(&path)
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-    csv.write_record(["step", "epoch", "state", "range_m", "rel_speed_mps"])
-        .map_err(|e| e.to_string())?;
-    for s in &run.samples {
-        csv.write_record([
-            s.step.to_string(),
-            s.epoch.clone(),
-            s.state.clone(),
-            s.range_m.to_string(),
-            s.rel_speed_mps.to_string(),
-        ])
-        .map_err(|e| e.to_string())?;
+    write_trajectory_csv(
+        &out.join("trajectory.csv"),
+        run.samples.iter().map(|s| TrajectoryRow {
+            step: s.step,
+            epoch_utc: &s.epoch,
+            phase: &s.state,
+            range_m: s.range_m,
+            rel_speed_mps: s.rel_speed_mps,
+        }),
+    )?;
+
+    // Without samples (`--stop-at-capture` before the first) there is no ephemeris.
+    if !run.ephemeris.is_empty() {
+        let segment = |name, chaser: bool| OemObject {
+            name,
+            id: None,
+            states: run
+                .ephemeris
+                .iter()
+                .map(|e| (e.epoch, if chaser { e.chaser } else { e.target }))
+                .collect(),
+        };
+        write_oem(
+            &out.join("ephemeris.oem"),
+            run.start,
+            &[
+                segment(&run.target_label, false),
+                segment(&run.chaser_label, true),
+            ],
+        )?;
     }
-    csv.flush().map_err(|e| e.to_string())?;
 
     println!(
         "plan {} ({} epoch): {} steps at {}x, {} transitions, final {} at step {}, range {:.6} m, {:.1} s wall -> {}",

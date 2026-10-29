@@ -20,16 +20,17 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
+use brahe::Epoch;
 use ssg_sim::SimPlugins;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, CaptureTransition, SimCommand};
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::lvlh::LvlhFrame;
-use ssg_sim::orbit::selection::OrbitalSelectionState;
+use ssg_sim::orbit::selection::{OrbitalSelectionSource, OrbitalSelectionState};
 use ssg_sim::physics_bubble::body_eci_state;
 use ssg_sim::project::{AssetsDir, SelectedProject, format_utc};
 use ssg_sim::session::{SimState, UiScreen};
-use ssg_sim::telemetry::{LogEvent, LogLevel};
+use ssg_sim::telemetry::{EphemerisSample, LogEvent, LogLevel};
 use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
 
 use crate::args::Args;
@@ -60,12 +61,20 @@ pub struct Run {
     /// The NORAD ids of the two bodies, when they have them.
     pub target: Option<u64>,
     pub chaser: Option<u64>,
+    /// The labels of the two bodies (`OBJECT_NAME` in `ephemeris.oem`).
+    pub target_label: String,
+    pub chaser_label: String,
     pub epoch_mode: &'static str,
+    /// The start epoch as an `Epoch` (`CREATION_DATE` of `ephemeris.oem`) and as
+    /// its `format_utc` string.
+    pub start: Epoch,
     pub start_epoch: String,
     /// Fixed steps run after the capture command.
     pub steps: u64,
     pub transitions: Vec<Transition>,
     pub samples: Vec<Sample>,
+    /// The debris's (target) and the root's (chaser) ECI states at each sample.
+    pub ephemeris: Vec<EphemerisSample>,
     pub last: Sample,
     pub wall: Duration,
 }
@@ -75,6 +84,11 @@ pub fn run(args: &Args) -> Result<Run, String> {
     let inputs = resolve(args)?;
     let reference_epoch = inputs.start_epoch;
     let (target, chaser) = (inputs.target.clone(), inputs.chaser.clone());
+    let label = |source: &OrbitalSelectionSource| match source {
+        OrbitalSelectionSource::Catalog { label, .. }
+        | OrbitalSelectionSource::Custom { label } => label.clone(),
+    };
+    let (target_label, chaser_label) = (label(&target.source), label(&chaser.source));
 
     let mut app = App::new();
     app.add_plugins((
@@ -162,6 +176,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
     let (total_updates, sample_every_updates) = (args.steps / warp, args.sample_every / warp);
     let mut transitions = Vec::new();
     let mut samples = Vec::new();
+    let mut ephemeris = Vec::new();
     let mut updates = 0;
     let mut last = sample(&app, debris, root)?;
     while updates < total_updates {
@@ -185,6 +200,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
         }
         if updates % sample_every_updates == 0 {
             samples.push(sample(&app, debris, root)?);
+            ephemeris.push(ephemeris_sample(&app, debris, root)?);
         }
         if args.stop_at_capture && last.state == "capture" {
             break;
@@ -203,10 +219,14 @@ pub fn run(args: &Args) -> Result<Run, String> {
         epoch_mode: inputs.epoch_mode,
         target: inputs.target_id,
         chaser: inputs.chaser_id,
+        target_label,
+        chaser_label,
+        start: start_epoch,
         start_epoch: format_utc(start_epoch),
         steps: updates * warp,
         transitions,
         samples,
+        ephemeris,
         last,
         wall: started.elapsed(),
     })
@@ -258,5 +278,33 @@ fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
         root_velocity,
         debris_position,
         debris_velocity,
+    })
+}
+
+/// The debris's and the root's ECI states now (bubble offset added for enabled
+/// bodies), as the app's capture controller samples them.
+fn ephemeris_sample(app: &App, debris: Entity, root: Entity) -> Result<EphemerisSample, String> {
+    let world = app.world();
+    let cache = world.resource::<OrbitalCache>();
+    let eci = |entity: Entity, what: &str| {
+        let position = world
+            .get::<Position>(entity)
+            .ok_or(format!("{what} Position"))?;
+        let velocity = world
+            .get::<LinearVelocity>(entity)
+            .ok_or(format!("{what} velocity"))?;
+        body_eci_state(
+            cache,
+            entity,
+            position.0,
+            velocity.0,
+            world.get::<RigidBodyDisabled>(entity).is_some(),
+        )
+        .ok_or(format!("the {what} has no ECI state"))
+    };
+    Ok(EphemerisSample {
+        epoch: world.resource::<WorldTime>().epoch,
+        target: eci(debris, "debris")?,
+        chaser: eci(root, "root")?,
     })
 }
