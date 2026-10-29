@@ -961,6 +961,41 @@ fn generated_selections_survive_from_selection_and_sim_inputs() {
     println!("seed {seed:#x}: 300 selections survive from_selection, a JSON text and sim_inputs");
 }
 
+#[test]
+fn the_targets_mass_reaches_the_selection_and_survives_writing_it_back() {
+    // P6 S4: `target.mass_kg` is applied by the sim, so it travels with the selection.
+    let manifest = read(&doc()).manifest.unwrap();
+    let inputs = manifest.sim_inputs().unwrap();
+    assert_eq!(inputs.target.mass_kg, Some(2500.0));
+    assert_eq!(inputs.chaser.mass_kg, None);
+
+    let mut value = doc();
+    value["target"]["mass_kg"] = json!(3200.5);
+    let inputs = read(&value).manifest.unwrap().sim_inputs().unwrap();
+    assert_eq!(inputs.target.mass_kg, Some(3200.5));
+
+    let selection = OrbitalSelectionState {
+        target: Some(inputs.target),
+        chaser: Some(inputs.chaser),
+    };
+    let written = ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap();
+    assert_eq!(written.target.mass_kg, Some(3200.5));
+    assert_eq!(written.chaser.mass_kg, None);
+    let text = manifest_to_json(&written);
+    let reread = read_manifest_value(&serde_json::from_str(&text).unwrap());
+    assert_eq!(reread.errors, Vec::<String>::new());
+    assert_eq!(
+        reread
+            .manifest
+            .unwrap()
+            .sim_inputs()
+            .unwrap()
+            .target
+            .mass_kg,
+        Some(3200.5)
+    );
+}
+
 // ---------------------------------------------------------------------------
 // the published JSON Schema
 // ---------------------------------------------------------------------------
