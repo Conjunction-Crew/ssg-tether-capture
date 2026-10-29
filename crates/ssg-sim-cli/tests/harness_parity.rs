@@ -7,7 +7,7 @@
 //! each other and never with the macOS goldens.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use ssg_sim::test_support::q13;
 
@@ -63,7 +63,9 @@ fn cli_trajectory_equals_the_harness_checkpoints_bit_for_bit() {
     .unwrap();
     let out = project.join("out");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_ssg-sim"))
+    // The binary and the in-process harness run at the same time: two independent
+    // runs, so the test costs the slower one, not the sum.
+    let child = Command::new(env!("CARGO_BIN_EXE_ssg-sim"))
         .arg("run")
         .arg(&project)
         .args(["--target", "20580", "--chaser", "99901", "--epoch", EPOCH])
@@ -72,8 +74,12 @@ fn cli_trajectory_equals_the_harness_checkpoints_bit_for_bit() {
         .arg(repo_root().join("assets"))
         .arg("--out")
         .arg(&out)
-        .output()
-        .expect("the binary runs");
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the binary starts");
+    let harness = q13::run(HARNESS_TICKS, false);
+    let output = child.wait_with_output().expect("the binary finishes");
     assert!(
         output.status.success(),
         "exit {:?}: {}",
@@ -84,8 +90,6 @@ fn cli_trajectory_equals_the_harness_checkpoints_bit_for_bit() {
     let summary: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("summary.json")).unwrap()).unwrap();
     let _ = std::fs::remove_dir_all(&project);
-
-    let harness = q13::run(HARNESS_TICKS, false);
 
     // Preconditions: the offset is the documented one, and the horizons match.
     assert_eq!(
