@@ -689,3 +689,37 @@ pub fn manifest_to_json(manifest: &ProjectManifest) -> String {
 pub fn save_manifest(dir: &Path, manifest: &ProjectManifest) -> std::io::Result<()> {
     fs::write(dir.join(MANIFEST_FILE), manifest_to_json(manifest))
 }
+
+/// The sim inputs of `<dir>/project.json`: `None` when the folder has no manifest
+/// (a v0 folder), `Err` with the messages when it has one that cannot be used.
+pub fn read_sim_inputs(dir: &Path) -> Option<Result<ManifestSimInputs, Vec<String>>> {
+    let report = read_manifest_file(dir)?;
+    Some(match report.manifest {
+        Some(manifest) => manifest.sim_inputs(),
+        None => Err(report.errors),
+    })
+}
+
+/// Writes `manifest` to `<dir>/project.json`, reads the file back and returns the
+/// sim inputs of what was read: the one path from files to sim inputs. When the
+/// file cannot be written the inputs come from `manifest` itself and the write
+/// error is returned beside them. `Err` when the manifest, as written or as read
+/// back, is not valid.
+pub fn save_and_reload(
+    dir: &Path,
+    manifest: &ProjectManifest,
+) -> Result<(ManifestSimInputs, Option<String>), Vec<String>> {
+    if let Err(e) = save_manifest(dir, manifest) {
+        let inputs = manifest.sim_inputs()?;
+        return Ok((
+            inputs,
+            Some(format!("could not write {MANIFEST_FILE}: {e}")),
+        ));
+    }
+    match read_sim_inputs(dir) {
+        Some(result) => result.map(|inputs| (inputs, None)),
+        None => Err(vec![format!(
+            "[{MANIFEST_FILE}] disappeared after it was written"
+        )]),
+    }
+}

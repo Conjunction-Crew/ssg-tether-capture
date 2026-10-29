@@ -2,7 +2,7 @@
 
 use brahe::{Epoch, TimeSystem};
 
-use crate::project::{format_utc, parse_utc};
+use crate::project::{format_utc, now_utc, parse_utc};
 use crate::test_support::{Lcg, fixed_epoch};
 
 /// A random `YYYY-MM-DDTHH:MM:SS.ffffffZ` string (days up to 28, so every month has them).
@@ -82,4 +82,23 @@ fn malformed_epoch_strings_do_not_parse() {
     ] {
         assert!(parse_utc(bad).is_none(), "`{bad}` must not parse");
     }
+}
+
+#[test]
+fn now_utc_is_a_whole_number_of_microseconds() {
+    let before = Epoch::now();
+    let now = now_utc();
+    let after = Epoch::now();
+
+    assert_eq!(
+        parse_utc(&format_utc(now)),
+        Some(now),
+        "the string is the epoch"
+    );
+    assert!(
+        now - before > -1e-5 && after - now > -1e-5,
+        "it is the wall clock: {} s after the first reading, {} s before the last",
+        now - before,
+        after - now
+    );
 }

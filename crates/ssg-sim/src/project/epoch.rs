@@ -46,3 +46,11 @@ pub fn parse_utc(raw: &str) -> Option<Epoch> {
         TimeSystem::UTC,
     ))
 }
+
+/// The wall clock now, rounded to the microsecond: the epoch a new project starts
+/// from, so that the manifest's string and the simulation's epoch are the same
+/// number (F-06).
+pub fn now_utc() -> Epoch {
+    let now = Epoch::now();
+    parse_utc(&format_utc(now)).unwrap_or(now)
+}

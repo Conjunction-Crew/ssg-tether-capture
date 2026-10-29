@@ -5,7 +5,7 @@ pub mod manifest;
 pub(crate) mod migrate_v0;
 pub mod plan_files;
 
-pub use epoch::{format_utc, parse_utc};
+pub use epoch::{format_utc, now_utc, parse_utc};
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -13,7 +13,7 @@ use crate::project::epoch::{format_utc, parse_utc};
 use crate::project::manifest::{
     BuiltWith, MANIFEST_FILE, ManifestBody, ManifestElements, ManifestOrbit, ManifestSource,
     ProjectManifest, RelativePreset, RelativeToTarget, manifest_to_json, read_manifest_file,
-    read_manifest_value, save_manifest,
+    read_manifest_value, read_sim_inputs, save_and_reload, save_manifest,
 };
 use crate::test_support::{Lcg, TempDir, fixed_epoch, q13};
 use crate::tests::plan_schema_v1::check_schema;
@@ -604,6 +604,107 @@ fn a_selection_needs_both_bodies() {
         ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap_err(),
         "no target is selected"
     );
+}
+
+// ---------------------------------------------------------------------------
+// files -> sim inputs
+// ---------------------------------------------------------------------------
+
+#[test]
+fn read_sim_inputs_distinguishes_no_manifest_a_bad_one_and_a_good_one() {
+    let dir = TempDir::new("manifest-inputs");
+    assert!(
+        read_sim_inputs(dir.path()).is_none(),
+        "a v0 folder has no manifest"
+    );
+
+    dir.write(MANIFEST_FILE, "{ not json");
+    let errors = read_sim_inputs(dir.path()).unwrap().unwrap_err();
+    assert!(
+        errors[0].starts_with("[project.json] Invalid JSON: "),
+        "{errors:?}"
+    );
+
+    let mut value = doc();
+    value["chaser"]["mass_kg"] = json!(5.0);
+    dir.write(MANIFEST_FILE, &value.to_string());
+    let errors = read_sim_inputs(dir.path()).unwrap().unwrap_err();
+    assert_eq!(
+        errors,
+        [
+            "[project.json] /chaser/mass_kg: the chaser's mass is not supported yet; it is applied from v0.4.0-rc.4"
+        ]
+    );
+
+    dir.write(MANIFEST_FILE, &doc().to_string());
+    let inputs = read_sim_inputs(dir.path()).unwrap().unwrap();
+    assert_eq!(inputs.start_epoch, fixed_epoch());
+}
+
+#[test]
+fn save_and_reload_starts_from_what_was_read() {
+    let dir = TempDir::new("manifest-reload");
+    let selection = OrbitalSelectionState {
+        target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
+        chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+    };
+    let manifest =
+        ProjectManifest::from_selection("proj", fixed_epoch(), Some("example_plan"), &selection)
+            .unwrap();
+
+    let (inputs, write_error) = save_and_reload(dir.path(), &manifest).unwrap();
+
+    assert_eq!(write_error, None);
+    assert!(
+        dir.path().join(MANIFEST_FILE).is_file(),
+        "the manifest was written"
+    );
+    assert_eq!(inputs.target.gp, selection.target.as_ref().unwrap().gp);
+    assert_eq!(inputs.chaser.gp, selection.chaser.as_ref().unwrap().gp);
+    assert_eq!(inputs.active_plan.as_deref(), Some("example_plan"));
+    assert_eq!(inputs.start_epoch, fixed_epoch());
+}
+
+#[test]
+fn save_and_reload_without_a_writable_folder_starts_from_the_manifest_itself() {
+    let dir = TempDir::new("manifest-reload-unwritable");
+    let missing = dir.path().join("not").join("there");
+    let selection = OrbitalSelectionState {
+        target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
+        chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+    };
+    let manifest =
+        ProjectManifest::from_selection("proj", fixed_epoch(), None, &selection).unwrap();
+
+    let (inputs, write_error) = save_and_reload(&missing, &manifest).unwrap();
+
+    let message = write_error.expect("the write failed");
+    assert!(
+        message.starts_with("could not write project.json: "),
+        "{message}"
+    );
+    assert_eq!(
+        inputs.target.gp,
+        selection.target.as_ref().unwrap().gp,
+        "in-memory inputs"
+    );
+    assert!(!missing.exists());
+}
+
+#[test]
+fn save_and_reload_refuses_a_manifest_that_is_not_valid() {
+    let dir = TempDir::new("manifest-reload-invalid");
+    let mut manifest = read(&doc()).manifest.unwrap();
+    manifest.name = String::new();
+    manifest.chaser.mass_kg = Some(1.0);
+
+    let errors = save_and_reload(dir.path(), &manifest).unwrap_err();
+
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert_eq!(errors[0], "[project.json] /name: must not be blank");
+    // And when the folder cannot be written, the manifest itself is checked.
+    let errors = save_and_reload(&dir.path().join("gone"), &manifest).unwrap_err();
+    assert_eq!(errors.len(), 2, "{errors:?}");
 }
 
 // ---------------------------------------------------------------------------
