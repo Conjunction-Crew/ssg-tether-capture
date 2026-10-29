@@ -22,6 +22,12 @@ GitHub Release description.
 
 ### Changed
 - Docs: every non-dry-run release now deploys the docs site. Patch and release-candidate releases appear as two rolling versions (latest patch, latest pre-release) built from the release tags at deploy time, outside the 10-version cap; stable X.Y.0 releases keep their permanent snapshot. The default docs version is now the newest stable one computed from `versions.json` (it was hard-coded to 0.2.0 while 0.3.0 existed, F-54). `scripts/docs_versions.sh plan <version>` shows what a release publishes; the Release run summary prints it, dry runs included. `deploy-docs.yml` gains `version` and `deploy` inputs (a build-only run uploads the site as an artifact).
+- Capture plans: plan files have a typed schema v1 (`"schema_version": 1`): `phases` instead of `states`, metric unit-suffixed keys (`max_velocity_mps`, `max_force_n`, `shrink_rate_mps`, `device.tether_length_m`), transition conditions under `all_of` (all must hold), optional device and `capture_sphere` fields with documented defaults, and an `end: "success" | "abort"` phase marker. Older (v0) plan files still load: they are migrated in memory without loss (every value v1 has no field for is kept under `migrated_from_v0.unmapped` with a warning; a transition with no numeric bound, which never fired, is dropped from the phase) and become v1 when saved from the plan form. Unknown keys and newer schema versions are refused, naming the key. The JSON Schema is published as `schemas/capture-plan.v1.schema.json` on the docs site; the example plan is a v1 file (F-15, F-24)
+
+### Fixed
+- Capture plans: a wrong type is reported as such with its location (a string number was reported as a missing parameter), and negative limits, shrink rates and condition bounds are refused (a plan with a negative force loaded and reversed the push); every message reads `[<plan-id>] <json-pointer>: <message>` (F-32)
+- Capture plans: the tether is always registered under the plan's own tether id, so the sidebar and the spawner agree; `Tether1` is used only when no plan is active, and a blank id cannot load (F-43)
+- Capture plans: reloading the plans drops the compiled entry of a deleted or no longer valid plan (F-53)
 
 ## [v0.3.3] - 2026-10-29
 
