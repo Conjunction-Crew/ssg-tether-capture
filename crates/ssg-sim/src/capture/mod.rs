@@ -502,9 +502,10 @@ pub fn apply_sim_commands(
                                 world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
-                                // F-11: every capture starts with the initial radius.
+                                // F-11: every capture starts with the initial radius, the
+                                // plan's `capture_sphere.initial_radius_m` (25 m by default).
                                 if let Some(radius) = capture_sphere_radius.as_mut() {
-                                    radius.radius = INITIAL_CAPTURE_SPHERE_RADIUS_M;
+                                    radius.radius = plan.initial_capture_radius_m();
                                 }
                                 log.write(LogEvent {
                                     level: LogLevel::Info,

@@ -10,8 +10,8 @@ use crate::capture::{CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M};
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
 
 const DEFAULT_DEVICE_TYPE: &str = "tether";
-const DEFAULT_TETHER_LENGTH_M: f64 = 20.0;
-const DEFAULT_SEGMENT_SPACING_M: f64 = 0.1;
+pub(crate) const DEFAULT_TETHER_LENGTH_M: f64 = 20.0;
+pub(crate) const DEFAULT_SEGMENT_SPACING_M: f64 = 0.1;
 const DEFAULT_SEGMENT_MASS_KG: f64 = 0.1;
 const DEFAULT_END_MASS_KG: f64 = 2.0;
 const DEFAULT_JOINT_DAMPING: f64 = 1.0;
