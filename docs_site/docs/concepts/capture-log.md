@@ -48,6 +48,31 @@ The viewport automatically scrolls to the newest entry when new messages arrive.
 
 Click the **Clear** button in the header to empty the log buffer. This does not affect the simulation — only the displayed log entries are removed.
 
+## Saving the log
+
+Click **Save** in the header to write the buffer to `logs/<plan-id>_<sim-time>.jsonl` in the project folder. `<plan-id>` is the active capture plan's id (the plan file's name without `.json`; `unnamed` when no plan is active), with every character other than letters, digits, `-` and `_` replaced by `_`. `<sim-time>` is the simulation time when you clicked, with the same characters replaced by `-`. A line in the log says where the file went.
+
+The file has one JSON object per entry, oldest first:
+
+```json
+{"timestamp":"16:03:47","epoch_utc":"2026-04-03T16:03:47.002464Z","level":"Info","source":"time","message":"Sim start epoch: …"}
+```
+
+| Field | Meaning |
+|---|---|
+| `timestamp` | Simulation time of day, `HH:MM:SS` (UTC), as the panel shows it |
+| `epoch_utc` | Full simulation epoch, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC, microseconds), the format of `project.json` |
+| `level` | `Error`, `Warn`, `Info` or `Debug` |
+| `source` | The emitting subsystem (see below) |
+| `message` | The text shown in the panel |
+
+## Exporting data
+
+The **Data Collection** window under the plots has two buttons. Both write into the `exports/` folder of the project (created when needed):
+
+- **Export to CSV** proposes `<plan-id>-<date>_<time>.csv` (you can edit the name), then **Export** writes one row per sample with the columns `seconds_since_start_s` (simulation seconds since the start epoch), `range_m` (distance between the tether root and the target, m) and `rel_speed_mps` (the root's speed relative to the target in the target's LVLH frame, m/s). Before v0.4.0-rc.1 the columns were `seconds_since_start,rel_position,rel_velocity` and the file went to the project folder itself.
+- **Export OEM** writes `<plan-id>-<date>_<time>.oem` at once: a CCSDS Orbit Ephemeris Message (OEM 2.0) with the target's and the chaser's (tether root's) states in the GCRF frame, one per simulated second of the running capture. It has the same layout as the `ephemeris.oem` of [`ssg-sim run`](../getting-started/headless-cli#output).
+
 ## Log sources
 
 The `source` field identifies which subsystem emitted the entry:
