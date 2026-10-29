@@ -13,7 +13,7 @@ name: Release
 #   3. build    Linux / Windows / macOS packages from the staged commit.
 #   4. publish  Only if everything above is green: fast-forward main to the
 #               staged commit, push the vX.Y.Z tag, create the GitHub Release.
-#   5. docs     Deploy the docs site (stable major/minor releases only).
+#   5. docs     Deploy the docs site (every non-dry-run release).
 #
 # A `preflight` job runs first (dry runs included) and fails in seconds if the
 # release credentials are missing or misplaced.  A dry run also mints (and the
@@ -201,6 +201,19 @@ jobs:
             echo "| Dry run | ${{ inputs.dry_run }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Docs versions plan
+        # Which docs versions this release gets (also on dry runs).
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          {
+            echo ""
+            echo "### Docs versions"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          sh scripts/docs_versions.sh plan "$VERSION" "$GITHUB_STEP_SUMMARY"
+
       - name: Bump Cargo.toml and Cargo.lock
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -386,13 +399,15 @@ jobs:
         run: git push origin --delete "release-staging/${{ needs.prepare.outputs.tag }}" || true
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Deploy docs for stable major/minor releases (patch + rc releases do not
-  # add a versioned docs set, so the live site stays as it is).
+  # Deploy docs for every release. Stable X.Y.0 releases add a permanent
+  # snapshot (committed by prepare); patch and rc releases are built as the
+  # rolling "latest patch" / "latest pre-release" versions at deploy time
+  # (scripts/docs_versions.sh). Dry runs skip this job and print the plan.
   # ───────────────────────────────────────────────────────────────────────────
   docs:
     name: Deploy docs
     needs: [prepare, publish]
-    if: ${{ !inputs.dry_run && needs.prepare.outputs.snapshot_docs == 'true' }}
+    if: ${{ !inputs.dry_run }}
     permissions:
       contents: read
       pages: write
@@ -400,3 +415,4 @@ jobs:
     uses: ./.github/workflows/deploy-docs.yml
     with:
       ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
