@@ -252,6 +252,8 @@ fn load_all_replaces_what_the_library_held_before() {
 
     assert_eq!(sorted_keys(&library.example_plans), ["other"]);
     assert_eq!(sorted_keys(&library.plans), ["other"]);
+    // F-53 (P6): the compiled plans are replaced too.
+    assert_eq!(sorted_keys(&library.compiled_plans), ["other"]);
 }
 
 #[test]
