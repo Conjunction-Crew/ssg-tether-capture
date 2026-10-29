@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.4.0-rc.1] 🔬 - 2026-10-29
+
 ### Added
 - Project files: a project folder can hold a `project.json` manifest (schema v1): the start epoch (microsecond UTC), the active plan, and the target and chaser as a copy of their Space-Track record or as osculating elements in metres and radians, with the build that wrote it. The app writes it when a run starts and starts from what it read back; opening a project restores its epoch and bodies, and a new project starts at the wall clock rounded to the microsecond. `<project>/datasets/*.json` are part of the catalog. `config.json` carries `"schema_version": 1` (a config without it is read as before; one from a newer version is ignored with a warning). Chaser mass, both inertias and a chaser placed relative to the target are in the schema but refused until v0.4.0-rc.4. The JSON Schema is published as `schemas/project.v1.schema.json` (F-24)
 - CLI: `ssg-sim validate <project-dir>` checks `project.json`, every plan file, the active plan and the orbits and prints `error:`, `warning:` and `info:` lines (exit 0 / 1 / 2); `ssg-sim run <project-dir>` takes the target, chaser, epoch and plan from `project.json` when it exists (the flags override it and say so on stderr) and then writes the same files as the flag run of the same scenario
