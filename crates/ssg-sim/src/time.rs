@@ -155,6 +155,7 @@ impl Plugin for TimePlugin {
                     SimStep::Bubble,
                     SimStep::RelativeDynamics,
                     SimStep::Capture,
+                    SimStep::Record,
                 )
                     .chain()
                     .in_set(PhysicsSystems::Last)

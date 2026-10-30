@@ -247,6 +247,54 @@ impl Lcg {
     }
 }
 
+/// The fixed step of the app's clock: `round((epoch − start_epoch) / PHYS_DT)`.
+pub fn current_step(app: &App) -> u64 {
+    let t = app.world().resource::<WorldTime>();
+    ((t.epoch - t.start_epoch) / PHYS_DT).round() as u64
+}
+
+/// A hash of the bits of every rigid body's `Position`, `Rotation`,
+/// `LinearVelocity` and `AngularVelocity`, in entity order (the P7 probes'
+/// `state_hash`): equal hashes at a step mean bit-identical states.
+pub fn state_hash(app: &mut App) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut entities: Vec<Entity> = app
+        .world_mut()
+        .query_filtered::<Entity, With<RigidBody>>()
+        .iter(app.world())
+        .collect();
+    entities.sort();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let world = app.world();
+    for entity in entities {
+        let p = world.get::<Position>(entity).expect("Position").0;
+        let r = world.get::<Rotation>(entity).expect("Rotation").0;
+        let v = world
+            .get::<LinearVelocity>(entity)
+            .expect("LinearVelocity")
+            .0;
+        let w = world
+            .get::<AngularVelocity>(entity)
+            .expect("AngularVelocity")
+            .0;
+        for x in [
+            p.x, p.y, p.z, r.x, r.y, r.z, r.w, v.x, v.y, v.z, w.x, w.y, w.z,
+        ] {
+            x.to_bits().hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// Installs a [`MemorySink`](crate::recording::MemorySink) as the recorder's sink
+/// and returns a handle to its segments.
+pub fn install_memory_sink(app: &mut App) -> crate::recording::MemorySink {
+    let sink = crate::recording::MemorySink::default();
+    app.world_mut()
+        .insert_resource(crate::recording::RecordingSink(Box::new(sink.clone())));
+    sink
+}
+
 /// Reads [`LogEvent`] messages from a cursor.
 ///
 /// `app.update()` swaps message buffers each frame, so drain after **every**
@@ -444,7 +492,7 @@ pub mod q13 {
 
     use super::{enter_sim, fixed_epoch, load_example_plans, start_running, test_app, tick};
     use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
-    use crate::capture::{CaptureComponent, CaptureTransition};
+    use crate::capture::{CaptureComponent, CaptureTransition, SimCommand};
     use crate::orbit::cache::OrbitalCache;
     use crate::orbit::catalog::{JsonOrbital, JsonOrbitalData, gp_record_to_elements};
     use crate::orbit::selection::{
@@ -586,6 +634,37 @@ pub mod q13 {
         let component =
             build_capture_component(PLAN_ID, &plan, start_time).expect("example_plan has states");
         app.world_mut().entity_mut(handles.debris).insert(component);
+        tick(app);
+        handles
+    }
+
+    /// As [`build`] with the plan `plan_id` (already in the library), but the
+    /// capture starts through `SimCommand::StartCapture`, as the CLI's scenario
+    /// does (P7): the command is applied after step 2, the step [`build`] inserts
+    /// the component after, so the [`SimInputLog`](crate::recording::inputs::SimInputLog)
+    /// holds the start. Returns, like [`build`], at step 3.
+    pub fn build_with_command(app: &mut App, plan_id: &str) -> Q13Handles {
+        app.world_mut().resource_mut::<SelectedProject>().project_id = Some(plan_id.to_string());
+        {
+            let mut selection = app.world_mut().resource_mut::<OrbitalSelectionState>();
+            selection.target = Some(catalog_pick("HST", HST_NORAD_ID));
+            selection.chaser = Some(catalog_pick("P0 HST CHASER", CHASER_NORAD_ID));
+        }
+        enter_sim(app);
+        start_running(app);
+        let tether = app.world().resource::<CapturePlanLibrary>().plans[plan_id]
+            .tether
+            .clone();
+        let cache = app.world().resource::<OrbitalCache>();
+        let handles = Q13Handles {
+            debris: *cache.debris.get("Satellite1").expect("debris not spawned"),
+            root: cache.tethers.get(&tether).expect("tether not spawned")[0],
+        };
+        app.world_mut().write_message(SimCommand::StartCapture {
+            target: Some(handles.debris),
+            plan_id: plan_id.to_string(),
+        });
+        tick(app);
         tick(app);
         handles
     }

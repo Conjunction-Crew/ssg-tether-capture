@@ -17,6 +17,7 @@ use nalgebra::Vector6;
 use crate::SimStep;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::GpElements;
+use crate::recording::inputs::SimInputLog;
 use crate::session::UiScreen;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::{ManualPhysics, WorldTime};
@@ -72,13 +73,22 @@ pub const ISS_ORBIT: Vector6<f64> = Vector6::new(
 /// when this runs (F-06). Catalog records start from their SGP4 state there (F-10);
 /// elements are taken at their own epoch (F-27). From then on every body is
 /// two-body (Kepler) propagated.
+///
+/// The first time it builds a propagator in a session it writes the
+/// [`SimInputLog`]'s `SessionStart` entry: the fixed steps that ran before it,
+/// the spawn-update step count k (P7, C1).
 pub fn init_orbitals(
     mut commands: Commands,
     mut q: Query<(Entity, &Orbit, &mut Orbital), Added<Orbit>>,
     world_time: Res<WorldTime>,
     mut log_events: MessageWriter<LogEvent>,
+    mut input_log: ResMut<SimInputLog>,
 ) {
     let start_epoch = world_time.start_epoch;
+    if !q.is_empty() {
+        let step = ((world_time.epoch - start_epoch) / crate::time::PHYS_DT).round() as u32;
+        input_log.push_session_start(step);
+    }
     for (entity, init, mut orbital) in &mut q {
         orbital.propagator = match init {
             Orbit::FromElements(elements) => kepler_at_start(*elements, start_epoch, start_epoch),

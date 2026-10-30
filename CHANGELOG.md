@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- Simulation recording core (headless, no files yet): a capture that enters an end phase (`end: success` or `abort`) now writes a `CaptureEnded` event and the log line `Capture ended: <outcome> (phase <id>)`, and the controller keeps running. The sim keeps a log of its inputs for every session: the fixed steps run before the orbits start, then each capture start with its step. A recorder can be started and stopped by hand, or starts on its own when the capture enters a chosen phase. It takes full-state frames of the target and every tether body every K steps (default 32), each with the frame origin's orbit and the floating-origin shift since the previous frame, and keeps the capture transitions. It stops on its own 60 s after the end event, at the duration cap (30 min) or at the size cap (100 MB), warning at 80 %. It refuses a second recording, and a tether of more than 200 bodies. A run with a recording is bit-identical to the run without.
+
 ### Changed
 - CLI: `ssg-sim run` prints the warnings of `project.json` and of the plan it runs (a v0 plan's unmapped values, a missing dataset, an oversized tether) on stderr as `ssg-sim: warning: <line>`, worded and ordered as `ssg-sim validate` prints them; stdout and the output files are unchanged.
 

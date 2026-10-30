@@ -86,6 +86,8 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                     })
                 })
                 .collect(),
+            // v0 has no end phases.
+            end: None,
         });
     }
 
