@@ -11,7 +11,7 @@ use ssg_sim::orbit::catalog::{JsonOrbital, JsonOrbitalData, gp_record_to_element
 use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, SelectedOrbitalObject,
 };
-use ssg_sim::project::manifest::{RecordingBlock, read_manifest_file};
+use ssg_sim::project::manifest::read_manifest_file;
 use ssg_sim::project::plan_files::plan_file_reports;
 
 use crate::args::{Args, DEFAULT_PLAN, EpochArg};
@@ -28,9 +28,6 @@ pub struct Inputs {
     pub chaser_id: Option<u64>,
     /// `--plan`, else the manifest's active plan; `None` picks by the default rules.
     pub plan: Option<String>,
-    /// The manifest's `name` and `recording` block, when there is a manifest.
-    pub project_name: Option<String>,
-    pub recording: Option<RecordingBlock>,
 }
 
 /// The inputs of `args`: `project.json` when the project has one (every flag given
@@ -107,8 +104,6 @@ pub fn resolve(args: &Args) -> Result<Inputs, String> {
             .plan
             .clone()
             .or_else(|| from_manifest.and_then(|inputs| inputs.active_plan)),
-        project_name: manifest.as_ref().map(|m| m.name.clone()),
-        recording: manifest.and_then(|m| m.recording),
     })
 }
 

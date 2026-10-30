@@ -28,7 +28,7 @@ use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::orbit::selection::{OrbitalSelectionSource, OrbitalSelectionState};
 use ssg_sim::physics_bubble::body_eci_state;
-use ssg_sim::project::manifest::ProjectManifest;
+use ssg_sim::project::manifest::{ProjectManifest, read_manifest_file};
 use ssg_sim::project::recording::RecordingSource;
 use ssg_sim::project::{AssetsDir, SelectedProject, format_utc, parse_utc};
 use ssg_sim::recording::RecordingSink;
@@ -156,8 +156,7 @@ pub fn run(args: &Args) -> Result<Run, String> {
             name,
             &RecordedRun {
                 plan: &plan,
-                project_name: inputs.project_name.as_deref(),
-                block: inputs.recording.clone(),
+                manifest: read_manifest_file(&args.project_dir).and_then(|report| report.manifest),
                 start_epoch: reference_epoch,
                 target_label: &target_label,
             },
@@ -311,8 +310,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
 /// What a recording needs to know about the run.
 struct RecordedRun<'a> {
     plan: &'a str,
-    project_name: Option<&'a str>,
-    block: Option<ssg_sim::project::manifest::RecordingBlock>,
+    /// The project's `project.json`, when it has one: its name and `recording` block.
+    manifest: Option<ProjectManifest>,
     start_epoch: Epoch,
     target_label: &'a str,
 }
@@ -325,7 +324,8 @@ fn set_up_recording(
     name: &str,
     run: &RecordedRun,
 ) -> Result<FileSink, String> {
-    let mut settings = RecordingSettings::from_block(run.block.as_ref());
+    let block = run.manifest.as_ref().and_then(|m| m.recording.as_ref());
+    let mut settings = RecordingSettings::from_block(block);
     let plan = app.world().resource::<CapturePlanLibrary>().plans[run.plan].clone();
     match &args.record_from_phase {
         Some(phase) => {
@@ -339,7 +339,7 @@ fn set_up_recording(
             settings.auto_start_phase = Some(phase.clone());
         }
         None => {
-            if let Some(warning) = run.block.as_ref().and_then(|b| b.auto_start_warning(&plan)) {
+            if let Some(warning) = block.and_then(|b| b.auto_start_warning(&plan)) {
                 eprintln!("ssg-sim: warning: {warning}");
             }
         }
@@ -349,13 +349,15 @@ fn set_up_recording(
     let mut project = {
         let selection = app.world().resource::<OrbitalSelectionState>();
         ProjectManifest::from_selection(
-            run.project_name.unwrap_or("ssg-sim run"),
+            run.manifest
+                .as_ref()
+                .map_or("ssg-sim run", |m| m.name.as_str()),
             run.start_epoch,
             Some(run.plan),
             selection,
         )?
     };
-    project.recording = run.block.clone();
+    project.recording = block.cloned();
     let sink = FileSink::new(RecordingContext {
         recordings_dir: args.project_dir.join("recordings"),
         default_name: name.to_string(),
