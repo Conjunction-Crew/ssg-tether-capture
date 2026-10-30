@@ -18,7 +18,6 @@ egui_plot = { workspace = true }
 avian3d = { workspace = true }
 ssg-sim = { workspace = true }
 serde = { workspace = true }
-csv = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }
 brahe = { workspace = true }

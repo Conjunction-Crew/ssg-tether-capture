@@ -2,10 +2,12 @@
 
 pub mod plan;
 
+#[cfg(debug_assertions)]
+use avian3d::prelude::RigidBody;
 use avian3d::{
     math::PI,
     prelude::{
-        Forces, LinearVelocity, Position, RigidBody, RigidBodyDisabled, RigidBodyQuery, Rotation,
+        Forces, LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery, Rotation,
         WriteRigidBodyForces,
     },
 };

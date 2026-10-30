@@ -85,7 +85,6 @@ The exit code is 0 without errors, 1 with errors and 2 for a usage error (no dir
 - `state_hash`: a 64-bit FNV-1a hash (16 hex digits) of the sampled state: per sample, the step and the tether root's and the debris's position and velocity, bit for bit. Two runs with the same hash sampled bit-identical states.
 
 What a fixed `--epoch` guarantees, and what differs between platforms, is described in [Determinism](../concepts/determinism).
-- One summary line on stdout.
 
 The exit code is 0 on success, 1 on a failure (missing plan, NORAD id not found, an invalid `project.json`, no capture with `--stop-at-capture`) and 2 for a usage error.
 
