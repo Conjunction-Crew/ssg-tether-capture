@@ -261,3 +261,130 @@ fn a_manifest_with_an_unknown_active_plan_names_it() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+
+/// The `warning:` lines `ssg-sim validate` prints for `project`.
+fn validate_warnings(project: &Path) -> Vec<String> {
+    let output = Command::new(env!("CARGO_BIN_EXE_ssg-sim"))
+        .arg("validate")
+        .arg(project)
+        .arg("--assets")
+        .arg(repo_root().join("assets"))
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("warning: "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The `ssg-sim: warning:` lines of a run's stderr, without the prefix.
+fn run_warnings(output: &Output) -> Vec<String> {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .filter_map(|line| line.strip_prefix("ssg-sim: warning: "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// F-56: a run prints the warnings of the plan it runs (here the migration warnings
+/// of a v0 plan with unmapped values) as `validate` words them, and the outputs are
+/// byte-identical to the run of the same plan without those values.
+#[test]
+fn a_run_prints_the_plan_warnings_validate_prints() {
+    let fixture = repo_root().join("crates/ssg-sim/tests/fixtures/v0/q10_ignored_fields.json");
+    let warned = flag_project("plan-warned");
+    std::fs::copy(&fixture, warned.join("q10_ignored_fields.json")).unwrap();
+    // The same plan without every key the migration reports as unmapped.
+    let clean = flag_project("plan-clean");
+    let mut plan: Value =
+        serde_json::from_str(&std::fs::read_to_string(&fixture).unwrap()).unwrap();
+    for key in ["chaser", "target", "start_epoch"] {
+        plan.as_object_mut().unwrap().remove(key);
+    }
+    for key in ["damping", "segment_mass", "segments"] {
+        plan["device"].as_object_mut().unwrap().remove(key);
+    }
+    plan["states"][0]["parameters"]
+        .as_object_mut()
+        .unwrap()
+        .remove("kp");
+    plan["states"][0]["transitions"] = json!([]);
+    plan["states"][1]["transitions"][0]["distance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("units");
+    std::fs::write(clean.join("q10_ignored_fields.json"), plan.to_string()).unwrap();
+    let flags = [
+        "--target", "20580", "--chaser", "99901", "--epoch", EPOCH, "--steps", "640",
+    ];
+
+    let expected = validate_warnings(&warned);
+    assert!(!expected.is_empty(), "the fixture has migration warnings");
+    assert!(
+        validate_warnings(&clean).is_empty(),
+        "the stripped plan has none"
+    );
+    let warned_output = ssg_sim(&warned, "out", &flags).output().unwrap();
+    let clean_output = ssg_sim(&clean, "out", &flags).output().unwrap();
+
+    assert_success(&warned_output);
+    assert_success(&clean_output);
+    assert_eq!(
+        run_warnings(&warned_output),
+        expected,
+        "same lines, same order"
+    );
+    assert!(run_warnings(&clean_output).is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&warned_output.stdout)
+            .lines()
+            .count(),
+        1,
+        "stdout keeps its one summary line"
+    );
+    let (warned_csv, warned_summary) = outputs(&warned, "out");
+    let (clean_csv, clean_summary) = outputs(&clean, "out");
+    assert!(warned_csv == clean_csv, "trajectory.csv bytes differ");
+    assert_eq!(without_wall(warned_summary), without_wall(clean_summary));
+    let _ = std::fs::remove_dir_all(&warned);
+    let _ = std::fs::remove_dir_all(&clean);
+}
+
+/// F-56: a run prints the warnings of `project.json` (here a dataset that does not
+/// exist) as `validate` words them, and the outputs equal those of the run without.
+#[test]
+fn a_run_prints_the_project_json_warnings_validate_prints() {
+    let warned = manifest_project("manifest-warned");
+    let mut manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(warned.join("project.json")).unwrap())
+            .unwrap();
+    manifest["target"]["source"] = json!({ "dataset": "datasets/gone.json", "norad_id": 20580 });
+    std::fs::write(warned.join("project.json"), manifest.to_string()).unwrap();
+    let clean = manifest_project("manifest-clean");
+
+    let expected = validate_warnings(&warned);
+    assert_eq!(
+        expected,
+        [
+            "[project.json] /target/source/dataset: `datasets/gone.json` does not exist (the stored orbit is used)"
+        ]
+    );
+    let warned_output = ssg_sim(&warned, "out", &["--steps", "640"])
+        .output()
+        .unwrap();
+    let clean_output = ssg_sim(&clean, "out", &["--steps", "640"])
+        .output()
+        .unwrap();
+
+    assert_success(&warned_output);
+    assert_success(&clean_output);
+    assert_eq!(run_warnings(&warned_output), expected);
+    assert!(run_warnings(&clean_output).is_empty());
+    let (warned_csv, warned_summary) = outputs(&warned, "out");
+    let (clean_csv, clean_summary) = outputs(&clean, "out");
+    assert!(warned_csv == clean_csv, "trajectory.csv bytes differ");
+    assert_eq!(without_wall(warned_summary), without_wall(clean_summary));
+    let _ = std::fs::remove_dir_all(&warned);
+    let _ = std::fs::remove_dir_all(&clean);
+}

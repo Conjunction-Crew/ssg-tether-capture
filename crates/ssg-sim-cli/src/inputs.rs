@@ -12,6 +12,7 @@ use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, SelectedOrbitalObject,
 };
 use ssg_sim::project::manifest::read_manifest_file;
+use ssg_sim::project::plan_files::plan_file_reports;
 
 use crate::args::{Args, DEFAULT_PLAN, EpochArg};
 
@@ -30,14 +31,20 @@ pub struct Inputs {
 }
 
 /// The inputs of `args`: `project.json` when the project has one (every flag given
-/// overrides its entry and says so on stderr), the flags and the datasets otherwise.
+/// overrides its entry and says so on stderr; so does each of its warnings, as
+/// `validate` words them), the flags and the datasets otherwise.
 pub fn resolve(args: &Args) -> Result<Inputs, String> {
     let manifest = match read_manifest_file(&args.project_dir) {
         None => None,
-        Some(report) => match report.manifest {
-            Some(manifest) => Some(manifest),
-            None => return Err(report.errors.join("; ")),
-        },
+        Some(report) => {
+            for line in &report.warnings {
+                eprintln!("ssg-sim: warning: {line}");
+            }
+            match report.manifest {
+                Some(manifest) => Some(manifest),
+                None => return Err(report.errors.join("; ")),
+            }
+        }
     };
     let from_manifest = manifest
         .as_ref()
@@ -123,7 +130,8 @@ fn pick(
 }
 
 /// Load the example plans and the project's plans, pick the plan id: `requested`
-/// when given, else the project's only plan, else the example.
+/// when given, else the project's only plan, else the example. The warnings of the
+/// project's plan file that runs go to stderr, as `validate` words them.
 pub fn load_plans(app: &mut App, args: &Args, requested: Option<&str>) -> Result<String, String> {
     let mut library = app.world_mut().resource_mut::<CapturePlanLibrary>();
     let errors = library.load_all(
@@ -139,6 +147,13 @@ pub fn load_plans(app: &mut App, args: &Args, requested: Option<&str>) -> Result
         None => DEFAULT_PLAN.to_string(),
     };
     if library.plans.contains_key(&plan) {
+        for (stem, report) in plan_file_reports(&args.project_dir) {
+            if stem == plan && report.plan.is_some() {
+                for line in &report.warnings {
+                    eprintln!("ssg-sim: warning: {line}");
+                }
+            }
+        }
         Ok(plan)
     } else {
         Err(format!("capture plan `{plan}` not found"))
