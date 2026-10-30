@@ -1020,8 +1020,12 @@ fn check_table(
             steps[0], manifest.start_step
         ));
     }
+    // A first step off start_step is reported above; the cadence is measured from it.
     let last = steps.len().saturating_sub(1);
-    if let Some(step) = steps.iter().take(last).find(|s| {
+    let aligned = steps
+        .first()
+        .is_none_or(|s| *s as u64 == manifest.start_step);
+    if let Some(step) = steps.iter().take(last).filter(|_| aligned).find(|s| {
         (**s as u64)
             .checked_sub(manifest.start_step)
             .is_none_or(|d| d % interval != 0)
