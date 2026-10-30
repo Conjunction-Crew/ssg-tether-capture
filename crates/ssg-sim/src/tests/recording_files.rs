@@ -567,7 +567,7 @@ fn an_io_error_is_reported_when_the_recording_ends() {
 // ---------------------------------------------------------------------------
 
 /// A valid recording named `r` of 5 frames (steps 100 … 164, K = 16) in `dir`.
-fn valid_recording(dir: &TempDir, source: RecordingSource) -> std::path::PathBuf {
+pub(crate) fn valid_recording(dir: &TempDir, source: RecordingSource) -> std::path::PathBuf {
     let recordings = dir.path().join("recordings");
     let mut ctx = context(&recordings);
     ctx.source = source;
