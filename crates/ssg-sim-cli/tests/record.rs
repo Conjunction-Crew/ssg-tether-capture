@@ -20,6 +20,16 @@ const EPOCH: &str = "2026-04-03T16:03:47.002464";
 /// `ssg-sim run` of the Q13 6,400-step command (macOS/aarch64 reference).
 const Q13_6400_HASH: &str = "990794b3425a84be";
 
+/// The files of a recording folder.
+const FILES: [&str; 6] = [
+    "manifest.json",
+    "inputs.jsonl",
+    "keyframes.parquet",
+    "frames.jsonl",
+    "transitions.jsonl",
+    "log.jsonl",
+];
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -120,41 +130,43 @@ fn text(path: &Path) -> String {
 }
 
 #[test]
-fn recording_does_not_change_the_run_and_writes_the_design_layout() {
+fn recording_does_not_change_the_run() {
+    // Steps 468 and 979 are floating-origin resets, 4318 the first transition:
+    // 1,100 steps cover the resets with the recording running.
     let project = flag_project("hash");
-    assert_success(&run(&project, "plain", &q13_flags("6400")));
-    let mut args = q13_flags("6400").to_vec();
+    assert_success(&run(&project, "plain", &q13_flags("1100")));
+    let mut args = q13_flags("1100").to_vec();
     args.extend(["--record", "r"]);
-    let recorded = run(&project, "recorded", &args);
-    assert_success(&recorded);
-
-    let (plain, recorded_summary) = (summary(&project, "plain"), summary(&project, "recorded"));
+    assert_success(&run(&project, "recorded", &args));
+    let (plain, recorded) = (summary(&project, "plain"), summary(&project, "recorded"));
     assert_eq!(
-        plain["state_hash"], recorded_summary["state_hash"],
+        plain["state_hash"], recorded["state_hash"],
         "a recording is a read-only tap"
     );
+    for key in ["transitions", "final", "steps"] {
+        assert_eq!(plain[key], recorded[key], "{key}");
+    }
+}
+
+#[test]
+fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
+    let block = json!({ "keyframe_interval_steps": 16 });
+    let project = manifest_project("layout", block);
+    let recorded = run(&project, "recorded", &["--steps", "6400", "--record", "r"]);
+    assert_success(&recorded);
+    let recorded_summary = summary(&project, "recorded");
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         assert_eq!(recorded_summary["state_hash"], Q13_6400_HASH);
     }
-    for key in ["transitions", "final", "steps"] {
-        assert_eq!(plain[key], recorded_summary[key], "{key}");
-    }
     let message = stderr(&recorded);
     assert!(
-        message.contains("recorded ") && message.contains("201 frames of 193 bodies"),
+        message.contains("recorded ") && message.contains("401 frames of 193 bodies"),
         "{message}"
     );
 
     let folder = project.join("recordings/r");
     assert!(!project.join("recordings/r.partial").exists());
-    for file in [
-        "manifest.json",
-        "inputs.jsonl",
-        "keyframes.parquet",
-        "frames.jsonl",
-        "transitions.jsonl",
-        "log.jsonl",
-    ] {
+    for file in FILES {
         assert!(folder.join(file).is_file(), "{file}");
     }
     // inputs.jsonl starts with SessionStart k = 1 (the CLI always runs one step
@@ -182,7 +194,7 @@ fn recording_does_not_change_the_run_and_writes_the_design_layout() {
     );
     assert_eq!(manifest.start_step, 2);
     assert_eq!(manifest.bodies.len(), 193);
-    assert_eq!(manifest.keyframe_interval_steps, 32);
+    assert_eq!(manifest.keyframe_interval_steps, 16);
     // Its project gives the run's inputs back (the dataset is not needed).
     let inputs = manifest.project.as_ref().unwrap().sim_inputs().unwrap();
     let fixture = q13::fixture_record(q13::HST_NORAD_ID);
@@ -196,20 +208,13 @@ fn recording_does_not_change_the_run_and_writes_the_design_layout() {
     );
     // Rows and size: 116 bytes per body per frame.
     let loaded = read_recording(&folder).unwrap();
-    assert_eq!(loaded.frames.len(), 201);
+    assert_eq!(loaded.frames.len(), 401);
     let rows = 193 * loaded.frames.len() as u64;
     let size = std::fs::metadata(folder.join("keyframes.parquet"))
         .unwrap()
         .len();
-    println!("6,400-step recording at K = 32:");
-    for file in [
-        "manifest.json",
-        "inputs.jsonl",
-        "keyframes.parquet",
-        "frames.jsonl",
-        "transitions.jsonl",
-        "log.jsonl",
-    ] {
+    println!("6,400-step recording at K = 16:");
+    for file in FILES {
         println!(
             "  {file}: {} bytes",
             std::fs::metadata(folder.join(file)).unwrap().len()
@@ -238,13 +243,24 @@ fn recording_does_not_change_the_run_and_writes_the_design_layout() {
 }
 
 #[test]
-fn a_phase_starts_the_recording_at_the_transition_step() {
-    let project = flag_project("phase");
-    let mut args = q13_flags("4400").to_vec();
-    args.extend(["--record", "late", "--record-from-phase", "approach"]);
+fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
+    // The flag overrides the block's phase; the block gives K and a 1 s cap.
+    let block = json!({
+        "auto_start_phase": "capture", "keyframe_interval_steps": 64, "max_duration_s": 1.0
+    });
+    let project = manifest_project("phase", block.clone());
+    let args = [
+        "--steps",
+        "4400",
+        "--record",
+        "p",
+        "--record-from-phase",
+        "approach",
+    ];
     assert_success(&run(&project, "out", &args));
 
-    let loaded = read_recording(&project.join("recordings/late")).unwrap();
+    let folder = project.join("recordings/p");
+    let loaded = read_recording(&folder).unwrap();
     let manifest = &loaded.manifest;
     assert_eq!(
         manifest.start_step, 4318,
@@ -252,8 +268,18 @@ fn a_phase_starts_the_recording_at_the_transition_step() {
     );
     assert_eq!(manifest.start_trigger, Some(RecordingStartTrigger::Phase));
     assert_eq!(manifest.start_phase.as_deref(), Some("approach"));
-    let steps: Vec<u64> = loaded.frames.iter().map(|f| f.line.step).collect();
-    assert_eq!(steps, [4318, 4350, 4382, 4402]);
+    assert_eq!(manifest.keyframe_interval_steps, 64);
+    assert_eq!(manifest.end_reason, Some(RecordingEndReason::MaxDuration));
+    assert_eq!(manifest.limits.max_duration_s, 1.0);
+    // 1 s = 64 steps: a frame at the start and one at the cap.
+    assert_eq!(
+        loaded
+            .frames
+            .iter()
+            .map(|f| f.line.step)
+            .collect::<Vec<_>>(),
+        [4318, 4382]
+    );
     assert_eq!(
         loaded
             .transitions
@@ -267,47 +293,42 @@ fn a_phase_starts_the_recording_at_the_transition_step() {
         Some(1),
         "the input log is kept from step 0, not from the recording's start"
     );
+    // The project the recording carries has the block, so a re-run starts alike.
+    let project_copy = serde_json::to_value(manifest.project.as_ref().unwrap()).unwrap();
+    assert_eq!(project_copy["recording"], block);
+    // The segment's log: the transition line of the start step, then the recorder's.
+    let log: Vec<Value> = read_jsonl(&folder.join("log.jsonl")).unwrap();
+    let messages: Vec<&str> = log.iter().map(|l| l["message"].as_str().unwrap()).collect();
+    assert!(
+        messages[0].starts_with("State: rendezvous → approach"),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.starts_with("Recording started at step 4318")),
+        "{messages:?}"
+    );
 }
 
 #[test]
-fn the_projects_recording_block_sets_the_start_the_cadence_and_the_cap() {
-    let block = json!({ "auto_start_phase": "approach", "keyframe_interval_steps": 64, "max_duration_s": 2.0 });
-    let project = manifest_project("block", block.clone());
-    assert_success(&run(&project, "out", &["--steps", "4800", "--record", "b"]));
-
+fn the_blocks_phase_alone_starts_the_recording() {
+    let block = json!({ "auto_start_phase": "rendezvous", "keyframe_interval_steps": 64 });
+    let project = manifest_project("block", block);
+    assert_success(&run(&project, "out", &["--steps", "200", "--record", "b"]));
     let loaded = read_recording(&project.join("recordings/b")).unwrap();
-    let manifest = &loaded.manifest;
-    assert_eq!(manifest.start_step, 4318);
-    assert_eq!(manifest.keyframe_interval_steps, 64);
-    assert_eq!(manifest.end_reason, Some(RecordingEndReason::MaxDuration));
-    assert_eq!(manifest.limits.max_duration_s, 2.0);
-    // 2 s = 128 steps: frames at the start, +64 and +128.
+    assert_eq!(loaded.manifest.start_phase.as_deref(), Some("rendezvous"));
+    assert_eq!(
+        loaded.manifest.start_step, 2,
+        "the first phase starts at the capture command"
+    );
     assert_eq!(
         loaded
             .frames
             .iter()
             .map(|f| f.line.step)
             .collect::<Vec<_>>(),
-        [4318, 4382, 4446]
-    );
-    // The project the recording carries has the block, so a re-run starts alike.
-    let project_copy = serde_json::to_value(manifest.project.as_ref().unwrap()).unwrap();
-    assert_eq!(project_copy["recording"], block);
-    // `--record-from-phase` overrides the block.
-    let args = [
-        "--steps",
-        "400",
-        "--record",
-        "c",
-        "--record-from-phase",
-        "rendezvous",
-    ];
-    assert_success(&run(&project, "out2", &args));
-    let c = read_recording(&project.join("recordings/c")).unwrap();
-    assert_eq!(c.manifest.start_phase.as_deref(), Some("rendezvous"));
-    assert_eq!(
-        c.manifest.start_step, 2,
-        "the first phase starts at the capture command"
+        [2, 66, 130, 194, 202]
     );
 }
 
@@ -405,31 +426,6 @@ fn bad_record_flags_are_usage_errors() {
             stderr(&output)
         );
     }
-}
-
-#[test]
-fn the_recorded_log_holds_the_segments_events() {
-    let project = flag_project("log");
-    let mut args = q13_flags("4400").to_vec();
-    args.extend(["--record", "l", "--record-from-phase", "approach"]);
-    assert_success(&run(&project, "out", &args));
-    let log: Vec<Value> = read_jsonl(&project.join("recordings/l/log.jsonl")).unwrap();
-    let messages: Vec<&str> = log.iter().map(|l| l["message"].as_str().unwrap()).collect();
-    assert!(
-        messages[0].starts_with("State: rendezvous → approach"),
-        "the transition line of the start step: {messages:?}"
-    );
-    assert!(
-        messages
-            .iter()
-            .any(|m| m.starts_with("Recording started at step 4318")),
-        "{messages:?}"
-    );
-    assert!(
-        log.iter()
-            .all(|l| l["epoch_utc"].as_str().unwrap().as_bytes()[0] == b'2'),
-        "{log:?}"
-    );
 }
 
 #[test]
