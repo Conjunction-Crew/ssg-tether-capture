@@ -325,7 +325,13 @@ fn resimulate<'a>(
     };
     comparison.check(&app, &bodies)?;
 
-    for input in recording.inputs.iter().skip(1) {
+    // Every input after the leading `SessionStart` (absent in a CLI recording that
+    // lost it).
+    let leading = usize::from(matches!(
+        recording.inputs.first().map(|input| &input.command),
+        Some(RecordedCommand::SessionStart { .. })
+    ));
+    for input in &recording.inputs[leading..] {
         let RecordedCommand::StartCapture { target, plan_id } = &input.command else {
             return Err(format!(
                 "a second `session_start` entry after step {}",
