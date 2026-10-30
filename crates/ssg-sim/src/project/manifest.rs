@@ -105,6 +105,25 @@ pub struct RecordingBlock {
 }
 
 impl RecordingBlock {
+    /// The warning for an `auto_start_phase` that names no phase of `plan`; `None`
+    /// when there is none or it does (the plan is not known to the manifest, so
+    /// this is a warning, not an error).
+    pub fn auto_start_warning(&self, plan: &crate::capture::plan::CapturePlan) -> Option<String> {
+        let phase = self.auto_start_phase.as_ref()?;
+        if plan.phases.iter().any(|p| &p.id == phase) {
+            return None;
+        }
+        let ids: Vec<&str> = plan.phases.iter().map(|p| p.id.as_str()).collect();
+        Some(message(
+            "/recording/auto_start_phase",
+            format!(
+                "no phase `{phase}` in plan `{}` (its phases: {}); the recording would never start",
+                plan.id,
+                ids.join(", ")
+            ),
+        ))
+    }
+
     fn validate(&self, at: &str, errors: &mut Vec<String>) {
         if let Some(phase) = &self.auto_start_phase
             && phase.trim().is_empty()

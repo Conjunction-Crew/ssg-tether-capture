@@ -1,8 +1,9 @@
 //! `ssg-sim`: the headless runner. `ssg-sim run <project-dir> [options]` runs a
 //! capture scenario without a window and writes `summary.json` (its
 //! `final.phase` is the phase the run ended in), `trajectory.csv` and
-//! `ephemeris.oem`, and prints one summary line on stdout;
-//! `ssg-sim validate <project-dir>` checks a project's files.
+//! `ephemeris.oem`, and prints one summary line on stdout (`--record NAME` also
+//! writes `<project-dir>/recordings/NAME/`);
+//! `ssg-sim validate <project-dir>` checks a project's files and its recordings.
 
 mod args;
 mod inputs;

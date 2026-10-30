@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use brahe::Epoch;
+use ssg_sim::project::export::sanitize_file_stem;
 use ssg_sim::project::manifest::MANIFEST_FILE;
 use ssg_sim::project::parse_utc;
 use ssg_sim::time::MAX_STEPS_PER_UPDATE;
@@ -29,8 +30,15 @@ run options:
                        of --warp)
   --out DIR            output directory (default <project-dir>/runs/<utc-timestamp>)
   --stop-at-capture    stop at the end of the update in which the state becomes `capture`
+  --record NAME        record the run to <project-dir>/recordings/NAME/ (letters, digits, `-`, `_`);
+                       starts with the capture command, or when the capture enters
+                       project.json's recording.auto_start_phase; ends with the run
+  --record-from-phase ID
+                       start the recording when the capture enters phase ID (overrides
+                       recording.auto_start_phase; needs --record)
 
-validate checks project.json, every plan file, the active plan and the orbits; it prints
+validate checks project.json, every plan file, the active plan, the orbits and every
+recording under <project-dir>/recordings; it prints
 `error:`, `warning:` and `info:` lines and exits 0 without errors, 1 with errors.";
 
 pub const DEFAULT_PLAN: &str = "example_plan";
@@ -77,6 +85,10 @@ pub struct Args {
     pub sample_every: u64,
     pub out: Option<PathBuf>,
     pub stop_at_capture: bool,
+    /// `--record`: the name of the recording folder under `<project-dir>/recordings`.
+    pub record: Option<String>,
+    /// `--record-from-phase`: overrides the project's `recording.auto_start_phase`.
+    pub record_from_phase: Option<String>,
 }
 
 /// Parse the arguments after the program name. `Err` carries the message to
@@ -126,6 +138,8 @@ fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
         sample_every: 64,
         out: None,
         stop_at_capture: false,
+        record: None,
+        record_from_phase: None,
     };
     let mut project_dir = None;
     while let Some(arg) = args.next() {
@@ -144,6 +158,8 @@ fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--out" => parsed.out = Some(PathBuf::from(value("--out")?)),
             "--stop-at-capture" => parsed.stop_at_capture = true,
+            "--record" => parsed.record = Some(value("--record")?),
+            "--record-from-phase" => parsed.record_from_phase = Some(value("--record-from-phase")?),
             flag if flag.starts_with("--") => return Err(format!("unknown option `{flag}`")),
             dir if project_dir.is_none() => project_dir = Some(PathBuf::from(dir)),
             extra => return Err(format!("unexpected argument `{extra}`")),
@@ -158,6 +174,16 @@ fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
         if parsed.chaser.is_none() {
             return Err("missing --chaser".to_string());
         }
+    }
+    if let Some(name) = &parsed.record
+        && (name.is_empty() || sanitize_file_stem(name) != *name)
+    {
+        return Err(format!(
+            "--record: `{name}` is not a name (use letters, digits, `-` and `_`)"
+        ));
+    }
+    if parsed.record_from_phase.is_some() && parsed.record.is_none() {
+        return Err("--record-from-phase needs --record".to_string());
     }
     if parsed.sample_every == 0 {
         return Err("--sample-every must be at least 1".to_string());

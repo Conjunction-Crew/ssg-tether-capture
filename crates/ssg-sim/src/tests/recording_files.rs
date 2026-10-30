@@ -1054,3 +1054,22 @@ fn the_epoch_of_a_frame_line_parses_back_to_the_frames_epoch() {
     let expected = fixed_epoch() + 116.0 * PHYS_DT;
     assert!(((parsed - expected).abs()) < 1e-9, "{}", line.epoch_utc);
 }
+
+#[test]
+fn an_auto_start_phase_the_plan_lacks_is_a_warning_naming_the_plans_phases() {
+    let plan = example_plan();
+    let block = |phase: Option<&str>| RecordingBlock {
+        auto_start_phase: phase.map(str::to_string),
+        ..RecordingBlock::default()
+    };
+    assert_eq!(block(None).auto_start_warning(&plan), None);
+    assert_eq!(block(Some("capture")).auto_start_warning(&plan), None);
+    let warning = block(Some("docking")).auto_start_warning(&plan).unwrap();
+    assert!(
+        warning.starts_with(
+            "[project.json] /recording/auto_start_phase: no phase `docking` in plan `example_plan` (its phases: "
+        ) && warning.ends_with("); the recording would never start"),
+        "{warning}"
+    );
+    assert!(warning.contains("rendezvous, approach"), "{warning}");
+}

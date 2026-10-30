@@ -607,6 +607,8 @@ pub fn apply_recorder_commands(
     if let Some(phase) = auto_start {
         ctx.start(&settings, step, None, StartTrigger::Phase, Some(phase));
     }
+    // A start's own log line is stamped with this step.
+    ctx.read_logs();
     ctx.read_ended(&ended);
     // Only the end-event stop can fall due here (an end phase entered at the start).
     if let RecorderState::Recording(active) = &ctx.recorder.state
