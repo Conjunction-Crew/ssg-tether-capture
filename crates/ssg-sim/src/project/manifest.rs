@@ -66,6 +66,73 @@ pub struct ProjectManifest {
     /// The build that wrote the file; read only by `ssg-sim validate`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub built_with: Option<BuiltWith>,
+    /// When and how this project records. Absent: manual recording only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording: Option<RecordingBlock>,
+}
+
+/// The `recording` block of `project.json`: every key is optional and falls back
+/// to the default named here. Durations are simulation seconds.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct RecordingBlock {
+    /// Start a recording when the capture enters this phase (a phase id of the
+    /// active plan). Absent: no automatic start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_start_phase: Option<String>,
+    /// Stop the recording `stop_after_end_s` after the capture enters an end phase.
+    /// Default `true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_stop_on_end: Option<bool>,
+    /// Seconds recorded after the end event; greater than 0. Default 60.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_after_end_s: Option<f64>,
+    /// Steps between two frames (K); at least 1. Default 32.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, schemars(range(min = 1)))]
+    pub keyframe_interval_steps: Option<u32>,
+    /// The longest recording; greater than 0. Default 1800.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_duration_s: Option<f64>,
+    /// The largest keyframe table in megabytes; greater than 0. Default 100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size_mb: Option<f64>,
+    /// The most tether bodies a recording may hold; at least 1. Default 200.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, schemars(range(min = 1)))]
+    pub max_tether_bodies: Option<u32>,
+}
+
+impl RecordingBlock {
+    fn validate(&self, at: &str, errors: &mut Vec<String>) {
+        if let Some(phase) = &self.auto_start_phase
+            && phase.trim().is_empty()
+        {
+            errors.push(message(
+                &format!("{at}/auto_start_phase"),
+                "must not be blank",
+            ));
+        }
+        let positive = |key: &str, value: Option<f64>, errors: &mut Vec<String>| {
+            if let Some(v) = value
+                && !(v.is_finite() && v > 0.0)
+            {
+                errors.push(message(&format!("{at}/{key}"), "must be greater than 0"));
+            }
+        };
+        positive("stop_after_end_s", self.stop_after_end_s, errors);
+        positive("max_duration_s", self.max_duration_s, errors);
+        positive("max_size_mb", self.max_size_mb, errors);
+        for (key, value) in [
+            ("keyframe_interval_steps", self.keyframe_interval_steps),
+            ("max_tether_bodies", self.max_tether_bodies),
+        ] {
+            if value == Some(0) {
+                errors.push(message(&format!("{at}/{key}"), "must be at least 1"));
+            }
+        }
+    }
 }
 
 /// One body of the scenario.
@@ -269,6 +336,9 @@ impl ProjectManifest {
         }
         self.target.validate("/target", Role::Target, &mut errors);
         self.chaser.validate("/chaser", Role::Chaser, &mut errors);
+        if let Some(recording) = &self.recording {
+            recording.validate("/recording", &mut errors);
+        }
         errors
     }
 
@@ -314,6 +384,7 @@ impl ProjectManifest {
             target: body("target", &selection.target)?,
             chaser: body("chaser", &selection.chaser)?,
             built_with: Some(BuiltWith::current()),
+            recording: None,
         })
     }
 }
@@ -577,6 +648,9 @@ fn error_pointer(value: &Value) -> String {
     }
     if fails::<BuiltWith>(value.get("built_with")) {
         return "/built_with".to_string();
+    }
+    if fails::<RecordingBlock>(value.get("recording")) {
+        return "/recording".to_string();
     }
     "/".to_string()
 }

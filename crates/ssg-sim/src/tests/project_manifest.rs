@@ -1022,6 +1022,105 @@ fn the_targets_mass_reaches_the_selection_and_survives_writing_it_back() {
 }
 
 // ---------------------------------------------------------------------------
+// the `recording` block (P7)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_recording_block_loads_with_every_key_optional() {
+    let mut value = doc();
+    value["recording"] = json!({});
+    let report = read(&value);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.manifest.unwrap().recording, Some(Default::default()));
+
+    value["recording"] = json!({
+        "auto_start_phase": "capture",
+        "auto_stop_on_end": false,
+        "stop_after_end_s": 30.5,
+        "keyframe_interval_steps": 16,
+        "max_duration_s": 600.0,
+        "max_size_mb": 50.0,
+        "max_tether_bodies": 120
+    });
+    let report = read(&value);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let block = report.manifest.unwrap().recording.unwrap();
+    assert_eq!(block.auto_start_phase.as_deref(), Some("capture"));
+    assert_eq!(block.auto_stop_on_end, Some(false));
+    assert_eq!(block.stop_after_end_s, Some(30.5));
+    assert_eq!(block.keyframe_interval_steps, Some(16));
+    assert_eq!(block.max_duration_s, Some(600.0));
+    assert_eq!(block.max_size_mb, Some(50.0));
+    assert_eq!(block.max_tether_bodies, Some(120));
+}
+
+#[test]
+fn a_manifest_without_a_recording_block_writes_none() {
+    let manifest = read(&doc()).manifest.unwrap();
+    assert_eq!(manifest.recording, None);
+    let written: Value = serde_json::from_str(&manifest_to_json(&manifest)).unwrap();
+    assert!(written.get("recording").is_none());
+}
+
+#[test]
+fn each_recording_rule_reports_its_message() {
+    let cases: [(&str, Value, &str); 8] = [
+        (
+            "blank phase",
+            json!({ "auto_start_phase": " " }),
+            "[project.json] /recording/auto_start_phase: must not be blank",
+        ),
+        (
+            "stop delay zero",
+            json!({ "stop_after_end_s": 0.0 }),
+            "[project.json] /recording/stop_after_end_s: must be greater than 0",
+        ),
+        (
+            "duration negative",
+            json!({ "max_duration_s": -1.0 }),
+            "[project.json] /recording/max_duration_s: must be greater than 0",
+        ),
+        (
+            "size zero",
+            json!({ "max_size_mb": 0.0 }),
+            "[project.json] /recording/max_size_mb: must be greater than 0",
+        ),
+        (
+            "interval zero",
+            json!({ "keyframe_interval_steps": 0 }),
+            "[project.json] /recording/keyframe_interval_steps: must be at least 1",
+        ),
+        (
+            "tether bodies zero",
+            json!({ "max_tether_bodies": 0 }),
+            "[project.json] /recording/max_tether_bodies: must be at least 1",
+        ),
+        (
+            "unknown key",
+            json!({ "keyframe_every": 8 }),
+            "[project.json] /recording: unknown field `keyframe_every`, expected one of `auto_start_phase`, `auto_stop_on_end`, `stop_after_end_s`, `keyframe_interval_steps`, `max_duration_s`, `max_size_mb`, `max_tether_bodies`",
+        ),
+        (
+            "wrong type",
+            json!({ "max_size_mb": "big" }),
+            "[project.json] /recording: invalid type: string \"big\", expected f64",
+        ),
+    ];
+    for (what, block, expected) in cases {
+        let mut value = doc();
+        value["recording"] = block;
+        let report = read(&value);
+        assert_eq!(report.errors.len(), 1, "{what}: {:?}", report.errors);
+        assert!(
+            report.errors[0].starts_with(expected),
+            "{what}: {:?} should start with {expected}",
+            report.errors
+        );
+        assert!(report.manifest.is_none(), "{what}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // the published JSON Schema
 // ---------------------------------------------------------------------------
 

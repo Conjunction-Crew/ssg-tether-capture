@@ -1,14 +1,17 @@
 //! The recording manifest, `recordings/<name>/manifest.json` (schema v1, design D8):
 //! the file model, the reader and validator, and the writer.
 //!
-//! P6 publishes the layout and this type; P7 writes recordings with it. A recording
-//! folder holds the manifest, the input log and the keyframes:
+//! P6 publishes the layout and this type; P7 writes recordings with it
+//! (`recording::files`). A recording folder holds:
 //!
 //! ```text
 //! recordings/<name>/
 //!   manifest.json      this file
 //!   inputs.jsonl       one JSON object per line: {"step": u64, "command": …}
-//!   keyframes.parquet  one row per body per keyframe (CSV fallback: keyframes.csv)
+//!   keyframes.parquet  one row per body per frame (the only keyframe table)
+//!   frames.jsonl       one line per frame: step, epoch, phase, sphere radius, frame origin
+//!   transitions.jsonl  one line per capture transition inside the segment
+//!   log.jsonl          the segment's log events
 //! ```
 
 use std::fs;
@@ -20,7 +23,7 @@ use serde_json::Value;
 
 use crate::capture::plan::{CapturePlan, validate_capture_plan};
 use crate::project::epoch::parse_utc;
-use crate::project::manifest::BuiltWith;
+use crate::project::manifest::{BuiltWith, ProjectManifest};
 use crate::project::plan_files::read_plan_value;
 
 /// The manifest's file name in the recording folder.
@@ -32,8 +35,17 @@ pub const RECORDING_INPUTS_FILE: &str = "inputs.jsonl";
 /// The keyframe table's file name (Parquet).
 pub const RECORDING_KEYFRAMES_PARQUET: &str = "keyframes.parquet";
 
-/// The keyframe table's file name for tiny segments (CSV, the same columns).
-pub const RECORDING_KEYFRAMES_CSV: &str = "keyframes.csv";
+/// The per-frame scalars' file name: one JSON object per frame.
+pub const RECORDING_FRAMES_FILE: &str = "frames.jsonl";
+
+/// The capture transitions' file name: one JSON object per transition.
+pub const RECORDING_TRANSITIONS_FILE: &str = "transitions.jsonl";
+
+/// The segment's log events' file name (the `write_log_jsonl` line format).
+pub const RECORDING_LOG_FILE: &str = "log.jsonl";
+
+/// The suffix of a recording folder that is being written (or was cut short).
+pub const RECORDING_PARTIAL_SUFFIX: &str = ".partial";
 
 /// The `schema_version` of the recording manifests this build reads and writes.
 pub const RECORDING_SCHEMA_VERSION: u32 = 1;
@@ -70,6 +82,68 @@ pub struct RecordingManifest {
     pub bodies: Vec<RecordingBody>,
     /// The caps on the recorded segment.
     pub limits: RecordingLimits,
+    /// The scenario at the start (`project.json` as the run used it). Absent: the
+    /// recording plays but cannot be verified by re-simulation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<ProjectManifest>,
+    /// Which program wrote the recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<RecordingSource>,
+    /// The step of the last frame; at least `start_step`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_step: Option<u64>,
+    /// Why the recording ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<RecordingEndReason>,
+    /// What started the recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_trigger: Option<RecordingStartTrigger>,
+    /// The capture phase that started the recording; present exactly when
+    /// `start_trigger` is `phase`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_phase: Option<String>,
+}
+
+/// Which program wrote a recording.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum RecordingSource {
+    /// The application (its spawn-update step count varies, so a missing
+    /// `SessionStart` entry cannot be assumed).
+    App,
+    /// `ssg-sim run --record`.
+    Cli,
+}
+
+/// Why a recording ended.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum RecordingEndReason {
+    /// Stopped by the user.
+    Manual,
+    /// The capture reached an end phase with outcome success and the stop delay passed.
+    EndSuccess,
+    /// The capture reached an end phase with outcome abort and the stop delay passed.
+    EndAbort,
+    /// `limits.max_duration_s` was reached.
+    MaxDuration,
+    /// The next frame would exceed `limits.max_size_mb`.
+    MaxSize,
+    /// The simulation screen was left (or the headless run ended).
+    SessionEnd,
+}
+
+/// What started a recording.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum RecordingStartTrigger {
+    /// The user (or the CLI's capture command).
+    Manual,
+    /// The capture entered the project's `auto_start_phase`.
+    Phase,
 }
 
 /// One recorded body.
@@ -111,6 +185,10 @@ pub struct RecordingLimits {
     /// The most tether bodies (every body except the target); at least 1.
     #[cfg_attr(test, schemars(range(min = 1)))]
     pub max_tether_bodies: u32,
+    /// The largest keyframe table in megabytes (116 bytes per body per frame);
+    /// greater than 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size_mb: Option<f64>,
 }
 
 /// What reading a recording manifest gave: the manifest when it loads (valid) and
@@ -210,6 +288,40 @@ impl RecordingManifest {
                 ),
             ));
         }
+        if let Some(max_size_mb) = self.limits.max_size_mb
+            && !(max_size_mb.is_finite() && max_size_mb > 0.0)
+        {
+            errors.push(message("/limits/max_size_mb", "must be greater than 0"));
+        }
+        if let Some(end_step) = self.end_step
+            && end_step < self.start_step
+        {
+            errors.push(message(
+                "/end_step",
+                format!("{end_step} is before start_step {}", self.start_step),
+            ));
+        }
+        match (self.start_trigger, &self.start_phase) {
+            (Some(RecordingStartTrigger::Phase), None) => errors.push(message(
+                "/start_phase",
+                "missing (start_trigger is `phase`)",
+            )),
+            (Some(RecordingStartTrigger::Phase), Some(phase)) if phase.trim().is_empty() => {
+                errors.push(message("/start_phase", "must not be blank"))
+            }
+            (trigger, Some(_)) if trigger != Some(RecordingStartTrigger::Phase) => errors.push(
+                message("/start_phase", "only allowed when start_trigger is `phase`"),
+            ),
+            _ => {}
+        }
+        if let Some(project) = &self.project {
+            errors.extend(project.validate().into_iter().map(|m| {
+                match m.strip_prefix("[project.json] ") {
+                    Some(rest) => message(&format!("/project{}", pointer_of(rest)), text_of(rest)),
+                    None => message("/project", m),
+                }
+            }));
+        }
         errors
     }
 }
@@ -234,6 +346,9 @@ fn error_pointer(value: &Value) -> String {
     }
     if fails::<RecordingLimits>(value.get("limits")) {
         return "/limits".to_string();
+    }
+    if fails::<ProjectManifest>(value.get("project")) {
+        return "/project".to_string();
     }
     "/".to_string()
 }

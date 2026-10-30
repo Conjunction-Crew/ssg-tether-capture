@@ -241,6 +241,69 @@
       ],
       "type": "object"
     },
+    "RecordingBlock": {
+      "additionalProperties": false,
+      "description": "The `recording` block of `project.json`: every key is optional and falls back\nto the default named here. Durations are simulation seconds.",
+      "properties": {
+        "auto_start_phase": {
+          "description": "Start a recording when the capture enters this phase (a phase id of the\nactive plan). Absent: no automatic start.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "auto_stop_on_end": {
+          "description": "Stop the recording `stop_after_end_s` after the capture enters an end phase.\nDefault `true`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "keyframe_interval_steps": {
+          "description": "Steps between two frames (K); at least 1. Default 32.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_duration_s": {
+          "description": "The longest recording; greater than 0. Default 1800.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_size_mb": {
+          "description": "The largest keyframe table in megabytes; greater than 0. Default 100.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_tether_bodies": {
+          "description": "The most tether bodies a recording may hold; at least 1. Default 200.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stop_after_end_s": {
+          "description": "Seconds recorded after the end event; greater than 0. Default 60.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "RelativePreset": {
       "description": "The approach line of a chaser placed relative to the target.",
       "oneOf": [
@@ -307,6 +370,17 @@
     "name": {
       "description": "Display name of the project. Must not be blank.",
       "type": "string"
+    },
+    "recording": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordingBlock"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "When and how this project records. Absent: manual recording only."
     },
     "schema_version": {
       "description": "File format version; `1`.",

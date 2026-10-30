@@ -8,10 +8,11 @@ use crate::capture::plan::CapturePlan;
 use crate::project::manifest::BuiltWith;
 use crate::project::plan_files::read_plan_value;
 use crate::project::recording::{
-    RECORDING_INPUTS_FILE, RECORDING_KEYFRAMES_CSV, RECORDING_KEYFRAMES_PARQUET,
-    RECORDING_MANIFEST_FILE, RECORDING_SCHEMA_VERSION, RecordingBody, RecordingBodyRole,
-    RecordingLimits, RecordingManifest, read_recording_file, read_recording_value,
-    recording_manifest_to_json, save_recording_manifest,
+    RECORDING_FRAMES_FILE, RECORDING_INPUTS_FILE, RECORDING_KEYFRAMES_PARQUET, RECORDING_LOG_FILE,
+    RECORDING_MANIFEST_FILE, RECORDING_PARTIAL_SUFFIX, RECORDING_SCHEMA_VERSION,
+    RECORDING_TRANSITIONS_FILE, RecordingBody, RecordingBodyRole, RecordingEndReason,
+    RecordingLimits, RecordingManifest, RecordingSource, RecordingStartTrigger,
+    read_recording_file, read_recording_value, recording_manifest_to_json, save_recording_manifest,
 };
 use crate::test_support::{Lcg, TempDir, repo_root};
 use crate::tests::plan_schema_v1::check_schema;
@@ -59,8 +60,32 @@ fn sample() -> RecordingManifest {
         limits: RecordingLimits {
             max_duration_s: 1800.0,
             max_tether_bodies: 200,
+            max_size_mb: None,
         },
+        project: None,
+        source: None,
+        end_step: None,
+        end_reason: None,
+        start_trigger: None,
+        start_phase: None,
     }
+}
+
+/// A valid `project.json` document for the embedded `project`.
+fn project_value() -> Value {
+    json!({
+        "schema_version": 1,
+        "name": "p",
+        "start_epoch_utc": START,
+        "target": { "label": "T", "orbit": { "elements": {
+            "semi_major_axis_m": 6.9e6, "eccentricity": 0.001, "inclination_rad": 0.5,
+            "raan_rad": 0.1, "arg_perigee_rad": 0.2, "mean_anomaly_rad": 0.3,
+            "epoch_utc": START } } },
+        "chaser": { "label": "C", "orbit": { "elements": {
+            "semi_major_axis_m": 6.9e6, "eccentricity": 0.001, "inclination_rad": 0.5,
+            "raan_rad": 0.1, "arg_perigee_rad": 0.2, "mean_anomaly_rad": 0.3,
+            "epoch_utc": START } } }
+    })
 }
 
 fn doc() -> Value {
@@ -86,7 +111,10 @@ fn the_layout_names_are_the_designs() {
     assert_eq!(RECORDING_MANIFEST_FILE, "manifest.json");
     assert_eq!(RECORDING_INPUTS_FILE, "inputs.jsonl");
     assert_eq!(RECORDING_KEYFRAMES_PARQUET, "keyframes.parquet");
-    assert_eq!(RECORDING_KEYFRAMES_CSV, "keyframes.csv");
+    assert_eq!(RECORDING_FRAMES_FILE, "frames.jsonl");
+    assert_eq!(RECORDING_TRANSITIONS_FILE, "transitions.jsonl");
+    assert_eq!(RECORDING_LOG_FILE, "log.jsonl");
+    assert_eq!(RECORDING_PARTIAL_SUFFIX, ".partial");
     assert_eq!(RECORDING_SCHEMA_VERSION, 1);
 }
 
@@ -329,6 +357,50 @@ fn each_validation_rule_reports_its_message() {
             "[manifest.json] /bodies: lists 4 tether bodies; limits.max_tether_bodies allows 3",
         ),
         (
+            "size cap zero",
+            Box::new(|v| v["limits"]["max_size_mb"] = json!(0.0)),
+            "[manifest.json] /limits/max_size_mb: must be greater than 0",
+        ),
+        (
+            "end before start",
+            Box::new(|v| v["end_step"] = json!(4000)),
+            "[manifest.json] /end_step: 4000 is before start_step 4318",
+        ),
+        (
+            "phase trigger without a phase",
+            Box::new(|v| v["start_trigger"] = json!("phase")),
+            "[manifest.json] /start_phase: missing (start_trigger is `phase`)",
+        ),
+        (
+            "blank start phase",
+            Box::new(|v| {
+                v["start_trigger"] = json!("phase");
+                v["start_phase"] = json!(" ");
+            }),
+            "[manifest.json] /start_phase: must not be blank",
+        ),
+        (
+            "phase with a manual trigger",
+            Box::new(|v| {
+                v["start_trigger"] = json!("manual");
+                v["start_phase"] = json!("approach");
+            }),
+            "[manifest.json] /start_phase: only allowed when start_trigger is `phase`",
+        ),
+        (
+            "phase without a trigger",
+            Box::new(|v| v["start_phase"] = json!("approach")),
+            "[manifest.json] /start_phase: only allowed when start_trigger is `phase`",
+        ),
+        (
+            "embedded project rule",
+            Box::new(|v| {
+                v["project"] = project_value();
+                v["project"]["name"] = json!(" ");
+            }),
+            "[manifest.json] /project/name: must not be blank",
+        ),
+        (
             "plan rule",
             Box::new(|v| v["plan"]["phases"][0]["max_force_n"] = json!(-1.0)),
             "[manifest.json] /plan/phases/0/max_force_n: must not be negative",
@@ -469,6 +541,7 @@ fn generated(rng: &mut Lcg) -> RecordingManifest {
         // 17 significant digits: the text must give back the same f64.
         max_duration_s: rng.range(1e-3, 1e5),
         max_tether_bodies: (tether + 2) as u32 + rng.below(50) as u32,
+        max_size_mb: rng.chance(0.5).then(|| rng.range(1e-3, 1e4)),
     };
     manifest.built_with.app_version = format!("0.{}.{}", rng.below(10), rng.below(10));
     manifest
@@ -541,5 +614,51 @@ fn the_recording_schema_requires_the_v1_keys_and_refuses_unknown_ones() {
     assert_eq!(
         schema["properties"]["keyframe_interval_steps"]["minimum"],
         json!(1)
+    );
+}
+
+#[test]
+fn the_optional_keys_round_trip_and_an_unfinished_manifest_stays_valid() {
+    let mut manifest = sample();
+    manifest.project = Some(serde_json::from_value(project_value()).unwrap());
+    manifest.source = Some(RecordingSource::Cli);
+    manifest.end_step = Some(4400);
+    manifest.end_reason = Some(RecordingEndReason::EndSuccess);
+    manifest.start_trigger = Some(RecordingStartTrigger::Phase);
+    manifest.start_phase = Some("approach".to_string());
+    manifest.limits.max_size_mb = Some(100.0);
+    let value: Value = serde_json::from_str(&recording_manifest_to_json(&manifest)).unwrap();
+    assert_eq!(value["source"], json!("cli"));
+    assert_eq!(value["end_reason"], json!("end_success"));
+    assert_eq!(value["start_trigger"], json!("phase"));
+    assert_eq!(value["limits"]["max_size_mb"], json!(100.0));
+    let report = read_recording_value(&value);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.manifest.unwrap(), manifest);
+    // Without them the document has none of the keys (the rc.1 shape).
+    let plain = doc();
+    for key in [
+        "project",
+        "source",
+        "end_step",
+        "end_reason",
+        "start_trigger",
+        "start_phase",
+    ] {
+        assert!(plain.get(key).is_none(), "{key}");
+    }
+    assert!(plain["limits"].get("max_size_mb").is_none());
+}
+
+#[test]
+fn a_wrong_typed_project_is_located() {
+    let mut value = doc();
+    value["project"] = json!({ "schema_version": 1, "name": 5 });
+    let report = read_recording_value(&value);
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].starts_with("[manifest.json] /project: "),
+        "{:?}",
+        report.errors
     );
 }
