@@ -1,5 +1,5 @@
-//! Hand-rolled argument parsing for `ssg-sim run` and `ssg-sim validate` (no
-//! argument-parser dependency).
+//! Hand-rolled argument parsing for `ssg-sim run`, `ssg-sim validate` and
+//! `ssg-sim replay` (no argument-parser dependency).
 
 use std::path::PathBuf;
 
@@ -11,6 +11,7 @@ use ssg_sim::time::MAX_STEPS_PER_UPDATE;
 
 pub const USAGE: &str = "usage: ssg-sim run <project-dir> [options]
        ssg-sim validate <project-dir> [--assets DIR]
+       ssg-sim replay <recording-dir> [--assets DIR] [--frames-only]
 
 run options:
   --plan ID            capture plan id (default: project.json's active_plan, else the only
@@ -39,7 +40,12 @@ run options:
 
 validate checks project.json, every plan file, the active plan, the orbits and every
 recording under <project-dir>/recordings; it prints
-`error:`, `warning:` and `info:` lines and exits 0 without errors, 1 with errors.";
+`error:`, `warning:` and `info:` lines and exits 0 without errors, 1 with errors.
+
+replay checks a recording's files and re-simulates it from step 0 with its inputs,
+comparing every frame bit for bit (--frames-only: check the files only). Exit 0: every
+frame identical; 1: a difference with the same target and version; 3: a difference with
+another target or version (expected, F-48); 2: usage error or invalid recording.";
 
 pub const DEFAULT_PLAN: &str = "example_plan";
 
@@ -55,6 +61,16 @@ pub enum EpochArg {
 pub enum Command {
     Run(Box<Args>),
     Validate(ValidateArgs),
+    Replay(ReplayArgs),
+}
+
+/// `ssg-sim replay <recording-dir> [--assets DIR] [--frames-only]`.
+#[derive(Debug)]
+pub struct ReplayArgs {
+    pub recording_dir: PathBuf,
+    pub assets: PathBuf,
+    /// Check the files without re-simulating.
+    pub frames_only: bool,
 }
 
 /// `ssg-sim validate <project-dir> [--assets DIR]`.
@@ -98,6 +114,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
     match args.next().as_deref() {
         Some("run") => parse_run(args).map(|run| Command::Run(Box::new(run))),
         Some("validate") => parse_validate(args).map(Command::Validate),
+        Some("replay") => parse_replay(args).map(Command::Replay),
         Some(other) => Err(format!("unknown command `{other}`")),
         None => Err(String::new()),
     }
@@ -120,6 +137,29 @@ fn parse_validate(args: impl Iterator<Item = String>) -> Result<ValidateArgs, St
     Ok(ValidateArgs {
         project_dir: project_dir.ok_or("missing <project-dir>")?,
         assets,
+    })
+}
+
+fn parse_replay(args: impl Iterator<Item = String>) -> Result<ReplayArgs, String> {
+    let mut args = args;
+    let mut assets = PathBuf::from("assets");
+    let mut frames_only = false;
+    let mut recording_dir = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--assets" => {
+                assets = PathBuf::from(args.next().ok_or("--assets needs a value")?);
+            }
+            "--frames-only" => frames_only = true,
+            flag if flag.starts_with("--") => return Err(format!("unknown option `{flag}`")),
+            dir if recording_dir.is_none() => recording_dir = Some(PathBuf::from(dir)),
+            extra => return Err(format!("unexpected argument `{extra}`")),
+        }
+    }
+    Ok(ReplayArgs {
+        recording_dir: recording_dir.ok_or("missing <recording-dir>")?,
+        assets,
+        frames_only,
     })
 }
 
