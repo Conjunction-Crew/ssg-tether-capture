@@ -12,6 +12,7 @@
 
 pub mod files;
 pub mod inputs;
+pub mod player;
 pub mod recorder;
 
 use std::sync::{Arc, Mutex, PoisonError};

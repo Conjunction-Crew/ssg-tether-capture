@@ -3,11 +3,13 @@
 //! `final.phase` is the phase the run ended in), `trajectory.csv` and
 //! `ephemeris.oem`, and prints one summary line on stdout (`--record NAME` also
 //! writes `<project-dir>/recordings/NAME/`);
-//! `ssg-sim validate <project-dir>` checks a project's files and its recordings.
+//! `ssg-sim validate <project-dir>` checks a project's files and its recordings;
+//! `ssg-sim replay <recording-dir>` re-simulates a recording and compares its frames.
 
 mod args;
 mod inputs;
 mod output;
+mod replay;
 mod scenario;
 mod validate;
 
@@ -47,5 +49,6 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        args::Command::Replay(args) => ExitCode::from(replay::replay(&args)),
     }
 }

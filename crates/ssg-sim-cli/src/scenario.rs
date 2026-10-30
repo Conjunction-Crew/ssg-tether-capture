@@ -8,6 +8,7 @@
 //! absolute step, never by tick count. At the same absolute step the two are
 //! bit-identical, which `crates/ssg-sim-cli/tests/harness_parity.rs` checks.
 
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use avian3d::collider_tree::ColliderTreeDiagnostics;
@@ -118,29 +119,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
     };
     let (target_label, chaser_label) = (label(&target.source), label(&chaser.source));
 
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins,
-        StatesPlugin,
-        AssetPlugin::default(),
-        InputPlugin,
-        ScenePlugin,
-    ))
-    .init_asset::<Mesh>()
-    .add_plugins(SimPlugins)
-    .init_resource::<CollisionDiagnostics>()
-    .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>()
-    .init_resource::<ColliderTreeDiagnostics>()
-    .insert_resource(AssetsDir(args.assets.clone()))
     // The sim start epoch: `--epoch`, with `now` resolved once above (F-06).
-    .insert_resource(SimConfig {
-        start_epoch: reference_epoch,
-    })
-    // One `app.update()` = one fixed step (the P2 clock recipe, D8).
-    .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        PHYS_DT,
-    )));
+    let mut app = sim_app(&args.assets, reference_epoch);
 
     let plan = load_plans(&mut app, args, inputs.plan.as_deref())?;
     app.world_mut().resource_mut::<SelectedProject>().project_id = Some(plan.clone());
@@ -305,6 +285,32 @@ pub fn run(args: &Args) -> Result<Run, String> {
         wall: started.elapsed(),
         recordings,
     })
+}
+
+/// The headless app `run` and `replay` build: the sim plugins, the assets
+/// directory and the start epoch; one `app.update()` = one fixed step at warp 1
+/// (the P2 clock recipe, D8).
+pub fn sim_app(assets: &Path, start_epoch: Epoch) -> App {
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        StatesPlugin,
+        AssetPlugin::default(),
+        InputPlugin,
+        ScenePlugin,
+    ))
+    .init_asset::<Mesh>()
+    .add_plugins(SimPlugins)
+    .init_resource::<CollisionDiagnostics>()
+    .init_resource::<SpatialQueryDiagnostics>()
+    .init_resource::<SolverDiagnostics>()
+    .init_resource::<ColliderTreeDiagnostics>()
+    .insert_resource(AssetsDir(assets.to_path_buf()))
+    .insert_resource(SimConfig { start_epoch })
+    .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
+        PHYS_DT,
+    )));
+    app
 }
 
 /// What a recording needs to know about the run.
