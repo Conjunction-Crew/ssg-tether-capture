@@ -254,7 +254,7 @@ pub fn read_keyframes(path: &Path, mut each: impl FnMut(KeyframeRow)) -> Result<
         let n = group.metadata().num_rows() as usize;
         let mut steps: Vec<i64> = Vec::with_capacity(n);
         let mut bodies: Vec<i32> = Vec::with_capacity(n);
-        let mut columns: Vec<Vec<f64>> = vec![Vec::with_capacity(n); 13];
+        let mut columns: Vec<Vec<f64>> = (0..13).map(|_| Vec::with_capacity(n)).collect();
         for index in 0..expected.len() {
             let read = match group.get_column_reader(index).map_err(parquet_error)? {
                 ColumnReader::Int64ColumnReader(mut r) => r.read_records(n, None, None, &mut steps),

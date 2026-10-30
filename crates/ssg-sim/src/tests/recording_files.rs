@@ -36,7 +36,7 @@ use crate::test_support::{
 };
 use crate::time::PHYS_DT;
 
-const SEED: u64 = 0x7E57_F11E_5;
+const SEED: u64 = 0x5EED_F11E;
 
 fn random_body(rng: &mut Lcg) -> BodyFrame {
     let mut v = |scale: f64| rng.range(-scale, scale);
@@ -53,9 +53,9 @@ fn frame(rng: &mut Lcg, step: u64, bodies: usize) -> Frame {
     Frame {
         step,
         epoch: fixed_epoch() + step as f64 * PHYS_DT,
-        phase: (step % 3 != 0).then(|| "approach".to_string()),
+        phase: (!step.is_multiple_of(3)).then(|| "approach".to_string()),
         capture_sphere_radius_m: rng.range(0.0, 100.0),
-        frame_origin_eci: (step % 5 != 0).then(|| {
+        frame_origin_eci: (!step.is_multiple_of(5)).then(|| {
             Vector6::new(
                 rng.range(-7e6, 7e6),
                 rng.range(-7e6, 7e6),
@@ -65,7 +65,7 @@ fn frame(rng: &mut Lcg, step: u64, bodies: usize) -> Frame {
                 rng.range(-8e3, 8e3),
             )
         }),
-        origin_shift_m: if step % 7 == 0 {
+        origin_shift_m: if step.is_multiple_of(7) {
             DVec3::new(rng.range(-50.0, 50.0), -0.0, f64::MIN_POSITIVE / 4.0)
         } else {
             DVec3::ZERO
@@ -215,9 +215,10 @@ fn example_plan() -> crate::capture::plan::CapturePlan {
 }
 
 fn q13_project() -> ProjectManifest {
-    let mut selection = OrbitalSelectionState::default();
-    selection.target = Some(q13::catalog_pick("HST", q13::HST_NORAD_ID));
-    selection.chaser = Some(q13::catalog_pick("P0 HST CHASER", q13::CHASER_NORAD_ID));
+    let selection = OrbitalSelectionState {
+        target: Some(q13::catalog_pick("HST", q13::HST_NORAD_ID)),
+        chaser: Some(q13::catalog_pick("P0 HST CHASER", q13::CHASER_NORAD_ID)),
+    };
     ProjectManifest::from_selection("q13", fixed_epoch(), Some(q13::PLAN_ID), &selection).unwrap()
 }
 

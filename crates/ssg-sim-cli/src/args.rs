@@ -53,7 +53,7 @@ pub enum EpochArg {
 /// What the command line asks for.
 #[derive(Debug)]
 pub enum Command {
-    Run(Args),
+    Run(Box<Args>),
     Validate(ValidateArgs),
 }
 
@@ -96,7 +96,7 @@ pub struct Args {
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
-        Some("run") => parse_run(args).map(Command::Run),
+        Some("run") => parse_run(args).map(|run| Command::Run(Box::new(run))),
         Some("validate") => parse_validate(args).map(Command::Validate),
         Some(other) => Err(format!("unknown command `{other}`")),
         None => Err(String::new()),
