@@ -5,7 +5,7 @@
 use bevy::ecs::message::Messages;
 use bevy::prelude::*;
 
-use crate::capture::capture_state_machine_update;
+use crate::capture::{CaptureTransition, capture_state_machine_update};
 use crate::floating_origin::OriginReset;
 use crate::recording::recorder::record_step;
 use crate::recording::recorder::{RecorderCommand, RecorderEvent, RecordingSettings};
@@ -14,7 +14,7 @@ use crate::test_support::{
     current_step, insert_plan_json, install_memory_sink, load_example_plans, q13, state_hash,
     test_app, tick,
 };
-use crate::time::ManualPhysics;
+use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 /// The outcome of [`run_q13`].
 pub struct TapRun {
@@ -23,7 +23,14 @@ pub struct TapRun {
     pub segments: Vec<MemorySegment>,
     pub events: Vec<RecorderEvent>,
     pub resets: Vec<OriginReset>,
+    /// `(step, from, to)` of every capture transition the sim wrote.
+    pub transitions: Vec<(u64, String, String)>,
 }
+
+/// The Q13 golden steps hold on macOS/aarch64 only; other platforms reach them a
+/// few steps apart (F-17, F-48; `baseline_hubble`). Elsewhere the tests compare
+/// the recording with what the same run's sim wrote.
+pub const MACOS_GOLDENS: bool = cfg!(all(target_os = "macos", target_arch = "aarch64"));
 
 /// The Q13 scenario (capture started by command) for `ticks` ticks after
 /// [`q13::build_with_command`], with `settings`; each `(step, command)` is sent
@@ -59,12 +66,17 @@ pub fn run_plan(
         .world()
         .resource::<Messages<OriginReset>>()
         .get_cursor_current();
+    let mut transitions_cursor = app
+        .world()
+        .resource::<Messages<CaptureTransition>>()
+        .get_cursor_current();
     q13::build_with_command(&mut app, plan_id);
     let mut run = TapRun {
         hashes: Vec::with_capacity(ticks as usize),
         segments: Vec::new(),
         events: Vec::new(),
         resets: Vec::new(),
+        transitions: Vec::new(),
     };
     for _ in 0..ticks {
         let next = current_step(&app) + 1;
@@ -83,6 +95,15 @@ pub fn run_plan(
             resets_cursor
                 .read(world.resource::<Messages<OriginReset>>())
                 .copied(),
+        );
+        let start = world.resource::<WorldTime>().start_epoch;
+        run.transitions.extend(
+            transitions_cursor
+                .read(world.resource::<Messages<CaptureTransition>>())
+                .map(|t| {
+                    let step = ((t.epoch - start) / PHYS_DT).round() as u64;
+                    (step, t.from.clone(), t.to.clone())
+                }),
         );
     }
     run.segments = sink.segments();
@@ -197,6 +218,17 @@ fn a_recording_does_not_change_the_run() {
     assert!(single_steps.windows(2).all(|w| w[1] - w[0] == 16));
     assert_eq!(single.segments[0].end, None, "still recording at the end");
 
+    // The automatic start is the step the sim entered `approach` (4,318 on macOS).
+    let approach = multi
+        .transitions
+        .iter()
+        .find(|(_, _, to)| to == "approach")
+        .expect("the run enters approach")
+        .0;
+    println!("approach entered at step {approach}");
+    if MACOS_GOLDENS {
+        assert_eq!(approach, 4_318);
+    }
     let starts: Vec<(u64, StartTrigger)> = multi
         .segments
         .iter()
@@ -207,7 +239,7 @@ fn a_recording_does_not_change_the_run() {
         vec![
             (640, StartTrigger::Manual),
             (2_500, StartTrigger::Manual),
-            (4_318, StartTrigger::Phase),
+            (approach, StartTrigger::Phase),
         ]
     );
     let ends: Vec<Option<(u64, EndReason)>> = multi
@@ -259,20 +291,31 @@ fn a_frame_carries_the_origin_shift_since_the_previous_frame() {
         "resets: {:?}",
         run.resets.iter().map(|r| r.step).collect::<Vec<_>>()
     );
-    assert_eq!((first.step, second.step), (468, 979), "the Q13 resets");
+    if MACOS_GOLDENS {
+        assert_eq!((first.step, second.step), (468, 979), "the Q13 resets");
+    }
     let frames = &run.segments[0].frames;
     let shifted = frames
         .iter()
         .find(|f| f.step > first.step)
         .expect("a frame after the reset");
     println!(
-        "step-468 reset com_r {:?} com_v {:?}; frame {} origin_shift_m {:?} origin_shift_mps {:?}",
-        first.com_r, first.com_v, shifted.step, shifted.origin_shift_m, shifted.origin_shift_mps
+        "step-{} reset com_r {:?} com_v {:?}; frame {} origin_shift_m {:?} origin_shift_mps {:?}",
+        first.step,
+        first.com_r,
+        first.com_v,
+        shifted.step,
+        shifted.origin_shift_m,
+        shifted.origin_shift_mps
     );
-    assert_eq!(shifted.step, 480);
+    // The first frame after the reset (frames at 400 + 16 n).
+    assert_eq!(shifted.step, 400 + (first.step - 400) / 16 * 16 + 16);
     assert_eq!(shifted.origin_shift_m.to_array(), first.com_r.to_array());
     assert_eq!(shifted.origin_shift_mps.to_array(), first.com_v.to_array());
-    for frame in frames.iter().filter(|f| f.step != 480 && f.step < 979) {
+    for frame in frames
+        .iter()
+        .filter(|f| f.step != shifted.step && f.step < second.step)
+    {
         assert_eq!(
             (frame.origin_shift_m, frame.origin_shift_mps),
             (Vec3::ZERO.as_dvec3(), Vec3::ZERO.as_dvec3()),
