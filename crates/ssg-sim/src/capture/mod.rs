@@ -18,11 +18,12 @@ use crate::SimSet;
 use crate::SimStep;
 use crate::capture::plan::{
     CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
-    CompiledCaptureTransition, build_capture_component,
+    CompiledCaptureTransition, PhaseEnd, build_capture_component,
 };
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::lvlh::LvlhFrame;
 use crate::physics_bubble::body_eci_state;
+use crate::recording::inputs::SimInputLog;
 use crate::telemetry::{DataCollection, EphemerisSample, LogEvent, LogLevel};
 use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
@@ -61,11 +62,24 @@ pub struct CaptureTransition {
     pub reason: String,
 }
 
+/// Written once when a capture enters a phase that has `end` (Q10 row 7), next
+/// to the log line `Capture ended: <outcome> (phase <id>)`. Nothing else changes:
+/// the controller keeps running in that phase (E4). `epoch` is the sub-step it
+/// happened in, as for [`CaptureTransition`].
+#[derive(Message, Debug, Clone, PartialEq)]
+pub struct CaptureEnded {
+    pub entity: Entity,
+    pub phase: String,
+    pub outcome: PhaseEnd,
+    pub epoch: Epoch,
+}
+
 /// The messages [`capture_state_machine_update`] writes.
 #[derive(SystemParam)]
 pub struct CaptureMessages<'w> {
     log_events: MessageWriter<'w, LogEvent>,
     transitions: MessageWriter<'w, CaptureTransition>,
+    ended: MessageWriter<'w, CaptureEnded>,
 }
 
 /// The read-only data [`capture_state_machine_update`] reads.
@@ -368,10 +382,12 @@ fn resolve_root_state(
             .map(|reason| (transition.to.clone(), reason))
     });
     if let Some((to, reason)) = fired {
+        let end = plan.state(&to).and_then(|state| state.end);
         transition_to(
             capture_entity,
             capture_component,
             &to,
+            end,
             world_time,
             reason,
             messages,
@@ -434,11 +450,13 @@ fn transition_satisfied(
 }
 
 /// Enters `new_state` at the current sim time (`state_enter_time_s` is sim seconds
-/// since the start epoch) and reports it as a log line and a [`CaptureTransition`].
+/// since the start epoch) and reports it as a log line and a [`CaptureTransition`],
+/// and, when `new_state` is an end phase (`end`), as a [`CaptureEnded`].
 fn transition_to(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     new_state: &str,
+    end: Option<PhaseEnd>,
     world_time: &WorldTime,
     reason: String,
     messages: &mut CaptureMessages,
@@ -458,9 +476,45 @@ fn transition_to(
         epoch: world_time.epoch,
         reason,
     });
+    if let Some(outcome) = end {
+        report_capture_ended(
+            capture_entity,
+            new_state,
+            outcome,
+            world_time.epoch,
+            &mut messages.log_events,
+            &mut messages.ended,
+        );
+    }
     capture_component.current_state = String::from(new_state);
     capture_component.state_enter_time_s = world_time.epoch - world_time.start_epoch;
     capture_component.state_elapsed_time_s = 0.0;
+}
+
+/// Writes the [`CaptureEnded`] message and its Info log line.
+fn report_capture_ended(
+    entity: Entity,
+    phase: &str,
+    outcome: PhaseEnd,
+    epoch: Epoch,
+    log: &mut MessageWriter<LogEvent>,
+    ended: &mut MessageWriter<CaptureEnded>,
+) {
+    let label = match outcome {
+        PhaseEnd::Success => "success",
+        PhaseEnd::Abort => "abort",
+    };
+    log.write(LogEvent {
+        level: LogLevel::Info,
+        source: "capture",
+        message: format!("Capture ended: {label} (phase {phase})"),
+    });
+    ended.write(CaptureEnded {
+        entity,
+        phase: phase.to_string(),
+        outcome,
+        epoch,
+    });
 }
 
 /// Debug builds only: panics if an enabled rigid body has a non-finite `Position`
@@ -496,7 +550,9 @@ pub enum SimCommand {
 
 /// Applies the queued [`SimCommand`]s in `Last` ([`SimSet::ApplyCommands`]), the
 /// frame the UI sends them, as the UI handler did before P3. The capture start
-/// time is sim seconds since the start epoch (F-38: fixed in P4).
+/// time is sim seconds since the start epoch (F-38: fixed in P4). Every command
+/// that starts a capture is appended to the [`SimInputLog`] after the current
+/// step; a refused one changes nothing and is not an input.
 pub fn apply_sim_commands(
     mut commands: Commands,
     mut sim_commands: MessageReader<SimCommand>,
@@ -509,7 +565,11 @@ pub fn apply_sim_commands(
         ResMut<DataCollection>,
         Option<ResMut<CaptureSphereRadius>>,
     ),
-    mut log: MessageWriter<LogEvent>,
+    (mut log, mut ended, mut input_log): (
+        MessageWriter<LogEvent>,
+        MessageWriter<CaptureEnded>,
+        ResMut<SimInputLog>,
+    ),
 ) {
     for command in sim_commands.read() {
         match command {
@@ -545,6 +605,23 @@ pub fn apply_sim_commands(
                                         "Capture initiated for entity {capture_entity:?} with plan '{plan_id}'"
                                     ),
                                 });
+                                let epoch = world_time.as_ref().map(|t| t.epoch);
+                                let step = world_time.as_ref().map_or(0, |t| {
+                                    ((t.epoch - t.start_epoch) / PHYS_DT).round() as u64
+                                });
+                                input_log.push_start_capture(step, *capture_entity, plan_id);
+                                if let (Some(first), Some(epoch)) = (plan.phases.first(), epoch)
+                                    && let Some(outcome) = first.end
+                                {
+                                    report_capture_ended(
+                                        *capture_entity,
+                                        &first.id,
+                                        outcome,
+                                        epoch,
+                                        &mut log,
+                                        &mut ended,
+                                    );
+                                }
                             } else {
                                 log.write(LogEvent {
                                     level: LogLevel::Error,
@@ -602,6 +679,7 @@ impl Plugin for CapturePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SimCommand>()
             .add_message::<CaptureTransition>()
+            .add_message::<CaptureEnded>()
             .configure_sets(Last, SimSet::ApplyCommands)
             .add_systems(
                 ManualPhysics,

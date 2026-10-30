@@ -256,6 +256,8 @@ pub struct CompiledCaptureState {
     pub id: String,
     pub parameters: CompiledCaptureStateParameters,
     pub transitions: Vec<CompiledCaptureTransition>,
+    /// How entering this phase ends the capture; `None` for a phase that is not an end phase.
+    pub end: Option<PhaseEnd>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -483,6 +485,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                     }
                 })
                 .collect(),
+            end: phase.end,
         });
     }
 

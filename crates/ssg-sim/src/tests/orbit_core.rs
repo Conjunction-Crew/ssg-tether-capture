@@ -16,6 +16,7 @@ use crate::orbit::selection::EditableOrbitalElements;
 use crate::orbit::{
     ISS_ORBIT, Orbit, Orbital, cache::OrbitalCache, cache_eci_states, init_orbitals,
 };
+use crate::recording::inputs::SimInputLog;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::test_support::{
     Lcg, LogTap, assert_close, assert_close_vec6, fixed_epoch, kepler_eci, q13, test_app,
@@ -31,6 +32,7 @@ fn init_app() -> App {
     set_global_eop_provider(StaticEOPProvider::from_zero());
     let mut app = App::new();
     app.add_message::<LogEvent>()
+        .init_resource::<SimInputLog>()
         .insert_resource(WorldTime::starting_at(fixed_epoch()));
     app
 }
