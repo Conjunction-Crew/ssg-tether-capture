@@ -64,6 +64,10 @@ pub struct Run {
     /// The labels of the two bodies (`OBJECT_NAME` in `ephemeris.oem`).
     pub target_label: String,
     pub chaser_label: String,
+    /// The GP records' `OBJECT_ID`s (`OBJECT_ID` in `ephemeris.oem`), when the
+    /// bodies are GP picks that have one.
+    pub target_object_id: Option<String>,
+    pub chaser_object_id: Option<String>,
     pub epoch_mode: &'static str,
     /// The start epoch as an `Epoch` (`CREATION_DATE` of `ephemeris.oem`) and as
     /// its `format_utc` string.
@@ -221,6 +225,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
         chaser: inputs.chaser_id,
         target_label,
         chaser_label,
+        target_object_id: inputs.target.gp.and_then(|gp| gp.object_id),
+        chaser_object_id: inputs.chaser.gp.and_then(|gp| gp.object_id),
         start: start_epoch,
         start_epoch: format_utc(start_epoch),
         steps: updates * warp,

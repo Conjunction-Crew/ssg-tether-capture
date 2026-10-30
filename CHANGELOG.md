@@ -20,6 +20,15 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Changed
+- CLI: `ssg-sim run` prints the warnings of `project.json` and of the plan it runs (a v0 plan's unmapped values, a missing dataset, an oversized tether) on stderr as `ssg-sim: warning: <line>`, worded and ordered as `ssg-sim validate` prints them; stdout and the output files are unchanged.
+
+### Fixed
+- OEM export: `OBJECT_ID` is the GP record's own (for Hubble `1990-037B`) in `ephemeris.oem` from `ssg-sim run` and in the app's Export OEM, and `project.json` keeps it in the GP snapshot; before, it repeated the body's name.
+- The release build of `ssg-sim` has no unused-import warning; the headless CLI docs list every `run` output and lose a stray line.
+
+### Removed
+- The unused `csv` dependency of `ssg-sim-cli` and `ssg-app`.
 
 ## [v0.4.0-rc.1] 🔬 - 2026-10-29
 

@@ -57,6 +57,16 @@ fn body_label(selection: &OrbitalSelectionState, chaser: bool) -> String {
     }
 }
 
+/// The `OBJECT_ID` of a selected body's GP record, when it has one.
+fn body_object_id(selection: &OrbitalSelectionState, chaser: bool) -> Option<&str> {
+    let body = if chaser {
+        &selection.chaser
+    } else {
+        &selection.target
+    };
+    body.as_ref()?.gp.as_ref()?.object_id.as_deref()
+}
+
 pub fn egui_plots(
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut contexts: EguiContexts,
@@ -213,9 +223,9 @@ fn export_oem(
 ) {
     let (target, chaser) = (body_label(selection, false), body_label(selection, true));
     let samples = samples.map(Vec::as_slice).unwrap_or_default();
-    let segment = |name, chaser: bool| OemObject {
+    let segment = |name, id, chaser: bool| OemObject {
         name,
-        id: None,
+        id,
         states: samples
             .iter()
             .map(|e| (e.epoch, if chaser { e.chaser } else { e.target }))
@@ -228,7 +238,10 @@ fn export_oem(
             write_oem(
                 &path,
                 world_time.start_epoch,
-                &[segment(&target, false), segment(&chaser, true)],
+                &[
+                    segment(&target, body_object_id(selection, false), false),
+                    segment(&chaser, body_object_id(selection, true), true),
+                ],
             )
             .map(|()| path)
         });
