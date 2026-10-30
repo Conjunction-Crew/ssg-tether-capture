@@ -125,14 +125,22 @@ fn summary(project: &Path, out: &str) -> Value {
         .unwrap()
 }
 
+/// The step of the run's first transition (to `approach`): 4,318 on macOS/aarch64,
+/// a few steps earlier elsewhere (F-17, F-48), so the tests read it from the run.
+fn first_transition_step(summary: &Value) -> u64 {
+    let first = &summary["transitions"][0];
+    assert_eq!(first["to"], "approach", "{summary}");
+    first["step"].as_u64().unwrap()
+}
+
 fn text(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap().replace("\r\n", "\n")
 }
 
 #[test]
 fn recording_does_not_change_the_run() {
-    // Steps 468 and 979 are floating-origin resets, 4318 the first transition:
-    // 1,100 steps cover the resets with the recording running.
+    // Steps 468 and 979 are floating-origin resets: 1,100 steps cover them with the
+    // recording running.
     let project = flag_project("hash");
     assert_success(&run(&project, "plain", &q13_flags("1100")));
     let mut args = q13_flags("1100").to_vec();
@@ -258,12 +266,13 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
         "approach",
     ];
     assert_success(&run(&project, "out", &args));
+    let transition = first_transition_step(&summary(&project, "out"));
 
     let folder = project.join("recordings/p");
     let loaded = read_recording(&folder).unwrap();
     let manifest = &loaded.manifest;
     assert_eq!(
-        manifest.start_step, 4318,
+        manifest.start_step, transition,
         "the step of rendezvous → approach"
     );
     assert_eq!(manifest.start_trigger, Some(RecordingStartTrigger::Phase));
@@ -278,7 +287,7 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
             .iter()
             .map(|f| f.line.step)
             .collect::<Vec<_>>(),
-        [4318, 4382]
+        [transition, transition + 64]
     );
     assert_eq!(
         loaded
@@ -286,7 +295,7 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
             .iter()
             .map(|t| t.step)
             .collect::<Vec<_>>(),
-        [4318]
+        [transition]
     );
     assert_eq!(
         loaded.inputs.first().map(|i| i.after_step),
@@ -306,7 +315,7 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
     assert!(
         messages
             .iter()
-            .any(|m| m.starts_with("Recording started at step 4318")),
+            .any(|m| m.starts_with(&format!("Recording started at step {transition}"))),
         "{messages:?}"
     );
 }
