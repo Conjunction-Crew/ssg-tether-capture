@@ -14,7 +14,7 @@ use crate::test_support::{
     insert_plan_json, install_memory_sink, load_example_plans, q13, test_app, tick,
 };
 use crate::tests::recording_end_event::SHORT_PLAN;
-use crate::tests::recording_tap::{MACOS_GOLDENS, TapRun, run_plan, run_q13};
+use crate::tests::recording_tap::{TapRun, run_plan, run_q13};
 use crate::tether::TetherNode;
 
 fn k32() -> RecordingSettings {
@@ -107,51 +107,6 @@ fn a_second_start_while_recording_is_refused() {
         refusals(&run),
         vec!["a recording is already running".to_string()]
     );
-}
-
-#[test]
-fn a_recording_holds_the_transitions_inside_it() {
-    let run = run_q13(
-        6_400,
-        k32(),
-        &[
-            (4_000, RecorderCommand::Start { name: "t".into() }),
-            (6_400, RecorderCommand::Stop),
-        ],
-    );
-    let transitions: Vec<(u64, &str, &str)> = run.segments[0]
-        .transitions
-        .iter()
-        .map(|t| (t.step, t.from.as_str(), t.to.as_str()))
-        .collect();
-    println!("recording 4000..6400: transitions {transitions:?}");
-    // The one transition the sim wrote (4,318 on macOS, F-17).
-    let approach = run.transitions[0].0;
-    assert_eq!(run.transitions.len(), 1);
-    if MACOS_GOLDENS {
-        assert_eq!(approach, 4_318);
-    }
-    assert_eq!(transitions, vec![(approach, "rendezvous", "approach")]);
-    assert!(
-        run.segments[0].transitions[0]
-            .reason
-            .starts_with("distance")
-    );
-    assert_eq!(end(&run, 0), Some((6_400, EndReason::Manual)));
-    // The phase in the frames follows the transition.
-    for frame in &run.segments[0].frames {
-        let expected = if frame.step < approach {
-            "rendezvous"
-        } else {
-            "approach"
-        };
-        assert_eq!(
-            frame.phase.as_deref(),
-            Some(expected),
-            "frame {}",
-            frame.step
-        );
-    }
 }
 
 #[test]

@@ -218,6 +218,39 @@ fn a_recording_does_not_change_the_run() {
     assert!(single_steps.windows(2).all(|w| w[1] - w[0] == 16));
     assert_eq!(single.segments[0].end, None, "still recording at the end");
 
+    // The single recording (640 to the end) holds the one transition the sim wrote
+    // inside it (4,318 on macOS, F-17), and the frames' phase follows it.
+    let approach = single.transitions[0].0;
+    assert_eq!(single.transitions.len(), 1);
+    if MACOS_GOLDENS {
+        assert_eq!(approach, 4_318);
+    }
+    let recorded: Vec<(u64, &str, &str)> = single.segments[0]
+        .transitions
+        .iter()
+        .map(|t| (t.step, t.from.as_str(), t.to.as_str()))
+        .collect();
+    println!("single: transitions {recorded:?}");
+    assert_eq!(recorded, vec![(approach, "rendezvous", "approach")]);
+    assert!(
+        single.segments[0].transitions[0]
+            .reason
+            .starts_with("distance")
+    );
+    for frame in &single.segments[0].frames {
+        let expected = if frame.step < approach {
+            "rendezvous"
+        } else {
+            "approach"
+        };
+        assert_eq!(
+            frame.phase.as_deref(),
+            Some(expected),
+            "frame {}",
+            frame.step
+        );
+    }
+
     // The automatic start is the step the sim entered `approach` (4,318 on macOS).
     let approach = multi
         .transitions
