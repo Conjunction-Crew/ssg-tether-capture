@@ -13,12 +13,14 @@ use crate::capture::plan::{CapturePlanLibrary, PhaseEnd};
 use crate::capture::{CaptureComponent, CaptureEnded, CaptureSphereRadius, CaptureTransition};
 use crate::floating_origin::OriginReset;
 use crate::orbit::cache::OrbitalCache;
-use crate::recording::inputs::{RecordedCommand, SimInputLog};
+use crate::project::format_utc;
+use crate::project::manifest::RecordingBlock;
+use crate::recording::inputs::{RecordedCommand, RecordedInput, SimInputLog};
 use crate::recording::{
     BYTES_PER_BODY_FRAME, BodyFrame, EndReason, Frame, RecordedTransition, RecordingBodies,
     RecordingEnd, RecordingHeader, RecordingSink, StartTrigger,
 };
-use crate::telemetry::{LogEvent, LogLevel};
+use crate::telemetry::{LogEntry, LogEvent, LogLevel};
 use crate::time::{FIXED_HZ, PHYS_DT, WorldTime};
 
 /// The per-project recording settings (the `recording` block of `project.json`,
@@ -47,6 +49,28 @@ impl Default for RecordingSettings {
             max_duration_s: 1800.0,
             max_size_mb: 100.0,
             max_tether_bodies: 200,
+        }
+    }
+}
+
+impl RecordingSettings {
+    /// The settings of a project's `recording` block; a key it lacks keeps its
+    /// default, and no block is all defaults.
+    pub fn from_block(block: Option<&RecordingBlock>) -> Self {
+        let default = Self::default();
+        let Some(block) = block else {
+            return default;
+        };
+        Self {
+            auto_start_phase: block.auto_start_phase.clone(),
+            auto_stop_on_end: block.auto_stop_on_end.unwrap_or(default.auto_stop_on_end),
+            stop_after_end_s: block.stop_after_end_s.unwrap_or(default.stop_after_end_s),
+            keyframe_interval_steps: block
+                .keyframe_interval_steps
+                .unwrap_or(default.keyframe_interval_steps),
+            max_duration_s: block.max_duration_s.unwrap_or(default.max_duration_s),
+            max_size_mb: block.max_size_mb.unwrap_or(default.max_size_mb),
+            max_tether_bodies: block.max_tether_bodies.unwrap_or(default.max_tether_bodies),
         }
     }
 }
@@ -105,6 +129,8 @@ pub struct Recorder {
     pub state: RecorderState,
     /// Shared by the tap and the `Last` system, so each `CaptureEnded` is seen once.
     ended: MessageCursor<CaptureEnded>,
+    /// Likewise for the log events the segment keeps (`log.jsonl`).
+    logs: MessageCursor<LogEvent>,
     /// The [`SimInputLog`] entries already checked for an automatic start.
     inputs_seen: usize,
 }
@@ -133,6 +159,7 @@ pub struct FrameReader<'w, 's> {
     cache: Option<Res<'w, OrbitalCache>>,
     radius: Option<Res<'w, CaptureSphereRadius>>,
     world_time: Option<Res<'w, WorldTime>>,
+    input_log: Option<Res<'w, SimInputLog>>,
 }
 
 impl FrameReader<'_, '_> {
@@ -146,6 +173,11 @@ impl FrameReader<'_, '_> {
         self.world_time
             .as_ref()
             .map_or(0, |t| ((epoch - t.start_epoch) / PHYS_DT).round() as u64)
+    }
+
+    /// The session's inputs from step 0.
+    fn inputs(&self) -> &[RecordedInput] {
+        self.input_log.as_ref().map_or(&[], |log| &log.entries)
     }
 
     fn target(&self) -> Option<Entity> {
@@ -195,7 +227,9 @@ impl FrameReader<'_, '_> {
 #[derive(SystemParam)]
 pub struct RecorderOutput<'w> {
     events: MessageWriter<'w, RecorderEvent>,
-    log: MessageWriter<'w, LogEvent>,
+    /// Written, and read back for the segment's log (`Ctx::read_logs`); a
+    /// `MessageReader` beside a `MessageWriter` of the same type would conflict.
+    log: ResMut<'w, Messages<LogEvent>>,
 }
 
 impl RecorderOutput<'_> {
@@ -392,6 +426,7 @@ impl Ctx<'_, '_, '_, '_> {
             end_step: active.last_frame_step,
             reason,
         };
+        self.sink.0.inputs(self.reader.inputs());
         self.sink.0.finish(&end);
         self.out.emit(
             LogLevel::Info,
@@ -401,6 +436,22 @@ impl Ctx<'_, '_, '_, '_> {
                 end.end_step, active.frames
             ),
         );
+    }
+
+    /// Hands the log events since the last call to the sink while recording (and
+    /// drops them otherwise), stamped with the current epoch as the capture log
+    /// stamps them.
+    fn read_logs(&mut self) {
+        let events: Vec<LogEvent> = self.recorder.logs.read(&self.out.log).cloned().collect();
+        if !self.recorder.is_recording() {
+            return;
+        }
+        let Some(world_time) = self.reader.world_time.as_ref() else {
+            return;
+        };
+        for event in &events {
+            self.sink.0.log(&log_entry(world_time.epoch, event));
+        }
     }
 
     /// Notes the first `CaptureEnded` at or after the start.
@@ -416,6 +467,20 @@ impl Ctx<'_, '_, '_, '_> {
         {
             active.end_event = events.into_iter().find(|(at, _)| *at >= active.start_step);
         }
+    }
+}
+
+/// The capture log's entry for `event` at `epoch` (`collect_log_events`).
+fn log_entry(epoch: brahe::Epoch, event: &LogEvent) -> LogEntry {
+    let full = format!("{epoch}");
+    LogEntry {
+        timestamp: full
+            .get(11..19)
+            .map_or_else(|| full.clone(), str::to_string),
+        epoch_utc: format_utc(epoch),
+        level: event.level,
+        source: event.source,
+        message: event.message.clone(),
     }
 }
 
@@ -481,6 +546,7 @@ pub fn record_step(
         }
     }
     ctx.read_ended(&ended);
+    ctx.read_logs();
     ctx.after_step(step);
 }
 
@@ -522,6 +588,8 @@ pub fn apply_recorder_commands(
         reader: &reader,
         out: &mut out,
     };
+    // The events of this update's `Last` so far belong to the segment before a stop.
+    ctx.read_logs();
     for command in commands.read() {
         match command {
             RecorderCommand::Start { name } => {
@@ -539,6 +607,8 @@ pub fn apply_recorder_commands(
     if let Some(phase) = auto_start {
         ctx.start(&settings, step, None, StartTrigger::Phase, Some(phase));
     }
+    // A start's own log line is stamped with this step.
+    ctx.read_logs();
     ctx.read_ended(&ended);
     // Only the end-event stop can fall due here (an end phase entered at the start).
     if let RecorderState::Recording(active) = &ctx.recorder.state

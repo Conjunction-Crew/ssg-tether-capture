@@ -15,6 +15,7 @@ pub mod project_files;
 pub mod project_manifest;
 pub mod project_recording;
 pub mod recording_end_event;
+pub mod recording_files;
 pub mod recording_inputs;
 pub mod recording_recorder;
 pub mod recording_tap;

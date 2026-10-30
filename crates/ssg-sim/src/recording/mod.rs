@@ -10,6 +10,7 @@
 //! by fixed step, never by update (R5, C8): a run with a recording is
 //! bit-identical to the run without.
 
+pub mod files;
 pub mod inputs;
 pub mod recorder;
 
@@ -27,8 +28,9 @@ use crate::orbit::cache::OrbitalCache;
 use crate::project::SelectedProject;
 use crate::project::recording::RecordingBodyRole;
 use crate::session::{SimState, UiScreen};
+use crate::telemetry::LogEntry;
 use crate::{SimSet, SimStep};
-use inputs::{SimInputLog, reset_sim_input_log};
+use inputs::{RecordedInput, SimInputLog, reset_sim_input_log};
 use recorder::{
     Recorder, RecorderCommand, RecorderEvent, RecordingSettings, apply_recorder_commands,
     end_recording_on_exit, record_step, reset_recorder,
@@ -120,6 +122,10 @@ pub trait FrameSink: Send + Sync {
     fn begin(&mut self, header: &RecordingHeader);
     fn frame(&mut self, frame: &Frame);
     fn transition(&mut self, transition: &RecordedTransition);
+    /// A log event of the segment, in the order they were written.
+    fn log(&mut self, entry: &LogEntry);
+    /// The session's input log from step 0, handed over just before [`Self::finish`].
+    fn inputs(&mut self, inputs: &[RecordedInput]);
     /// Bytes of the current recording so far (checked against `max_size_mb`).
     fn bytes(&self) -> u64;
     fn finish(&mut self, end: &RecordingEnd);
@@ -141,6 +147,10 @@ pub struct MemorySegment {
     pub header: RecordingHeader,
     pub frames: Vec<Frame>,
     pub transitions: Vec<RecordedTransition>,
+    /// The messages of the log events, oldest first.
+    pub logs: Vec<String>,
+    /// The session's inputs, set when the recording ends.
+    pub inputs: Vec<RecordedInput>,
     /// `None` while the recording runs.
     pub end: Option<RecordingEnd>,
 }
@@ -175,6 +185,8 @@ impl FrameSink for MemorySink {
             header: header.clone(),
             frames: Vec::new(),
             transitions: Vec::new(),
+            logs: Vec::new(),
+            inputs: Vec::new(),
             end: None,
         });
     }
@@ -185,6 +197,14 @@ impl FrameSink for MemorySink {
 
     fn transition(&mut self, transition: &RecordedTransition) {
         self.with_current(|s| s.transitions.push(transition.clone()));
+    }
+
+    fn log(&mut self, entry: &LogEntry) {
+        self.with_current(|s| s.logs.push(entry.message.clone()));
+    }
+
+    fn inputs(&mut self, inputs: &[RecordedInput]) {
+        self.with_current(|s| s.inputs = inputs.to_vec());
     }
 
     fn bytes(&self) -> u64 {

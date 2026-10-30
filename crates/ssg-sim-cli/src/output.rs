@@ -85,7 +85,32 @@ pub fn write(args: &Args, run: &Run) -> Result<(), String> {
         run.wall.as_secs_f64(),
         out.display()
     );
-    Ok(())
+    report_recordings(run)
+}
+
+/// Says on stderr what each recording holds; `Err` with every recording that could
+/// not be written (the run's own outputs are already on disk by then).
+fn report_recordings(run: &Run) -> Result<(), String> {
+    let mut failed = Vec::new();
+    for recording in &run.recordings {
+        match recording {
+            Ok(written) => eprintln!(
+                "ssg-sim: recorded {}: {} frames of {} bodies, last step {} ({:?}), {} bytes of keyframes",
+                written.dir.display(),
+                written.frames,
+                written.bodies,
+                written.end.end_step,
+                written.end.reason,
+                written.keyframes_bytes
+            ),
+            Err(e) => failed.push(e.as_str()),
+        }
+    }
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("recording failed: {}", failed.join("; ")))
+    }
 }
 
 /// 64-bit FNV-1a over the sampled state, written to `summary.json` as 16 hex

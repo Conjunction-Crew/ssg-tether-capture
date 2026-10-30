@@ -2,11 +2,14 @@
 //! besides the scenario and the plan.
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::project::recording::RecordingBodyRole;
 
-/// One sim-affecting input.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One sim-affecting input; as a line of `inputs.jsonl` it is
+/// `{"session_start": {…}}` or `{"start_capture": {…}}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RecordedCommand {
     /// Always the first entry: the fixed steps that ran in the update that spawned
     /// the bodies, before `init_orbitals` built the propagators (k, C1). The CLI
@@ -21,9 +24,11 @@ pub enum RecordedCommand {
 }
 
 /// An input applied after fixed step `after_step` (in `Last`, or by
-/// `init_orbitals` in `First` for `SessionStart`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// `init_orbitals` in `First` for `SessionStart`); a line of `inputs.jsonl`
+/// (`{"step": …, "command": …}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordedInput {
+    #[serde(rename = "step")]
     pub after_step: u64,
     pub command: RecordedCommand,
 }

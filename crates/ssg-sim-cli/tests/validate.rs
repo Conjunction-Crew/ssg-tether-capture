@@ -308,3 +308,110 @@ fn usage_errors_exit_2() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("is not a directory"));
 }
+
+/// A project with the Q13 fixture as a dataset and one 200-step recording `r`
+/// (frames at steps 2, 34, … 194 and 202).
+fn recorded_project(name: &str) -> PathBuf {
+    let project = temp_project(name);
+    std::fs::create_dir_all(project.join("datasets")).unwrap();
+    std::fs::copy(
+        repo_root().join("crates/ssg-sim/src/test_support/fixtures/q13_hubble_pair.json"),
+        project.join("datasets/q13.json"),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ssg-sim"))
+        .arg("run")
+        .arg(&project)
+        .args(["--target", "20580", "--chaser", "99901"])
+        .args(["--epoch", "2026-04-03T16:03:47.002464"])
+        .args(["--steps", "200", "--record", "r"])
+        .arg("--assets")
+        .arg(repo_root().join("assets"))
+        .arg("--out")
+        .arg(project.join("out"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    project
+}
+
+#[test]
+fn a_recording_is_checked_and_summarised() {
+    let project = recorded_project("recording_ok");
+
+    let output = validate(&project);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        stdout_lines(&output),
+        [
+            "info: no project.json: the folder is read as a v0 project (plans only)",
+            "info: no plan files in the project folder (the example plans are used)",
+            "info: recordings/r: 8 frames, 193 bodies, steps 2..202",
+            "0 errors, 0 warnings",
+        ]
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[test]
+fn a_broken_recording_is_an_error_and_an_unfinished_one_a_warning() {
+    let project = recorded_project("recording_broken");
+    std::fs::remove_file(project.join("recordings/r/keyframes.parquet")).unwrap();
+    std::fs::create_dir_all(project.join("recordings/crashed.partial")).unwrap();
+
+    let output = validate(&project);
+
+    assert_eq!(output.status.code(), Some(1));
+    let lines = stdout_lines(&output);
+    assert_eq!(
+        lines[2..],
+        [
+            "warning: recordings/crashed.partial: unfinished (an interrupted run or a crash); \
+             its Parquet file has no footer and cannot be recovered: make the recording again",
+            "error: [recordings/r/keyframes.parquet] missing",
+            "1 errors, 1 warnings",
+        ]
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[test]
+fn the_recording_block_is_checked_against_the_active_plan() {
+    let project = valid_project("recording_block");
+    let mut value = manifest();
+    value["recording"] = json!({ "auto_start_phase": "approach", "keyframe_interval_steps": 16 });
+    write_manifest(&project, &value);
+
+    let output = validate(&project);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        stdout_lines(&output),
+        [
+            "warning: [project.json] /recording/auto_start_phase: no phase `approach` in plan \
+             `mine` (its phases: only); the recording would never start",
+            "0 errors, 1 warnings",
+        ]
+    );
+    // A phase of the plan is fine; a wrong number is an error.
+    value["recording"] = json!({ "auto_start_phase": "only", "max_size_mb": 0.0 });
+    write_manifest(&project, &value);
+    let output = validate(&project);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stdout_lines(&output),
+        [
+            "error: [project.json] /recording/max_size_mb: must be greater than 0",
+            "1 errors, 0 warnings",
+        ]
+    );
+    value["recording"] = json!({ "auto_start_phase": "only" });
+    write_manifest(&project, &value);
+    assert_eq!(stdout_lines(&validate(&project)), ["0 errors, 0 warnings"]);
+    let _ = std::fs::remove_dir_all(&project);
+}
