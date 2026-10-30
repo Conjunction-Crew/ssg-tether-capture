@@ -156,6 +156,9 @@ pub struct SpaceObjectCatalog {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpElements {
     pub norad_id: u32,
+    /// The record's `OBJECT_ID` (the international designator), when it has a
+    /// non-empty one; the OEM export writes it as `OBJECT_ID`.
+    pub object_id: Option<String>,
     /// The record's `EPOCH` verbatim; brahe's SGP4 parses it. Empty when the
     /// record has none (SGP4 then fails at init and logs it).
     pub epoch_str: String,
@@ -460,6 +463,7 @@ pub fn gp_record_to_elements(
 
     let gp = GpElements {
         norad_id: id as u32,
+        object_id: record.object_id.clone().filter(|id| !id.is_empty()),
         epoch_str: record.epoch.clone().unwrap_or_default(),
         epoch: object_epoch,
         mean_motion_rev_per_day: mean_motion,

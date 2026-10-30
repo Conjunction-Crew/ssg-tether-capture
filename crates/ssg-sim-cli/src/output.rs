@@ -53,9 +53,9 @@ pub fn write(args: &Args, run: &Run) -> Result<(), String> {
 
     // Without samples (`--stop-at-capture` before the first) there is no ephemeris.
     if !run.ephemeris.is_empty() {
-        let segment = |name, chaser: bool| OemObject {
+        let segment = |name, id, chaser: bool| OemObject {
             name,
-            id: None,
+            id,
             states: run
                 .ephemeris
                 .iter()
@@ -66,8 +66,8 @@ pub fn write(args: &Args, run: &Run) -> Result<(), String> {
             &out.join("ephemeris.oem"),
             run.start,
             &[
-                segment(&run.target_label, false),
-                segment(&run.chaser_label, true),
+                segment(&run.target_label, run.target_object_id.as_deref(), false),
+                segment(&run.chaser_label, run.chaser_object_id.as_deref(), true),
             ],
         )?;
     }

@@ -65,6 +65,15 @@ fn run_writes_summary_and_trajectory() {
     assert!(oem.starts_with("CCSDS_OEM_VERS = 2.0\n"), "{oem}");
     assert_eq!(oem.matches("META_START").count(), 2);
     assert!(oem.contains("OBJECT_NAME = HST\n") && oem.contains("OBJECT_NAME = P0 HST CHASER\n"));
+    // F-55: OBJECT_ID is the GP record's own, not the name.
+    assert!(
+        oem.contains("OBJECT_NAME = HST\nOBJECT_ID = 1990-037B\n"),
+        "{oem}"
+    );
+    assert!(
+        oem.contains("OBJECT_NAME = P0 HST CHASER\nOBJECT_ID = P0-CHASER-1\n"),
+        "{oem}"
+    );
     assert_eq!(
         oem.lines().filter(|l| l.starts_with("2026-")).count(),
         200,

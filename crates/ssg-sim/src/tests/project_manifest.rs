@@ -666,6 +666,31 @@ fn save_and_reload_starts_from_what_was_read() {
     assert_eq!(inputs.start_epoch, fixed_epoch());
 }
 
+/// F-55: the record's `OBJECT_ID` is part of the GP snapshot in `project.json`; an
+/// empty one is no id.
+#[test]
+fn a_catalog_pick_keeps_its_object_id_through_a_project_json() {
+    let dir = TempDir::new("manifest-object-id");
+    let selection = OrbitalSelectionState {
+        target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
+        chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+    };
+    let manifest =
+        ProjectManifest::from_selection("proj", fixed_epoch(), None, &selection).unwrap();
+
+    let (inputs, write_error) = save_and_reload(dir.path(), &manifest).unwrap();
+
+    assert_eq!(write_error, None);
+    let object_id =
+        |body: &SelectedOrbitalObject| body.gp.as_ref().and_then(|gp| gp.object_id.clone());
+    assert_eq!(object_id(&inputs.target).as_deref(), Some("1990-037B"));
+    assert_eq!(object_id(&inputs.chaser).as_deref(), Some("P0-CHASER-1"));
+    let mut record = q13::fixture_record(q13::HST_NORAD_ID);
+    record.object_id = Some(String::new());
+    let (_, gp, _) = gp_record_to_elements(&record, fixed_epoch()).unwrap();
+    assert_eq!(gp.object_id, None, "an empty OBJECT_ID is none");
+}
+
 #[test]
 fn save_and_reload_without_a_writable_folder_starts_from_the_manifest_itself() {
     let dir = TempDir::new("manifest-reload-unwritable");

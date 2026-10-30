@@ -534,7 +534,7 @@ impl ManifestBody {
 fn gp_to_record(label: &str, gp: &GpElements) -> JsonOrbital {
     JsonOrbital {
         object_name: Some(label.to_string()),
-        object_id: None,
+        object_id: gp.object_id.clone(),
         epoch: (!gp.epoch_str.is_empty()).then(|| gp.epoch_str.clone()),
         mean_motion: Some(Value::from(gp.mean_motion_rev_per_day)),
         eccentricity: Some(Value::from(gp.eccentricity)),
