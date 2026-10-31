@@ -41,7 +41,7 @@ fn exports_dir(working_directory: &WorkingDirectory) -> Result<PathBuf, String> 
 }
 
 /// The label of a selected body (`OBJECT_NAME` in the OEM file).
-fn body_label(selection: &OrbitalSelectionState, chaser: bool) -> String {
+pub(crate) fn body_label(selection: &OrbitalSelectionState, chaser: bool) -> String {
     let body = if chaser {
         &selection.chaser
     } else {
