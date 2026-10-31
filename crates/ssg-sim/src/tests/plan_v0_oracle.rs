@@ -61,6 +61,7 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                 max_velocity: parameter_value(&state.parameters, "max_velocity").unwrap_or(0.0),
                 max_force: parameter_value(&state.parameters, "max_force").unwrap_or(0.0),
                 shrink_rate: parameter_value(&state.parameters, "shrink_rate"),
+                tail_actuation: false,
             },
             transitions: state
                 .transitions

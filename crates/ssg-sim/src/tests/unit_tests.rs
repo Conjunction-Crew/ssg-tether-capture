@@ -24,6 +24,7 @@ mod tests {
             shrink_rate_mps: None,
             transitions: None,
             end: None,
+            tail_actuation: None,
         }
     }
 

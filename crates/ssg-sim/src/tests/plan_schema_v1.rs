@@ -490,6 +490,7 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                 shrink_rate_mps: maybe(rng, 0.0, 0.1),
                 transitions,
                 end,
+                tail_actuation: rng.chance(0.5).then(|| rng.chance(0.5)),
             }
         })
         .collect();

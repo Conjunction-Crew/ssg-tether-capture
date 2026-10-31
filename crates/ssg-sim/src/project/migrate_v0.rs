@@ -127,6 +127,7 @@ impl Migrator<'_> {
             shrink_rate_mps: None,
             transitions: None,
             end: None,
+            tail_actuation: None,
         };
         let parameters = state.get("parameters").and_then(Value::as_object);
         for (key, slot) in [

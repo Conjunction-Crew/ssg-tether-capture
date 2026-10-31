@@ -40,6 +40,73 @@ pub struct CaptureComponent {
 /// The capture-sphere radius at the start of every capture (F-11).
 pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
 
+/// Seconds the force bound takes to rise from 0 to the phase's `max_force_n`, at
+/// the capture start and at every phase entry (F-31, Q10 row 8). A direction
+/// reversal does not restart it (C2).
+pub const FORCE_RAMP_S: f64 = 1.0;
+
+/// The relative width of the hysteresis band on the controller's three branch
+/// thresholds (the `0.8 R` inner edge, the `R` outer edge and the velocity kill),
+/// so a body at a threshold does not flip branch every step (F-31). The phase
+/// transitions have no band.
+pub const BRANCH_DEAD_BAND: f64 = 0.02;
+
+/// The capture controller's per-body state and output, on the tether root and the
+/// tail while a capture runs: inserted when the capture starts
+/// ([`apply_sim_commands`]) and removed with the [`CaptureComponent`]. The root is
+/// the chaser (design D8).
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
+pub struct CaptureForce {
+    /// The force the controller handed to avian this step, in N; zero for a body
+    /// the current phase does not push. The gizmo reads it (F-41).
+    pub applied: DVec3,
+    /// The ramped bound in N: 0 at the capture start and at every phase entry,
+    /// rising by `max_force_n × PHYS_DT / FORCE_RAMP_S` per pushed step up to
+    /// `max_force_n`.
+    pub ramp_n: f64,
+    /// The unit direction of the last non-zero applied force. Drives nothing.
+    pub direction: DVec3,
+    /// Inside the inner edge (`0.8 R`), with the dead band.
+    pub inner: bool,
+    /// Outside the outer edge (`R`), with the dead band.
+    pub outer: bool,
+    /// Above the velocity limit, with the dead band.
+    pub kill: bool,
+}
+
+impl CaptureForce {
+    /// Updates the three branch states for this step's range `rel_r_len` and speed
+    /// `rel_v_len` with the dead band: the inner edge is entered below
+    /// `0.8 R (1 − band)` and left above `0.8 R (1 + band)`, the outer edge entered
+    /// above `R (1 + band)` and left below `R (1 − band)`, the kill entered above
+    /// `max_velocity` and left below `max_velocity (1 − band)`.
+    fn update_branches(
+        &mut self,
+        rel_r_len: f64,
+        rel_v_len: f64,
+        capture_radius: f64,
+        max_velocity: f64,
+    ) {
+        let band = BRANCH_DEAD_BAND;
+        let inner_edge = capture_radius * 0.8;
+        self.inner = if self.inner {
+            rel_r_len <= inner_edge * (1.0 + band)
+        } else {
+            rel_r_len < inner_edge * (1.0 - band)
+        };
+        self.outer = if self.outer {
+            rel_r_len >= capture_radius * (1.0 - band)
+        } else {
+            rel_r_len > capture_radius * (1.0 + band)
+        };
+        self.kill = if self.kill {
+            rel_v_len >= max_velocity * (1.0 - band)
+        } else {
+            rel_v_len > max_velocity
+        };
+    }
+}
+
 /// A running capture records an [`EphemerisSample`] at every step since the sim
 /// start that is a multiple of this (64 steps = 1 s), for the app's OEM export.
 pub const EPHEMERIS_EVERY_STEPS: u64 = 64;
@@ -107,6 +174,7 @@ pub fn capture_state_machine_update(
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
     inputs: CaptureInputs,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
+    mut capture_forces: Query<(Entity, &mut CaptureForce)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
     mut data_collection: ResMut<DataCollection>,
     mut messages: CaptureMessages,
@@ -196,7 +264,8 @@ pub fn capture_state_machine_update(
                     });
                 }
 
-                let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
+                let (shared_state_parameters, entered_phase) = if let Some((r_len, v_len)) = root_rv
+                {
                     resolve_root_state(
                         capture_entity,
                         &mut capture_component,
@@ -207,8 +276,20 @@ pub fn capture_state_machine_update(
                         &mut messages,
                     )
                 } else {
-                    current_state_parameters(plan, &capture_component.current_state)
+                    (
+                        current_state_parameters(plan, &capture_component.current_state),
+                        false,
+                    )
                 };
+                // C2: the ramp restarts at every phase entry (and at the capture
+                // start, where `CaptureForce` is inserted at 0), never on a reversal.
+                if entered_phase {
+                    for &node in nodes {
+                        if let Ok((_, mut state)) = capture_forces.get_mut(node) {
+                            state.ramp_n = 0.0;
+                        }
+                    }
+                }
 
                 let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
 
@@ -254,6 +335,23 @@ pub fn capture_state_machine_update(
                         };
                     }
 
+                    // C7: the root always; the tail only in a phase with `tail_actuation`.
+                    let pushed = idx == 0 || shared_state_parameters.tail_actuation;
+                    let Ok((_, mut state)) = capture_forces.get_mut(node) else {
+                        // Every capture start inserts it on the root and the tail.
+                        if !pushed {
+                            continue;
+                        }
+                        messages.log_events.write(LogEvent {
+                            level: LogLevel::Warn,
+                            source: "capture",
+                            message: format!(
+                                "Failed to apply force to tether node {idx} (no CaptureForce)"
+                            ),
+                        });
+                        continue;
+                    };
+
                     let mut force_vec = DVec3::ZERO;
                     let max_velocity = shared_state_parameters.max_velocity;
                     let max_force = shared_state_parameters.max_force;
@@ -262,17 +360,23 @@ pub fn capture_state_machine_update(
                     } else {
                         capture_sphere_radius.radius + 1.0
                     };
+                    state.update_branches(rel_r_len, rel_v_len, capture_radius, max_velocity);
+
+                    if !pushed {
+                        state.applied = DVec3::ZERO;
+                        continue;
+                    }
 
                     // If vel is high, kill vel
-                    if rel_v_len > max_velocity {
+                    if state.kill {
                         force_vec += -rel_v.normalize_or_zero() * 2.0;
                     }
                     // If too close, force in opposite dir
-                    if rel_r_len < capture_radius * 0.8 {
+                    if state.inner {
                         force_vec += -rel_r.normalize_or_zero();
                     }
                     // If we are outside the sphere radius, force in target dir (or slow down)
-                    else if rel_r_len > capture_radius {
+                    else if state.outer {
                         if rel_v.angle_between(rel_r) > PI / 2.0 {
                             force_vec += -rel_v.normalize_or_zero();
                         }
@@ -293,16 +397,26 @@ pub fn capture_state_machine_update(
                         }
                     }
 
+                    // F-31: `max_force_n` is an upper bound reached through the ramp.
+                    state.ramp_n =
+                        (state.ramp_n + max_force * PHYS_DT / FORCE_RAMP_S).min(max_force);
+                    // F-11: a zero vector gives a zero force, not NaN.
+                    let direction = force_vec.normalize_or_zero();
+                    let force = direction * state.ramp_n;
+                    debug_assert!(
+                        force.is_finite() && force.length() <= max_force * (1.0 + 1e-12),
+                        "force {force:?} on tether node {idx} is not finite or above {max_force} N"
+                    );
+
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        // F-11: a zero vector gives a zero force, not NaN.
-                        let force = force_vec.normalize_or_zero() * max_force;
-                        debug_assert!(
-                            force.is_finite(),
-                            "non-finite force {force:?} on tether node {idx}"
-                        );
                         node_forces.apply_force(force);
+                        state.applied = force;
+                        if direction != DVec3::ZERO {
+                            state.direction = direction;
+                        }
                     } else {
+                        state.applied = DVec3::ZERO;
                         messages.log_events.write(LogEvent {
                             level: LogLevel::Warn,
                             source: "capture",
@@ -336,6 +450,9 @@ pub fn capture_state_machine_update(
                 capture_component.plan_id
             );
             commands.entity(capture_entity).remove::<CaptureComponent>();
+            for (entity, _) in &capture_forces {
+                commands.entity(entity).remove::<CaptureForce>();
+            }
             messages.log_events.write(LogEvent {
                 level: LogLevel::Error,
                 source: "capture",
@@ -363,7 +480,8 @@ fn current_state_parameters(
 /// satisfied transition fires and nothing more happens this step (no cascade).
 /// The state current after this check sets this step's parameters and shrinks the
 /// capture sphere once, so when a transition fires, the new state's limits and
-/// shrink rate already apply to this step's forces.
+/// shrink rate already apply to this step's forces. The `bool` is whether a
+/// transition fired (a phase entry, which restarts the force ramp).
 fn resolve_root_state(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
@@ -372,15 +490,16 @@ fn resolve_root_state(
     world_time: &WorldTime,
     capture_sphere_radius: &mut CaptureSphereRadius,
     messages: &mut CaptureMessages,
-) -> CompiledCaptureStateParameters {
+) -> (CompiledCaptureStateParameters, bool) {
     let Some(state) = plan.state(&capture_component.current_state) else {
-        return CompiledCaptureStateParameters::default();
+        return (CompiledCaptureStateParameters::default(), false);
     };
 
     let fired = state.transitions.iter().find_map(|transition| {
         transition_satisfied(transition, rel_r_length, rel_v_length)
             .map(|reason| (transition.to.clone(), reason))
     });
+    let entered_phase = fired.is_some();
     if let Some((to, reason)) = fired {
         let end = plan.state(&to).and_then(|state| state.end);
         transition_to(
@@ -401,7 +520,7 @@ fn resolve_root_state(
         capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
     }
 
-    parameters
+    (parameters, entered_phase)
 }
 
 /// The reason string if every condition of `transition` holds (`None` if one does
@@ -560,6 +679,12 @@ pub fn apply_sim_commands(
     // Absent outside the sim screen, where no capture target exists.
     world_time: Option<Res<WorldTime>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
+    // The tether registry (absent outside the sim screen) and the bodies that
+    // carry the controller's state of the capture being replaced.
+    (orbital_cache, capture_force_bodies): (
+        Option<Res<OrbitalCache>>,
+        Query<Entity, With<CaptureForce>>,
+    ),
     // The radius is absent outside the sim screen, like `WorldTime`.
     (mut data_collection, mut capture_sphere_radius): (
         ResMut<DataCollection>,
@@ -584,6 +709,9 @@ pub fn apply_sim_commands(
                         for marked_entity in capture_entities {
                             commands.entity(marked_entity).remove::<CaptureComponent>();
                         }
+                        for body in &capture_force_bodies {
+                            commands.entity(body).remove::<CaptureForce>();
+                        }
                         // Get plan information
                         if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
                             // Now, mark the entity for capture
@@ -593,6 +721,16 @@ pub fn apply_sim_commands(
                                 world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                                // The controller's state on the root and the tail, from
+                                // the first step (the ramp starts at 0 here).
+                                if let Some(nodes) = orbital_cache
+                                    .as_ref()
+                                    .and_then(|cache| cache.tethers.get(&plan.tether))
+                                {
+                                    for &node in nodes {
+                                        commands.entity(node).insert(CaptureForce::default());
+                                    }
+                                }
                                 // F-11: every capture starts with the initial radius, the
                                 // plan's `capture_sphere.initial_radius_m` (25 m by default).
                                 if let Some(radius) = capture_sphere_radius.as_mut() {
