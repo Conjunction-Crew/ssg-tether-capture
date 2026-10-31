@@ -21,6 +21,9 @@ pub enum SimState {
     #[default]
     Setup,
     Running,
+    /// Playing a recording (P7): visual-only bodies, no physics step, no sim
+    /// commands and no recorder. Entered from `Setup` by the app's Recordings window.
+    Replay,
 }
 
 /// Whether the sim clock advances (F-12): pause is a state, not a 0x warp.
