@@ -18,12 +18,14 @@ This page states the determinism contract measured in P4 (v0.3.2). It is a draft
 
 - **Frame rate and wall-clock time.** The simulation advances in fixed steps of 1/64 s. Each step advances the epoch by 1/64 s and runs one physics step, whatever the frame rate.
 - **Time warp.** The warp sets how many fixed steps one update runs. Results depend only on the sequence of fixed steps: a run at 16× gives the same `trajectory.csv` as a run at 1×.
-- **The warp cap.** At most 64 fixed steps run per update. The cap changes how fast the simulation runs, not which steps it runs.
+- **The warp cap.** At most a capped number of fixed steps run per update: 64 on the command line; in the app the cap adapts to the machine, from 8 to 512 ([Time warp](./time-warp#requested-and-effective-warp)). The cap changes how fast the simulation runs, not which steps it runs.
 - **Pause.** Pausing stops the fixed steps; resuming continues from the same state.
 - **Camera cycling.** The camera target is a viewing choice. The floating origin and the physics bubble follow the simulation anchor (the tether root).
 - **Run-to-run timing of threads.** The parallel parts of the step are order-independent (see below).
 
 ## What does change the result
+
+- **The number of fixed steps in the update that creates the bodies.** Those steps run before the orbits start, and they move the tether, which is not at rest when it is created. The command line always runs 1. The app runs 0 to 3 (more when the warp was raised before Start), depending on the frame timing at the click. A recording stores this number so that it can be re-simulated ([Recordings](./recordings#the-spawn-update-step-count)).
 
 - **The start epoch.** Catalog objects start from an SGP4 state at the start epoch, so a different epoch gives a different geometry. `--epoch now` (the CLI default) and the desktop app read the wall clock once for it; use a fixed `--epoch` for repeatable runs.
 - **The capture plan** and **the catalog records** (the GP elements and their epochs).
@@ -57,6 +59,10 @@ grep state_hash run-a/summary.json run-b/summary.json
 ```
 
 Add `--warp 16` to one of them: the hash stays the same.
+
+## Recordings
+
+A [recording](./recordings) is played back from its files, so **playback is identical on every platform**. `ssg-sim replay` re-simulates a recording from step 0 with its scenario, plan and input log, including the number of steps of the spawn update, and compares every frame bit for bit. On the machine that recorded it, a recording made by `ssg-sim run --record` re-simulates bit for bit. An app recording does not re-simulate bit for bit yet: the app's run already differs from the headless re-simulation before any tether–debris contact, for a reason not yet found (F-65). Beyond that, the headless debris has no collider and no collider-derived mass or inertia; the app builds both when the glTF scene has loaded, at a wall-clock-dependent step (F-64). On another machine, platform or build, re-simulation may differ, and `ssg-sim replay` reports by how much (exit 3, or exit 1 when the target and version are the same but the C library or toolchain differs).
 
 ## Tests
 
