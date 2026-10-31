@@ -1,7 +1,7 @@
 //! Floating origin: keeps the anchor body close to the physics origin.
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
-use bevy::prelude::*;
+use bevy::{math::DVec3, prelude::*};
 use brahe::KeplerianPropagator;
 use brahe::utils::DOrbitStateProvider;
 use nalgebra::DVector;
@@ -13,9 +13,18 @@ use crate::orbit::cache::OrbitalCache;
 use crate::physics_bubble::PHYSICS_ENABLE_RADIUS;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::tether::{TetherNode, TetherRoot};
-use crate::time::{ManualPhysics, WorldTime};
+use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 pub const MAX_ORIGIN_OFFSET: f64 = PHYSICS_ENABLE_RADIUS / 2.0;
+
+/// One floating-origin reset (P7, C2): every enabled body's `Position` and
+/// `LinearVelocity` moved by minus `(com_r, com_v)` at the end of fixed step `step`.
+#[derive(Message, Debug, Clone, Copy, PartialEq)]
+pub struct OriginReset {
+    pub step: u64,
+    pub com_r: DVec3,
+    pub com_v: DVec3,
+}
 
 pub fn calculate_com_rv(
     entities: Query<Entity, With<TetherRoot>>,
@@ -66,7 +75,7 @@ pub fn target_entity_reset_origin(
     target_entity_q: Query<Entity, (With<SimAnchor>, Without<RigidBodyDisabled>)>,
     world_time: Res<WorldTime>,
     orbital_cache: Res<OrbitalCache>,
-    mut log_events: MessageWriter<LogEvent>,
+    (mut log_events, mut resets): (MessageWriter<LogEvent>, MessageWriter<OriginReset>),
 ) {
     let Ok(target_entity) = target_entity_q.single() else {
         return;
@@ -84,6 +93,11 @@ pub fn target_entity_reset_origin(
         level: LogLevel::Debug,
         source: "propagation",
         message: format!("Floating origin reset (epoch: {})", world_time.epoch),
+    });
+    resets.write(OriginReset {
+        step: ((world_time.epoch - world_time.start_epoch) / PHYS_DT).round() as u64,
+        com_r: *com_r,
+        com_v: *com_v,
     });
 
     // Accumulate current linvel and position into rigidbodies
@@ -114,7 +128,7 @@ pub struct FloatingOriginPlugin;
 
 impl Plugin for FloatingOriginPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        app.add_message::<OriginReset>().add_systems(
             ManualPhysics,
             (
                 calculate_com_rv.in_set(SimStep::CenterOfMass),

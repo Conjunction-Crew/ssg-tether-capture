@@ -195,6 +195,220 @@
       },
       "type": "object"
     },
+    "JsonOrbital": {
+      "description": "One Space-Track GP (OMM JSON) record: the keys the sim reads. Other keys of a\nrecord are ignored on read and not written back. `project.json` carries it as the\nsnapshot a body starts from.",
+      "properties": {
+        "ARG_OF_PERICENTER": true,
+        "BSTAR": true,
+        "CLASSIFICATION_TYPE": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ECCENTRICITY": true,
+        "ELEMENT_SET_NO": true,
+        "EPHEMERIS_TYPE": true,
+        "EPOCH": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "INCLINATION": true,
+        "MEAN_ANOMALY": true,
+        "MEAN_MOTION": true,
+        "MEAN_MOTION_DDOT": true,
+        "MEAN_MOTION_DOT": true,
+        "NORAD_CAT_ID": true,
+        "OBJECT_ID": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "OBJECT_NAME": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "RA_OF_ASC_NODE": true,
+        "REV_AT_EPOCH": true
+      },
+      "type": "object"
+    },
+    "ManifestBody": {
+      "additionalProperties": false,
+      "description": "One body of the scenario.",
+      "properties": {
+        "inertia_kg_m2": {
+          "description": "Inertia tensor in kg m², row-major. Refused until v0.4.0-rc.4.",
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "label": {
+          "description": "Display name. Must not be blank.",
+          "type": "string"
+        },
+        "mass_kg": {
+          "description": "Mass in kg; greater than 0. The target's is applied from v0.4.0-rc.1; the\nchaser's is refused until v0.4.0-rc.4.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "orbit": {
+          "$ref": "#/$defs/ManifestOrbit",
+          "description": "Where the body starts."
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ManifestSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the orbit came from. Provenance only: the orbit is the source of truth."
+        }
+      },
+      "required": [
+        "label",
+        "orbit"
+      ],
+      "type": "object"
+    },
+    "ManifestElements": {
+      "additionalProperties": false,
+      "description": "Osculating Keplerian elements, metres and radians (degrees would not round-trip\nbit for bit), valid at `epoch_utc`.",
+      "properties": {
+        "arg_perigee_rad": {
+          "description": "Argument of perigee in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "eccentricity": {
+          "description": "Eccentricity; at least 0 and below 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "epoch_utc": {
+          "description": "The epoch the six elements are valid at, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC).",
+          "type": "string"
+        },
+        "inclination_rad": {
+          "description": "Inclination in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "mean_anomaly_rad": {
+          "description": "Mean anomaly in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "raan_rad": {
+          "description": "Right ascension of the ascending node in radians.",
+          "format": "double",
+          "type": "number"
+        },
+        "semi_major_axis_m": {
+          "description": "Semi-major axis in metres; greater than 0.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "semi_major_axis_m",
+        "eccentricity",
+        "inclination_rad",
+        "raan_rad",
+        "arg_perigee_rad",
+        "mean_anomaly_rad",
+        "epoch_utc"
+      ],
+      "type": "object"
+    },
+    "ManifestOrbit": {
+      "description": "How a body's initial state is given: exactly one key.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The Space-Track GP (OMM JSON) record verbatim. The body starts from SGP4, as\nan unedited catalog pick does.",
+          "properties": {
+            "gp": {
+              "$ref": "#/$defs/JsonOrbital"
+            }
+          },
+          "required": [
+            "gp"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Osculating Keplerian elements in metres and radians.",
+          "properties": {
+            "elements": {
+              "$ref": "#/$defs/ManifestElements"
+            }
+          },
+          "required": [
+            "elements"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.4.",
+          "properties": {
+            "relative_to_target": {
+              "$ref": "#/$defs/RelativeToTarget"
+            }
+          },
+          "required": [
+            "relative_to_target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ManifestSource": {
+      "additionalProperties": false,
+      "description": "Where a body's orbit was taken from.",
+      "properties": {
+        "dataset": {
+          "description": "Path of the dataset file, relative to the project folder.",
+          "type": "string"
+        },
+        "norad_id": {
+          "description": "NORAD catalog id of the record.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset",
+        "norad_id"
+      ],
+      "type": "object"
+    },
     "MigratedFromV0": {
       "additionalProperties": false,
       "description": "The v0 content a migration could not map, so the file can be written back\nwithout losing it.",
@@ -275,6 +489,135 @@
       ],
       "type": "string"
     },
+    "ProjectManifest": {
+      "additionalProperties": false,
+      "description": "The project manifest, schema v1. Lengths are metres, angles radians, masses kg,\nepochs UTC strings with microseconds.",
+      "properties": {
+        "active_plan": {
+          "description": "Id (file stem) of the capture plan to run. Absent: the project's only plan,\nelse `example_plan`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "built_with": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BuiltWith"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The build that wrote the file; read only by `ssg-sim validate`."
+        },
+        "chaser": {
+          "$ref": "#/$defs/ManifestBody",
+          "description": "The chaser (the tether root's carrier)."
+        },
+        "name": {
+          "description": "Display name of the project. Must not be blank.",
+          "type": "string"
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordingBlock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When and how this project records. Absent: manual recording only."
+        },
+        "schema_version": {
+          "description": "File format version; `1`.",
+          "format": "uint32",
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start_epoch_utc": {
+          "description": "The simulation start epoch, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC, microseconds).\nThe simulation always starts from exactly this string.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ManifestBody",
+          "description": "The capture target."
+        }
+      },
+      "required": [
+        "schema_version",
+        "name",
+        "start_epoch_utc",
+        "target",
+        "chaser"
+      ],
+      "type": "object"
+    },
+    "RecordingBlock": {
+      "additionalProperties": false,
+      "description": "The `recording` block of `project.json`: every key is optional and falls back\nto the default named here. Durations are simulation seconds.",
+      "properties": {
+        "auto_start_phase": {
+          "description": "Start a recording when the capture enters this phase (a phase id of the\nactive plan). Absent: no automatic start.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "auto_stop_on_end": {
+          "description": "Stop the recording `stop_after_end_s` after the capture enters an end phase.\nDefault `true`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "keyframe_interval_steps": {
+          "description": "Steps between two frames (K); at least 1. Default 32.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_duration_s": {
+          "description": "The longest recording; greater than 0. Default 1800.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_size_mb": {
+          "description": "The largest keyframe table in megabytes; greater than 0. Default 100.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_tether_bodies": {
+          "description": "The most tether bodies a recording may hold; at least 1. Default 200.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stop_after_end_s": {
+          "description": "Seconds recorded after the end event; greater than 0. Default 60.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "RecordingBody": {
       "additionalProperties": false,
       "description": "One recorded body.",
@@ -326,6 +669,41 @@
         }
       ]
     },
+    "RecordingEndReason": {
+      "description": "Why a recording ended.",
+      "oneOf": [
+        {
+          "const": "manual",
+          "description": "Stopped by the user.",
+          "type": "string"
+        },
+        {
+          "const": "end_success",
+          "description": "The capture reached an end phase with outcome success and the stop delay passed.",
+          "type": "string"
+        },
+        {
+          "const": "end_abort",
+          "description": "The capture reached an end phase with outcome abort and the stop delay passed.",
+          "type": "string"
+        },
+        {
+          "const": "max_duration",
+          "description": "`limits.max_duration_s` was reached.",
+          "type": "string"
+        },
+        {
+          "const": "max_size",
+          "description": "The next frame would exceed `limits.max_size_mb`.",
+          "type": "string"
+        },
+        {
+          "const": "session_end",
+          "description": "The simulation screen was left (or the headless run ended).",
+          "type": "string"
+        }
+      ]
+    },
     "RecordingLimits": {
       "additionalProperties": false,
       "description": "The caps on a recorded segment: a recording is a short interaction, not a whole\napproach (the recording budget is sized for 200 tether bodies).",
@@ -334,6 +712,14 @@
           "description": "The longest segment in simulation seconds; greater than 0.",
           "format": "double",
           "type": "number"
+        },
+        "max_size_mb": {
+          "description": "The largest keyframe table in megabytes (116 bytes per body per frame);\ngreater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "max_tether_bodies": {
           "description": "The most tether bodies (every body except the target); at least 1.",
@@ -345,6 +731,71 @@
       "required": [
         "max_duration_s",
         "max_tether_bodies"
+      ],
+      "type": "object"
+    },
+    "RecordingSource": {
+      "description": "Which program wrote a recording.",
+      "oneOf": [
+        {
+          "const": "app",
+          "description": "The application (its spawn-update step count varies, so a missing\n`SessionStart` entry cannot be assumed).",
+          "type": "string"
+        },
+        {
+          "const": "cli",
+          "description": "`ssg-sim run --record`.",
+          "type": "string"
+        }
+      ]
+    },
+    "RecordingStartTrigger": {
+      "description": "What started a recording.",
+      "oneOf": [
+        {
+          "const": "manual",
+          "description": "The user (or the CLI's capture command).",
+          "type": "string"
+        },
+        {
+          "const": "phase",
+          "description": "The capture entered the project's `auto_start_phase`.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelativePreset": {
+      "description": "The approach line of a chaser placed relative to the target.",
+      "oneOf": [
+        {
+          "const": "v_bar",
+          "description": "Along the velocity vector.",
+          "type": "string"
+        },
+        {
+          "const": "r_bar",
+          "description": "Along the radial vector.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelativeToTarget": {
+      "additionalProperties": false,
+      "description": "A chaser placed relative to the target.",
+      "properties": {
+        "offset_m": {
+          "description": "Distance from the target in metres.",
+          "format": "double",
+          "type": "number"
+        },
+        "preset": {
+          "$ref": "#/$defs/RelativePreset",
+          "description": "The approach line."
+        }
+      },
+      "required": [
+        "preset",
+        "offset_m"
       ],
       "type": "object"
     },
@@ -431,6 +882,26 @@
       "$ref": "#/$defs/BuiltWith",
       "description": "The build that recorded; a recording replays bit for bit only on the same\nbuild and platform."
     },
+    "end_reason": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordingEndReason"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Why the recording ended."
+    },
+    "end_step": {
+      "description": "The step of the last frame; at least `start_step`.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "keyframe_interval_steps": {
       "description": "Steps between two keyframes (K); at least 1.",
       "format": "uint32",
@@ -449,6 +920,17 @@
       "description": "Id (file stem) of the capture plan the recording ran. Must not be blank.",
       "type": "string"
     },
+    "project": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProjectManifest"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The scenario at the start (`project.json` as the run used it). Absent: the\nrecording plays but cannot be verified by re-simulation."
+    },
     "schema_version": {
       "description": "File format version; `1`.",
       "format": "uint32",
@@ -456,15 +938,44 @@
       "minimum": 1,
       "type": "integer"
     },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Which program wrote the recording."
+    },
     "start_epoch_utc": {
       "description": "The simulation epoch at `start_step`, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC,\nmicroseconds).",
       "type": "string"
+    },
+    "start_phase": {
+      "description": "The capture phase that started the recording; present exactly when\n`start_trigger` is `phase`.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "start_step": {
       "description": "The simulation step the recording starts at.",
       "format": "uint64",
       "minimum": 0,
       "type": "integer"
+    },
+    "start_trigger": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordingStartTrigger"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What started the recording."
     }
   },
   "required": [

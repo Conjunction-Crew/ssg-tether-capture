@@ -11,6 +11,7 @@ pub mod floating_origin;
 pub mod orbit;
 pub mod physics_bubble;
 pub mod project;
+pub mod recording;
 pub mod session;
 pub mod telemetry;
 #[cfg(any(test, feature = "test-support"))]
@@ -40,6 +41,9 @@ pub enum SimStep {
     /// Differential two-body gravity on the enabled bodies (F-09).
     RelativeDynamics,
     Capture,
+    /// The recorder's read-only frame tap (P7): reads the step's end state, writes
+    /// no component.
+    Record,
 }
 
 /// Sets in other schedules that the app orders its systems against.
@@ -69,5 +73,6 @@ impl PluginGroup for SimPlugins {
             .add(physics_bubble::PhysicsBubblePlugin)
             .add(tether::TetherPlugin)
             .add(capture::CapturePlugin)
+            .add(recording::RecordingPlugin)
     }
 }

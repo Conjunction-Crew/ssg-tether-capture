@@ -1,15 +1,17 @@
-//! Hand-rolled argument parsing for `ssg-sim run` and `ssg-sim validate` (no
-//! argument-parser dependency).
+//! Hand-rolled argument parsing for `ssg-sim run`, `ssg-sim validate` and
+//! `ssg-sim replay` (no argument-parser dependency).
 
 use std::path::PathBuf;
 
 use brahe::Epoch;
+use ssg_sim::project::export::sanitize_file_stem;
 use ssg_sim::project::manifest::MANIFEST_FILE;
 use ssg_sim::project::parse_utc;
 use ssg_sim::time::MAX_STEPS_PER_UPDATE;
 
 pub const USAGE: &str = "usage: ssg-sim run <project-dir> [options]
        ssg-sim validate <project-dir> [--assets DIR]
+       ssg-sim replay <recording-dir> [--assets DIR] [--frames-only]
 
 run options:
   --plan ID            capture plan id (default: project.json's active_plan, else the only
@@ -29,9 +31,21 @@ run options:
                        of --warp)
   --out DIR            output directory (default <project-dir>/runs/<utc-timestamp>)
   --stop-at-capture    stop at the end of the update in which the state becomes `capture`
+  --record NAME        record the run to <project-dir>/recordings/NAME/ (letters, digits, `-`, `_`);
+                       starts with the capture command, or when the capture enters
+                       project.json's recording.auto_start_phase; ends with the run
+  --record-from-phase ID
+                       start the recording when the capture enters phase ID (overrides
+                       recording.auto_start_phase; needs --record)
 
-validate checks project.json, every plan file, the active plan and the orbits; it prints
-`error:`, `warning:` and `info:` lines and exits 0 without errors, 1 with errors.";
+validate checks project.json, every plan file, the active plan, the orbits and every
+recording under <project-dir>/recordings; it prints
+`error:`, `warning:` and `info:` lines and exits 0 without errors, 1 with errors.
+
+replay checks a recording's files and re-simulates it from step 0 with its inputs,
+comparing every frame bit for bit (--frames-only: check the files only). Exit 0: every
+frame identical; 1: a difference with the same target and version; 3: a difference with
+another target or version (expected, F-48); 2: usage error or invalid recording.";
 
 pub const DEFAULT_PLAN: &str = "example_plan";
 
@@ -45,8 +59,18 @@ pub enum EpochArg {
 /// What the command line asks for.
 #[derive(Debug)]
 pub enum Command {
-    Run(Args),
+    Run(Box<Args>),
     Validate(ValidateArgs),
+    Replay(ReplayArgs),
+}
+
+/// `ssg-sim replay <recording-dir> [--assets DIR] [--frames-only]`.
+#[derive(Debug)]
+pub struct ReplayArgs {
+    pub recording_dir: PathBuf,
+    pub assets: PathBuf,
+    /// Check the files without re-simulating.
+    pub frames_only: bool,
 }
 
 /// `ssg-sim validate <project-dir> [--assets DIR]`.
@@ -77,6 +101,10 @@ pub struct Args {
     pub sample_every: u64,
     pub out: Option<PathBuf>,
     pub stop_at_capture: bool,
+    /// `--record`: the name of the recording folder under `<project-dir>/recordings`.
+    pub record: Option<String>,
+    /// `--record-from-phase`: overrides the project's `recording.auto_start_phase`.
+    pub record_from_phase: Option<String>,
 }
 
 /// Parse the arguments after the program name. `Err` carries the message to
@@ -84,8 +112,9 @@ pub struct Args {
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
-        Some("run") => parse_run(args).map(Command::Run),
+        Some("run") => parse_run(args).map(|run| Command::Run(Box::new(run))),
         Some("validate") => parse_validate(args).map(Command::Validate),
+        Some("replay") => parse_replay(args).map(Command::Replay),
         Some(other) => Err(format!("unknown command `{other}`")),
         None => Err(String::new()),
     }
@@ -111,6 +140,29 @@ fn parse_validate(args: impl Iterator<Item = String>) -> Result<ValidateArgs, St
     })
 }
 
+fn parse_replay(args: impl Iterator<Item = String>) -> Result<ReplayArgs, String> {
+    let mut args = args;
+    let mut assets = PathBuf::from("assets");
+    let mut frames_only = false;
+    let mut recording_dir = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--assets" => {
+                assets = PathBuf::from(args.next().ok_or("--assets needs a value")?);
+            }
+            "--frames-only" => frames_only = true,
+            flag if flag.starts_with("--") => return Err(format!("unknown option `{flag}`")),
+            dir if recording_dir.is_none() => recording_dir = Some(PathBuf::from(dir)),
+            extra => return Err(format!("unexpected argument `{extra}`")),
+        }
+    }
+    Ok(ReplayArgs {
+        recording_dir: recording_dir.ok_or("missing <recording-dir>")?,
+        assets,
+        frames_only,
+    })
+}
+
 fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut args = args;
     let mut parsed = Args {
@@ -126,6 +178,8 @@ fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
         sample_every: 64,
         out: None,
         stop_at_capture: false,
+        record: None,
+        record_from_phase: None,
     };
     let mut project_dir = None;
     while let Some(arg) = args.next() {
@@ -144,6 +198,8 @@ fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--out" => parsed.out = Some(PathBuf::from(value("--out")?)),
             "--stop-at-capture" => parsed.stop_at_capture = true,
+            "--record" => parsed.record = Some(value("--record")?),
+            "--record-from-phase" => parsed.record_from_phase = Some(value("--record-from-phase")?),
             flag if flag.starts_with("--") => return Err(format!("unknown option `{flag}`")),
             dir if project_dir.is_none() => project_dir = Some(PathBuf::from(dir)),
             extra => return Err(format!("unexpected argument `{extra}`")),
@@ -158,6 +214,16 @@ fn parse_run(args: impl Iterator<Item = String>) -> Result<Args, String> {
         if parsed.chaser.is_none() {
             return Err("missing --chaser".to_string());
         }
+    }
+    if let Some(name) = &parsed.record
+        && (name.is_empty() || sanitize_file_stem(name) != *name)
+    {
+        return Err(format!(
+            "--record: `{name}` is not a name (use letters, digits, `-` and `_`)"
+        ));
+    }
+    if parsed.record_from_phase.is_some() && parsed.record.is_none() {
+        return Err("--record-from-phase needs --record".to_string());
     }
     if parsed.sample_every == 0 {
         return Err("--sample-every must be at least 1".to_string());

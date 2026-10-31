@@ -8,10 +8,13 @@ use bevy::light::{CascadeShadowConfigBuilder, SunDisk};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
+use bevy::pbr::Atmosphere;
+
 use crate::render::camera::setup_camera;
 use crate::render::layers::*;
+use crate::ui::replay::{ReplaySession, show_replay_frame};
 use ssg_sim::SimSet;
-use ssg_sim::session::UiScreen;
+use ssg_sim::session::{SimState, UiScreen};
 
 // Component to query Earth.
 #[derive(Component)]
@@ -120,6 +123,39 @@ pub fn setup_celestial(
     );
 }
 
+/// The Earth's translation in the replay scene (R6, C2, C7): minus the frame
+/// origin's ECI position, because every replay body sits at its bubble-frame
+/// position. Unlike the live scene it needs no body: the player interpolates the
+/// frame origin origin-aware, so the Earth moves continuously across a
+/// floating-origin reset.
+pub fn replay_earth_translation(frame_origin_eci: &[f64; 6]) -> Vec3 {
+    -Vec3::new(
+        frame_origin_eci[0] as f32,
+        frame_origin_eci[1] as f32,
+        frame_origin_eci[2] as f32,
+    )
+}
+
+/// Places the Earth and its atmosphere from the player's frame origin while a
+/// recording plays. A recording without a frame origin leaves them where they are.
+pub fn place_replay_earth(
+    session: Res<ReplaySession>,
+    mut earth: Single<&mut Transform, With<Earth>>,
+    camera: Single<(&mut Atmosphere, &RenderLayers), With<Camera3d>>,
+) {
+    let (mut atmosphere, render_layers) = camera.into_inner();
+    // The map view keeps the Earth at the map's origin.
+    if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        return;
+    }
+    let Some(origin) = session.player.view().frame_origin_eci else {
+        return;
+    };
+    let translation = replay_earth_translation(&origin);
+    earth.translation = translation;
+    atmosphere.world_position = translation;
+}
+
 fn init_celestials(mut commands: Commands) {
     commands.init_resource::<Celestials>();
 }
@@ -143,6 +179,12 @@ impl Plugin for CelestialPlugin {
                 .chain()
                 .after(SimSet::SessionInit),
         )
-        .add_systems(OnExit(UiScreen::Sim), remove_celestials);
+        .add_systems(OnExit(UiScreen::Sim), remove_celestials)
+        .add_systems(
+            Update,
+            place_replay_earth
+                .after(show_replay_frame)
+                .run_if(in_state(SimState::Replay)),
+        );
     }
 }

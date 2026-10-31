@@ -27,7 +27,7 @@ Pause is a state (`PauseState::Paused`), not a 0× warp: the multiplier keeps it
 
 ## Requested and effective warp
 
-The multiplier is the **requested** warp: the number of fixed steps (`1/64` s each) to run per `FixedUpdate` run. One run executes at most `MAX_STEPS_PER_UPDATE` (64) steps, so the app stays responsive; the number actually run is the **effective** warp. The HUD shows `8192x (effective 64x)` when the cap holds the warp back, and `Paused` when paused. No step debt is carried over, so lowering the warp takes effect at once. Bevy's catch-up window is lowered to three fixed steps, so one slow frame cannot multiply the work.
+The multiplier is the **requested** warp: the number of fixed steps (`1/64` s each) to run per `FixedUpdate` run. One run executes at most `StepCap` steps (default `MAX_STEPS_PER_UPDATE`, 64), so the app stays responsive; the number actually run is the **effective** warp. The app adapts the cap to the machine: it halves it (down to 8) after frames longer than 50 ms that ran at the cap, and doubles it (up to 512) after frames shorter than 25 ms while the requested warp is higher, at most once every half second of wall time. The command line keeps 64 (its `--warp` is at most 64). The cap changes how many steps run per update, never which steps, so it does not change the result. The HUD shows `8192x (effective 64x)` when the cap holds the warp back, and `Paused` when paused. No step debt is carried over, so lowering the warp takes effect at once. Bevy's catch-up window is lowered to three fixed steps, so one slow frame cannot multiply the work.
 
 ## Invariant
 

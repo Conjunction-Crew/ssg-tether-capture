@@ -5,10 +5,10 @@ sidebar_position: 9
 # Project files
 
 :::note Draft
-This page describes the file formats of v0.4.0-rc.1. It is a draft; the full documentation pass comes later.
+This page describes the file formats of v0.4.0-rc.2. It is a draft; the full documentation pass comes later.
 :::
 
-A project is a folder. Sharing a project means zipping the folder; opening one means pointing the application (or `ssg-sim`) at it. Every file the project holds is plain JSON, text or CSV, and every JSON file has a published [JSON Schema](#json-schemas) and an integer `schema_version`.
+A project is a folder. Sharing a project means zipping the folder; opening one means pointing the application (or `ssg-sim`) at it. Every file the project holds is plain JSON, text or CSV (except a recording's keyframe table, which is Parquet), and every JSON file has a published [JSON Schema](#json-schemas) and an integer `schema_version`.
 
 ## The project folder
 
@@ -22,7 +22,7 @@ The application's working directory is the project folder (you pick it with **Se
   exports/                CSV and OEM files exported from the application
   logs/                   Capture Log files
   runs/<utc-stamp>/       outputs of `ssg-sim run`
-  recordings/<name>/      recorded segments (the layout is fixed; see below)
+  recordings/<name>/      recorded segments (see below)
 ```
 
 Nothing is moved or rewritten when a project is opened. A folder from an earlier version (plan files only) opens as it is; a plan file is written in the new format only when you save it again.
@@ -66,10 +66,11 @@ The manifest records what a run needs besides the plan: the start epoch, the act
 | `source` | Where the orbit came from (dataset path and NORAD id). Provenance only; a missing dataset file is a warning. |
 | `mass_kg` | Mass in kg. The target's is applied; the chaser's is not yet. |
 | `built_with` | The build that wrote the file. Only `ssg-sim validate` reads it, to say when the build or platform differs: results are bit-identical only on the same build and platform ([Determinism](./determinism)). |
+| `recording` | Optional: the project's recording settings ([below](#the-recording-block)). Absent: recordings start and stop only by hand. |
 
 The chaser's `mass_kg`, both `inertia_kg_m2` and `orbit.relative_to_target` are part of the schema but refused with "applied from v0.4.0-rc.4" until the release that implements them. A file never silently simulates differently from what it says.
 
-The application writes `project.json` when you start a simulation and starts from what it wrote; opening the project restores the start epoch and the two bodies. `ssg-sim run <project>` reads the same file, so the same files give the same inputs in both ([Running without a window](../getting-started/headless-cli#running-from-projectjson)).
+The application writes `project.json` when you start a simulation (keeping its `recording` block) and starts from what it wrote; opening the project restores the start epoch and the two bodies. `ssg-sim run <project>` reads the same file, so the same files give the same inputs in both ([Running without a window](../getting-started/headless-cli#running-from-projectjson)).
 
 ## Capture plans, schema v1
 
@@ -112,7 +113,7 @@ The defaults are the values the simulation used before they became configurable,
 
 **All conditions of a transition must hold** (logical AND). In each step at most one transition fires: the first one, in file order, whose conditions hold.
 
-The `end` key marks a phase as the conclusion of the capture. In v0.4.0-rc.1 the file format and its validation exist; what the simulation does on reaching an end phase is defined later.
+The `end` key marks a phase as the conclusion of the capture. When the capture enters an end phase, the simulation writes the log line `Capture ended: success (phase <id>)` (or `abort`) and an end event that a running recording uses to stop after its delay ([Recordings](./recordings#starting-and-stopping)). Nothing else changes: the controller keeps running in the end phase.
 
 ## Opening a v0 plan
 
@@ -164,32 +165,78 @@ An OEM file has `CCSDS_OEM_VERS = 2.0`, one segment for the target and one for t
 
 ## Recordings
 
-A recording stores a short interaction segment of a running simulation in the project folder. This release fixes the layout and the manifest; recording and playback arrive in a later release. The layout is:
+A recording stores a segment of a running simulation; what it holds, how it starts and stops, and how it is played and checked is described in [Recordings](./recordings). A recording folder is written as `recordings/<name>.partial/` and renamed when it is complete:
 
 ```text
 recordings/<name>/
   manifest.json      the recording manifest (schema v1)
-  inputs.jsonl       one JSON object per line: {"step": <u64>, "command": …}
-                     for every input that affects the simulation
-  keyframes.parquet  one row per body per keyframe
-  keyframes.csv      the same columns, for tiny segments (instead of the Parquet file)
+  inputs.jsonl       the input log from step 0, one JSON object per line: {"step": <u64>, "command": …}
+  keyframes.parquet  one row per body per frame
+  frames.jsonl       one line per frame: step, epoch, phase, sphere radius, frame origin, origin shift
+  transitions.jsonl  one line per capture transition in the segment
+  log.jsonl          the segment's log events
 ```
 
-The keyframe table has one row per body per keyframe, with the columns `step` (INT64), `body` (INT32, an `index` of the manifest's body table) and, as DOUBLE, `position_m_x`, `position_m_y`, `position_m_z`, `rotation_x`, `rotation_y`, `rotation_z`, `rotation_w`, `velocity_mps_x`, `velocity_mps_y`, `velocity_mps_z`, `angular_velocity_radps_x`, `angular_velocity_radps_y`, `angular_velocity_radps_z`. Later releases may add columns; the columns above keep their meaning.
+**`inputs.jsonl`** holds every input that affects the simulation, from step 0 of the session (also before the recording started), ordered by step. The first line is the number of fixed steps the spawn update ran, `{"step": k, "command": {"session_start": {"steps_before_propagators": k}}}`; each capture start follows as `{"step": <the step it was applied after>, "command": {"start_capture": {"target": "target", "plan_id": "<id>"}}}`.
+
+**`keyframes.parquet`** has one row per body per frame, with the columns `step` (INT64), `body` (INT32, an `index` of the manifest's body table) and, as DOUBLE, `position_m_x`, `position_m_y`, `position_m_z`, `rotation_x`, `rotation_y`, `rotation_z`, `rotation_w`, `velocity_mps_x`, `velocity_mps_y`, `velocity_mps_z`, `angular_velocity_radps_x`, `angular_velocity_radps_y`, `angular_velocity_radps_z`. The values are in the simulation's local frame and are stored exactly (plain encoding, no compression), 64 frames per row group with a shorter last one. A frame is taken at `start_step`, every `keyframe_interval_steps` after it, and at `end_step`. Later releases may add columns; the columns above keep their meaning.
+
+**`frames.jsonl`** has one line per frame, in the order of the table:
+
+```json
+{"step":162547,"epoch_utc":"2026-04-03T16:46:06.799339Z","phase":"capture","capture_sphere_radius_m":4.99960937501819,"frame_origin_eci":[5688404.548055969,3714844.426850873,1004419.4278612267,-3269.920460524945,5952.755114869788,-3442.3836914584326],"origin_shift_m":[0.0,0.0,0.0],"origin_shift_mps":[0.0,0.0,0.0]}
+```
+
+`frame_origin_eci` is the ECI position (m) and velocity (m/s) of the local frame's origin. `origin_shift_m` and `origin_shift_mps` are the sum of the floating-origin resets since the previous frame (zero in the first frame and in most others): every body's local state moved by minus that shift. Numbers are written so that they read back exactly.
+
+**`transitions.jsonl`** has one line per capture transition inside the segment: `{"step", "epoch_utc", "from", "to", "reason"}`. **`log.jsonl`** has the segment's log events in the format of a saved [Capture Log](./capture-log).
 
 The manifest says what was recorded and how to read the rest:
 
 | Key | Meaning |
 |---|---|
 | `schema_version` | `1` |
-| `built_with` | The build that recorded (`app_version`, `target`, `avian_features`). A recording replays bit for bit only on the same build and platform. |
+| `built_with` | The build that recorded (`app_version`, `target`, `avian_features`). A recording re-simulates bit for bit only on the machine that recorded it ([Recordings](./recordings#what-re-simulation-promises)). |
 | `plan_id`, `plan` | The id of the capture plan and a copy of it (schema v1) as it was when the recording started. |
-| `start_step`, `start_epoch_utc` | The simulation step and epoch at which the recording starts. |
-| `keyframe_interval_steps` | Steps between two keyframes; at least 1. |
+| `start_step`, `start_epoch_utc` | The simulation step and epoch of the first frame. |
+| `keyframe_interval_steps` | Steps between two frames (K); at least 1. |
 | `bodies` | The recorded bodies: `index` (the position in the list, also the `body` column), `role` (`target`, `tether_root`, `tether_node` or `tether_tail`) and `name`. |
-| `limits` | `max_duration_s` (the longest segment in simulation seconds) and `max_tether_bodies` (every body except the target). |
+| `limits` | `max_duration_s` (the longest segment in simulation seconds), `max_tether_bodies` (every body except the target) and, optionally, `max_size_mb` (greater than 0). |
+| `project` | Optional: the scenario at the start (`project.json` as the run used it). Absent: the recording plays but cannot be re-simulated. |
+| `source` | Optional: the program that wrote it, `app` or `cli`. A recording whose input log lacks its first line can be re-simulated only when `source` is `cli`. |
+| `end_step` | Optional: the step of the last frame; at least `start_step`. |
+| `end_reason` | Optional: `manual`, `end_success`, `end_abort`, `max_duration`, `max_size` or `session_end`. |
+| `start_trigger`, `start_phase` | Optional: `manual` or `phase`; `start_phase` (the phase that started it) is present exactly when `start_trigger` is `phase`. |
 
 The recording budget is sized for tethers of up to 200 bodies; the default 20 m tether has 192.
+
+### The `recording` block
+
+`project.json` may carry the project's recording settings. Every key is optional and falls back to its default; a project without the block records only by hand.
+
+```json
+"recording": {
+  "auto_start_phase": "capture",
+  "auto_stop_on_end": true,
+  "stop_after_end_s": 60,
+  "keyframe_interval_steps": 32,
+  "max_duration_s": 1800,
+  "max_size_mb": 100,
+  "max_tether_bodies": 200
+}
+```
+
+| Key | Default | Rule |
+|---|---|---|
+| `auto_start_phase` | none (no automatic start) | Start a recording when the capture enters this phase. A name that is not a phase of the active plan is a warning. |
+| `auto_stop_on_end` | `true` | Stop `stop_after_end_s` after the capture enters an end phase. |
+| `stop_after_end_s` | 60 | Simulated seconds recorded after the end event; greater than 0. |
+| `keyframe_interval_steps` | 32 | Steps between two frames (K); at least 1. |
+| `max_duration_s` | 1800 | The longest recording in simulated seconds; greater than 0. |
+| `max_size_mb` | 100 | The largest keyframe table in MB; greater than 0. |
+| `max_tether_bodies` | 200 | A tether with more bodies is not recorded; at least 1. |
+
+The application's Recording window edits these settings and **Save** writes them into `project.json`. `ssg-sim run --record` reads them too ([Running without a window](../getting-started/headless-cli#recording-a-run)).
 
 ## Checking a project from the command line
 
@@ -197,7 +244,7 @@ The recording budget is sized for tethers of up to 200 bodies; the default 20 m 
 ssg-sim validate my-project
 ```
 
-reads `project.json` and every plan file and prints one `error:`, `warning:` or `info:` line per finding, then the totals; the exit code is 0 without errors and 1 with errors. See [Running without a window](../getting-started/headless-cli#checking-a-project).
+reads `project.json`, every plan file and every recording under `recordings/` and prints one `error:`, `warning:` or `info:` line per finding, then the totals; the exit code is 0 without errors and 1 with errors. See [Running without a window](../getting-started/headless-cli#checking-a-project).
 
 ## JSON Schemas
 

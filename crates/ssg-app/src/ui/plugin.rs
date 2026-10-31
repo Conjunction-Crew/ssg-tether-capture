@@ -25,6 +25,15 @@ use crate::ui::input::{
     change_time_warp, step_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
 };
 use crate::ui::log_ui::{CaptureLogUiState, CapturePlanLoadErrors};
+use crate::ui::recording::{
+    RecordingPanel, adapt_step_cap, collect_recorder_events, install_recording_sink,
+    recording_window, reset_recording_panel, reset_step_cap,
+};
+use crate::ui::replay::{
+    RecordingsList, ReturnToSim, advance_replay, poll_open_recording, recordings_window,
+    remove_replay_session, reset_recordings_list, return_to_sim, scan_recordings_system,
+    show_replay_frame, show_replay_in_scene_view, spawn_replay_bodies, transport_window,
+};
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
     dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
@@ -101,6 +110,9 @@ impl Plugin for UiPlugin {
             .init_resource::<CapturePlanLoadErrors>()
             .init_resource::<CaptureLogUiState>()
             .init_resource::<CsvExportState>()
+            .init_resource::<RecordingPanel>()
+            .init_resource::<RecordingsList>()
+            .init_resource::<ReturnToSim>()
             .init_resource::<SpaceCatalogUiState>()
             .init_resource::<FilteredSpaceCatalogResults>()
             .init_resource::<Settings>()
@@ -113,13 +125,47 @@ impl Plugin for UiPlugin {
                     toggle_map_view,
                     toggle_origin,
                     toggle_capture_gizmos,
-                    change_time_warp,
                     update_time_warp_readout,
                     update_capture_telemetry,
                     update_capture_guidance,
                 )
                     .run_if(in_state(UiScreen::Sim)),
             )
+            // The warp keys do nothing in a replay (the player has its own speeds).
+            .add_systems(
+                Update,
+                change_time_warp
+                    .run_if(in_state(UiScreen::Sim))
+                    .run_if(not(in_state(SimState::Replay))),
+            )
+            .add_systems(
+                OnEnter(UiScreen::Sim),
+                (reset_recording_panel, reset_recordings_list, reset_step_cap),
+            )
+            .add_systems(OnEnter(SimState::Running), install_recording_sink)
+            .add_systems(
+                Update,
+                (
+                    adapt_step_cap.run_if(in_state(SimState::Running)),
+                    collect_recorder_events,
+                    (scan_recordings_system, poll_open_recording).run_if(in_state(SimState::Setup)),
+                    (advance_replay, show_replay_frame)
+                        .chain()
+                        .run_if(in_state(SimState::Replay)),
+                )
+                    .run_if(in_state(UiScreen::Sim)),
+            )
+            .add_systems(
+                OnEnter(SimState::Replay),
+                (
+                    cleanup_project_detail_screen,
+                    spawn_replay_bodies,
+                    show_replay_in_scene_view,
+                )
+                    .chain(),
+            )
+            .add_systems(OnExit(SimState::Replay), remove_replay_session)
+            .add_systems(Update, return_to_sim.run_if(in_state(UiScreen::Home)))
             .add_systems(
                 PostUpdate,
                 map_orbitals
@@ -204,6 +250,15 @@ impl Plugin for UiPlugin {
                 EguiPrimaryContextPass,
                 (egui_terminal_panel, egui_plots)
                     .chain()
+                    .run_if(in_state(UiScreen::Sim)),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                (
+                    recording_window.run_if(in_state(SimState::Running)),
+                    recordings_window.run_if(in_state(SimState::Setup)),
+                    transport_window.run_if(in_state(SimState::Replay)),
+                )
                     .run_if(in_state(UiScreen::Sim)),
             );
     }
@@ -451,8 +506,13 @@ fn start_from_project_file(
             message,
         });
     };
-    let name = read_manifest_file(dir)
-        .and_then(|report| report.manifest)
+    // The file is rewritten from the selection; the recording settings are not part
+    // of it and carry over.
+    let previous = read_manifest_file(dir).and_then(|report| report.manifest);
+    let recording = previous
+        .as_ref()
+        .and_then(|manifest| manifest.recording.clone());
+    let name = previous
         .map(|manifest| manifest.name)
         .or_else(|| {
             dir.file_name()
@@ -466,7 +526,10 @@ fn start_from_project_file(
         active_plan,
         selection,
     ) {
-        Ok(manifest) => manifest,
+        Ok(manifest) => ProjectManifest {
+            recording,
+            ..manifest
+        },
         // Nothing to write; the sim reports the missing body as before.
         Err(_) => return,
     };
@@ -1011,6 +1074,40 @@ mod start_from_project_file_tests {
             target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
             chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
         }
+    }
+
+    #[test]
+    fn start_keeps_the_recording_settings_of_project_json() {
+        let dir = TempDir::new("app-start-recording");
+        let selection = both_bodies();
+        start(
+            dir.path(),
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            selection.clone(),
+        );
+        // The Recording window's Save put a block into the file.
+        let mut manifest = read_manifest_file(dir.path()).unwrap().manifest.unwrap();
+        let block = ssg_sim::project::manifest::RecordingBlock {
+            auto_start_phase: Some("capture".to_string()),
+            keyframe_interval_steps: Some(16),
+            ..Default::default()
+        };
+        manifest.recording = Some(block.clone());
+        ssg_sim::project::manifest::save_manifest(dir.path(), &manifest).unwrap();
+
+        let (_, _, logged) = start(
+            dir.path(),
+            SimConfig {
+                start_epoch: fixed_epoch(),
+            },
+            selection,
+        );
+
+        assert!(logged.is_empty(), "{logged:?}");
+        let kept = read_manifest_file(dir.path()).unwrap().manifest.unwrap();
+        assert_eq!(kept.recording, Some(block));
     }
 
     #[test]

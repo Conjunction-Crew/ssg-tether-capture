@@ -21,13 +21,25 @@ pub const PHYS_DT: f64 = 1.0 / FIXED_HZ;
 /// so 64 steps take about 37 ms and 128 about 74 ms.
 pub const MAX_STEPS_PER_UPDATE: u32 = 64;
 
-/// Runs `min(multiplier, MAX_STEPS_PER_UPDATE)` fixed steps and records the count
-/// as the effective warp. No step debt is carried over.
+/// The fixed steps one `FixedUpdate` run may execute (F-46, R9); default
+/// [`MAX_STEPS_PER_UPDATE`]. It changes how many steps run per update, never which
+/// steps. The CLI keeps the default; the replay driver raises it for the update
+/// that spawns the bodies when the recording's k is larger.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StepCap(pub u32);
+
+impl Default for StepCap {
+    fn default() -> Self {
+        Self(MAX_STEPS_PER_UPDATE)
+    }
+}
+
+/// Runs `min(multiplier, StepCap)` fixed steps and records the count as the
+/// effective warp. No step debt is carried over. The cap is read once, before the
+/// first step (C8).
 pub fn fixed_physics_step(world: &mut World) {
-    let steps = world
-        .resource::<WorldTime>()
-        .multiplier
-        .min(MAX_STEPS_PER_UPDATE);
+    let cap = world.get_resource::<StepCap>().copied().unwrap_or_default();
+    let steps = world.resource::<WorldTime>().multiplier.min(cap.0);
     for _ in 0..steps {
         // `Time<Physics>` is advanced once, by avian's `run_physics_schedule`
         // (F-38: fixed in P4).
@@ -76,8 +88,8 @@ pub fn setup_time(
 pub struct WorldTime {
     /// The requested warp: fixed steps per `FixedUpdate` run.
     pub multiplier: u32,
-    /// The fixed steps the last `FixedUpdate` run executed (at most
-    /// [`MAX_STEPS_PER_UPDATE`]); 0 before the first run.
+    /// The fixed steps the last `FixedUpdate` run executed (at most the
+    /// [`StepCap`]); 0 before the first run.
     pub effective_multiplier: u32,
     pub epoch: Epoch,
     pub start_epoch: Epoch,
@@ -138,6 +150,7 @@ impl Plugin for TimePlugin {
             .insert_resource(Gravity(DVec3::ZERO))
             .insert_resource(SubstepCount(4)) // Avian3d Substep Count
             .insert_resource(Time::<Fixed>::from_hz(FIXED_HZ)) // FixedUpdate rate
+            .init_resource::<StepCap>()
             .add_systems(
                 FixedUpdate,
                 fixed_physics_step
@@ -155,6 +168,7 @@ impl Plugin for TimePlugin {
                     SimStep::Bubble,
                     SimStep::RelativeDynamics,
                     SimStep::Capture,
+                    SimStep::Record,
                 )
                     .chain()
                     .in_set(PhysicsSystems::Last)

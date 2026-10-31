@@ -2,7 +2,8 @@
 //!
 //! The sim spawns bodies with [`TetherShape`] / [`DebrisBody`] markers; these
 //! systems attach the visuals in the same `OnEnter(SimState::Running)` schedule,
-//! after the spawn set. Not in `Update`: avian's
+//! after the spawn set. A replay (`SimState::Replay`) attaches the same visuals
+//! to its visual-only bodies. Not in `Update`: avian's
 //! `init_collider_constructor_hierarchies` runs there and strips
 //! `ColliderConstructorHierarchy` from a body that has no `SceneRoot` yet.
 
@@ -10,6 +11,7 @@ use bevy::{camera::visibility::RenderLayers, platform::collections::HashMap, pre
 
 use crate::render::camera::CameraTarget;
 use crate::render::layers::SCENE_LAYER;
+use crate::ui::replay::spawn_replay_bodies;
 use ssg_sim::SimSet;
 use ssg_sim::anchor::SimAnchor;
 use ssg_sim::session::SimState;
@@ -111,6 +113,13 @@ impl Plugin for AttachPlugin {
                 attach_camera_target,
             )
                 .after(SimSet::SpawnBodies),
+        )
+        // The replay bodies carry the same markers, so the same systems give
+        // them their meshes and the debris model (no collider is built: the
+        // replay world has no physics).
+        .add_systems(
+            OnEnter(SimState::Replay),
+            (attach_tether_visuals, attach_debris_scene).after(spawn_replay_bodies),
         );
     }
 }

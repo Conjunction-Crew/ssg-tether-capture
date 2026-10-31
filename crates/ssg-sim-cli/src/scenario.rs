@@ -8,6 +8,7 @@
 //! absolute step, never by tick count. At the same absolute step the two are
 //! bit-identical, which `crates/ssg-sim-cli/tests/harness_parity.rs` checks.
 
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use avian3d::collider_tree::ColliderTreeDiagnostics;
@@ -28,7 +29,12 @@ use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::orbit::selection::{OrbitalSelectionSource, OrbitalSelectionState};
 use ssg_sim::physics_bubble::body_eci_state;
-use ssg_sim::project::{AssetsDir, SelectedProject, format_utc};
+use ssg_sim::project::manifest::{ProjectManifest, read_manifest_file};
+use ssg_sim::project::recording::RecordingSource;
+use ssg_sim::project::{AssetsDir, SelectedProject, format_utc, parse_utc};
+use ssg_sim::recording::RecordingSink;
+use ssg_sim::recording::files::{FileSink, RecordingContext, WrittenRecording};
+use ssg_sim::recording::recorder::{RecorderCommand, RecordingSettings};
 use ssg_sim::session::{SimState, UiScreen};
 use ssg_sim::telemetry::{EphemerisSample, LogEvent, LogLevel};
 use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
@@ -64,6 +70,10 @@ pub struct Run {
     /// The labels of the two bodies (`OBJECT_NAME` in `ephemeris.oem`).
     pub target_label: String,
     pub chaser_label: String,
+    /// The GP records' `OBJECT_ID`s (`OBJECT_ID` in `ephemeris.oem`), when the
+    /// bodies are GP picks that have one.
+    pub target_object_id: Option<String>,
+    pub chaser_object_id: Option<String>,
     pub epoch_mode: &'static str,
     /// The start epoch as an `Epoch` (`CREATION_DATE` of `ephemeris.oem`) and as
     /// its `format_utc` string.
@@ -77,12 +87,31 @@ pub struct Run {
     pub ephemeris: Vec<EphemerisSample>,
     pub last: Sample,
     pub wall: Duration,
+    /// One entry per recording the run made (`--record`), oldest first.
+    pub recordings: Vec<Result<WrittenRecording, String>>,
 }
 
 pub fn run(args: &Args) -> Result<Run, String> {
     let started = Instant::now();
     let inputs = resolve(args)?;
-    let reference_epoch = inputs.start_epoch;
+    if let Some(name) = &args.record {
+        let recordings = args.project_dir.join("recordings");
+        if recordings.join(name).exists() || recordings.join(format!("{name}.partial")).exists() {
+            return Err(format!(
+                "--record: recording `{name}` already exists in {}",
+                recordings.display()
+            ));
+        }
+    }
+    // A recording keeps the start epoch as the project file writes it, to the
+    // microsecond; `now` is rounded the same way so a replay starts from the same
+    // epoch.
+    let reference_epoch = match (&args.record, inputs.epoch_mode) {
+        (Some(_), "now") => {
+            parse_utc(&format_utc(inputs.start_epoch)).unwrap_or(inputs.start_epoch)
+        }
+        _ => inputs.start_epoch,
+    };
     let (target, chaser) = (inputs.target.clone(), inputs.chaser.clone());
     let label = |source: &OrbitalSelectionSource| match source {
         OrbitalSelectionSource::Catalog { label, .. }
@@ -90,29 +119,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
     };
     let (target_label, chaser_label) = (label(&target.source), label(&chaser.source));
 
-    let mut app = App::new();
-    app.add_plugins((
-        MinimalPlugins,
-        StatesPlugin,
-        AssetPlugin::default(),
-        InputPlugin,
-        ScenePlugin,
-    ))
-    .init_asset::<Mesh>()
-    .add_plugins(SimPlugins)
-    .init_resource::<CollisionDiagnostics>()
-    .init_resource::<SpatialQueryDiagnostics>()
-    .init_resource::<SolverDiagnostics>()
-    .init_resource::<ColliderTreeDiagnostics>()
-    .insert_resource(AssetsDir(args.assets.clone()))
     // The sim start epoch: `--epoch`, with `now` resolved once above (F-06).
-    .insert_resource(SimConfig {
-        start_epoch: reference_epoch,
-    })
-    // One `app.update()` = one fixed step (the P2 clock recipe, D8).
-    .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        PHYS_DT,
-    )));
+    let mut app = sim_app(&args.assets, reference_epoch);
 
     let plan = load_plans(&mut app, args, inputs.plan.as_deref())?;
     app.world_mut().resource_mut::<SelectedProject>().project_id = Some(plan.clone());
@@ -121,6 +129,20 @@ pub fn run(args: &Args) -> Result<Run, String> {
         selection.target = Some(target);
         selection.chaser = Some(chaser);
     }
+    let recording = match &args.record {
+        Some(name) => Some(set_up_recording(
+            &mut app,
+            args,
+            name,
+            &RecordedRun {
+                plan: &plan,
+                manifest: read_manifest_file(&args.project_dir).and_then(|report| report.manifest),
+                start_epoch: reference_epoch,
+                target_label: &target_label,
+            },
+        )?),
+        None => None,
+    };
 
     app.world_mut()
         .resource_mut::<NextState<UiScreen>>()
@@ -158,6 +180,17 @@ pub fn run(args: &Args) -> Result<Run, String> {
             target: Some(debris),
             plan_id: plan.clone(),
         });
+    // The recording starts with the capture command unless a phase starts it.
+    if let Some(name) = &args.record
+        && app
+            .world()
+            .resource::<RecordingSettings>()
+            .auto_start_phase
+            .is_none()
+    {
+        app.world_mut()
+            .write_message(RecorderCommand::Start { name: name.clone() });
+    }
     app.update();
     app.world_mut().resource_mut::<WorldTime>().multiplier = args.warp;
 
@@ -206,6 +239,25 @@ pub fn run(args: &Args) -> Result<Run, String> {
             break;
         }
     }
+    // The run ends the session, and a recording still running ends with it.
+    let recordings = match recording {
+        Some(sink) => {
+            app.world_mut()
+                .resource_mut::<NextState<UiScreen>>()
+                .set(UiScreen::Home);
+            app.update();
+            let results = sink.results();
+            if results.is_empty() {
+                let why = match &app.world().resource::<RecordingSettings>().auto_start_phase {
+                    Some(phase) => format!("the capture never entered phase `{phase}`"),
+                    None => "the recorder did not start (see the warnings above)".to_string(),
+                };
+                eprintln!("ssg-sim: warning: no recording was made: {why}");
+            }
+            results
+        }
+        None => Vec::new(),
+    };
     if args.stop_at_capture && last.state != "capture" {
         return Err(format!(
             "no capture within {} steps (final state `{}`)",
@@ -221,6 +273,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
         chaser: inputs.chaser_id,
         target_label,
         chaser_label,
+        target_object_id: inputs.target.gp.and_then(|gp| gp.object_id),
+        chaser_object_id: inputs.chaser.gp.and_then(|gp| gp.object_id),
         start: start_epoch,
         start_epoch: format_utc(start_epoch),
         steps: updates * warp,
@@ -229,7 +283,100 @@ pub fn run(args: &Args) -> Result<Run, String> {
         ephemeris,
         last,
         wall: started.elapsed(),
+        recordings,
     })
+}
+
+/// The headless app `run` and `replay` build: the sim plugins, the assets
+/// directory and the start epoch; one `app.update()` = one fixed step at warp 1
+/// (the P2 clock recipe, D8).
+pub fn sim_app(assets: &Path, start_epoch: Epoch) -> App {
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        StatesPlugin,
+        AssetPlugin::default(),
+        InputPlugin,
+        ScenePlugin,
+    ))
+    .init_asset::<Mesh>()
+    .add_plugins(SimPlugins)
+    .init_resource::<CollisionDiagnostics>()
+    .init_resource::<SpatialQueryDiagnostics>()
+    .init_resource::<SolverDiagnostics>()
+    .init_resource::<ColliderTreeDiagnostics>()
+    .insert_resource(AssetsDir(assets.to_path_buf()))
+    .insert_resource(SimConfig { start_epoch })
+    .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
+        PHYS_DT,
+    )));
+    app
+}
+
+/// What a recording needs to know about the run.
+struct RecordedRun<'a> {
+    plan: &'a str,
+    /// The project's `project.json`, when it has one: its name and `recording` block.
+    manifest: Option<ProjectManifest>,
+    start_epoch: Epoch,
+    target_label: &'a str,
+}
+
+/// Installs the recorder's settings (`project.json`'s `recording` block, then
+/// `--record-from-phase`) and a file sink writing `<project>/recordings/<name>/`.
+fn set_up_recording(
+    app: &mut App,
+    args: &Args,
+    name: &str,
+    run: &RecordedRun,
+) -> Result<FileSink, String> {
+    let block = run.manifest.as_ref().and_then(|m| m.recording.as_ref());
+    let mut settings = RecordingSettings::from_block(block);
+    let plan = app.world().resource::<CapturePlanLibrary>().plans[run.plan].clone();
+    match &args.record_from_phase {
+        Some(phase) => {
+            if !plan.phases.iter().any(|p| &p.id == phase) {
+                eprintln!(
+                    "ssg-sim: warning: --record-from-phase: no phase `{phase}` in plan `{}`; \
+                     the recording would never start",
+                    plan.id
+                );
+            }
+            settings.auto_start_phase = Some(phase.clone());
+        }
+        None => {
+            if let Some(warning) = block.and_then(|b| b.auto_start_warning(&plan)) {
+                eprintln!("ssg-sim: warning: {warning}");
+            }
+        }
+    }
+    // The scenario as it runs (flags laid over project.json), so a replay needs
+    // no dataset.
+    let mut project = {
+        let selection = app.world().resource::<OrbitalSelectionState>();
+        ProjectManifest::from_selection(
+            run.manifest
+                .as_ref()
+                .map_or("ssg-sim run", |m| m.name.as_str()),
+            run.start_epoch,
+            Some(run.plan),
+            selection,
+        )?
+    };
+    project.recording = block.cloned();
+    let sink = FileSink::new(RecordingContext {
+        recordings_dir: args.project_dir.join("recordings"),
+        default_name: name.to_string(),
+        source: RecordingSource::Cli,
+        plan_id: run.plan.to_string(),
+        plan,
+        project: Some(project),
+        settings: settings.clone(),
+        target_name: run.target_label.to_string(),
+    });
+    app.insert_resource(settings);
+    app.insert_resource(RecordingSink(Box::new(sink.clone())));
+    Ok(sink)
 }
 
 fn sample(app: &App, debris: Entity, root: Entity) -> Result<Sample, String> {
