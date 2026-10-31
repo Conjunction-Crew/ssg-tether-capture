@@ -207,19 +207,21 @@ fn the_earth_is_placed_at_minus_the_frame_origin() {
     );
 }
 
-/// A counter of the times the sim screen was entered.
+/// The sim state at each entry of the sim screen.
 #[derive(Resource, Default)]
-struct ScreenEntries(u32);
+struct ScreenEntries(Vec<SimState>);
 
 #[test]
 fn a_replay_runs_no_physics_and_exit_returns_to_a_fresh_setup() {
     let mut app = test_app();
     app.init_resource::<ScreenEntries>().add_systems(
         OnEnter(UiScreen::Sim),
-        |mut entries: ResMut<ScreenEntries>| entries.0 += 1,
+        |mut entries: ResMut<ScreenEntries>, sim_state: Res<State<SimState>>| {
+            entries.0.push(sim_state.get().clone());
+        },
     );
     enter_sim(&mut app);
-    assert_eq!(app.world().resource::<ScreenEntries>().0, 1);
+    assert_eq!(app.world().resource::<ScreenEntries>().0, [SimState::Setup]);
 
     app.world_mut()
         .resource_mut::<NextState<SimState>>()
@@ -255,7 +257,7 @@ fn a_replay_runs_no_physics_and_exit_returns_to_a_fresh_setup() {
     );
     assert_eq!(
         app.world().resource::<ScreenEntries>().0,
-        2,
-        "the sim screen is entered again, so its setup screen is rebuilt"
+        [SimState::Setup, SimState::Setup],
+        "the sim screen is entered again, already in its setup state, so its setup screen is rebuilt"
     );
 }
