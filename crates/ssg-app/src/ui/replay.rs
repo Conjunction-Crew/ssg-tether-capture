@@ -7,14 +7,17 @@
 
 use std::path::{Path, PathBuf};
 
+use bevy::ecs::system::SystemParam;
 use bevy::math::DVec3;
+use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_egui::{EguiContexts, egui};
 
-use crate::render::camera::CameraTarget;
-use crate::render::layers::SCENE_LAYER;
-use crate::ui::recording::megabytes;
+use crate::render::camera::{CameraTarget, set_map_view};
+use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
+use crate::ui::events::UiEvent;
+use crate::ui::recording::{WINDOW_POS, megabytes};
 use ssg_sim::capture::plan::CapturePlan;
 use ssg_sim::project::manifest::BuiltWith;
 use ssg_sim::project::recording::{
@@ -68,6 +71,13 @@ pub struct RecordingEntry {
     /// Why the recording cannot be opened, when it cannot.
     pub error: Option<String>,
 }
+
+/// Set by Exit replay: the sim screen is left for Home and entered again on the
+/// next frame, as a restart does. Entering `UiScreen::Sim` again from itself
+/// would run its OnExit/OnEnter but despawn nothing (`DespawnOnExit` skips a
+/// transition to the same state): two cameras, two Earths.
+#[derive(Resource, Default)]
+pub struct ReturnToSim(pub bool);
 
 /// The Recordings window's list and the load in flight.
 #[derive(Resource, Default)]
@@ -281,15 +291,28 @@ pub(crate) fn apply_view(view: &FrameView, bodies: &mut Query<(&ReplayBody, &mut
     }
 }
 
+/// The body the camera follows in a replay: the tether root, as in the live sim
+/// (the anchor, Q15), or the debris.
+pub(crate) fn followed_body(roles: &[RecordingBodyRole], debris: bool) -> Option<usize> {
+    let role = if debris {
+        RecordingBodyRole::Target
+    } else {
+        RecordingBodyRole::TetherRoot
+    };
+    roles.iter().position(|r| *r == role)
+}
+
 /// `OnEnter(SimState::Replay)`: one visual-only body per recorded body. The
 /// target carries the debris marker (the renderer attaches its model), the tether
-/// bodies their [`TetherShape`]; nothing of the physics.
+/// bodies their [`TetherShape`]; nothing of the physics. The camera follows the
+/// tether root.
 pub fn spawn_replay_bodies(
     mut commands: Commands,
     session: Res<ReplaySession>,
     mut log: MessageWriter<ssg_sim::telemetry::LogEvent>,
 ) {
     let view = session.player.view();
+    let followed = followed_body(&session.roles, false).or(followed_body(&session.roles, true));
     for (index, shape) in session.shapes.iter().enumerate() {
         let state = view.bodies.get(index);
         let mut entity = commands.spawn((
@@ -307,13 +330,13 @@ pub fn spawn_replay_bodies(
                 entity.insert(*shape);
             }
             None => {
-                entity.insert((
-                    DebrisBody {
-                        model_path: "models/broken_satellite.glb".to_string(),
-                    },
-                    CameraTarget,
-                ));
+                entity.insert(DebrisBody {
+                    model_path: "models/broken_satellite.glb".to_string(),
+                });
             }
+        }
+        if followed == Some(index) {
+            entity.insert(CameraTarget);
         }
     }
     log.write(ssg_sim::telemetry::LogEvent {
@@ -337,8 +360,40 @@ pub fn show_replay_frame(
     apply_view(&session.player.view(), &mut bodies);
 }
 
+/// `OnEnter(SimState::Replay)`: a replay opens in the detail view, where its
+/// bodies are (the setup screen leaves the camera on the map).
+pub fn show_replay_in_scene_view(
+    camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings), With<Camera3d>>,
+) {
+    let (render_layers, atmosphere, atmosphere_settings) = camera.into_inner();
+    if render_layers.intersects(&RenderLayers::layer(MAP_LAYER)) {
+        set_map_view(render_layers, atmosphere, atmosphere_settings);
+    }
+}
+
 pub fn remove_replay_session(mut commands: Commands) {
     commands.remove_resource::<ReplaySession>();
+}
+
+/// Leaves the replay for a fresh sim screen in its setup state ([`ReturnToSim`]).
+pub(crate) fn exit_replay(
+    next_sim_state: &mut NextState<SimState>,
+    next_screen: &mut NextState<UiScreen>,
+    pending: &mut ReturnToSim,
+) {
+    next_sim_state.set(SimState::Setup);
+    next_screen.set(UiScreen::Home);
+    pending.0 = true;
+}
+
+/// On Home after Exit replay: back to the sim screen.
+pub fn return_to_sim(
+    mut pending: ResMut<ReturnToSim>,
+    mut next_screen: ResMut<NextState<UiScreen>>,
+) {
+    if std::mem::take(&mut pending.0) {
+        next_screen.set(UiScreen::Sim);
+    }
 }
 
 // ─── Windows ──────────────────────────────────────────────────────────────────
@@ -391,7 +446,7 @@ pub fn recordings_window(mut contexts: EguiContexts, mut list: ResMut<Recordings
     let mut refresh = false;
     let available_rect = ctx.available_rect();
     egui::Window::new("Recordings")
-        .default_pos(egui::Pos2::new(16.0, 120.0))
+        .default_pos(WINDOW_POS)
         .constrain_to(available_rect)
         .show(ctx, |ui| {
             if ui.button("Refresh").clicked() {
@@ -453,15 +508,49 @@ pub fn recordings_window(mut contexts: EguiContexts, mut list: ResMut<Recordings
     }
 }
 
+/// The camera's view and the body it follows, for the Transport window.
+#[derive(SystemParam)]
+pub struct ReplayCamera<'w, 's> {
+    layers: Query<'w, 's, &'static RenderLayers, With<Camera3d>>,
+    bodies: Query<'w, 's, (Entity, &'static ReplayBody, Has<CameraTarget>)>,
+    ui_events: MessageWriter<'w, UiEvent>,
+    commands: Commands<'w, 's>,
+}
+
+impl ReplayCamera<'_, '_> {
+    /// Moves the camera to the body at `index`.
+    fn follow(&mut self, index: usize) {
+        for (entity, body, followed) in &self.bodies {
+            if followed && body.index != index {
+                self.commands.entity(entity).remove::<CameraTarget>();
+            } else if !followed && body.index == index {
+                self.commands.entity(entity).insert(CameraTarget);
+            }
+        }
+    }
+}
+
 pub fn transport_window(
     mut contexts: EguiContexts,
     mut session: ResMut<ReplaySession>,
     mut next_sim_state: ResMut<NextState<SimState>>,
     mut next_screen: ResMut<NextState<UiScreen>>,
+    mut return_to_sim: ResMut<ReturnToSim>,
+    mut camera: ReplayCamera,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
+    let on_map = camera
+        .layers
+        .iter()
+        .any(|layers| layers.intersects(&RenderLayers::layer(MAP_LAYER)));
+    let debris = followed_body(&session.roles, true);
+    let on_debris = camera
+        .bodies
+        .iter()
+        .any(|(_, body, followed)| followed && Some(body.index) == debris);
+    let mut follow = None;
     let view = session.player.view();
     let epoch = epoch_at(&session.epochs, view.step);
     let (start, end) = (
@@ -478,7 +567,7 @@ pub fn transport_window(
     );
     let available_rect = ctx.available_rect();
     egui::Window::new("Transport")
-        .default_pos(egui::Pos2::new(16.0, 120.0))
+        .default_pos(WINDOW_POS)
         .constrain_to(available_rect)
         .show(ctx, |ui| {
             ui.label(format!("Recording {}", session.name));
@@ -563,17 +652,37 @@ pub fn transport_window(
             if view.interpolated {
                 ui.colored_label(egui::Color32::LIGHT_BLUE, "interpolated between frames");
             }
-            if ui.button("Exit replay").clicked() {
-                exit = true;
-            }
+            ui.horizontal(|ui| {
+                // The sidebar (and its view button) is gone in a replay.
+                if ui
+                    .button(if on_map { "Detail view" } else { "Map view" })
+                    .on_hover_text("M")
+                    .clicked()
+                {
+                    camera.ui_events.write(UiEvent::ToggleMapView);
+                }
+                if ui
+                    .button(if on_debris {
+                        "Follow tether root"
+                    } else {
+                        "Follow debris"
+                    })
+                    .clicked()
+                {
+                    follow = followed_body(&session.roles, !on_debris);
+                }
+                if ui.button("Exit replay").clicked() {
+                    exit = true;
+                }
+            });
         });
     for action in &actions {
         apply_transport(&mut session.player, action);
     }
+    if let Some(index) = follow {
+        camera.follow(index);
+    }
     if exit {
-        // A fresh sim screen in its setup state: the same transition a restart
-        // makes, so nothing of the replay stays.
-        next_sim_state.set(SimState::Setup);
-        next_screen.set(UiScreen::Sim);
+        exit_replay(&mut next_sim_state, &mut next_screen, &mut return_to_sim);
     }
 }

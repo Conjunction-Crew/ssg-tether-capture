@@ -2,12 +2,19 @@
 //! the Earth placement across a floating-origin reset and the Replay state. No
 //! rendering: the windows draw from the state these tests drive.
 
+use bevy::camera::visibility::RenderLayers;
+use bevy::ecs::system::RunSystemOnce;
 use bevy::math::{DQuat, DVec3};
+use bevy::pbr::{Atmosphere, AtmosphereSettings};
 use bevy::prelude::*;
 
 use crate::render::celestial::replay_earth_translation;
+use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
 use crate::tests::app_support::{enter_sim, test_app};
-use crate::ui::replay::{TransportAction, apply_transport, epoch_at, relative_state};
+use crate::ui::replay::{
+    ReturnToSim, TransportAction, apply_transport, epoch_at, exit_replay, followed_body,
+    relative_state, return_to_sim, show_replay_in_scene_view,
+};
 use ssg_sim::project::{format_utc, parse_utc};
 use ssg_sim::recording::BodyFrame;
 use ssg_sim::recording::files::{FrameLine, RecordedFrame};
@@ -211,15 +218,25 @@ fn the_earth_is_placed_at_minus_the_frame_origin() {
 #[derive(Resource, Default)]
 struct ScreenEntries(Vec<SimState>);
 
+/// Stands for what the sim screen spawns on entry (camera, Earth, lights).
+#[derive(Component)]
+struct SimScreenEntity;
+
 #[test]
 fn a_replay_runs_no_physics_and_exit_returns_to_a_fresh_setup() {
     let mut app = test_app();
-    app.init_resource::<ScreenEntries>().add_systems(
-        OnEnter(UiScreen::Sim),
-        |mut entries: ResMut<ScreenEntries>, sim_state: Res<State<SimState>>| {
-            entries.0.push(sim_state.get().clone());
-        },
-    );
+    app.init_resource::<ScreenEntries>()
+        .init_resource::<ReturnToSim>()
+        .add_systems(
+            OnEnter(UiScreen::Sim),
+            |mut commands: Commands,
+             mut entries: ResMut<ScreenEntries>,
+             sim_state: Res<State<SimState>>| {
+                entries.0.push(sim_state.get().clone());
+                commands.spawn((SimScreenEntity, DespawnOnExit(UiScreen::Sim)));
+            },
+        )
+        .add_systems(Update, return_to_sim.run_if(in_state(UiScreen::Home)));
     enter_sim(&mut app);
     assert_eq!(app.world().resource::<ScreenEntries>().0, [SimState::Setup]);
 
@@ -239,13 +256,22 @@ fn a_replay_runs_no_physics_and_exit_returns_to_a_fresh_setup() {
     assert_eq!(app.world().resource::<WorldTime>().epoch, epoch);
     assert_eq!(app.world().resource::<WorldTime>().effective_multiplier, 0);
 
-    // Exit replay, as the Transport window sets it.
+    // Exit replay, as the Transport window does: Home this frame, the sim screen
+    // the next.
     app.world_mut()
-        .resource_mut::<NextState<SimState>>()
-        .set(SimState::Setup);
-    app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Sim);
+        .run_system_once(
+            |mut next_sim_state: ResMut<NextState<SimState>>,
+             mut next_screen: ResMut<NextState<UiScreen>>,
+             mut pending: ResMut<ReturnToSim>| {
+                exit_replay(&mut next_sim_state, &mut next_screen, &mut pending);
+            },
+        )
+        .expect("exit_replay ran");
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<UiScreen>>().get(),
+        UiScreen::Home
+    );
     app.update();
     assert_eq!(
         *app.world().resource::<State<SimState>>().get(),
@@ -260,4 +286,49 @@ fn a_replay_runs_no_physics_and_exit_returns_to_a_fresh_setup() {
         [SimState::Setup, SimState::Setup],
         "the sim screen is entered again, already in its setup state, so its setup screen is rebuilt"
     );
+    // What the first entry spawned is gone: one camera, not two (O5 C9).
+    let world = app.world_mut();
+    let spawned = world
+        .query_filtered::<(), With<SimScreenEntity>>()
+        .iter(world)
+        .count();
+    assert_eq!(spawned, 1);
+    assert!(!app.world().resource::<ReturnToSim>().0);
+}
+
+#[test]
+fn the_camera_follows_the_tether_root_or_the_debris() {
+    use ssg_sim::project::recording::RecordingBodyRole::*;
+    let roles = [Target, TetherRoot, TetherNode, TetherTail];
+    assert_eq!(followed_body(&roles, false), Some(1));
+    assert_eq!(followed_body(&roles, true), Some(0));
+    assert_eq!(followed_body(&[], false), None);
+}
+
+#[test]
+fn a_replay_opens_in_the_detail_view() {
+    let mut app = test_app();
+    let camera = app
+        .world_mut()
+        .spawn((
+            Camera3d::default(),
+            RenderLayers::layer(MAP_LAYER),
+            Atmosphere {
+                bottom_radius: 6_360_000.0,
+                top_radius: 6_460_000.0,
+                world_position: Vec3::ZERO,
+                ground_albedo: Vec3::splat(0.3),
+                medium: Handle::default(),
+            },
+            AtmosphereSettings::default(),
+        ))
+        .id();
+    // From the map to the scene, and it stays there when already on the scene.
+    for _ in 0..2 {
+        app.world_mut()
+            .run_system_once(show_replay_in_scene_view)
+            .expect("show_replay_in_scene_view ran");
+        let layers = app.world().get::<RenderLayers>(camera).expect("layers");
+        assert_eq!(*layers, RenderLayers::layer(SCENE_LAYER));
+    }
 }
