@@ -608,3 +608,44 @@ fn the_schema_requires_the_v1_keys_and_refuses_unknown_ones() {
     assert_eq!(schema["properties"]["schema_version"]["minimum"], json!(1));
     assert_eq!(schema["properties"]["schema_version"]["maximum"], json!(1));
 }
+
+#[test]
+fn tail_actuation_is_a_phase_key_that_round_trips_and_not_a_device_key() {
+    // P7.5 S1 (C7): `phases[].tail_actuation` is optional, written only when set,
+    // compiled per phase; the device block has no such key.
+    let mut value = doc();
+    value["phases"][1]["tail_actuation"] = json!(true);
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].tail_actuation, None);
+    assert_eq!(plan.phases[1].tail_actuation, Some(true));
+    let text = plan_to_json(&plan);
+    assert_eq!(text.matches("tail_actuation").count(), 1, "{text}");
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(!compiled.states[0].parameters.tail_actuation);
+    assert!(compiled.states[1].parameters.tail_actuation);
+
+    let mut value = doc();
+    value["device"] = json!({ "tail_actuation": true });
+    let errors = errors_of(&value);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("/device") && errors[0].contains("tail_actuation"),
+        "{errors:?}"
+    );
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    let text = schema.to_string();
+    assert!(
+        schema["$defs"]["Phase"]["properties"]["tail_actuation"].is_object(),
+        "{text}"
+    );
+    assert!(
+        schema["$defs"]["CapturePlanDevice"]["properties"]
+            .get("tail_actuation")
+            .is_none()
+    );
+}

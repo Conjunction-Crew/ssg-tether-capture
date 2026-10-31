@@ -2,11 +2,12 @@
 //!
 //! The characterization tests pin the state machine (transitions, timers, radius).
 //! These pin the controller's force branches: for each branch the **direction** of
-//! the force on the tether nodes and its magnitude (`max_force`), and the log
-//! events of the paths where the controller gives up. Geometry: the nodes sit at
-//! the origin and the capture target at `(0, r, 0)`, so `rel_r` (node to target)
-//! points along +Y and the default `up` (the target's +X axis) is perpendicular
-//! to it.
+//! the force on the tether nodes and its magnitude (the ramp's first step), and the
+//! log events of the paths where the controller gives up; then the P7.5 force law
+//! (F-31, C2, C7): who is pushed, the ramp, the dead bands. Geometry: the nodes sit
+//! at the origin and the capture target at `(0, r, 0)`, so `rel_r` (node to
+//! target) points along +Y and the default `up` (the target's +X axis) is
+//! perpendicular to it.
 
 use avian3d::prelude::{Forces, LinearVelocity, Mass, Position, ReadRigidBodyForces, Rotation};
 use bevy::ecs::system::RunSystemOnce;
@@ -14,23 +15,29 @@ use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 
 use crate::capture::plan::CapturePlanLibrary;
-use crate::capture::{CaptureComponent, CaptureSphereRadius};
+use crate::capture::{
+    BRANCH_DEAD_BAND, CaptureComponent, CaptureForce, CaptureSphereRadius, FORCE_RAMP_S,
+};
 use crate::orbit::cache::OrbitalCache;
 use crate::telemetry::LogLevel;
 use crate::test_support::{
-    CaptureRig, LogTap, assert_close, assert_close_dvec3, capture_rig, insert_plan_json, rig_set,
-    rig_step, test_app,
+    CaptureRig, LogTap, assert_close, assert_close_dvec3, capture_rig, insert_plan_json,
+    load_example_plans, rig_set, rig_step, test_app,
 };
 use crate::time::PHYS_DT;
 
 const MAX_FORCE: f64 = 10.0;
+/// The force bound on the first step of a capture or a phase: one step of the
+/// ramp (F-31).
+const FIRST_STEP_FORCE: f64 = MAX_FORCE * PHYS_DT / FORCE_RAMP_S;
 const PLAN_ID: &str = "branches";
 
-/// Two states with the same limits (1.0 m/s, 10 N) and no transitions, so the
-/// state never changes under the scripted geometry.
-const BRANCH_PLAN: &str = r#"{"name": "branches", "tether": "T", "states": [
-  {"id": "s", "parameters": {"max_velocity": 1.0, "max_force": 10.0}},
-  {"id": "capture", "parameters": {"max_velocity": 1.0, "max_force": 10.0}}
+/// Two phases with the same limits (1.0 m/s, 10 N), no transitions and the tail
+/// pushed in both (`tail_actuation`), so the state never changes under the
+/// scripted geometry and every branch test drives both ends.
+const BRANCH_PLAN: &str = r#"{"schema_version": 1, "name": "branches", "tether": "T", "phases": [
+  {"id": "s", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true},
+  {"id": "capture", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true}
 ]}"#;
 
 /// A harness app with [`BRANCH_PLAN`] and the rig attached to it.
@@ -78,10 +85,18 @@ fn applied_force(app: &mut App, node: Entity) -> DVec3 {
     acceleration * f64::from(mass)
 }
 
-/// `direction` is not normalised: the force is `max_force` along it.
+/// `direction` is not normalised: the force is the first step's bound along it.
 #[track_caller]
 fn assert_force_along(actual: DVec3, direction: DVec3, what: &str) {
-    assert_close_dvec3(actual, direction.normalize() * MAX_FORCE, 1e-9, what);
+    assert_close_dvec3(actual, direction.normalize() * FIRST_STEP_FORCE, 1e-9, what);
+}
+
+/// The controller's state on `node` (what it applied this step, the ramp, the
+/// branch states).
+fn capture_force(app: &App, node: Entity) -> CaptureForce {
+    *app.world()
+        .get::<CaptureForce>(node)
+        .expect("node has a CaptureForce")
 }
 
 /// Runs the controller once and returns the `(level, source, message)` of every
@@ -136,17 +151,19 @@ fn controller_outside_radius_pulls_both_nodes_toward_the_target() {
 #[test]
 fn controller_tail_radius_is_one_metre_larger_than_the_roots() {
     // Capture radius 25 m: root band 20..25 m, tail band 20.8..26 m (radius + 1).
-    // At 25.5 m the root is outside (pulled in, +Y) and the tail inside its band
+    // A fresh body enters a branch past the 2 % dead band: the root's outer edge
+    // at 25.5 m and inner edge at 19.6 m, the tail's at 26.52 m and 20.384 m.
+    // At 25.8 m the root is outside (pulled in, +Y) and the tail inside its band
     // (tangent, +Z).
-    let (root, tail) = drive(DVec3::new(0.0, 25.5, 0.0), DVec3::ZERO);
-    assert_force_along(root, DVec3::Y, "root at 25.5 m");
-    assert_force_along(tail, DVec3::Z, "tail at 25.5 m");
+    let (root, tail) = drive(DVec3::new(0.0, 25.8, 0.0), DVec3::ZERO);
+    assert_force_along(root, DVec3::Y, "root at 25.8 m");
+    assert_force_along(tail, DVec3::Z, "tail at 25.8 m");
 
-    // At 20.5 m the root is inside its band (tangent, +Z) and the tail below
-    // 0.8 × 26 m = 20.8 m (pushed away, −Y).
-    let (root, tail) = drive(DVec3::new(0.0, 20.5, 0.0), DVec3::ZERO);
-    assert_force_along(root, DVec3::Z, "root at 20.5 m");
-    assert_force_along(tail, -DVec3::Y, "tail at 20.5 m");
+    // At 20.2 m the root is inside its band (tangent, +Z) and the tail below its
+    // inner edge (pushed away, −Y).
+    let (root, tail) = drive(DVec3::new(0.0, 20.2, 0.0), DVec3::ZERO);
+    assert_force_along(root, DVec3::Z, "root at 20.2 m");
+    assert_force_along(tail, -DVec3::Y, "tail at 20.2 m");
 }
 
 #[test]
@@ -208,33 +225,351 @@ fn controller_kills_velocity_above_the_state_limit() {
     assert_force_along(root, DVec3::Y - 2.0 * velocity.normalize(), "velocity kill");
 }
 
+/// Runs the controller `steps` times without advancing the physics and returns
+/// the length of the force applied to `node` at each step (from `CaptureForce`,
+/// which is per step; avian's accumulator only clears when it steps).
+fn force_lengths(app: &mut App, node: Entity, steps: usize) -> Vec<f64> {
+    (0..steps)
+        .map(|_| {
+            run_controller(app);
+            capture_force(app, node).applied.length()
+        })
+        .collect()
+}
+
 #[test]
-fn controller_force_magnitude_is_the_states_max_force() {
-    // Whatever the branch, the force has length `max_force` (the direction is
-    // normalised before it is scaled).
+fn controller_force_magnitude_is_at_most_max_force_and_reaches_it_after_the_ramp() {
+    // F-31: whatever the branch, the force is the direction (normalised) times the
+    // ramped bound, which reaches `max_force` after FORCE_RAMP_S and stays there.
+    let ramp_steps = (FORCE_RAMP_S / PHYS_DT).round() as usize;
     for target in [
         DVec3::new(0.0, 10.0, 0.0),
         DVec3::new(0.0, 22.0, 0.0),
         DVec3::new(0.0, 100.0, 0.0),
     ] {
-        let (root, tail) = drive(target, DVec3::new(0.0, 0.1, 0.2));
-        for (name, force) in [("root", root), ("tail", tail)] {
+        let (mut app, rig) = branch_rig();
+        place(&mut app, &rig, target, DVec3::new(0.0, 0.1, 0.2));
+        let lengths = force_lengths(&mut app, rig.root, ramp_steps + 36);
+        for (i, length) in lengths.iter().enumerate() {
+            assert!(
+                *length <= MAX_FORCE * (1.0 + 1e-12),
+                "step {} at {target:?}: {length} N > {MAX_FORCE} N",
+                i + 1
+            );
+        }
+        assert_close(
+            lengths[ramp_steps - 2],
+            MAX_FORCE * (ramp_steps - 1) as f64 / ramp_steps as f64,
+            1e-9,
+            &format!("one step before the end of the ramp at {target:?}"),
+        );
+        for (i, length) in lengths.iter().enumerate().skip(ramp_steps - 1) {
             assert_close(
-                force.length(),
+                *length,
                 MAX_FORCE,
                 1e-9,
-                &format!("{name} force length at {target:?}"),
+                &format!("step {} at {target:?}", i + 1),
             );
         }
     }
 }
 
-/// A plan whose first state has a shrink rate and a transition at 10 m, so a
-/// skipped state check shows as a missing transition and a missing shrink.
-const ROOTLESS_PLAN: &str = r#"{"name": "rootless", "tether": "T", "states": [
-  {"id": "s", "parameters": {"max_velocity": 1.0, "max_force": 10.0, "shrink_rate": 0.5},
-   "transitions": [{"to": "t", "distance": {"less_than": 10.0}}]},
-  {"id": "t", "parameters": {"max_velocity": 1.0, "max_force": 10.0}}
+#[test]
+fn controller_ramp_rises_from_zero_over_force_ramp_s() {
+    // (c): the first step's bound is max_force × PHYS_DT / FORCE_RAMP_S, the bound
+    // rises by that much per step, is max_force at step 64 and never above.
+    let (mut app, rig) = branch_rig();
+    place(&mut app, &rig, DVec3::new(0.0, 100.0, 0.0), DVec3::ZERO);
+    let lengths = force_lengths(&mut app, rig.root, 100);
+    assert_close(lengths[0], FIRST_STEP_FORCE, 1e-12, "step 1");
+    for (i, length) in lengths.iter().enumerate().take(64) {
+        assert_close(
+            *length,
+            FIRST_STEP_FORCE * (i + 1) as f64,
+            1e-9,
+            &format!("step {}", i + 1),
+        );
+    }
+    assert_close(lengths[63], MAX_FORCE, 1e-9, "step 64");
+    assert!(
+        lengths.iter().all(|l| *l <= MAX_FORCE * (1.0 + 1e-12)),
+        "{lengths:?}"
+    );
+    assert_close(
+        capture_force(&app, rig.root).ramp_n,
+        MAX_FORCE,
+        1e-12,
+        "ramp_n held at the bound",
+    );
+}
+
+#[test]
+fn controller_direction_reversal_does_not_restart_the_ramp() {
+    // (d), C2: the pull flips from +Y to −Y at step 32 (the target moves to the
+    // other side); the bound keeps rising and is max_force at step 64.
+    let (mut app, rig) = branch_rig();
+    place(&mut app, &rig, DVec3::new(0.0, 100.0, 0.0), DVec3::ZERO);
+    let mut lengths = force_lengths(&mut app, rig.root, 31);
+    assert_close_dvec3(
+        capture_force(&app, rig.root).direction,
+        DVec3::Y,
+        1e-12,
+        "before",
+    );
+    place(&mut app, &rig, DVec3::new(0.0, -100.0, 0.0), DVec3::ZERO);
+    lengths.extend(force_lengths(&mut app, rig.root, 33));
+    assert_close_dvec3(
+        capture_force(&app, rig.root).direction,
+        -DVec3::Y,
+        1e-12,
+        "after",
+    );
+    assert_close(
+        lengths[31],
+        FIRST_STEP_FORCE * 32.0,
+        1e-9,
+        "step 32, the reversal",
+    );
+    assert_close(lengths[63], MAX_FORCE, 1e-9, "step 64");
+}
+
+/// The branch the root is in after one controller step with the target `range_m`
+/// along +Y and the root moving at `speed` along +Z: `(inner, outer, kill)`.
+fn branches_after(app: &mut App, rig: &CaptureRig, range_m: f64, speed: f64) -> (bool, bool, bool) {
+    place(
+        app,
+        rig,
+        DVec3::new(0.0, range_m, 0.0),
+        DVec3::new(0.0, 0.0, speed),
+    );
+    run_controller(app);
+    let state = capture_force(app, rig.root);
+    (state.inner, state.outer, state.kill)
+}
+
+#[test]
+fn controller_branch_thresholds_have_a_dead_band() {
+    // (e): R = 25 m (no shrink), max_velocity = 1 m/s, band 2 %. Each edge: a
+    // fresh body just past the threshold keeps its branch; past the band it enters;
+    // back just past the threshold it stays; past the band the other way it leaves.
+    assert_close(BRANCH_DEAD_BAND, 0.02, 0.0, "the band");
+    let inner = 0.8 * 25.0;
+    let (mut app, rig) = branch_rig();
+    assert!(
+        !branches_after(&mut app, &rig, inner * 1.01, 0.0).0,
+        "inner: 1.01, fresh"
+    );
+    assert!(
+        !branches_after(&mut app, &rig, inner * 0.99, 0.0).0,
+        "inner: 0.99, inside the band"
+    );
+    assert!(
+        branches_after(&mut app, &rig, inner * 0.97, 0.0).0,
+        "inner: 0.97 enters"
+    );
+    assert_force_direction(&app, rig.root, -DVec3::Y, "inner: pushed away");
+    assert!(
+        branches_after(&mut app, &rig, inner * 1.01, 0.0).0,
+        "inner: 1.01 keeps it"
+    );
+    assert!(
+        !branches_after(&mut app, &rig, inner * 1.03, 0.0).0,
+        "inner: 1.03 leaves"
+    );
+    assert_force_direction(&app, rig.root, DVec3::Z, "inner left: tangent");
+
+    let outer = 25.0;
+    let (mut app, rig) = branch_rig();
+    assert!(
+        !branches_after(&mut app, &rig, outer * 1.01, 0.0).1,
+        "outer: 1.01, fresh"
+    );
+    assert_force_direction(&app, rig.root, DVec3::Z, "outer not entered: tangent");
+    assert!(
+        branches_after(&mut app, &rig, outer * 1.03, 0.0).1,
+        "outer: 1.03 enters"
+    );
+    assert_force_direction(&app, rig.root, DVec3::Y, "outer: pulled in");
+    assert!(
+        branches_after(&mut app, &rig, outer * 0.99, 0.0).1,
+        "outer: 0.99 keeps it"
+    );
+    assert!(
+        !branches_after(&mut app, &rig, outer * 0.97, 0.0).1,
+        "outer: 0.97 leaves"
+    );
+
+    // The kill, in the tangent band (22 m): entered above max_velocity, left below
+    // max_velocity × 0.98.
+    let (mut app, rig) = branch_rig();
+    assert!(
+        !branches_after(&mut app, &rig, 22.0, 0.99).2,
+        "kill: 0.99, fresh"
+    );
+    assert!(
+        branches_after(&mut app, &rig, 22.0, 1.01).2,
+        "kill: 1.01 enters"
+    );
+    assert!(
+        branches_after(&mut app, &rig, 22.0, 0.99).2,
+        "kill: 0.99 keeps it"
+    );
+    assert!(
+        !branches_after(&mut app, &rig, 22.0, 0.97).2,
+        "kill: 0.97 leaves"
+    );
+}
+
+#[track_caller]
+fn assert_force_direction(app: &App, node: Entity, direction: DVec3, what: &str) {
+    assert_close_dvec3(
+        capture_force(app, node).applied.normalize(),
+        direction,
+        1e-9,
+        what,
+    );
+}
+
+#[test]
+fn controller_pushes_only_the_root_with_the_example_plan() {
+    // (a), C7: `example_plan` sets `tail_actuation` in no phase, so in every phase
+    // the root gets a force and the tail none.
+    let mut app = test_app();
+    load_example_plans(&mut app);
+    let rig = capture_rig(&mut app, "example_plan");
+    let phases: Vec<String> = app.world().resource::<CapturePlanLibrary>().plans["example_plan"]
+        .phases
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    assert!(phases.len() >= 4, "{phases:?}");
+    for phase in &phases {
+        set_state(&mut app, &rig, phase);
+        // A range at which this phase's transitions do not fire.
+        let range = match phase.as_str() {
+            "rendezvous" => 3_000.0,
+            "approach" => 100.0,
+            _ => 20.0,
+        };
+        place(&mut app, &rig, DVec3::new(0.0, range, 0.0), DVec3::ZERO);
+        run_controller(&mut app);
+        assert_eq!(
+            app.world()
+                .get::<CaptureComponent>(rig.capture)
+                .unwrap()
+                .current_state,
+            *phase
+        );
+        assert!(
+            capture_force(&app, rig.root).applied.length() > 0.0,
+            "root in {phase}"
+        );
+        assert_eq!(
+            capture_force(&app, rig.tail).applied,
+            DVec3::ZERO,
+            "tail in {phase}"
+        );
+    }
+    assert_eq!(
+        applied_force(&mut app, rig.tail),
+        DVec3::ZERO,
+        "nothing reached avian"
+    );
+}
+
+/// `rendezvous` (root only) → `capture` (the tail too) below 10 m.
+const TAIL_PLAN: &str = r#"{"schema_version": 1, "name": "tail", "tether": "T", "phases": [
+  {"id": "rendezvous", "max_velocity_mps": 1.0, "max_force_n": 10.0,
+   "transitions": [{"to": "capture", "all_of": {"distance_m": {"less_than": 10.0}}}]},
+  {"id": "capture", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true}
+]}"#;
+
+#[test]
+fn controller_pushes_the_tail_only_in_a_phase_with_tail_actuation() {
+    // (b), C7: no tail force in `rendezvous`; after the transition into `capture`
+    // the tail's force follows the ramp from 0 at that entry.
+    let mut app = test_app();
+    insert_plan_json(&mut app, "tail", TAIL_PLAN);
+    let rig = capture_rig(&mut app, "tail");
+    place(&mut app, &rig, DVec3::new(0.0, 50.0, 0.0), DVec3::ZERO);
+    let tail = force_lengths(&mut app, rig.tail, 40);
+    assert!(
+        tail.iter().all(|l| *l == 0.0),
+        "tail in rendezvous: {tail:?}"
+    );
+    assert_eq!(applied_force(&mut app, rig.tail), DVec3::ZERO);
+
+    place(&mut app, &rig, DVec3::new(0.0, 5.0, 0.0), DVec3::ZERO);
+    let tail = force_lengths(&mut app, rig.tail, 70);
+    assert_eq!(
+        app.world()
+            .get::<CaptureComponent>(rig.capture)
+            .unwrap()
+            .current_state,
+        "capture"
+    );
+    for (i, length) in tail.iter().enumerate() {
+        let expected = (FIRST_STEP_FORCE * (i + 1) as f64).min(MAX_FORCE);
+        assert_close(
+            *length,
+            expected,
+            1e-9,
+            &format!("tail, step {} of capture", i + 1),
+        );
+    }
+}
+
+#[test]
+fn controller_phase_entry_restarts_the_ramp() {
+    // (g): the root is at the bound after 64 steps of `rendezvous`; the step the
+    // transition into `capture` fires, its bound is one ramp step again.
+    let mut app = test_app();
+    insert_plan_json(&mut app, "tail", TAIL_PLAN);
+    let rig = capture_rig(&mut app, "tail");
+    place(&mut app, &rig, DVec3::new(0.0, 50.0, 0.0), DVec3::ZERO);
+    let root = force_lengths(&mut app, rig.root, 80);
+    assert_close(root[79], MAX_FORCE, 1e-9, "root at the bound in rendezvous");
+    place(&mut app, &rig, DVec3::new(0.0, 5.0, 0.0), DVec3::ZERO);
+    let root = force_lengths(&mut app, rig.root, 2);
+    assert_close(root[0], FIRST_STEP_FORCE, 1e-12, "root, the entry step");
+    assert_close(
+        root[1],
+        2.0 * FIRST_STEP_FORCE,
+        1e-12,
+        "root, the step after",
+    );
+}
+
+#[test]
+fn controller_without_capture_force_pushes_nothing_and_warns() {
+    // Every capture start inserts `CaptureForce` on the root and the tail; a pushed
+    // node without it is reported, as a node without forces is.
+    let (mut app, rig) = branch_rig();
+    place(&mut app, &rig, DVec3::new(0.0, 100.0, 0.0), DVec3::ZERO);
+    app.world_mut()
+        .entity_mut(rig.tail)
+        .remove::<CaptureForce>();
+    let logs = run_controller(&mut app);
+    assert_eq!(
+        logs,
+        vec![(
+            LogLevel::Warn,
+            "capture",
+            "Failed to apply force to tether node 1 (no CaptureForce)".to_string()
+        )]
+    );
+    assert_eq!(applied_force(&mut app, rig.tail), DVec3::ZERO);
+    assert_force_along(applied_force(&mut app, rig.root), DVec3::Y, "root");
+}
+
+/// A plan whose first phase has a shrink rate and a transition at 10 m, so a
+/// skipped state check shows as a missing transition and a missing shrink; the
+/// tail is pushed (`tail_actuation`).
+const ROOTLESS_PLAN: &str = r#"{"schema_version": 1, "name": "rootless", "tether": "T", "phases": [
+  {"id": "s", "max_velocity_mps": 1.0, "max_force_n": 10.0, "shrink_rate_mps": 0.5,
+   "tail_actuation": true,
+   "transitions": [{"to": "t", "all_of": {"distance_m": {"less_than": 10.0}}}]},
+  {"id": "t", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true}
 ]}"#;
 
 #[test]

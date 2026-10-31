@@ -20,6 +20,7 @@ use crate::tether::{
     DebrisBody, TetherNode, TetherRoot, TetherShape, spawn_debris, spawn_selected_bodies,
     spawn_tether,
 };
+use crate::time::ManualPhysics;
 
 /// A plan whose `device` block (if any) is `device_json`, with tether `tether`.
 fn plan_with(tether: &str, device_json: Option<&str>) -> String {
@@ -713,5 +714,116 @@ fn spawn_selected_bodies_gives_the_debris_the_targets_mass_and_not_the_tether() 
         2.0,
         1e-6,
         "the tether root keeps the plan's end mass",
+    );
+}
+
+/// A symmetric, positive-definite tensor with off-diagonal terms (kg m²).
+const CHASER_TENSOR: [[f64; 3]; 3] = [[500.0, 10.0, -5.0], [10.0, 400.0, 3.0], [-5.0, 3.0, 300.0]];
+
+/// The six independent entries of avian's computed angular inertia tensor.
+fn computed_tensor(app: &App, entity: Entity) -> [f64; 6] {
+    let t = app
+        .world()
+        .get::<ComputedAngularInertia>(entity)
+        .expect("ComputedAngularInertia")
+        .tensor();
+    [t.m00, t.m01, t.m02, t.m11, t.m12, t.m22]
+}
+
+#[track_caller]
+fn assert_tensor(actual: [f64; 6], expected: &[[f64; 3]; 3], what: &str) {
+    let e = expected;
+    let expected = [e[0][0], e[0][1], e[0][2], e[1][1], e[1][2], e[2][2]];
+    for (a, b) in actual.iter().zip(expected) {
+        // The tensor goes through f32 and avian's eigen-decomposition.
+        assert_close(*a, b, 1e-3 * 500.0, what);
+    }
+}
+
+#[test]
+fn spawn_tether_gives_the_root_the_chasers_mass_and_inertia() {
+    // P7.5 S1 (Q10 row 11): the root is the chaser (design D8). With a stated mass
+    // and tensor the root carries them; the tail keeps the plan's end mass.
+    let mut app = spawn_app();
+    let mut chaser = q13::catalog_pick("CHASER", q13::CHASER_NORAD_ID);
+    chaser.mass_kg = Some(500.0);
+    chaser.inertia_kg_m2 = Some(CHASER_TENSOR);
+    run_spawn_tether(&mut app, None, chaser).expect("spawn failed");
+    // Avian folds a stated tensor in at the next physics step's Prepare set.
+    app.world_mut().run_schedule(ManualPhysics);
+
+    let nodes = registered(&app, "Tether1");
+    let (root, tail) = (nodes[0], nodes[1]);
+    let world = app.world();
+    assert_close(
+        world.get::<Mass>(root).unwrap().0 as f64,
+        500.0,
+        1e-3,
+        "root Mass",
+    );
+    assert_close(
+        world.get::<ComputedMass>(root).unwrap().value(),
+        500.0,
+        1e-3,
+        "root ComputedMass",
+    );
+    assert_tensor(computed_tensor(&app, root), &CHASER_TENSOR, "root inertia");
+    assert_eq!(
+        app.world().get::<Rotation>(root).unwrap().0,
+        bevy::math::DQuat::IDENTITY,
+        "the tensor is in the sim's axes: the root keeps the identity rotation"
+    );
+    assert_close(
+        app.world().get::<Mass>(tail).unwrap().0 as f64,
+        2.0,
+        1e-6,
+        "tail mass",
+    );
+
+    // Without them: the end mass and the sphere's inertia scaled to it (0.4 m r²).
+    let mut app = spawn_app();
+    run_spawn_tether(
+        &mut app,
+        None,
+        q13::catalog_pick("CHASER", q13::CHASER_NORAD_ID),
+    )
+    .expect("spawn failed");
+    app.update();
+    let root = registered(&app, "Tether1")[0];
+    assert_close(
+        app.world().get::<Mass>(root).unwrap().0 as f64,
+        2.0,
+        1e-6,
+        "default root mass",
+    );
+    let sphere = 0.4 * 2.0 * 0.5 * 0.5;
+    assert_tensor(
+        computed_tensor(&app, root),
+        &[[sphere, 0.0, 0.0], [0.0, sphere, 0.0], [0.0, 0.0, sphere]],
+        "default root inertia",
+    );
+}
+
+#[test]
+fn spawn_debris_takes_the_targets_inertia_from_the_selection() {
+    let mut app = spawn_app();
+    let mut pick = hst();
+    pick.inertia_kg_m2 = Some(CHASER_TENSOR);
+    app.world_mut()
+        .run_system_once(
+            move |mut commands: Commands, mut cache: ResMut<OrbitalCache>| {
+                spawn_debris(&mut commands, &mut cache, &pick).map_err(|e| e.to_string())
+            },
+        )
+        .expect("the spawn system failed to run")
+        .expect("spawn failed");
+    app.update();
+    let debris = app.world().resource::<OrbitalCache>().debris["Satellite1"];
+    assert!(app.world().get::<AngularInertia>(debris).is_some());
+    assert_close(
+        app.world().get::<Mass>(debris).unwrap().0 as f64,
+        2500.0,
+        1e-3,
+        "default mass",
     );
 }

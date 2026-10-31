@@ -216,8 +216,11 @@ fn a_field_that_is_not_supported_yet_is_an_error() {
     let mut manifest = manifest();
     manifest["chaser"]["orbit"] =
         json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 100.0 } });
+    // Applied since P7.5 (Q10 row 11): an inertia tensor and the chaser's mass
+    // are no longer errors.
     manifest["target"]["inertia_kg_m2"] =
         json!([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    manifest["chaser"]["mass_kg"] = json!(500.0);
     write_manifest(&project, &manifest);
 
     let output = validate(&project);
@@ -226,9 +229,8 @@ fn a_field_that_is_not_supported_yet_is_an_error() {
     assert_eq!(
         stdout_lines(&output),
         [
-            "error: [project.json] /target/inertia_kg_m2: the inertia is not supported yet; it is applied from v0.4.0-rc.4",
-            "error: [project.json] /chaser/orbit/relative_to_target: an orbit relative to the target is not supported yet; it is applied from v0.4.0-rc.4",
-            "2 errors, 0 warnings"
+            "error: [project.json] /chaser/orbit/relative_to_target: an orbit relative to the target is not supported yet; it is applied from v0.4.0-rc.5",
+            "1 errors, 0 warnings"
         ]
     );
     let _ = std::fs::remove_dir_all(&project);

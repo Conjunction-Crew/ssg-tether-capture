@@ -5,7 +5,7 @@
       "description": "The capture device. Every field is optional; an absent field takes its default.",
       "properties": {
         "end_mass_kg": {
-          "description": "Mass of the root and of the tail in kg. Default 2.0; greater than 0.",
+          "description": "Mass of the tail, and of the root unless `project.json` gives the chaser a\n`mass_kg`, in kg. Default 2.0; greater than 0.",
           "format": "double",
           "type": [
             "number",
@@ -151,6 +151,13 @@
           "format": "double",
           "type": [
             "number",
+            "null"
+          ]
+        },
+        "tail_actuation": {
+          "description": "Push the tail in this phase as well as the root. Default false.",
+          "type": [
+            "boolean",
             "null"
           ]
         },

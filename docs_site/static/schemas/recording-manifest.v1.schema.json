@@ -100,7 +100,7 @@
       "description": "The capture device. Every field is optional; an absent field takes its default.",
       "properties": {
         "end_mass_kg": {
-          "description": "Mass of the root and of the tail in kg. Default 2.0; greater than 0.",
+          "description": "Mass of the tail, and of the root unless `project.json` gives the chaser a\n`mass_kg`, in kg. Default 2.0; greater than 0.",
           "format": "double",
           "type": [
             "number",
@@ -243,7 +243,7 @@
       "description": "One body of the scenario.",
       "properties": {
         "inertia_kg_m2": {
-          "description": "Inertia tensor in kg m², row-major. Refused until v0.4.0-rc.4.",
+          "description": "Inertia tensor in kg m², row-major; finite, symmetric and positive definite.\nIt is taken in the sim's ECI-aligned axes at spawn: every body starts with\nthe identity attitude and the sim has no attitude model. Absent: the\ncollider's inertia scaled to the mass.",
           "items": {
             "items": {
               "format": "double",
@@ -265,7 +265,7 @@
           "type": "string"
         },
         "mass_kg": {
-          "description": "Mass in kg; greater than 0. The target's is applied from v0.4.0-rc.1; the\nchaser's is refused until v0.4.0-rc.4.",
+          "description": "Mass in kg; greater than 0. The chaser's is the tether root's (the root is\nthe chaser); without it the root takes the plan's `end_mass_kg`.",
           "format": "double",
           "type": [
             "number",
@@ -375,7 +375,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.4.",
+          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.5.",
           "properties": {
             "relative_to_target": {
               "$ref": "#/$defs/RelativeToTarget"
@@ -460,6 +460,13 @@
           "format": "double",
           "type": [
             "number",
+            "null"
+          ]
+        },
+        "tail_actuation": {
+          "description": "Push the tail in this phase as well as the root. Default false.",
+          "type": [
+            "boolean",
             "null"
           ]
         },
