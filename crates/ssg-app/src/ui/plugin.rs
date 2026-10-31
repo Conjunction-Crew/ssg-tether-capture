@@ -954,6 +954,7 @@ mod start_from_project_file_tests {
             elements: EditableOrbitalElements::from_gp(&gp),
             gp: Some(gp),
             mass_kg: None,
+            inertia_kg_m2: None,
         }
     }
 

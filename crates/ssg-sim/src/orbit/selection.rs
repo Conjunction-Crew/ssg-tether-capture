@@ -67,9 +67,13 @@ pub struct SelectedOrbitalObject {
     /// The catalog record a pick came from; `None` for a custom orbit or once
     /// the elements are edited. `Some` starts the body from SGP4 (F-10).
     pub gp: Option<GpElements>,
-    /// Mass in kg from `project.json`; `None` takes the body's default. Only the
-    /// target's is applied (2,500 kg by default); the chaser's is refused until P9.
+    /// Mass in kg from `project.json`; `None` takes the body's default (the
+    /// target 2,500 kg; the chaser, which is the tether root, the plan's
+    /// `end_mass_kg`).
     pub mass_kg: Option<f64>,
+    /// Inertia tensor in kg m² from `project.json`, in the sim's ECI-aligned axes
+    /// at spawn; `None` (always from the catalog) takes the collider's.
+    pub inertia_kg_m2: Option<[[f64; 3]; 3]>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
