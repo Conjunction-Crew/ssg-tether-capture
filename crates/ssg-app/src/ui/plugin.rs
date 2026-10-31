@@ -30,9 +30,9 @@ use crate::ui::recording::{
     recording_window, reset_recording_panel, reset_step_cap,
 };
 use crate::ui::replay::{
-    RecordingsList, advance_replay, poll_open_recording, recordings_window, remove_replay_session,
-    reset_recordings_list, scan_recordings_system, show_replay_frame, spawn_replay_bodies,
-    transport_window,
+    RecordingsList, ReturnToSim, advance_replay, poll_open_recording, recordings_window,
+    remove_replay_session, reset_recordings_list, return_to_sim, scan_recordings_system,
+    show_replay_frame, show_replay_in_scene_view, spawn_replay_bodies, transport_window,
 };
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
@@ -112,6 +112,7 @@ impl Plugin for UiPlugin {
             .init_resource::<CsvExportState>()
             .init_resource::<RecordingPanel>()
             .init_resource::<RecordingsList>()
+            .init_resource::<ReturnToSim>()
             .init_resource::<SpaceCatalogUiState>()
             .init_resource::<FilteredSpaceCatalogResults>()
             .init_resource::<Settings>()
@@ -156,9 +157,15 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 OnEnter(SimState::Replay),
-                (cleanup_project_detail_screen, spawn_replay_bodies).chain(),
+                (
+                    cleanup_project_detail_screen,
+                    spawn_replay_bodies,
+                    show_replay_in_scene_view,
+                )
+                    .chain(),
             )
             .add_systems(OnExit(SimState::Replay), remove_replay_session)
+            .add_systems(Update, return_to_sim.run_if(in_state(UiScreen::Home)))
             .add_systems(
                 PostUpdate,
                 map_orbitals

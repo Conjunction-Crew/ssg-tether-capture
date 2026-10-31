@@ -297,6 +297,10 @@ pub(crate) fn apply_panel_action(
     }
 }
 
+/// Where the Recording, Recordings and Transport windows open: right of the
+/// Space Catalog panel (12 px in, 340 px wide, from about 116 px down).
+pub(crate) const WINDOW_POS: egui::Pos2 = egui::Pos2::new(368.0, 128.0);
+
 pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1e6)
 }
@@ -336,7 +340,7 @@ pub fn recording_window(
     let mut action = None;
     let available_rect = ctx.available_rect();
     egui::Window::new("Recording")
-        .default_pos(egui::Pos2::new(16.0, 120.0))
+        .default_pos(WINDOW_POS)
         .constrain_to(available_rect)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
