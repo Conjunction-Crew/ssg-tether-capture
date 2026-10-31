@@ -23,7 +23,7 @@ A recording is a **viewing and analysis record**: playback shows the recorded st
 | The input log **from step 0** | `inputs.jsonl` | Every input that affects the simulation: first the spawn-update step count, then each capture start with the step it was applied after. |
 | The scenario and the plan | `manifest.json` | A copy of `project.json` as the run used it and of the capture plan, so the recording does not depend on the project's current files. |
 
-K is the frame interval, `keyframe_interval_steps` (default 32 steps, two frames per simulated second). The file layout and every key are described in [Project files](./project-files#recordings).
+K is the frame interval, `keyframe_interval_steps` (default 32 steps, two frames per simulated second). The file layout and every key are described in [Project files](./project-files#recordings); the manifest's schema is [`recording-manifest.v1.schema.json`](https://conjunction-crew.github.io/ssg-tether-capture/schemas/recording-manifest.v1.schema.json) and the `recording` block's is part of [`project.v1.schema.json`](https://conjunction-crew.github.io/ssg-tether-capture/schemas/project.v1.schema.json).
 
 ### The spawn-update step count
 
