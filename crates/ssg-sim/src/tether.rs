@@ -85,7 +85,8 @@ pub fn spawn_debris(
             PHYSICS_DISABLE_RADIUS as f32 + 10.0,
         ),
     ));
-    // Q10 row 11: the manifest's tensor replaces the collider's scaled inertia.
+    // Q10 row 11: the manifest's tensor replaces the collider's scaled inertia
+    // (avian recomputes the mass properties in the first step's Prepare set).
     if let Some(tensor) = &selected.inertia_kg_m2 {
         debris.insert(angular_inertia(tensor));
     }
@@ -175,6 +176,7 @@ pub fn spawn_tether(
         Transform::from_xyz(0.0, 0.0, 0.0),
         initial_orbit(selected),
     ));
+    // Avian recomputes the mass properties in the first step's Prepare set.
     if let Some(tensor) = &selected.inertia_kg_m2 {
         root.insert(angular_inertia(tensor));
     }
