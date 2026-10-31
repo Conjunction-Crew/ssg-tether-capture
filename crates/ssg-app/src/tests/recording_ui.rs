@@ -8,6 +8,7 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 
+use crate::render::camera::CameraTarget;
 use crate::tests::app_support::{test_app, tick};
 use crate::ui::recording::{
     MAX_STEP_CAP, MIN_STEP_CAP, PanelAction, RecordingPanel, adapt_step_cap, apply_panel_action,
@@ -21,7 +22,8 @@ use ssg_sim::orbit::selection::OrbitalSelectionState;
 use ssg_sim::project::WorkingDirectory;
 use ssg_sim::project::manifest::{ProjectManifest, read_manifest_file, save_manifest};
 use ssg_sim::project::recording::{
-    RecordingEndReason, RecordingSource, read_recording_file, save_recording_manifest,
+    RecordingBodyRole, RecordingEndReason, RecordingSource, read_recording_file,
+    save_recording_manifest,
 };
 use ssg_sim::recording::recorder::{Recorder, RecorderCommand, RecordingSettings};
 use ssg_sim::recording::{RecordingBodies, RecordingSink};
@@ -416,4 +418,11 @@ fn a_recording_made_from_the_window_plays_back() {
             "body {index}"
         );
     }
+    // The camera follows the tether root, as in the live sim (the anchor).
+    let mut followed = scene
+        .world_mut()
+        .query_filtered::<&ReplayBody, With<CameraTarget>>();
+    let followed: Vec<usize> = followed.iter(scene.world()).map(|b| b.index).collect();
+    assert_eq!(followed, [1]);
+    assert_eq!(live.roles[1], RecordingBodyRole::TetherRoot);
 }
