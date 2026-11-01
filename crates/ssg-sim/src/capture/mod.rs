@@ -35,6 +35,11 @@ pub struct CaptureComponent {
     pub current_state: String,
     pub state_enter_time_s: f64,
     pub state_elapsed_time_s: f64,
+    /// The capture-sphere radius when the current phase was entered, in m: the
+    /// initial radius at the capture start, the current radius at every phase entry
+    /// (before that step's shrink). A phase with `velocity_scales_with_sphere`
+    /// scales its speed limit by the current radius over this one.
+    pub sphere_radius_at_entry_m: f64,
 }
 
 /// The capture-sphere radius at the start of every capture (F-11).
@@ -53,7 +58,23 @@ pub const FORCE_RAMP_S: f64 = 1.0;
 /// thresholds (the `0.8 R` inner edge, the `R` outer edge and the velocity kill),
 /// so a body at a threshold does not flip branch every step (F-31). The phase
 /// transitions have no band.
+///
+/// This is the relative width for the two range edges; for the velocity kill the
+/// width is at least one step's Δv of the pushed body at the phase's force
+/// (`2 × max_force_n × PHYS_DT / m`), because at 2 N on the 2 kg root a 2 % band
+/// of a 0.5 m/s limit (0.010 m/s) is narrower than one step (0.0156 m/s) and the
+/// branch toggled on 56–97 % of the terminal-phase steps (design D7).
 pub const BRANCH_DEAD_BAND: f64 = 0.02;
+
+/// The debris body's axis the controller circles the root about: the axis the
+/// model's solar arrays span (their booms), so the root circles in the bus's X–Y
+/// plane between the arrays and the rope wraps the bus. The debris keeps the
+/// identity rotation and the sim has no attitude model, so this is the sim's (ECI)
+/// Z at spawn for the whole run: the root circles in a plane parallel to the
+/// equatorial plane, not the orbit plane. The axis and the collider boxes in
+/// `tether.rs` are fitted to one model and apply to every target in P7.5; a
+/// per-target key is P9's (OQ3).
+pub const CAPTURE_CIRCLING_AXIS: DVec3 = DVec3::Z;
 
 /// The capture controller's per-body state and output, on the tether root and the
 /// tail while a capture runs: inserted when the capture starts
@@ -83,13 +104,15 @@ impl CaptureForce {
     /// `rel_v_len` with the dead band: the inner edge is entered below
     /// `0.8 R (1 − band)` and left above `0.8 R (1 + band)`, the outer edge entered
     /// above `R (1 + band)` and left below `R (1 − band)`, the kill entered above
-    /// `max_velocity` and left below `max_velocity (1 − band)`.
+    /// `max_velocity` and left below `max_velocity − kill_band` (an absolute
+    /// width, see [`BRANCH_DEAD_BAND`]).
     fn update_branches(
         &mut self,
         rel_r_len: f64,
         rel_v_len: f64,
         capture_radius: f64,
         max_velocity: f64,
+        kill_band: f64,
     ) {
         let band = BRANCH_DEAD_BAND;
         let inner_edge = capture_radius * 0.8;
@@ -104,7 +127,7 @@ impl CaptureForce {
             rel_r_len > capture_radius * (1.0 + band)
         };
         self.kill = if self.kill {
-            rel_v_len >= max_velocity * (1.0 - band)
+            rel_v_len >= max_velocity - kill_band
         } else {
             rel_v_len > max_velocity
         };
@@ -295,10 +318,11 @@ pub fn capture_state_machine_update(
                     }
                 }
 
-                let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
+                let up = (capture_entity_rotation * CAPTURE_CIRCLING_AXIS)
+                    .normalize_or(CAPTURE_CIRCLING_AXIS);
 
                 for (idx, &node) in nodes.iter().enumerate() {
-                    let (rel_r, rel_v) = {
+                    let (rel_r, rel_v, mass) = {
                         let rb_query = rb_forces.p0();
                         let Ok(rb) = rb_query.get(node) else {
                             continue;
@@ -314,6 +338,7 @@ pub fn capture_state_machine_update(
                                 -rel_r,
                                 rb.linear_velocity.0 - capture_entity_linvel.0,
                             ),
+                            rb.mass.value(),
                         )
                     };
                     let rel_r_len = rel_r.length();
@@ -357,14 +382,31 @@ pub fn capture_state_machine_update(
                     };
 
                     let mut force_vec = DVec3::ZERO;
-                    let max_velocity = shared_state_parameters.max_velocity;
+                    // D14: the limit falls with the sphere in a phase that asks for it.
+                    let max_velocity = if shared_state_parameters.velocity_scales_with_sphere {
+                        shared_state_parameters.max_velocity
+                            * (capture_sphere_radius.radius
+                                / capture_component.sphere_radius_at_entry_m)
+                    } else {
+                        shared_state_parameters.max_velocity
+                    };
                     let max_force = shared_state_parameters.max_force;
+                    // D7 (C4): the kill band is at least one step's Δv of this body at
+                    // the phase's force, from the unscaled limit.
+                    let kill_band = (BRANCH_DEAD_BAND * shared_state_parameters.max_velocity)
+                        .max(2.0 * max_force * PHYS_DT / mass);
                     let capture_radius = if idx == 0 {
                         root_capture_radius
                     } else {
                         capture_sphere_radius.radius + 1.0
                     };
-                    state.update_branches(rel_r_len, rel_v_len, capture_radius, max_velocity);
+                    state.update_branches(
+                        rel_r_len,
+                        rel_v_len,
+                        capture_radius,
+                        max_velocity,
+                        kill_band,
+                    );
 
                     if !pushed {
                         state.applied = DVec3::ZERO;
@@ -512,6 +554,7 @@ fn resolve_root_state(
             &to,
             end,
             world_time,
+            capture_sphere_radius.radius,
             reason,
             messages,
         );
@@ -519,7 +562,7 @@ fn resolve_root_state(
 
     let parameters = current_state_parameters(plan, &capture_component.current_state);
     if let Some(shrink_rate) = parameters.shrink_rate
-        && capture_sphere_radius.radius > 0.1
+        && capture_sphere_radius.radius > plan.min_capture_radius_m
     {
         capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
     }
@@ -573,14 +616,16 @@ fn transition_satisfied(
 }
 
 /// Enters `new_state` at the current sim time (`state_enter_time_s` is sim seconds
-/// since the start epoch) and reports it as a log line and a [`CaptureTransition`],
-/// and, when `new_state` is an end phase (`end`), as a [`CaptureEnded`].
+/// since the start epoch) with the sphere at `sphere_radius_m`, and reports it as a
+/// log line and a [`CaptureTransition`], and, when `new_state` is an end phase
+/// (`end`), as a [`CaptureEnded`].
 fn transition_to(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     new_state: &str,
     end: Option<PhaseEnd>,
     world_time: &WorldTime,
+    sphere_radius_m: f64,
     reason: String,
     messages: &mut CaptureMessages,
 ) {
@@ -612,6 +657,7 @@ fn transition_to(
     capture_component.current_state = String::from(new_state);
     capture_component.state_enter_time_s = world_time.epoch - world_time.start_epoch;
     capture_component.state_elapsed_time_s = 0.0;
+    capture_component.sphere_radius_at_entry_m = sphere_radius_m;
 }
 
 /// Writes the [`CaptureEnded`] message and its Info log line.

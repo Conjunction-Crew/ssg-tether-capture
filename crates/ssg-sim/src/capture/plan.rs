@@ -530,6 +530,7 @@ pub fn build_capture_component(
         current_state: first_phase.id.clone(),
         state_enter_time_s: sim_time_s,
         state_elapsed_time_s: 0.0,
+        sphere_radius_at_entry_m: plan.initial_capture_radius_m(),
     })
 }
 

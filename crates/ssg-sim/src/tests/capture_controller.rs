@@ -4,19 +4,24 @@
 //! These pin the controller's force branches: for each branch the **direction** of
 //! the force on the tether nodes and its magnitude (the ramp's first step), and the
 //! log events of the paths where the controller gives up; then the P7.5 force law
-//! (F-31, C2, C7): who is pushed, the ramp, the dead bands. Geometry: the nodes sit
-//! at the origin and the capture target at `(0, r, 0)`, so `rel_r` (node to
-//! target) points along +Y and the default `up` (the target's +X axis) is
-//! perpendicular to it.
+//! (F-31, C2, C7): who is pushed, the ramp, the dead bands; and the O2 revision's
+//! touches (P7.5 S6): the circling axis, the speed limit that scales with the
+//! sphere, the absolute kill band and the sphere floor. Geometry: the nodes sit at
+//! the origin and the capture target at `(0, r, 0)`, so `rel_r` (node to target)
+//! points along +Y and `up` (the target's `CAPTURE_CIRCLING_AXIS`, +Z) is
+//! perpendicular to it: the tangent push `up × rel_r` is −X.
 
-use avian3d::prelude::{Forces, LinearVelocity, Mass, Position, ReadRigidBodyForces, Rotation};
+use avian3d::prelude::{
+    ComputedMass, Forces, LinearVelocity, Mass, Position, ReadRigidBodyForces, Rotation,
+};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 
 use crate::capture::plan::CapturePlanLibrary;
 use crate::capture::{
-    BRANCH_DEAD_BAND, CaptureComponent, CaptureForce, CaptureSphereRadius, FORCE_RAMP_S,
+    BRANCH_DEAD_BAND, CAPTURE_CIRCLING_AXIS, CaptureComponent, CaptureForce, CaptureSphereRadius,
+    FORCE_RAMP_S,
 };
 use crate::orbit::cache::OrbitalCache;
 use crate::telemetry::LogLevel;
@@ -31,6 +36,8 @@ const MAX_FORCE: f64 = 10.0;
 /// ramp (F-31).
 const FIRST_STEP_FORCE: f64 = MAX_FORCE * PHYS_DT / FORCE_RAMP_S;
 const PLAN_ID: &str = "branches";
+/// The tangent push for the geometry above: `CAPTURE_CIRCLING_AXIS × +Y` = −X.
+const TANGENT: DVec3 = DVec3::NEG_X;
 
 /// Two phases with the same limits (1.0 m/s, 10 N), no transitions and the tail
 /// pushed in both (`tail_actuation`), so the state never changes under the
@@ -154,25 +161,28 @@ fn controller_tail_radius_is_one_metre_larger_than_the_roots() {
     // A fresh body enters a branch past the 2 % dead band: the root's outer edge
     // at 25.5 m and inner edge at 19.6 m, the tail's at 26.52 m and 20.384 m.
     // At 25.8 m the root is outside (pulled in, +Y) and the tail inside its band
-    // (tangent, +Z).
+    // (tangent, −X).
     let (root, tail) = drive(DVec3::new(0.0, 25.8, 0.0), DVec3::ZERO);
     assert_force_along(root, DVec3::Y, "root at 25.8 m");
-    assert_force_along(tail, DVec3::Z, "tail at 25.8 m");
+    assert_force_along(tail, TANGENT, "tail at 25.8 m");
 
-    // At 20.2 m the root is inside its band (tangent, +Z) and the tail below its
+    // At 20.2 m the root is inside its band (tangent, −X) and the tail below its
     // inner edge (pushed away, −Y).
     let (root, tail) = drive(DVec3::new(0.0, 20.2, 0.0), DVec3::ZERO);
-    assert_force_along(root, DVec3::Z, "root at 20.2 m");
+    assert_force_along(root, TANGENT, "root at 20.2 m");
     assert_force_along(tail, -DVec3::Y, "tail at 20.2 m");
 }
 
 #[test]
 fn controller_tangent_band_pushes_sideways_around_the_target() {
-    // 22 m is inside both bands. `up` = +X, `rel_r` = +Y: the push is `up × rel_r`
-    // = +Z, for both nodes in every state but `capture`.
+    // 22 m is inside both bands. `up` = `CAPTURE_CIRCLING_AXIS` = +Z (P7.5 S6,
+    // design D14), `rel_r` = +Y: the push is `up × rel_r` = −X, for both nodes in
+    // every state but `capture` (the tail too: `tail_actuation`).
+    assert_eq!(CAPTURE_CIRCLING_AXIS, DVec3::Z);
+    assert_eq!(CAPTURE_CIRCLING_AXIS.cross(DVec3::Y), TANGENT);
     let (root, tail) = drive(DVec3::new(0.0, 22.0, 0.0), DVec3::ZERO);
-    assert_force_along(root, DVec3::Z, "root, tangent");
-    assert_force_along(tail, DVec3::Z, "tail, tangent");
+    assert_force_along(root, TANGENT, "root, tangent");
+    assert_force_along(tail, TANGENT, "tail, tangent");
 }
 
 #[test]
@@ -180,27 +190,27 @@ fn controller_tangent_direction_reverses_for_non_root_nodes_in_capture_state() {
     let (root, tail) = drive_with(DVec3::new(0.0, 22.0, 0.0), DVec3::ZERO, |app, rig| {
         set_state(app, rig, "capture")
     });
-    // The root keeps circling; the tail circles the other way, winding the tether
-    // around the target.
-    assert_force_along(root, DVec3::Z, "root, capture");
-    assert_force_along(tail, -DVec3::Z, "tail, capture");
+    // The root keeps circling; the tail circles the other way about
+    // `CAPTURE_CIRCLING_AXIS`, winding the tether around the target.
+    assert_force_along(root, TANGENT, "root, capture");
+    assert_force_along(tail, -TANGENT, "tail, capture");
 }
 
 #[test]
 fn controller_tangent_falls_back_to_x_when_up_is_parallel_to_the_range() {
-    // Rotate the target so its `up` (rotation × X) is +Z, and put it 22 m along +Z:
-    // `rel_r × up` = 0, so the axis falls back to +X and the push is
-    // `X × rel_r` = −Y. Without the fallback `up × rel_r` is the zero vector and
-    // no force would be applied.
-    let (root, tail) = drive_with(DVec3::new(0.0, 0.0, 22.0), DVec3::ZERO, |app, rig| {
+    // Rotate the target so its `up` (rotation × `CAPTURE_CIRCLING_AXIS`) is +Y, the
+    // range direction: `rel_r × up` = 0, so the axis falls back to +X and the push
+    // is `X × rel_r` = +Z. Without the fallback `up × rel_r` is the zero vector
+    // and no force would be applied.
+    let rotation = DQuat::from_rotation_x(-std::f64::consts::FRAC_PI_2);
+    assert_close_dvec3(rotation * CAPTURE_CIRCLING_AXIS, DVec3::Y, 1e-12, "up");
+    let (root, tail) = drive_with(DVec3::new(0.0, 22.0, 0.0), DVec3::ZERO, |app, rig| {
         app.world_mut()
             .entity_mut(rig.capture)
-            .insert(Rotation(DQuat::from_rotation_y(
-                -std::f64::consts::FRAC_PI_2,
-            )));
+            .insert(Rotation(rotation));
     });
-    assert_force_along(root, -DVec3::Y, "root, fallback");
-    assert_force_along(tail, -DVec3::Y, "tail, fallback");
+    assert_force_along(root, DVec3::Z, "root, fallback");
+    assert_force_along(tail, DVec3::Z, "tail, fallback");
 }
 
 #[test]
@@ -376,7 +386,7 @@ fn controller_branch_thresholds_have_a_dead_band() {
         !branches_after(&mut app, &rig, inner * 1.03, 0.0).0,
         "inner: 1.03 leaves"
     );
-    assert_force_direction(&app, rig.root, DVec3::Z, "inner left: tangent");
+    assert_force_direction(&app, rig.root, TANGENT, "inner left: tangent");
 
     let outer = 25.0;
     let (mut app, rig) = branch_rig();
@@ -384,7 +394,7 @@ fn controller_branch_thresholds_have_a_dead_band() {
         !branches_after(&mut app, &rig, outer * 1.01, 0.0).1,
         "outer: 1.01, fresh"
     );
-    assert_force_direction(&app, rig.root, DVec3::Z, "outer not entered: tangent");
+    assert_force_direction(&app, rig.root, TANGENT, "outer not entered: tangent");
     assert!(
         branches_after(&mut app, &rig, outer * 1.03, 0.0).1,
         "outer: 1.03 enters"
@@ -400,8 +410,14 @@ fn controller_branch_thresholds_have_a_dead_band() {
     );
 
     // The kill, in the tangent band (22 m): entered above max_velocity, left below
-    // max_velocity × 0.98.
+    // max_velocity × 0.98 for a body heavy enough that one step's Δv at the
+    // phase's force (2 × 10 N × PHYS_DT / 500 kg = 0.0006 m/s) is below the
+    // relative band (P7.5 S6: the band is the larger of the two; the light-body
+    // case is `controller_kill_band_is_at_least_one_steps_dv_of_the_pushed_body`).
     let (mut app, rig) = branch_rig();
+    app.world_mut()
+        .entity_mut(rig.root)
+        .insert(ComputedMass::new(500.0));
     assert!(
         !branches_after(&mut app, &rig, 22.0, 0.99).2,
         "kill: 0.99, fresh"
@@ -537,6 +553,185 @@ fn controller_phase_entry_restarts_the_ramp() {
         2.0 * FIRST_STEP_FORCE,
         1e-12,
         "root, the step after",
+    );
+}
+
+/// One phase at 0.5 m/s and 2 N (the example plan's terminal limits), with the
+/// speed limit scaling with the sphere or not; no transitions, no shrink.
+fn terminal_like_plan(scales: bool) -> String {
+    format!(
+        r#"{{"schema_version": 1, "name": "terminal", "tether": "T", "phases": [
+  {{"id": "t", "max_velocity_mps": 0.5, "max_force_n": 2.0, "velocity_scales_with_sphere": {scales}}}
+]}}"#
+    )
+}
+
+/// A rig on [`terminal_like_plan`] with the sphere at `radius_m` (entered at the
+/// initial 25 m) and the root's `ComputedMass` at `root_mass_kg`.
+fn terminal_rig(scales: bool, radius_m: f64, root_mass_kg: f64) -> (App, CaptureRig) {
+    let mut app = test_app();
+    insert_plan_json(&mut app, "terminal", &terminal_like_plan(scales));
+    let rig = capture_rig(&mut app, "terminal");
+    app.world_mut().resource_mut::<CaptureSphereRadius>().radius = radius_m;
+    app.world_mut()
+        .entity_mut(rig.root)
+        .insert(ComputedMass::new(root_mass_kg));
+    (app, rig)
+}
+
+#[test]
+fn controller_speed_limit_scales_with_the_sphere_only_in_a_phase_that_asks() {
+    // P7.5 S6 (a), design D14: R = 12.5 m of the 25 m the phase was entered at, so
+    // the scaled limit is 0.25 m/s; 0.3 m/s is above it and below the phase's
+    // 0.5 m/s. 11 m is inside the tangent band of R = 12.5 m (10.2–12.25 m).
+    let (mut app, rig) = terminal_rig(true, 12.5, 2.0);
+    assert_eq!(
+        app.world()
+            .get::<CaptureComponent>(rig.capture)
+            .unwrap()
+            .sphere_radius_at_entry_m,
+        25.0
+    );
+    let (inner, outer, kill) = branches_after(&mut app, &rig, 11.0, 0.3);
+    assert!(!inner && !outer, "in the tangent band");
+    assert!(kill, "scaled: 0.3 m/s is above 0.5 × 12.5 / 25 = 0.25 m/s");
+
+    let (mut app, rig) = terminal_rig(false, 12.5, 2.0);
+    let (inner, outer, kill) = branches_after(&mut app, &rig, 11.0, 0.3);
+    assert!(!inner && !outer, "in the tangent band");
+    assert!(!kill, "unscaled: 0.3 m/s is below 0.5 m/s");
+}
+
+/// `shrink` (the sphere at 0.64 m/s, 0.01 m per step) → `next` below 10 m, which
+/// shrinks too; the sphere's floor is `min_radius_m` when given.
+fn shrink_plan(min_radius_m: Option<f64>) -> String {
+    let sphere = min_radius_m
+        .map(|r| format!(r#""capture_sphere": {{"min_radius_m": {r}}},"#))
+        .unwrap_or_default();
+    format!(
+        r#"{{"schema_version": 1, "name": "shrink", "tether": "T", {sphere} "phases": [
+  {{"id": "shrink", "max_velocity_mps": 1.0, "max_force_n": 10.0, "shrink_rate_mps": 6.4,
+   "transitions": [{{"to": "next", "all_of": {{"distance_m": {{"less_than": 10.0}}}}}}]}},
+  {{"id": "next", "max_velocity_mps": 1.0, "max_force_n": 10.0, "shrink_rate_mps": 0.64}}
+]}}"#
+    )
+}
+
+#[test]
+fn controller_sets_the_entry_radius_at_the_capture_start_and_at_a_phase_entry() {
+    // P7.5 S6 (b): the capture start sets it to the plan's initial radius (here
+    // 30 m); a phase entry to the radius when the transition fires, before that
+    // step's shrink.
+    let mut app = test_app();
+    insert_plan_json(
+        &mut app,
+        "entry",
+        r#"{"schema_version": 1, "name": "entry", "tether": "T",
+  "capture_sphere": {"initial_radius_m": 30.0}, "phases": [
+  {"id": "a", "max_velocity_mps": 1.0, "max_force_n": 10.0,
+   "transitions": [{"to": "b", "all_of": {"distance_m": {"less_than": 10.0}}}]},
+  {"id": "b", "max_velocity_mps": 1.0, "max_force_n": 10.0, "shrink_rate_mps": 0.64}
+]}"#,
+    );
+    let rig = capture_rig(&mut app, "entry");
+    let entry = |app: &App| {
+        app.world()
+            .get::<CaptureComponent>(rig.capture)
+            .unwrap()
+            .sphere_radius_at_entry_m
+    };
+    assert_eq!(entry(&app), 30.0, "the capture start");
+    app.world_mut().resource_mut::<CaptureSphereRadius>().radius = 17.0;
+    place(&mut app, &rig, DVec3::new(0.0, 50.0, 0.0), DVec3::ZERO);
+    run_controller(&mut app);
+    assert_eq!(entry(&app), 30.0, "no entry, no change");
+    place(&mut app, &rig, DVec3::new(0.0, 5.0, 0.0), DVec3::ZERO);
+    run_controller(&mut app);
+    let component = app.world().get::<CaptureComponent>(rig.capture).unwrap();
+    assert_eq!(component.current_state, "b");
+    assert_eq!(entry(&app), 17.0, "the phase entry, before the shrink");
+    assert_close(
+        app.world().resource::<CaptureSphereRadius>().radius,
+        17.0 - 0.01,
+        1e-12,
+        "the entry step shrank once",
+    );
+}
+
+#[test]
+fn controller_shrinks_the_sphere_down_to_the_plans_floor_and_0_1_by_default() {
+    // P7.5 S6 (c), design D13: the sphere shrinks while its radius is above the
+    // floor: 0.1 m per step from 4.75 m against 4.5 m stops at 4.45 m; from 0.35 m
+    // against the default 0.1 m it stops at 0.05 m.
+    for (floor, start, stop) in [(Some(4.5), 4.75, 4.45), (None, 0.35, 0.05)] {
+        let mut app = test_app();
+        insert_plan_json(&mut app, "shrink", &shrink_plan(floor));
+        let rig = capture_rig(&mut app, "shrink");
+        app.world_mut().resource_mut::<CaptureSphereRadius>().radius = start;
+        place(&mut app, &rig, DVec3::new(0.0, 50.0, 0.0), DVec3::ZERO);
+        for _ in 0..20 {
+            run_controller(&mut app);
+        }
+        assert_close(
+            app.world().resource::<CaptureSphereRadius>().radius,
+            stop,
+            1e-9,
+            &format!("floor {floor:?}"),
+        );
+    }
+}
+
+#[test]
+fn controller_kill_band_is_at_least_one_steps_dv_of_the_pushed_body() {
+    // P7.5 S6 (e), design D7 (C4): 2 N on a 2 kg root gives a band of
+    // 2 × 2 N × PHYS_DT / 2 kg = 0.03125 m/s, wider than 2 % of 0.5 m/s (0.010).
+    // In the kill it stays at 0.48 m/s and leaves at 0.46 (the relative band would
+    // have left at 0.489). 22 m is inside the tangent band of R = 25 m.
+    let (mut app, rig) = terminal_rig(false, 25.0, 2.0);
+    assert!(!branches_after(&mut app, &rig, 22.0, 0.49).2, "0.49, fresh");
+    assert!(branches_after(&mut app, &rig, 22.0, 0.51).2, "0.51 enters");
+    assert!(
+        branches_after(&mut app, &rig, 22.0, 0.48).2,
+        "0.48 keeps it"
+    );
+    assert!(!branches_after(&mut app, &rig, 22.0, 0.46).2, "0.46 leaves");
+
+    // The scaled limit 0.1 m/s (R = 5 m of 25) keeps the band at 0.03125, taken
+    // from the unscaled limit: entered above 0.1, kept at 0.08, left at 0.06.
+    // 4.5 m is inside the tangent band of R = 5 m (4.08–4.9 m).
+    let (mut app, rig) = terminal_rig(true, 5.0, 2.0);
+    assert!(
+        !branches_after(&mut app, &rig, 4.5, 0.09).2,
+        "scaled: 0.09, fresh"
+    );
+    assert!(
+        branches_after(&mut app, &rig, 4.5, 0.11).2,
+        "scaled: 0.11 enters"
+    );
+    assert!(
+        branches_after(&mut app, &rig, 4.5, 0.08).2,
+        "scaled: 0.08 keeps it"
+    );
+    assert!(
+        !branches_after(&mut app, &rig, 4.5, 0.06).2,
+        "scaled: 0.06 leaves"
+    );
+
+    // A 500 kg root (a stated `chaser.mass_kg`) under the same phase: one step is
+    // 0.000125 m/s, so the relative band (0.01 m/s) governs: kept at 0.495, left
+    // at 0.489.
+    let (mut app, rig) = terminal_rig(false, 25.0, 500.0);
+    assert!(
+        branches_after(&mut app, &rig, 22.0, 0.51).2,
+        "500 kg: 0.51 enters"
+    );
+    assert!(
+        branches_after(&mut app, &rig, 22.0, 0.495).2,
+        "500 kg: 0.495 keeps it"
+    );
+    assert!(
+        !branches_after(&mut app, &rig, 22.0, 0.489).2,
+        "500 kg: 0.489 leaves"
     );
 }
 
