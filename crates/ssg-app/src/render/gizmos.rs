@@ -1,13 +1,5 @@
-use avian3d::{
-    math::PI,
-    prelude::{RigidBodyDisabled, RigidBodyQuery},
-};
-use bevy::{
-    camera::visibility::RenderLayers,
-    ecs::system::SystemParam,
-    math::{DQuat, DVec3},
-    prelude::*,
-};
+use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
+use bevy::{camera::visibility::RenderLayers, ecs::system::SystemParam, math::DVec3, prelude::*};
 use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::render::floating_origin_visuals::floating_origin_update_visuals;
@@ -15,7 +7,7 @@ use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
 use ssg_sim::capture::plan::CapturePlanLibrary;
-use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
+use ssg_sim::capture::{CaptureComponent, CaptureForce, CaptureSphereRadius};
 use ssg_sim::floating_origin::MAX_ORIGIN_OFFSET;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::cache::OrbitalCache;
@@ -214,42 +206,6 @@ pub fn orbital_gizmos(
     }
 }
 
-fn capture_force_direction(
-    rel_r: DVec3,
-    rel_v: DVec3,
-    capture_entity_rotation: DQuat,
-    capture_radius: f64,
-    max_velocity: f64,
-    tangent_sign: f64,
-) -> DVec3 {
-    let mut force_vec = DVec3::ZERO;
-
-    if rel_v.length() > max_velocity {
-        force_vec += -rel_v.normalize_or_zero();
-    }
-
-    if rel_r.length() < capture_radius * 0.8 {
-        force_vec += -rel_r.normalize_or_zero();
-    } else if rel_r.length() > capture_radius {
-        if rel_v.angle_between(rel_r) > PI / 2.0 {
-            force_vec += -rel_v.normalize_or_zero();
-        }
-
-        force_vec += rel_r.normalize_or_zero();
-    } else {
-        let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
-        let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
-            up
-        } else {
-            DVec3::X
-        };
-
-        force_vec += tangent_sign * tangent_axis.cross(rel_r).normalize_or_zero();
-    }
-
-    force_vec
-}
-
 /// The capture state [`capture_gizmos`] draws.
 #[derive(SystemParam)]
 pub struct CaptureGizmoInputs<'w> {
@@ -258,10 +214,14 @@ pub struct CaptureGizmoInputs<'w> {
     capture_sphere_radius: Res<'w, CaptureSphereRadius>,
 }
 
+/// The length of the force ray at the phase's `max_force_n` (1 m per N is too long).
+const FORCE_GIZMO_LENGTH_M: f64 = 2.0;
+
 pub fn capture_gizmos(
     capture_entities: Query<(Entity, &CaptureComponent)>,
     capture_inputs: CaptureGizmoInputs,
     rigidbodies: Query<RigidBodyQuery>,
+    capture_forces: Query<&CaptureForce>,
     settings: Res<Settings>,
     mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
     camera_s: Single<&RenderLayers, (With<Camera3d>, Without<Orbital>)>,
@@ -312,37 +272,24 @@ pub fn capture_gizmos(
             Srgba::new(0.0, 0.8, 0.4, 0.2),
         );
 
-        let base_max_velocity = phase.max_velocity_mps;
-        let capture_state = capture_component.current_state == "capture";
-
-        for (idx, &node) in nodes.iter().enumerate() {
-            let Ok(rb) = rigidbodies.get(node) else {
+        // F-41: the force the controller applied (its `CaptureForce`), drawn
+        // 2 m long at the phase's bound, and the velocity relative to the target.
+        let max_force = phase.max_force_n;
+        for &node in nodes {
+            let (Ok(rb), Ok(force)) = (rigidbodies.get(node), capture_forces.get(node)) else {
                 continue;
             };
 
-            let rel_r = capture_entity_rb.position.0 - rb.position.0;
             let rel_v = rb.linear_velocity.0 - capture_entity_rb.linear_velocity.0;
-
-            let mut max_velocity = base_max_velocity;
-            let mut capture_radius = capture_sphere_radius.radius;
-            if idx != 0 {
-                max_velocity *= 0.9;
-                capture_radius += 1.0;
-            }
-
-            let tangent_sign = if idx != 0 && capture_state { -1.0 } else { 1.0 };
-            let force_vec = capture_force_direction(
-                rel_r,
-                rel_v,
-                capture_entity_rb.rotation.0,
-                capture_radius,
-                max_velocity,
-                tangent_sign,
-            );
+            let force_ray = if max_force > 0.0 {
+                force.applied / max_force * FORCE_GIZMO_LENGTH_M
+            } else {
+                DVec3::ZERO
+            };
 
             gizmos.ray(
                 rb.position.as_vec3(),
-                force_vec.as_vec3(),
+                force_ray.as_vec3(),
                 Srgba::new(1.0, 0.0, 0.0, 0.2),
             );
             gizmos.ray(

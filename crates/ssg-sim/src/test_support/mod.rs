@@ -424,6 +424,12 @@ pub fn capture_rig(app: &mut App, plan_id: &str) -> CaptureRig {
     let component = build_capture_component(plan_id, &plan, 0.0)
         .unwrap_or_else(|| panic!("plan '{plan_id}' has no states"));
     app.world_mut().entity_mut(capture).insert(component);
+    // As `apply_sim_commands` does at the capture start.
+    for node in [root, tail] {
+        app.world_mut()
+            .entity_mut(node)
+            .insert(crate::capture::CaptureForce::default());
+    }
 
     app.update();
 
@@ -568,6 +574,7 @@ pub mod q13 {
             elements: EditableOrbitalElements::from_gp(&gp),
             gp: Some(gp),
             mass_kg: None,
+            inertia_kg_m2: None,
         }
     }
 
@@ -634,6 +641,13 @@ pub mod q13 {
         let component =
             build_capture_component(PLAN_ID, &plan, start_time).expect("example_plan has states");
         app.world_mut().entity_mut(handles.debris).insert(component);
+        // As `apply_sim_commands` does: the controller's state on the root and the tail.
+        let nodes = app.world().resource::<OrbitalCache>().tethers[&plan.tether].clone();
+        for node in nodes {
+            app.world_mut()
+                .entity_mut(node)
+                .insert(crate::capture::CaptureForce::default());
+        }
         tick(app);
         handles
     }

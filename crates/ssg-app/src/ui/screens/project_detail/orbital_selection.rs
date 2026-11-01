@@ -134,6 +134,7 @@ pub fn orbital_selection_interactions(
                         elements: EditableOrbitalElements::from_gp(&entry.gp),
                         gp: Some(entry.gp.clone()),
                         mass_kg: None,
+                        inertia_kg_m2: None,
                     };
 
                     match button.role {
@@ -160,6 +161,7 @@ pub fn orbital_selection_interactions(
                         },
                         gp: None,
                         mass_kg: None,
+                        inertia_kg_m2: None,
                     };
 
                     match button.role {

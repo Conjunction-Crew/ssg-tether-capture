@@ -143,32 +143,33 @@ const SHORT_TICKS: u64 = 6_400;
 /// The transition order every platform logs in the first 6,400 ticks.
 const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
 
-// Golden values captured at a465ece on macos/aarch64 (P4 S5: SGP4 initial states, F-10/F-27)
-// They hold on macOS/aarch64 only: Linux and Windows CI reach `approach` at step
-// 4315 with different ranges (P4 S6 lever run, F-17; the measured tolerance is in
+// Golden values captured on the P7.5 S1 branch on macos/aarch64 (root-only push,
+// ramped force bound, F-31; provisional until S4). They hold on macOS/aarch64
+// only: Linux and Windows CI reach `approach` at a nearby step with different
+// ranges (P4 S6 lever run, F-17; the measured tolerance is in
 // docs_site/docs/concepts/determinism.md), so only `baseline_q13_to_capture` checks
 // them (operator decision, 2026-10-26).
 /// `(step, state, range_m)` every 640 ticks, the first 6,400 ticks of a
 /// fixed-epoch run.
 const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
-    (643, "rendezvous", 3432.4996012584393),
-    (1_283, "rendezvous", 3185.0703447915175),
-    (1_923, "rendezvous", 2935.0054350755054),
-    (2_563, "rendezvous", 2684.9178989882676),
-    (3_203, "rendezvous", 2434.914064423956),
-    (3_843, "rendezvous", 2184.9201163227362),
-    (4_483, "approach", 1939.1233616820625),
-    (5_123, "approach", 1709.44125926763),
-    (5_763, "approach", 1508.3059241292256),
-    (6_403, "approach", 1334.4098855460968),
+    (643, "rendezvous", 3491.4620981419134), // F-66 (P7.5 S1): provisional until S4
+    (1_283, "rendezvous", 3327.1060252010984), // F-66 (P7.5 S1): provisional until S4
+    (1_923, "rendezvous", 3098.5321073890927), // F-66 (P7.5 S1): provisional until S4
+    (2_563, "rendezvous", 2851.7056980226407), // F-66 (P7.5 S1): provisional until S4
+    (3_203, "rendezvous", 2604.383997124594), // F-66 (P7.5 S1): provisional until S4
+    (3_843, "rendezvous", 2357.235401409218), // F-66 (P7.5 S1): provisional until S4
+    (4_483, "rendezvous", 2110.331892009801), // F-66 (P7.5 S1): provisional until S4
+    (5_123, "approach", 1872.480356958801),  // F-66 (P7.5 S1): provisional until S4
+    (5_763, "approach", 1641.873090069257),  // F-66 (P7.5 S1): provisional until S4
+    (6_403, "approach", 1419.9926171230607), // F-66 (P7.5 S1): provisional until S4
 ];
 /// The fixed-epoch run to `capture`: every transition, and the final range.
 const CAPTURE_TRANSITIONS: &[(u64, &str, &str)] = &[
-    (4_318, "rendezvous", "approach"),
-    (34_755, "approach", "terminal"),
-    (162_745, "terminal", "capture"),
+    (4_769, "rendezvous", "approach"), // F-66 (P7.5 S1): provisional until S4
+    (32_046, "approach", "terminal"),  // F-66 (P7.5 S1): provisional until S4
+    (159_248, "terminal", "capture"),  // F-66 (P7.5 S1): provisional until S4
 ];
-const CAPTURE_FINAL_RANGE_M: f64 = 4.999972839403157;
+const CAPTURE_FINAL_RANGE_M: f64 = 4.998531542400675; // F-66 (P7.5 S1): provisional until S4
 /// Baseline ranges carry 1e-6 m (A-3).
 const RANGE_TOL_M: f64 = 1e-6;
 

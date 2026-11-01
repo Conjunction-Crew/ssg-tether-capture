@@ -53,33 +53,46 @@ fn initial_orbit(selected: &SelectedOrbitalObject) -> Orbit {
 /// The target's mass when `project.json` gives none, in kg.
 const DEFAULT_TARGET_MASS_KG: f64 = 2500.0;
 
+/// The `project.json` inertia tensor (kg m², validated symmetric and positive
+/// definite) as avian's [`AngularInertia`]. Every body keeps the identity
+/// `Rotation` at spawn, so the tensor is in the sim's ECI-aligned axes (C3).
+fn angular_inertia(tensor: &[[f64; 3]; 3]) -> AngularInertia {
+    let rows = tensor.map(|row| row.map(|v| v as f32));
+    AngularInertia::from_tensor(AngularInertiaTensor::from_mat3_unchecked(
+        Mat3::from_cols_array_2d(&rows).transpose(),
+    ))
+}
+
 pub fn spawn_debris(
     commands: &mut Commands,
     orbital_cache: &mut ResMut<OrbitalCache>,
     selected: &SelectedOrbitalObject,
 ) -> Result<(), BevyError> {
-    orbital_cache.debris.insert(
-        "Satellite1".to_string(),
-        commands
-            .spawn((
-                DespawnOnExit(UiScreen::Sim),
-                DebrisBody {
-                    model_path: "models/broken_satellite.glb".to_string(),
-                },
-                RigidBody::Dynamic,
-                RigidBodyDisabled,
-                initial_orbit(selected),
-                ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
-                CenterOfMass(Vec3::ZERO),
-                Mass::from(selected.mass_kg.unwrap_or(DEFAULT_TARGET_MASS_KG) as f32),
-                Transform::from_xyz(
-                    PHYSICS_DISABLE_RADIUS as f32 + 10.0,
-                    PHYSICS_DISABLE_RADIUS as f32 + 10.0,
-                    PHYSICS_DISABLE_RADIUS as f32 + 10.0,
-                ),
-            ))
-            .id(),
-    );
+    let mut debris = commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
+        DebrisBody {
+            model_path: "models/broken_satellite.glb".to_string(),
+        },
+        RigidBody::Dynamic,
+        RigidBodyDisabled,
+        initial_orbit(selected),
+        ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+        CenterOfMass(Vec3::ZERO),
+        Mass::from(selected.mass_kg.unwrap_or(DEFAULT_TARGET_MASS_KG) as f32),
+        Transform::from_xyz(
+            PHYSICS_DISABLE_RADIUS as f32 + 10.0,
+            PHYSICS_DISABLE_RADIUS as f32 + 10.0,
+            PHYSICS_DISABLE_RADIUS as f32 + 10.0,
+        ),
+    ));
+    // Q10 row 11: the manifest's tensor replaces the collider's scaled inertia
+    // (avian recomputes the mass properties in the first step's Prepare set).
+    if let Some(tensor) = &selected.inertia_kg_m2 {
+        debris.insert(angular_inertia(tensor));
+    }
+    orbital_cache
+        .debris
+        .insert("Satellite1".to_string(), debris.id());
 
     Ok(())
 }
@@ -149,20 +162,25 @@ pub fn spawn_tether(
     };
     let tether_node_collider = Collider::cylinder(rope_radius / 8.0, tether_node_length);
 
-    // The root tether node
-    let tether_root = commands
-        .spawn((
-            DespawnOnExit(UiScreen::Sim),
-            SimAnchor,
-            TetherRoot,
-            sphere_shape,
-            RigidBody::Dynamic,
-            sphere_collider.clone(),
-            Mass::from(end_mass),
-            Transform::from_xyz(0.0, 0.0, 0.0),
-            initial_orbit(selected),
-        ))
-        .id();
+    // The root tether node. The root is the chaser (design D8): it takes the
+    // chaser's `mass_kg` and `inertia_kg_m2` from `project.json` when given (Q10 row 11).
+    let root_mass = selected.mass_kg.map_or(end_mass, |m| m as f32);
+    let mut root = commands.spawn((
+        DespawnOnExit(UiScreen::Sim),
+        SimAnchor,
+        TetherRoot,
+        sphere_shape,
+        RigidBody::Dynamic,
+        sphere_collider.clone(),
+        Mass::from(root_mass),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        initial_orbit(selected),
+    ));
+    // Avian recomputes the mass properties in the first step's Prepare set.
+    if let Some(tensor) = &selected.inertia_kg_m2 {
+        root.insert(angular_inertia(tensor));
+    }
+    let tether_root = root.id();
 
     orbital_entities
         .tethers

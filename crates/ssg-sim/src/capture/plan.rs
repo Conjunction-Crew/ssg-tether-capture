@@ -70,7 +70,8 @@ pub struct CapturePlanDevice {
     /// Mass of each interior tether node in kg. Default 0.1; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_mass_kg: Option<f64>,
-    /// Mass of the root and of the tail in kg. Default 2.0; greater than 0.
+    /// Mass of the tail, and of the root unless `project.json` gives the chaser a
+    /// `mass_kg`, in kg. Default 2.0; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_mass_kg: Option<f64>,
     /// Linear damping of each tether joint. Default 1.0; not negative.
@@ -166,6 +167,9 @@ pub struct Phase {
     /// Marks an end phase (`success` or `abort`); an end phase has no transitions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<PhaseEnd>,
+    /// Push the tail in this phase as well as the root. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_actuation: Option<bool>,
 }
 
 /// How an end phase ends the capture.
@@ -249,6 +253,9 @@ pub struct CompiledCaptureStateParameters {
     pub max_velocity: f64,
     pub max_force: f64,
     pub shrink_rate: Option<f64>,
+    /// The phase's `tail_actuation`: the controller pushes the tail as well as the
+    /// root (C7). `false` when the phase leaves it out.
+    pub tail_actuation: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -468,6 +475,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 max_velocity: phase.max_velocity_mps,
                 max_force: phase.max_force_n,
                 shrink_rate: phase.shrink_rate_mps,
+                tail_actuation: phase.tail_actuation.unwrap_or(false),
             },
             transitions: phase
                 .transitions

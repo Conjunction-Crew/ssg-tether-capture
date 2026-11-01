@@ -28,8 +28,9 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// bit-identical only on the same build and platform (F-48).
 const AVIAN_FEATURES: &[&str] = &["simd", "parallel"];
 
-/// Ends every "not supported yet" message (design D2, E1).
-const NOT_YET: &str = "is not supported yet; it is applied from v0.4.0-rc.4";
+/// Ends every "not supported yet" message (design D2, E1); only
+/// `relative_to_target` is left (P9).
+const NOT_YET: &str = "is not supported yet; it is applied from v0.4.0-rc.5";
 
 /// The six GP fields a body needs besides `NORAD_CAT_ID`, in load order.
 const GP_NUMBER_KEYS: [&str; 6] = [
@@ -166,11 +167,14 @@ pub struct ManifestBody {
     /// Where the orbit came from. Provenance only: the orbit is the source of truth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<ManifestSource>,
-    /// Mass in kg; greater than 0. The target's is applied from v0.4.0-rc.1; the
-    /// chaser's is refused until v0.4.0-rc.4.
+    /// Mass in kg; greater than 0. The chaser's is the tether root's (the root is
+    /// the chaser); without it the root takes the plan's `end_mass_kg`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mass_kg: Option<f64>,
-    /// Inertia tensor in kg m², row-major. Refused until v0.4.0-rc.4.
+    /// Inertia tensor in kg m², row-major; finite, symmetric and positive definite.
+    /// It is taken in the sim's ECI-aligned axes at spawn: every body starts with
+    /// the identity attitude and the sim has no attitude model. Absent: the
+    /// collider's inertia scaled to the mass.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inertia_kg_m2: Option<[[f64; 3]; 3]>,
 }
@@ -186,7 +190,7 @@ pub enum ManifestOrbit {
     /// Osculating Keplerian elements in metres and radians.
     Elements(ManifestElements),
     /// Chaser only: an offset from the target along V-bar or R-bar. Refused until
-    /// v0.4.0-rc.4.
+    /// v0.4.0-rc.5.
     RelativeToTarget(RelativeToTarget),
 }
 
@@ -428,20 +432,19 @@ impl ManifestBody {
                 "must not be blank",
             ));
         }
-        match (self.mass_kg, role) {
-            (Some(_), Role::Chaser) => errors.push(message(
-                &format!("{at}/mass_kg"),
-                format!("the chaser's mass {NOT_YET}"),
-            )),
-            (Some(mass), Role::Target) if !(mass.is_finite() && mass > 0.0) => {
-                errors.push(message(&format!("{at}/mass_kg"), "must be greater than 0"))
-            }
-            _ => {}
+        // Q10 row 11: both roles' mass and inertia are applied (the chaser's to the
+        // tether root).
+        if let Some(mass) = self.mass_kg
+            && !(mass.is_finite() && mass > 0.0)
+        {
+            errors.push(message(&format!("{at}/mass_kg"), "must be greater than 0"));
         }
-        if self.inertia_kg_m2.is_some() {
+        if let Some(tensor) = &self.inertia_kg_m2
+            && !is_inertia_tensor(tensor)
+        {
             errors.push(message(
                 &format!("{at}/inertia_kg_m2"),
-                format!("the inertia {NOT_YET}"),
+                "must be a finite, symmetric, positive-definite 3×3 tensor",
             ));
         }
     }
@@ -559,6 +562,7 @@ impl ManifestBody {
                     elements: EditableOrbitalElements::from_gp(&gp),
                     gp: Some(gp),
                     mass_kg: self.mass_kg,
+                    inertia_kg_m2: self.inertia_kg_m2,
                 })
             }
             ManifestOrbit::Elements(e) => {
@@ -581,6 +585,7 @@ impl ManifestBody {
                     },
                     gp: None,
                     mass_kg: self.mass_kg,
+                    inertia_kg_m2: self.inertia_kg_m2,
                 })
             }
             ManifestOrbit::RelativeToTarget(_) => Err(vec![message(
@@ -615,9 +620,25 @@ impl ManifestBody {
             orbit,
             source: None,
             mass_kg: selected.mass_kg,
-            inertia_kg_m2: None,
+            inertia_kg_m2: selected.inertia_kg_m2,
         }
     }
+}
+
+/// A finite, symmetric (to 1e-9 of its largest entry) and positive-definite 3×3
+/// tensor (Sylvester's criterion: the three leading principal minors are positive).
+fn is_inertia_tensor(t: &[[f64; 3]; 3]) -> bool {
+    if !t.iter().flatten().all(|v| v.is_finite()) {
+        return false;
+    }
+    let scale = t.iter().flatten().fold(0.0_f64, |m, v| m.max(v.abs()));
+    let symmetric = (0..3).all(|i| (0..3).all(|j| (t[i][j] - t[j][i]).abs() <= 1e-9 * scale));
+    let minor1 = t[0][0];
+    let minor2 = t[0][0] * t[1][1] - t[0][1] * t[1][0];
+    let det = t[0][0] * (t[1][1] * t[2][2] - t[1][2] * t[2][1])
+        - t[0][1] * (t[1][0] * t[2][2] - t[1][2] * t[2][0])
+        + t[0][2] * (t[1][0] * t[2][1] - t[1][1] * t[2][0]);
+    symmetric && minor1 > 0.0 && minor2 > 0.0 && det > 0.0
 }
 
 /// The GP record a catalog pick came from, as far as the sim reads it.
