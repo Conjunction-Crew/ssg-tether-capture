@@ -272,7 +272,8 @@ fn recordings_with_each_spawn_update_step_count_replay_exactly() {
 
 #[test]
 fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
-    // Q13 resets the origin at steps 468 and 979 (macOS/aarch64).
+    // Q13 resets the origin at steps 701 and 1,328 (macOS/aarch64).
+    let last_step: u64 = 1400; // F-66 (P7.5 S1): provisional until S4
     let dir = temp_dir("resets");
     let (mut app, sink) = harness(&dir.join("recordings"), 16);
     enter_sim(&mut app);
@@ -282,7 +283,7 @@ fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
         target: Some(debris),
         plan_id: q13::PLAN_ID.to_string(),
     });
-    while current_step(&app) < 1100 {
+    while current_step(&app) < last_step {
         if current_step(&app) + 1 == 400 {
             app.world_mut().write_message(RecorderCommand::Start {
                 name: "resets".to_string(),
@@ -298,7 +299,7 @@ fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
         .filter(|f| f.line.origin_shift_m != [0.0; 3])
         .map(|f| f.line.step)
         .collect();
-    assert!(!shifted.is_empty(), "no reset in steps 400–1100");
+    assert!(!shifted.is_empty(), "no reset in steps 400–{last_step}");
     println!("frames carrying an origin shift: {shifted:?}");
     let out = expect_exit(&replay(&folder, &[]), 0);
     assert!(out.contains(&identical(recording.frames.len())), "{out}");
@@ -321,7 +322,7 @@ fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
     let (mut largest, mut at) = (0.0_f64, 0);
     let mut largest_bubble = 0.0_f64;
     let mut previous = player.state_at(400.0);
-    for step in 401..=1100 {
+    for step in 401..=last_step {
         let view = player.state_at(step as f64);
         for body in 0..view.bodies.len() {
             let ((p0, v0), (p1, _)) = (eci(&previous, body), eci(&view, body));

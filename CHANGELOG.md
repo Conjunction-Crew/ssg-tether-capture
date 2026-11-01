@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Changed
+- Capture actuation (F-31, F-41): the controller pushes the tether root in every phase, and the tail only in a phase that sets the new optional plan key `phases[].tail_actuation: true` (the example plan sets it nowhere, so its capture phase no longer winds the tail the other way). `max_force_n` is now an upper bound: the force rises from 0 to it over 1 s at the capture start and at every phase entry (a change of direction does not restart the rise), and the controller's three branch thresholds (the inner and outer edges of the capture sphere and the speed limit) have a 2 % dead band, so a node at a threshold no longer flips direction every step. The app's capture gizmo draws the force the controller applied instead of re-deriving it, and the HUD calls `max_force_n` a bound. `project.json` now applies the chaser's `mass_kg` (the tether root is the chaser) and the `inertia_kg_m2` of both bodies (a symmetric, positive-definite tensor in the sim's ECI-aligned axes at spawn); `orbit.relative_to_target` is still refused, now "applied from v0.4.0-rc.5". The fixed-epoch results move: the Q13 6,400-step state hash, the first transition (step 4,318 to 4,769 on macOS) and the floating-origin reset steps; the plan, project and recording-manifest JSON Schemas are regenerated.
+
 
 ## [v0.4.0-rc.2] 🔬 - 2026-10-31
 
