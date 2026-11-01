@@ -6,21 +6,31 @@
 
 use avian3d::prelude::*;
 use bevy::ecs::system::RunSystemOnce;
+use bevy::math::DVec3;
 use bevy::prelude::*;
 
 use crate::anchor::SimAnchor;
-use crate::capture::plan::{CapturePlanLibrary, capture_plan_warnings, validate_capture_plan};
-use crate::orbit::Orbit;
+use crate::capture::plan::{
+    CapturePlanDevice, CapturePlanLibrary, SpawnOrientation, capture_plan_warnings,
+    validate_capture_plan,
+};
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::LvlhFrame;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
+use crate::orbit::{Orbit, Orbital};
 use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::project::SelectedProject;
-use crate::test_support::{assert_close, insert_plan_json, q13, test_app};
+use crate::telemetry::LogLevel;
+use crate::test_support::{
+    LogTap, assert_close, enter_sim, fixed_epoch, insert_plan_json, load_example_plans, q13,
+    start_running, test_app, tick,
+};
 use crate::tether::{
     DEBRIS_LAYER, DebrisBody, TETHER_LAYER, TetherNode, TetherRoot, TetherShape, chain_from_joints,
     spawn_debris, spawn_selected_bodies, spawn_tether,
 };
 use crate::time::ManualPhysics;
+use brahe::utils::DOrbitStateProvider;
 
 /// A plan whose `device` block (if any) is `device_json`, with tether `tether`.
 fn plan_with(tether: &str, device_json: Option<&str>) -> String {
@@ -43,7 +53,8 @@ fn hst() -> SelectedOrbitalObject {
     q13::catalog_pick("HST", q13::HST_NORAD_ID)
 }
 
-/// Runs `spawn_tether` for `selected` with project `project_id`; returns its result as a string.
+/// Runs `spawn_tether` for `selected` with project `project_id`, laid along +Y;
+/// returns its result as a string.
 fn run_spawn_tether(
     app: &mut App,
     project_id: Option<&str>,
@@ -56,8 +67,15 @@ fn run_spawn_tether(
                   mut cache: ResMut<OrbitalCache>,
                   project: Res<SelectedProject>,
                   library: Res<CapturePlanLibrary>| {
-                spawn_tether(&mut commands, &mut cache, &project, &library, &selected)
-                    .map_err(|e| e.to_string())
+                spawn_tether(
+                    &mut commands,
+                    &mut cache,
+                    &project,
+                    &library,
+                    &selected,
+                    DVec3::Y,
+                )
+                .map_err(|e| e.to_string())
             },
         )
         .expect("the spawn system failed to run")
@@ -542,7 +560,20 @@ fn spawn_selected_bodies_spawns_the_chasers_tether_and_the_targets_debris() {
     assert_eq!(count::<With<DebrisBody>>(&mut app), 1);
     let cache = app.world().resource::<OrbitalCache>();
     assert!(cache.debris.contains_key("Satellite1"));
-    assert_close(y_of(&app, registered(&app, "Rope")[1]), 2.0, 1e-3, "tail y");
+    // P7.5 S3: laid along the spawn orientation, not +Y; the root is at the origin.
+    let tail = registered(&app, "Rope")[1];
+    let tail_distance = app
+        .world()
+        .get::<Transform>(tail)
+        .unwrap()
+        .translation
+        .length();
+    assert_close(
+        f64::from(tail_distance),
+        2.0,
+        1e-3,
+        "tail distance from the root",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -895,5 +926,157 @@ fn spawn_debris_takes_the_targets_inertia_from_the_selection() {
         2500.0,
         1e-3,
         "default mass",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P7.5 S3: the spawn orientation (design D9)
+// ---------------------------------------------------------------------------
+
+/// The Q13 pair spawned at the fixed epoch with `example_plan`'s device set to
+/// `orientation` (`None`: no key), the propagators built after one tick. Returns
+/// the app, the chain root first, and the debris; also the log lines of the spawn.
+fn q13_spawned(
+    orientation: Option<SpawnOrientation>,
+    chaser: SelectedOrbitalObject,
+) -> (
+    App,
+    Vec<Entity>,
+    Entity,
+    Vec<(LogLevel, &'static str, String)>,
+) {
+    let mut app = test_app();
+    load_example_plans(&mut app);
+    if let Some(orientation) = orientation {
+        app.world_mut()
+            .resource_mut::<CapturePlanLibrary>()
+            .plans
+            .get_mut(q13::PLAN_ID)
+            .expect("example_plan")
+            .device = Some(CapturePlanDevice {
+            spawn_orientation: Some(orientation),
+            ..CapturePlanDevice::default()
+        });
+    }
+    app.world_mut().resource_mut::<SelectedProject>().project_id = Some(q13::PLAN_ID.to_string());
+    select(&mut app, Some(hst()), Some(chaser));
+    enter_sim(&mut app);
+    let mut tap = LogTap::new(app.world());
+    start_running(&mut app);
+    let logs = tap.drain(app.world());
+    tick(&mut app);
+    let root = registered(&app, "Tether1")[0];
+    let world = app.world_mut();
+    let joints: Vec<DistanceJoint> = world
+        .query::<&DistanceJoint>()
+        .iter(world)
+        .cloned()
+        .collect();
+    let chain = chain_from_joints(root, joints.iter());
+    let debris = app.world().resource::<OrbitalCache>().debris["Satellite1"];
+    (app, chain, debris, logs)
+}
+
+fn q13_chaser() -> SelectedOrbitalObject {
+    q13::catalog_pick("P0 HST CHASER", q13::CHASER_NORAD_ID)
+}
+
+fn position(app: &App, entity: Entity) -> DVec3 {
+    app.world().get::<Position>(entity).expect("Position").0
+}
+
+/// Degrees between two directions.
+fn degrees(a: DVec3, b: DVec3) -> f64 {
+    a.angle_between(b).to_degrees()
+}
+
+#[test]
+fn the_tail_trails_away_from_the_target_by_default() {
+    for orientation in [None, Some(SpawnOrientation::TowardTarget)] {
+        let (app, chain, debris, logs) = q13_spawned(orientation, q13_chaser());
+        let root = position(&app, chain[0]);
+        let angle = degrees(
+            position(&app, chain[76]) - root,
+            position(&app, debris) - root,
+        );
+        println!("{orientation:?}: angle(root->tail, root->target) {angle:.4} deg");
+        assert!((angle - 180.0).abs() < 0.1, "{orientation:?}: {angle} deg");
+        assert!(
+            logs.iter().all(|(level, ..)| *level != LogLevel::Warn),
+            "{logs:?}"
+        );
+        // Every body along the one axis, 20 m from the root to the tail.
+        let axis = (position(&app, chain[76]) - root).normalize();
+        for &body in &chain[1..] {
+            let offset = position(&app, body) - root;
+            assert!(
+                (offset - axis * offset.dot(axis)).length() < 1e-3,
+                "{body:?} off the axis"
+            );
+        }
+        assert_close(
+            (position(&app, chain[76]) - root).length(),
+            20.0,
+            1e-3,
+            "root to tail",
+        );
+    }
+}
+
+#[test]
+fn v_bar_and_r_bar_lay_the_tail_behind_and_below_the_chaser() {
+    for (orientation, lvlh) in [
+        (SpawnOrientation::VBar, DVec3::new(0.0, -1.0, 0.0)),
+        (SpawnOrientation::RBar, DVec3::new(-1.0, 0.0, 0.0)),
+    ] {
+        let (app, chain, _, _) = q13_spawned(Some(orientation), q13_chaser());
+        // The chaser's LVLH frame at the start epoch, from its propagator.
+        let state = app
+            .world()
+            .get::<Orbital>(chain[0])
+            .and_then(|orbital| orbital.propagator.as_ref())
+            .expect("the root has a propagator")
+            .state_eci(fixed_epoch())
+            .expect("the start state");
+        let frame = LvlhFrame::from_eci(&state).expect("a frame");
+        let tail = position(&app, chain[76]) - position(&app, chain[0]);
+        let angle = degrees(tail, frame.to_eci(lvlh));
+        println!("{orientation:?}: {angle:.5} deg from the LVLH axis");
+        assert!(angle < 0.1, "{orientation:?}: {angle} deg");
+    }
+}
+
+#[test]
+fn every_tether_body_keeps_the_identity_rotation_whatever_the_orientation() {
+    // C3: the orientation lives in the positions only, so a stated chaser inertia
+    // tensor stays in the sim's ECI-aligned axes.
+    for orientation in [
+        SpawnOrientation::TowardTarget,
+        SpawnOrientation::VBar,
+        SpawnOrientation::RBar,
+    ] {
+        let (app, chain, debris, _) = q13_spawned(Some(orientation), q13_chaser());
+        for &body in chain.iter().chain([&debris]) {
+            assert_eq!(
+                app.world().get::<Rotation>(body).expect("Rotation").0,
+                bevy::math::DQuat::IDENTITY,
+                "{orientation:?}: {body:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn without_a_start_direction_the_tether_falls_back_to_plus_y_with_a_warning() {
+    // A chaser at the target's own position gives no root-to-target direction.
+    let (app, chain, _, logs) = q13_spawned(None, hst());
+    let tail = position(&app, chain[76]) - position(&app, chain[0]);
+    assert!(degrees(tail, DVec3::Y) < 1e-6, "{tail}");
+    assert!(
+        logs.iter()
+            .any(|(level, source, message)| *level == LogLevel::Warn
+                && *source == "tether"
+                && message.contains("laid along +Y")),
+        "{logs:?}"
     );
 }

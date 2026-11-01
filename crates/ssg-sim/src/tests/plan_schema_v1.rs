@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 
 use crate::capture::plan::{
     CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, MigratedFromV0, Phase,
-    PhaseEnd, Transition, TransitionConditions, UnmappedValue, validate_capture_plan,
+    PhaseEnd, SpawnOrientation, Transition, TransitionConditions, UnmappedValue,
+    validate_capture_plan,
 };
 use crate::project::plan_files::{plan_file_reports, plan_to_json, read_plan_value, save_plan};
 use crate::test_support::{Lcg, TempDir, repo_root};
@@ -342,6 +343,7 @@ fn absent_optional_fields_take_the_documented_defaults() {
         end_mass_kg: Some(3.0),
         joint_damping_linear: Some(0.0),
         joint_damping_angular: Some(0.5),
+        spawn_orientation: Some(SpawnOrientation::RBar),
     };
     assert_eq!(
         (
@@ -351,10 +353,13 @@ fn absent_optional_fields_take_the_documented_defaults() {
             set.segment_mass_kg(),
             set.end_mass_kg(),
             set.joint_damping_linear(),
-            set.joint_damping_angular()
+            set.joint_damping_angular(),
+            set.spawn_orientation()
         ),
-        ("net", 5.0, 0.5, 0.2, 3.0, 0.0, 0.5)
+        ("net", 5.0, 0.5, 0.2, 3.0, 0.0, 0.5, SpawnOrientation::RBar)
     );
+    // P7.5 S3 (design D9): the tail trails away from the target by default.
+    assert_eq!(device.spawn_orientation(), SpawnOrientation::TowardTarget);
 
     let mut plan: CapturePlan = serde_json::from_value(doc()).unwrap();
     assert_eq!(plan.initial_capture_radius_m(), 25.0);
@@ -505,6 +510,13 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
         end_mass_kg: maybe(rng, 0.5, 5.0),
         joint_damping_linear: maybe(rng, 0.0, 2.0),
         joint_damping_angular: maybe(rng, 0.0, 2.0),
+        spawn_orientation: rng.chance(0.5).then(|| {
+            [
+                SpawnOrientation::TowardTarget,
+                SpawnOrientation::VBar,
+                SpawnOrientation::RBar,
+            ][rng.below(3)]
+        }),
     });
     CapturePlan {
         schema_version: 1,
@@ -651,4 +663,40 @@ fn tail_actuation_is_a_phase_key_that_round_trips_and_not_a_device_key() {
             .get("tail_actuation")
             .is_none()
     );
+}
+
+#[test]
+fn spawn_orientation_is_a_snake_case_device_key_that_round_trips() {
+    // P7.5 S3 (design D9): `device.spawn_orientation` is optional, written only
+    // when set, one of three snake_case values.
+    for (word, orientation) in [
+        ("toward_target", SpawnOrientation::TowardTarget),
+        ("v_bar", SpawnOrientation::VBar),
+        ("r_bar", SpawnOrientation::RBar),
+    ] {
+        let mut value = doc();
+        value["device"] = json!({ "spawn_orientation": word });
+        let plan = read_plan_value(ID, &value).plan.expect("loads");
+        let device = plan.device.clone().expect("device");
+        assert_eq!(device.spawn_orientation, Some(orientation));
+        let text = plan_to_json(&plan);
+        assert!(
+            text.contains(&format!("\"spawn_orientation\": \"{word}\"")),
+            "{text}"
+        );
+        let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+            .plan
+            .expect("reloads");
+        assert_eq!(reread, plan);
+    }
+    let mut value = doc();
+    value["device"] = json!({ "spawn_orientation": "sideways" });
+    let errors = errors_of(&value);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("/device") && errors[0].contains("`toward_target`, `v_bar`, `r_bar`"),
+        "{errors:?}"
+    );
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(!plan_to_json(&plan).contains("spawn_orientation"));
 }

@@ -82,6 +82,27 @@ pub struct CapturePlanDevice {
     /// the rope model (point masses); kept for file compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_damping_angular: Option<f64>,
+    /// How the tether is laid out at spawn, from both bodies' states at the start
+    /// epoch: `toward_target` (the tail trails along the root-to-target line, away
+    /// from the target), `v_bar` (behind the chaser along its velocity axis) or
+    /// `r_bar` (below it, toward the Earth). Default `toward_target`. A spawn
+    /// condition, not a held attitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawn_orientation: Option<SpawnOrientation>,
+}
+
+/// The axis the tether is laid along at spawn (P7.5 design D9).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum SpawnOrientation {
+    /// The tail trails along the root-to-target line, away from the target.
+    #[default]
+    TowardTarget,
+    /// The tail trails along the chaser's −V-bar (its LVLH along-track axis).
+    VBar,
+    /// The tail hangs along the chaser's −R-bar (its LVLH radial axis).
+    RBar,
 }
 
 impl CapturePlanDevice {
@@ -118,6 +139,11 @@ impl CapturePlanDevice {
     /// The joints' angular damping, 1.0 when absent.
     pub fn joint_damping_angular(&self) -> f64 {
         self.joint_damping_angular.unwrap_or(DEFAULT_JOINT_DAMPING)
+    }
+
+    /// The spawn orientation, `toward_target` when absent.
+    pub fn spawn_orientation(&self) -> SpawnOrientation {
+        self.spawn_orientation.unwrap_or_default()
     }
 
     /// Root + tail + interior nodes, as the spawner counts them: the rope between
