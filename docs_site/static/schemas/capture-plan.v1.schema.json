@@ -84,6 +84,14 @@
             "number",
             "null"
           ]
+        },
+        "min_radius_m": {
+          "description": "The radius the capture sphere stops shrinking at, m. Default 0.1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -179,6 +187,13 @@
           },
           "type": [
             "array",
+            "null"
+          ]
+        },
+        "velocity_scales_with_sphere": {
+          "description": "The phase's speed limit is `max_velocity_mps` at the capture-sphere radius\nthe phase was entered at and falls in proportion as the sphere shrinks.\nA no-op in a phase without `shrink_rate_mps` (the radius stays where it\nwas entered). Default false.",
+          "type": [
+            "boolean",
             "null"
           ]
         }

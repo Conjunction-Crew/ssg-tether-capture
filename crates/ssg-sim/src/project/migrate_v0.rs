@@ -128,6 +128,7 @@ impl Migrator<'_> {
             transitions: None,
             end: None,
             tail_actuation: None,
+            velocity_scales_with_sphere: None,
         };
         let parameters = state.get("parameters").and_then(Value::as_object);
         for (key, slot) in [

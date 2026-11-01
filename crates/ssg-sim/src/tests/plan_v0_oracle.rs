@@ -62,6 +62,7 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                 max_force: parameter_value(&state.parameters, "max_force").unwrap_or(0.0),
                 shrink_rate: parameter_value(&state.parameters, "shrink_rate"),
                 tail_actuation: false,
+                velocity_scales_with_sphere: false,
             },
             transitions: state
                 .transitions
@@ -96,6 +97,8 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
         tether: plan.tether.clone(),
         states,
         state_indices,
+        // v0 has no floor key: the default.
+        min_capture_radius_m: crate::capture::MIN_CAPTURE_SPHERE_RADIUS_M,
     }
 }
 

@@ -141,6 +141,7 @@ fn build_plan(spec: &PlanSpec, case: usize) -> CapturePlan {
                     .then(|| state.transitions.iter().map(transition).collect()),
                 end: None,
                 tail_actuation: None,
+                velocity_scales_with_sphere: None,
             })
             .collect(),
         migrated_from_v0: None,

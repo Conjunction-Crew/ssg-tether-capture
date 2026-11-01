@@ -40,6 +40,10 @@ pub struct CaptureComponent {
 /// The capture-sphere radius at the start of every capture (F-11).
 pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
 
+/// The radius the capture sphere stops shrinking at when the plan does not set
+/// `capture_sphere.min_radius_m`.
+pub const MIN_CAPTURE_SPHERE_RADIUS_M: f64 = 0.1;
+
 /// Seconds the force bound takes to rise from 0 to the phase's `max_force_n`, at
 /// the capture start and at every phase entry (F-31, Q10 row 8). A direction
 /// reversal does not restart it (C2).
