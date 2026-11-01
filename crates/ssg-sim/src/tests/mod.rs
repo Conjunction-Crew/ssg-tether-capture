@@ -21,6 +21,7 @@ pub mod recording_player;
 pub mod recording_recorder;
 pub mod recording_tap;
 pub mod session_telemetry;
+pub mod tether_dynamics;
 pub mod tether_spawn;
 pub mod time_step_cap;
 pub mod unit_tests;
