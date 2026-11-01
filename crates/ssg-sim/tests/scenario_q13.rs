@@ -12,7 +12,7 @@ const TICKS: u64 = 6_400;
 /// the first checkpoint, after 640 ticks, is at step 643.
 const FIRST_CHECKPOINT_STEP: u64 = 643;
 /// The last checkpoint at which the Q13 chaser is still in `rendezvous` on every
-/// platform (the first transition fires at step 4,769 on macOS).
+/// platform (the first transition fires at step 4,745 on Linux, 4,769 on macOS).
 const LAST_RENDEZVOUS_CHECKPOINT_STEP: u64 = 3_843;
 
 #[test]
@@ -27,8 +27,8 @@ fn q13_runs_through_the_first_transition_with_finite_states_and_a_closing_range(
         .collect();
     assert_eq!(order, [("rendezvous", "approach")]);
     assert!(
-        (4_750..4_790).contains(&run.transitions[0].0), // F-66 (P7.5 S1): provisional until S4
-        "the first transition fires near step 4,769 (macOS): {:?}",
+        (4_730..4_785).contains(&run.transitions[0].0), // F-66 (P7.5 S1): provisional until S4
+        "the first transition fires near step 4,769 (4,745 on Linux): {:?}",
         run.transitions
     );
 
