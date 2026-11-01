@@ -273,7 +273,7 @@ fn recordings_with_each_spawn_update_step_count_replay_exactly() {
 #[test]
 fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
     // Q13 resets the origin at steps 701 and 1,328 (macOS/aarch64).
-    let last_step: u64 = 1400; // F-66 (P7.5 S1): provisional until S4
+    let last_step: u64 = 1400;
     let dir = temp_dir("resets");
     let (mut app, sink) = harness(&dir.join("recordings"), 16);
     enter_sim(&mut app);

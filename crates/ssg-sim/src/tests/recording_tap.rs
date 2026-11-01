@@ -223,7 +223,7 @@ fn a_recording_does_not_change_the_run() {
     let approach = single.transitions[0].0;
     assert_eq!(single.transitions.len(), 1);
     if MACOS_GOLDENS {
-        assert_eq!(approach, 4_703); // F-66 (P7.5 S3): provisional until S4
+        assert_eq!(approach, 4_703);
     }
     let recorded: Vec<(u64, &str, &str)> = single.segments[0]
         .transitions
@@ -260,7 +260,7 @@ fn a_recording_does_not_change_the_run() {
         .0;
     println!("approach entered at step {approach}");
     if MACOS_GOLDENS {
-        assert_eq!(approach, 4_703); // F-66 (P7.5 S3): provisional until S4
+        assert_eq!(approach, 4_703);
     }
     let starts: Vec<(u64, StartTrigger)> = multi
         .segments
@@ -306,7 +306,7 @@ fn a_frame_carries_the_origin_shift_since_the_previous_frame() {
     };
     // 1,400 ticks after build: steps 4 ..= 1,403.
     let run = run_q13(
-        1_400, // F-66 (P7.5 S1): provisional until S4
+        1_400,
         settings,
         &[(400, RecorderCommand::Start { name: "o".into() })],
     );
@@ -325,7 +325,7 @@ fn a_frame_carries_the_origin_shift_since_the_previous_frame() {
         run.resets.iter().map(|r| r.step).collect::<Vec<_>>()
     );
     if MACOS_GOLDENS {
-        assert_eq!((first.step, second.step), (703, 1_314), "the Q13 resets"); // F-66 (P7.5 S3): provisional until S4
+        assert_eq!((first.step, second.step), (703, 1_314), "the Q13 resets");
     }
     let frames = &run.segments[0].frames;
     let shifted = frames
