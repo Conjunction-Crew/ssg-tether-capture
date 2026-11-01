@@ -18,7 +18,7 @@ use ssg_sim::test_support::q13;
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
 
 /// `ssg-sim run` of the Q13 6,400-step command (macOS/aarch64 reference).
-const Q13_6400_HASH: &str = "34f1b579033d2c2b"; // F-66 (P7.5 S3): provisional until S4
+const Q13_6400_HASH: &str = "34f1b579033d2c2b";
 
 /// The files of a recording folder.
 const FILES: [&str; 6] = [
@@ -142,8 +142,8 @@ fn recording_does_not_change_the_run() {
     // Steps 701 and 1,328 are floating-origin resets: 1,400 steps cover them with the
     // recording running.
     let project = flag_project("hash");
-    assert_success(&run(&project, "plain", &q13_flags("1400"))); // F-66 (P7.5 S1): provisional until S4
-    let mut args = q13_flags("1400").to_vec(); // F-66 (P7.5 S1): provisional until S4
+    assert_success(&run(&project, "plain", &q13_flags("1400")));
+    let mut args = q13_flags("1400").to_vec();
     args.extend(["--record", "r"]);
     assert_success(&run(&project, "recorded", &args));
     let (plain, recorded) = (summary(&project, "plain"), summary(&project, "recorded"));
@@ -247,7 +247,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
         (transition, "approach")
     );
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(transition, 4703); // F-66 (P7.5 S3): provisional until S4
+        assert_eq!(transition, 4703);
     }
     // The folder passes the checks.
     let check = check_recording(&folder, "recordings/r");
@@ -267,7 +267,7 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
     let project = manifest_project("phase", block.clone());
     let args = [
         "--steps",
-        "4900", // F-66 (P7.5 S3): provisional until S4 (the first transition is at 4,703)
+        "4900", // the first transition is at 4,703
         "--record",
         "p",
         "--record-from-phase",

@@ -196,9 +196,12 @@ jobs:
         # `full` is true on the weekday schedule, manual runs and `full-ci` PRs
         # (the release PR always carries it), so these long tests check the code
         # before it is released.  Runs on every platform: it compares runs on the
-        # same platform (see docs_site/docs/concepts/determinism.md).
+        # same platform (see docs_site/docs/concepts/determinism.md).  The tether
+        # tests: no contact of the ends to capture, and the 10-minute rest.
         if: needs.changes.outputs.full == 'true'
-        run: cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
+        run: >-
+          cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
+          && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_to_capture_contacts tether_rest_ten_minutes
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
@@ -349,9 +352,14 @@ jobs:
 
       - name: Determinism to capture (ignored tests)
         # Per-platform identity everywhere: three runs at 1x and one at 16x must
-        # be bit-identical on the same platform.
+        # be bit-identical on the same platform.  The tether tests: no contact of
+        # the ends to capture, and the 10-minute rest.  One command line joined
+        # by `&&` (a folded scalar), so a failure of either fails the step in
+        # PowerShell on Windows as in bash.
         if: needs.changes.outputs.full == 'true'
-        run: cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
+        run: >-
+          cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
+          && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_to_capture_contacts tether_rest_ten_minutes
 
       - name: macOS goldens to capture
         # The goldens hold on macOS/aarch64 only (Q29 as replaced, F-48): there
