@@ -1,19 +1,23 @@
 //! The tether and the debris: the two bodies a capture run spawns.
 
 use avian3d::prelude::*;
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{math::DVec3, platform::collections::HashMap, prelude::*};
+use brahe::Epoch;
 
 use crate::SimSet;
 use crate::anchor::SimAnchor;
 use crate::capture::plan::{
-    CapturePlanLibrary, DEFAULT_SEGMENT_SPACING_M, DEFAULT_TETHER_LENGTH_M,
+    CapturePlanLibrary, DEFAULT_SEGMENT_SPACING_M, DEFAULT_TETHER_LENGTH_M, SpawnOrientation,
 };
-use crate::orbit::Orbit;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::LvlhFrame;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
+use crate::orbit::{Orbit, start_state_eci};
 use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::project::SelectedProject;
 use crate::session::{SimState, UiScreen};
+use crate::telemetry::{LogEvent, LogLevel};
+use crate::time::SimConfig;
 
 // A root tether node
 #[derive(Component, Debug, Clone)]
@@ -120,12 +124,44 @@ pub fn spawn_debris(
     Ok(())
 }
 
+/// The unit axis the tether is laid along from the root (design D9), from both
+/// bodies' states at `start_epoch`: away from the target (`toward_target`), or
+/// along the chaser's LVLH −V-bar (`v_bar`, trailing) or −R-bar (`r_bar`, below).
+/// `None` when a state is unavailable (SGP4 failure) or the bodies coincide.
+pub(crate) fn spawn_axis(
+    orientation: SpawnOrientation,
+    chaser: &SelectedOrbitalObject,
+    target: &SelectedOrbitalObject,
+    start_epoch: Epoch,
+) -> Option<DVec3> {
+    let chaser_state = start_state_eci(&initial_orbit(chaser), start_epoch)?;
+    match orientation {
+        SpawnOrientation::TowardTarget => {
+            let target_state = start_state_eci(&initial_orbit(target), start_epoch)?;
+            let to_target = DVec3::new(
+                target_state[0] - chaser_state[0],
+                target_state[1] - chaser_state[1],
+                target_state[2] - chaser_state[2],
+            );
+            (-to_target).try_normalize()
+        }
+        SpawnOrientation::VBar => LvlhFrame::from_eci(&chaser_state)
+            .map(|frame| frame.to_eci(DVec3::new(0.0, -1.0, 0.0))),
+        SpawnOrientation::RBar => LvlhFrame::from_eci(&chaser_state)
+            .map(|frame| frame.to_eci(DVec3::new(-1.0, 0.0, 0.0))),
+    }
+}
+
+/// Spawns the tether from the root at the origin along the unit `axis`. The
+/// orientation lives in the positions only: every body keeps the identity
+/// `Rotation` (C3), so a stated chaser inertia tensor stays in the sim's axes.
 pub fn spawn_tether(
     commands: &mut Commands,
     orbital_entities: &mut ResMut<OrbitalCache>,
     selected_project: &Res<SelectedProject>,
     capture_plan_lib: &Res<CapturePlanLibrary>,
     selected: &SelectedOrbitalObject,
+    axis: DVec3,
 ) -> Result<(), BevyError> {
     let root_tail_radius: f64 = 0.50;
     let rope_radius: f64 = 0.25;
@@ -215,7 +251,7 @@ pub fn spawn_tether(
         .insert(tether_name.clone(), vec![tether_root]);
 
     let mut prev_sphere = tether_root;
-    let mut prev_y = 0.0;
+    let mut prev_position = Vec3::ZERO;
 
     for i in 1..=interval_count {
         let is_tail = i == interval_count;
@@ -225,12 +261,13 @@ pub fn spawn_tether(
             root_tail_radius + interval * i as f64
         };
 
+        let position = (axis * y).as_vec3();
         let mut body = commands.spawn((
             DespawnOnExit(UiScreen::Sim),
             TetherNode { root: tether_root },
             RigidBody::Dynamic,
             tether_layers,
-            Transform::from_xyz(0.0, y as f32, 0.0),
+            Transform::from_translation(position),
         ));
         if is_tail {
             body.insert((sphere_shape, sphere_collider.clone(), Mass::from(end_mass)));
@@ -248,13 +285,14 @@ pub fn spawn_tether(
         // Centre to centre, slack below the spawn distance and a hard stop at it.
         commands.spawn((
             DespawnOnExit(UiScreen::Sim),
-            DistanceJoint::new(prev_sphere, sphere).with_limits(0.0, y - prev_y),
+            DistanceJoint::new(prev_sphere, sphere)
+                .with_limits(0.0, f64::from(position.distance(prev_position))),
             joint_damping,
             JointCollisionDisabled,
         ));
 
         prev_sphere = sphere;
-        prev_y = y;
+        prev_position = position;
     }
 
     // Add tail node to tether entity
@@ -272,6 +310,8 @@ pub fn spawn_selected_bodies(
     capture_plan_lib: Res<CapturePlanLibrary>,
     selection: Res<OrbitalSelectionState>,
     mut orbital_cache: ResMut<OrbitalCache>,
+    config: Res<SimConfig>,
+    mut log: MessageWriter<LogEvent>,
 ) {
     let Some(chaser) = selection.chaser.as_ref() else {
         return;
@@ -281,12 +321,31 @@ pub fn spawn_selected_bodies(
         return;
     };
 
+    let orientation = selected_project
+        .project_id
+        .as_deref()
+        .and_then(|id| capture_plan_lib.plans.get(id))
+        .and_then(|plan| plan.device.as_ref())
+        .map(|device| device.spawn_orientation())
+        .unwrap_or_default();
+    let axis = spawn_axis(orientation, chaser, target, config.start_epoch).unwrap_or_else(|| {
+        log.write(LogEvent {
+            level: LogLevel::Warn,
+            source: "tether",
+            message: format!(
+                "No start state for the {orientation:?} spawn orientation; the tether is laid along +Y"
+            ),
+        });
+        DVec3::Y
+    });
+
     if let Err(e) = spawn_tether(
         &mut commands,
         &mut orbital_cache,
         &selected_project,
         &capture_plan_lib,
         chaser,
+        axis,
     ) {
         error!("Error spawning tether: {}", e);
     };

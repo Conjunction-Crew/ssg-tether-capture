@@ -44,6 +44,17 @@
             "null"
           ]
         },
+        "spawn_orientation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpawnOrientation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the tether is laid out at spawn, from both bodies' states at the start\nepoch: `toward_target` (the tail trails along the root-to-target line, away\nfrom the target), `v_bar` (behind the chaser along its velocity axis) or\n`r_bar` (below it, toward the Earth). Default `toward_target`. A spawn\ncondition, not a held attitude."
+        },
         "tether_length_m": {
           "description": "Physical length of the tether in metres. Default 20.0; greater than 0.",
           "format": "double",
@@ -186,6 +197,26 @@
         "abort"
       ],
       "type": "string"
+    },
+    "SpawnOrientation": {
+      "description": "The axis the tether is laid along at spawn (P7.5 design D9).",
+      "oneOf": [
+        {
+          "const": "toward_target",
+          "description": "The tail trails along the root-to-target line, away from the target.",
+          "type": "string"
+        },
+        {
+          "const": "v_bar",
+          "description": "The tail trails along the chaser's −V-bar (its LVLH along-track axis).",
+          "type": "string"
+        },
+        {
+          "const": "r_bar",
+          "description": "The tail hangs along the chaser's −R-bar (its LVLH radial axis).",
+          "type": "string"
+        }
+      ]
     },
     "Transition": {
       "additionalProperties": false,

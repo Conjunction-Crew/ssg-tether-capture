@@ -112,6 +112,22 @@ pub fn init_orbitals(
     }
 }
 
+/// The ECI state `orbit` starts from at `start_epoch`, as [`init_orbitals`]
+/// computes it; `None` when SGP4 fails. The tether spawner reads it before any
+/// propagator exists (P7.5 design D9).
+pub(crate) fn start_state_eci(orbit: &Orbit, start_epoch: Epoch) -> Option<Vector6<f64>> {
+    let kepler = |elements: Vector6<f64>, epoch: Epoch| {
+        kepler_at_start(elements, epoch, start_epoch)?
+            .state_eci(start_epoch)
+            .ok()
+    };
+    match orbit {
+        Orbit::FromElements(elements) => kepler(*elements, start_epoch),
+        Orbit::FromElementsAt { elements, epoch } => kepler(*elements, *epoch),
+        Orbit::FromGp(gp) => sgp4_state_eci(gp, start_epoch).ok(),
+    }
+}
+
 /// A two-body propagator at `start_epoch` from osculating `elements` at `epoch`.
 fn kepler_at_start(
     elements: Vector6<f64>,
