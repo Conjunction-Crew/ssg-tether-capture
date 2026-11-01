@@ -945,7 +945,7 @@ fn a_q13_run_through_the_file_sink_matches_the_memory_sink_bit_for_bit() {
         ..RecordingSettings::default()
     };
     let memory = crate::recording::MemorySink::default();
-    run_q13_with(Box::new(memory.clone()), settings.clone(), 1400, &commands);
+    run_q13_with(Box::new(memory.clone()), settings.clone(), 1500, &commands);
     let segments = memory.segments();
     assert_eq!(segments.len(), 1);
     let expected = &segments[0];
@@ -953,7 +953,7 @@ fn a_q13_run_through_the_file_sink_matches_the_memory_sink_bit_for_bit() {
     let dir = TempDir::new("q13_file_sink");
     let recordings = dir.path().join("recordings");
     let file_sink = FileSink::new(context(&recordings));
-    run_q13_with(Box::new(file_sink.clone()), settings, 1400, &commands);
+    run_q13_with(Box::new(file_sink.clone()), settings, 1500, &commands);
     let results = file_sink.results();
     assert_eq!(results.len(), 1);
     let written = results[0].as_ref().unwrap();
@@ -977,7 +977,8 @@ fn a_q13_run_through_the_file_sink_matches_the_memory_sink_bit_for_bit() {
             assert_eq!(bits(r), bits(m), "step {}", memory.step);
         }
     }
-    // Resets inside the segment (Q13 steps 701 and 1,328) are in the frames' shifts.
+    // Resets inside the segment (Q13 steps 703 and 1,407; P7.5 S6: the 1,500-tick
+    // run reaches the second) are in the frames' shifts. // F-66 (P7.5 S6): provisional until S8
     let shifted: Vec<u64> = loaded
         .frames
         .iter()

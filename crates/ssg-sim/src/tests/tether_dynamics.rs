@@ -33,7 +33,7 @@ const WINDOW_TICKS: u64 = 640;
 const SAMPLE_EVERY: u64 = 64;
 
 /// The tether's bodies, root first, from the distance joints.
-fn chain(app: &mut App, root: Entity) -> Vec<Entity> {
+pub(super) fn chain(app: &mut App, root: Entity) -> Vec<Entity> {
     let world = app.world_mut();
     let joints: Vec<DistanceJoint> = world
         .query::<&DistanceJoint>()
@@ -43,11 +43,11 @@ fn chain(app: &mut App, root: Entity) -> Vec<Entity> {
     chain_from_joints(root, joints.iter())
 }
 
-fn position(app: &App, entity: Entity) -> DVec3 {
+pub(super) fn position(app: &App, entity: Entity) -> DVec3 {
     app.world().get::<Position>(entity).expect("Position").0
 }
 
-fn velocity(app: &App, entity: Entity) -> DVec3 {
+pub(super) fn velocity(app: &App, entity: Entity) -> DVec3 {
     app.world()
         .get::<LinearVelocity>(entity)
         .expect("LinearVelocity")
@@ -225,7 +225,7 @@ fn tether_steady_at_capture_start() {
 
 /// The debris's two array children (P7.5 S6): every collider entity whose parent
 /// is the debris, as `(array A, array B)` (A on +Z, B on −Z of the body).
-fn debris_arrays(app: &mut App, debris: Entity) -> (Entity, Entity) {
+pub(super) fn debris_arrays(app: &mut App, debris: Entity) -> (Entity, Entity) {
     let world = app.world_mut();
     let children: Vec<(Entity, f32)> = world
         .query_filtered::<(Entity, &ChildOf, &Transform), With<Collider>>()
@@ -378,10 +378,7 @@ fn the_headless_collider_set_is_the_rope_the_bus_and_the_two_arrays() {
         diag[0], diag[1], diag[2], off[0], off[1], off[2]
     );
     assert!((mass / 2500.0 - 1.0).abs() < 1e-9, "ComputedMass {mass}");
-    assert!(
-        f64::from(centre.length()) < 1e-9,
-        "ComputedCenterOfMass {centre}"
-    );
+    assert!(centre.length() < 1e-9, "ComputedCenterOfMass {centre}");
     // The compound's tensor about the origin (design D12 G2b printed it to 0.1).
     let want = debris_angular_inertia(2500.0).tensor();
     let (want_diag, want_off) = (
@@ -608,23 +605,37 @@ fn shape_pairs(app: &App, chain: &[Entity], debris: Entity) -> ShapePairs {
     pairs
 }
 
-/// The three debris colliders' world placement relative to the debris centre, in
-/// its axes: for the bus (the body's own collider) and each array child, avian's
-/// shape AABB at the collider's own `Position`/`Rotation` (which avian derives for a
-/// child from its `ColliderTransform` every step) and avian's `ColliderAabb` (the
-/// broad phase's box, enlarged by avian's margins). Rows `(what, centre, half,
+/// The debris's pose `(Position, Rotation)`.
+pub(super) fn debris_pose(app: &App, debris: Entity) -> (DVec3, DQuat) {
+    let world = app.world();
+    (
+        world.get::<Position>(debris).expect("Position").0,
+        world.get::<Rotation>(debris).expect("Rotation").0,
+    )
+}
+
+/// The three debris colliders' world placement relative to the debris, in its axes:
+/// for the bus (the body's own collider) and each array child, avian's shape AABB at
+/// the collider's own `Position`/`Rotation`, and avian's `ColliderAabb` (the broad
+/// phase's box, enlarged by avian's margins and the body's motion, so printed only).
+/// avian derives a child collider's `Position`/`Rotation` from the body's pose and
+/// its `ColliderTransform` at the start of every step (`PhysicsStepSystems::First`),
+/// so after a step the children sit where the body was when it began: the bus is
+/// measured against the debris's pose now, the arrays against `step_start`, the
+/// debris's pose before the step that just ran. Rows `(what, centre, half,
 /// collider_aabb_centre, collider_aabb_half)`.
-fn debris_world_boxes(
+pub(super) fn debris_world_boxes(
     app: &mut App,
     debris: Entity,
+    step_start: (DVec3, DQuat),
 ) -> Vec<(&'static str, DVec3, DVec3, DVec3, DVec3)> {
     let (array_a, array_b) = debris_arrays(app, debris);
+    let now = debris_pose(app, debris);
     let world = app.world();
-    let debris_p = world.get::<Position>(debris).expect("Position").0;
-    let debris_r = world.get::<Rotation>(debris).expect("Rotation").0;
     [("bus", debris), ("array A", array_a), ("array B", array_b)]
         .into_iter()
         .map(|(what, entity)| {
+            let (debris_p, debris_r) = if entity == debris { now } else { step_start };
             let p = world.get::<Position>(entity).expect("collider Position").0;
             let r = world.get::<Rotation>(entity).expect("collider Rotation").0;
             let aabb = world
@@ -671,7 +682,9 @@ fn tether_to_capture_contacts() {
     let mut transitions = Vec::new();
     let mut ticks = 0;
     let mut state = String::new();
+    let mut step_start = debris_pose(&app, handles.debris);
     while ticks < MAX_TICKS {
+        step_start = debris_pose(&app, handles.debris);
         tick(&mut app);
         ticks += 1;
         let pairs = role_pairs(&app, &chain);
@@ -719,7 +732,8 @@ fn tether_to_capture_contacts() {
         .get::<Rotation>(handles.debris)
         .expect("Rotation")
         .0;
-    let boxes = debris_world_boxes(&mut app, handles.debris);
+    let boxes = debris_world_boxes(&mut app, handles.debris, step_start);
+    let moved = debris_pose(&app, handles.debris).0 - step_start.0;
     let wall = started.elapsed().as_secs_f64();
     println!(
         "tether_to_capture_contacts: {ticks} ticks to '{state}' at step {}, range {} m; \
@@ -736,7 +750,10 @@ fn tether_to_capture_contacts() {
         shape_steps.node_array,
         1000.0 * wall / ticks as f64,
     );
-    println!("debris rotation at the capture transition {debris_rotation:?}");
+    println!(
+        "debris rotation at the capture transition {debris_rotation:?}; the debris moved \
+         {moved} m in the transition step (the children's poses are the step's start)"
+    );
     for (what, centre, half, aabb_centre, aabb_half) in &boxes {
         println!(
             "debris {what} at the capture transition, relative to the debris centre: \
