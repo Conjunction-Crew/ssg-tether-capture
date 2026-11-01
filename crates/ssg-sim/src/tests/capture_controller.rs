@@ -447,9 +447,10 @@ fn assert_force_direction(app: &App, node: Entity, direction: DVec3, what: &str)
 }
 
 #[test]
-fn controller_pushes_only_the_root_with_the_example_plan() {
-    // (a), C7: `example_plan` sets `tail_actuation` in no phase, so in every phase
-    // the root gets a force and the tail none.
+fn controller_pushes_the_tail_only_in_the_example_plans_terminal_and_capture_phases() {
+    // (a), C7: the root gets a force in every phase; the tail only in the phases
+    // where `example_plan` sets `tail_actuation` (P7.5 S6, E9: `terminal` and
+    // `capture`), and only those forces reach avian.
     let mut app = test_app();
     load_example_plans(&mut app);
     let rig = capture_rig(&mut app, "example_plan");
@@ -468,7 +469,20 @@ fn controller_pushes_only_the_root_with_the_example_plan() {
             _ => 20.0,
         };
         place(&mut app, &rig, DVec3::new(0.0, range, 0.0), DVec3::ZERO);
+        let tail_before = applied_force(&mut app, rig.tail);
         run_controller(&mut app);
+        let tail_pushed = matches!(phase.as_str(), "terminal" | "capture");
+        assert_eq!(
+            capture_force(&app, rig.tail).applied.length() > 0.0,
+            tail_pushed,
+            "tail in {phase}"
+        );
+        assert_close_dvec3(
+            applied_force(&mut app, rig.tail) - tail_before,
+            capture_force(&app, rig.tail).applied,
+            1e-9,
+            &format!("what reached avian for the tail in {phase}"),
+        );
         assert_eq!(
             app.world()
                 .get::<CaptureComponent>(rig.capture)
@@ -480,17 +494,7 @@ fn controller_pushes_only_the_root_with_the_example_plan() {
             capture_force(&app, rig.root).applied.length() > 0.0,
             "root in {phase}"
         );
-        assert_eq!(
-            capture_force(&app, rig.tail).applied,
-            DVec3::ZERO,
-            "tail in {phase}"
-        );
     }
-    assert_eq!(
-        applied_force(&mut app, rig.tail),
-        DVec3::ZERO,
-        "nothing reached avian"
-    );
 }
 
 /// `rendezvous` (root only) → `capture` (the tail too) below 10 m.
