@@ -1,20 +1,25 @@
-//! The tether's dynamics on the Q13 scenario (P7.5 S2, F-66): the rope at rest,
-//! and two `#[ignore]`d long runs (a 10-minute rest; the run to the capture phase
-//! with its contact count).
+//! The tether's dynamics on the Q13 scenario (P7.5 S2, S3; F-66, F-64): the §4
+//! acceptance measurements in the 10 s after the capture start, the collider set,
+//! the rope at rest, and two `#[ignore]`d long runs (a 10-minute rest; the run to
+//! the capture phase with its contact count).
 //!
 //! "Relative to the root" is a body's velocity minus the root's. A floating-origin
 //! reset shifts every enabled body by the same `(com_r, com_v)`, so the relative
-//! speed and the length need nothing.
+//! speed and the length need nothing; the root's velocity change adds the reset's
+//! `com_v` back (review C4).
 
 use avian3d::prelude::*;
+use bevy::ecs::message::Messages;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 
-use crate::capture::CaptureComponent;
+use crate::capture::{CaptureComponent, CaptureForce};
+use crate::floating_origin::OriginReset;
 use crate::orbit::selection::OrbitalSelectionState;
 use crate::project::SelectedProject;
 use crate::test_support::{enter_sim, load_example_plans, q13, start_running, test_app, tick};
-use crate::tether::chain_from_joints;
+use crate::tether::{DEBRIS_LAYER, TETHER_LAYER, chain_from_joints};
+use crate::time::PHYS_DT;
 
 /// The default tether length, m.
 const TETHER_LENGTH_M: f64 = 20.0;
@@ -121,6 +126,150 @@ fn q13_without_a_capture(app: &mut App) -> Entity {
     app.world()
         .resource::<crate::orbit::cache::OrbitalCache>()
         .tethers[&plan_tether][0]
+}
+
+/// §4 P7.5 acceptance (F-66): in the 10 s after the capture start no tether body
+/// exceeds 1 m/s relative to the root, no tether–tether pair touches, the root
+/// stays within 2 % of 20 m from the tail, and the root's velocity change matches
+/// the controller's impulse over the chain's mass to 1 % (reset-aware, C4).
+#[test]
+fn tether_steady_at_capture_start() {
+    let mut app = test_app();
+    let handles = q13::build(&mut app);
+    let chain = chain(&mut app, handles.root);
+    assert_eq!(chain.len(), 77, "root + 75 nodes + tail");
+    let mass: f64 = chain
+        .iter()
+        .map(|&body| f64::from(app.world().get::<Mass>(body).expect("Mass").0))
+        .sum();
+
+    let start_v = velocity(&app, handles.root);
+    let mut resets = app
+        .world()
+        .resource::<Messages<OriginReset>>()
+        .get_cursor_current();
+    let mut impulse = 0.0;
+    let mut reset_v = DVec3::ZERO;
+    let mut reset_count = 0;
+    let mut peak = Sample::default();
+    let mut worst_length_error = 0.0f64;
+    for t in 1..=WINDOW_TICKS {
+        tick(&mut app);
+        impulse += chain
+            .iter()
+            .filter_map(|&body| app.world().get::<CaptureForce>(body))
+            .map(|force| force.applied.length())
+            .sum::<f64>()
+            * PHYS_DT;
+        for reset in resets.read(app.world().resource::<Messages<OriginReset>>()) {
+            reset_v += reset.com_v;
+            reset_count += 1;
+        }
+        if t % SAMPLE_EVERY == 0 {
+            let s = sample(&app, &chain);
+            peak.max_rel_speed = peak.max_rel_speed.max(s.max_rel_speed);
+            peak.tether_tether = peak.tether_tether.max(s.tether_tether);
+            peak.tether_debris = peak.tether_debris.max(s.tether_debris);
+            worst_length_error = worst_length_error.max(length_error(s.length));
+            peak.length = s.length;
+        }
+    }
+    let delta_v = (velocity(&app, handles.root) - start_v + reset_v).length();
+    let expected = impulse / mass;
+    let f_over_m_error = delta_v / expected - 1.0;
+    println!(
+        "tether_steady_at_capture_start: chain {} bodies, {mass:.3} kg; peak relative \
+         speed {:.4} m/s; root->tail at 10 s {:.4} m (worst {:+.3} %); tether-tether \
+         pairs {}; tether-debris pairs {}; root dv {delta_v:.5} m/s vs impulse/mass \
+         {expected:.5} m/s ({:+.3} %); origin resets {reset_count}",
+        chain.len(),
+        peak.max_rel_speed,
+        peak.length,
+        100.0 * worst_length_error,
+        peak.tether_tether,
+        peak.tether_debris,
+        100.0 * f_over_m_error,
+    );
+
+    assert!(
+        peak.max_rel_speed < 1.0,
+        "a tether body reached {} m/s relative to the root",
+        peak.max_rel_speed
+    );
+    assert_eq!(peak.tether_tether, 0, "tether-tether touching pairs");
+    assert!(
+        worst_length_error < 0.02,
+        "root to tail off by {:.3} % of 20 m",
+        100.0 * worst_length_error
+    );
+    assert!(
+        f_over_m_error.abs() < 0.01,
+        "root dv {delta_v} m/s against impulse/mass {expected} m/s"
+    );
+    // A documented fact of the default plan, not a dependency: the chain's centre
+    // stays inside the 50 m reset threshold for these 10 s.
+    assert_eq!(reset_count, 0, "origin resets in the window");
+}
+
+/// F-64: headless, the colliders are the rope's 77 bodies and the debris's
+/// primitive cylinder, each on its layer, and no collider is built from a mesh. The
+/// explicit 2,500 kg replaces the cylinder's density mass and scales its inertia.
+#[test]
+fn the_headless_collider_set_is_the_rope_and_the_debris_cylinder() {
+    let mut app = test_app();
+    let handles = q13::build(&mut app);
+    let chain = chain(&mut app, handles.root);
+    let world = app.world_mut();
+    let colliders: Vec<Entity> = world
+        .query_filtered::<Entity, With<Collider>>()
+        .iter(world)
+        .collect();
+    assert_eq!(colliders.len(), 78, "77 tether bodies + the debris");
+    assert!(chain.iter().all(|body| colliders.contains(body)));
+    assert!(colliders.contains(&handles.debris));
+    assert_eq!(
+        world
+            .query::<&ColliderConstructorHierarchy>()
+            .iter(world)
+            .count(),
+        0
+    );
+    for &body in &chain {
+        assert_eq!(
+            world.get::<CollisionLayers>(body),
+            Some(&CollisionLayers::new(TETHER_LAYER, DEBRIS_LAYER))
+        );
+    }
+    assert_eq!(
+        world.get::<CollisionLayers>(handles.debris),
+        Some(&CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER))
+    );
+    let mass = world
+        .get::<ComputedMass>(handles.debris)
+        .expect("ComputedMass")
+        .value();
+    let inertia = world
+        .get::<ComputedAngularInertia>(handles.debris)
+        .expect("ComputedAngularInertia")
+        .tensor();
+    println!(
+        "debris: ComputedMass {mass} kg; ComputedAngularInertia diag ({}, {}, {}) kg m2",
+        inertia.m00, inertia.m11, inertia.m22
+    );
+    let (r, l) = (2.1f64, 13.2f64);
+    let axial = 2500.0 * r * r / 2.0;
+    let transverse = 2500.0 * (3.0 * r * r + l * l) / 12.0;
+    for (actual, expected, what) in [
+        (mass, 2500.0, "mass"),
+        (inertia.m11, axial, "axial inertia (local Y)"),
+        (inertia.m00, transverse, "transverse inertia (X)"),
+        (inertia.m22, transverse, "transverse inertia (Z)"),
+    ] {
+        assert!(
+            (actual / expected - 1.0).abs() < 1e-4,
+            "{what}: {actual} vs {expected}"
+        );
+    }
 }
 
 /// Without a capture the rope stays where it was spawned: no body moves more than

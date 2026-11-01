@@ -680,7 +680,10 @@ fn spawn_orientation_is_a_snake_case_device_key_that_round_trips() {
         let device = plan.device.clone().expect("device");
         assert_eq!(device.spawn_orientation, Some(orientation));
         let text = plan_to_json(&plan);
-        assert!(text.contains(&format!("\"spawn_orientation\": \"{word}\"")), "{text}");
+        assert!(
+            text.contains(&format!("\"spawn_orientation\": \"{word}\"")),
+            "{text}"
+        );
         let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
             .plan
             .expect("reloads");

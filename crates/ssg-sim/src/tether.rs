@@ -153,10 +153,12 @@ pub(crate) fn spawn_axis(
             );
             (-to_target).try_normalize()
         }
-        SpawnOrientation::VBar => LvlhFrame::from_eci(&chaser_state)
-            .map(|frame| frame.to_eci(DVec3::new(0.0, -1.0, 0.0))),
-        SpawnOrientation::RBar => LvlhFrame::from_eci(&chaser_state)
-            .map(|frame| frame.to_eci(DVec3::new(-1.0, 0.0, 0.0))),
+        SpawnOrientation::VBar => {
+            LvlhFrame::from_eci(&chaser_state).map(|frame| frame.to_eci(DVec3::new(0.0, -1.0, 0.0)))
+        }
+        SpawnOrientation::RBar => {
+            LvlhFrame::from_eci(&chaser_state).map(|frame| frame.to_eci(DVec3::new(-1.0, 0.0, 0.0)))
+        }
     }
 }
 

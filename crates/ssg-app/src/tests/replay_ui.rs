@@ -10,11 +10,14 @@ use bevy::prelude::*;
 
 use crate::render::celestial::replay_earth_translation;
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
-use crate::tests::app_support::{enter_sim, test_app};
+use crate::tests::app_support::{enter_sim, test_app, test_app_with_attach};
 use crate::ui::replay::{
-    ReturnToSim, TransportAction, apply_transport, epoch_at, exit_replay, followed_body,
-    relative_state, return_to_sim, show_replay_in_scene_view,
+    ReplayBody, ReplaySession, ReturnToSim, TransportAction, apply_transport, epoch_at,
+    exit_replay, followed_body, relative_state, replay_shapes, return_to_sim,
+    show_replay_in_scene_view, spawn_replay_bodies,
 };
+use avian3d::prelude::{Collider, ColliderConstructorHierarchy};
+use ssg_sim::project::recording::RecordingBodyRole;
 use ssg_sim::project::{format_utc, parse_utc};
 use ssg_sim::recording::BodyFrame;
 use ssg_sim::recording::files::{FrameLine, RecordedFrame};
@@ -331,4 +334,51 @@ fn a_replay_opens_in_the_detail_view() {
         let layers = app.world().get::<RenderLayers>(camera).expect("layers");
         assert_eq!(*layers, RenderLayers::layer(SCENE_LAYER));
     }
+}
+
+/// F-64 (P7.5 S3, C5): a replay of the default tether (the target and 77 tether
+/// bodies) with the app's attach systems gets its meshes and no collider: the
+/// replay world has no physics, and the attach path builds none.
+#[test]
+fn a_replay_with_the_attach_systems_has_no_collider() {
+    let mut app = test_app_with_attach();
+    app.add_systems(OnEnter(SimState::Replay), spawn_replay_bodies);
+    enter_sim(&mut app);
+    let mut roles = vec![RecordingBodyRole::Target, RecordingBodyRole::TetherRoot];
+    roles.extend([RecordingBodyRole::TetherNode; 75]);
+    roles.push(RecordingBodyRole::TetherTail);
+    let bodies: Vec<BodyFrame> = (0..roles.len())
+        .map(|i| body(DVec3::new(0.0, i as f64 * 0.25, 0.0), DVec3::ZERO))
+        .collect();
+    let player =
+        Player::new(vec![frame(0, 7.0e6, 0.0, bodies)], Some(Vec::new())).expect("a frame");
+    app.insert_resource(ReplaySession {
+        name: "r".to_string(),
+        player,
+        shapes: replay_shapes(&roles),
+        roles,
+        epochs: vec![(0, format_utc(fixed_epoch()))],
+        differences: Vec::new(),
+    });
+    app.world_mut()
+        .resource_mut::<NextState<SimState>>()
+        .set(SimState::Replay);
+    app.update();
+
+    let world = app.world_mut();
+    let replayed = world.query::<&ReplayBody>().iter(world).count();
+    let meshes = world
+        .query_filtered::<(), (With<ReplayBody>, With<Mesh3d>)>()
+        .iter(world)
+        .count();
+    let colliders = world
+        .query_filtered::<(), With<Collider>>()
+        .iter(world)
+        .count();
+    let hulls = world
+        .query::<&ColliderConstructorHierarchy>()
+        .iter(world)
+        .count();
+    assert_eq!((replayed, meshes), (78, 77), "the bodies and their meshes");
+    assert_eq!((colliders, hulls), (0, 0));
 }

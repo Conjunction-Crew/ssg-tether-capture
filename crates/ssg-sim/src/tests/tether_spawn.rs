@@ -14,10 +14,10 @@ use crate::capture::plan::{
     CapturePlanDevice, CapturePlanLibrary, SpawnOrientation, capture_plan_warnings,
     validate_capture_plan,
 };
-use crate::orbit::lvlh::LvlhFrame;
-use crate::orbit::{Orbit, Orbital};
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::lvlh::LvlhFrame;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
+use crate::orbit::{Orbit, Orbital};
 use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::project::SelectedProject;
 use crate::telemetry::LogLevel;
@@ -562,8 +562,18 @@ fn spawn_selected_bodies_spawns_the_chasers_tether_and_the_targets_debris() {
     assert!(cache.debris.contains_key("Satellite1"));
     // P7.5 S3: laid along the spawn orientation, not +Y; the root is at the origin.
     let tail = registered(&app, "Rope")[1];
-    let tail_distance = app.world().get::<Transform>(tail).unwrap().translation.length();
-    assert_close(f64::from(tail_distance), 2.0, 1e-3, "tail distance from the root");
+    let tail_distance = app
+        .world()
+        .get::<Transform>(tail)
+        .unwrap()
+        .translation
+        .length();
+    assert_close(
+        f64::from(tail_distance),
+        2.0,
+        1e-3,
+        "tail distance from the root",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -929,7 +939,12 @@ fn spawn_debris_takes_the_targets_inertia_from_the_selection() {
 fn q13_spawned(
     orientation: Option<SpawnOrientation>,
     chaser: SelectedOrbitalObject,
-) -> (App, Vec<Entity>, Entity, Vec<(LogLevel, &'static str, String)>) {
+) -> (
+    App,
+    Vec<Entity>,
+    Entity,
+    Vec<(LogLevel, &'static str, String)>,
+) {
     let mut app = test_app();
     load_example_plans(&mut app);
     if let Some(orientation) = orientation {
@@ -1058,9 +1073,10 @@ fn without_a_start_direction_the_tether_falls_back_to_plus_y_with_a_warning() {
     let tail = position(&app, chain[76]) - position(&app, chain[0]);
     assert!(degrees(tail, DVec3::Y) < 1e-6, "{tail}");
     assert!(
-        logs.iter().any(|(level, source, message)| *level == LogLevel::Warn
-            && *source == "tether"
-            && message.contains("laid along +Y")),
+        logs.iter()
+            .any(|(level, source, message)| *level == LogLevel::Warn
+                && *source == "tether"
+                && message.contains("laid along +Y")),
         "{logs:?}"
     );
 }
