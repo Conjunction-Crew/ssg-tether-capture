@@ -18,7 +18,7 @@ use ssg_sim::test_support::q13;
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
 
 /// `ssg-sim run` of the Q13 6,400-step command (macOS/aarch64 reference).
-const Q13_6400_HASH: &str = "9b7f6b91be7f1f0e"; // F-66 (P7.5 S1): provisional until S4
+const Q13_6400_HASH: &str = "508aefc0670ee689"; // F-66 (P7.5 S2): provisional until S4
 
 /// The files of a recording folder.
 const FILES: [&str; 6] = [
@@ -168,7 +168,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
     }
     let message = stderr(&recorded);
     assert!(
-        message.contains("recorded ") && message.contains("401 frames of 193 bodies"),
+        message.contains("recorded ") && message.contains("401 frames of 78 bodies"),
         "{message}"
     );
 
@@ -201,7 +201,11 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
         recorded_summary["final"]["step"].as_u64()
     );
     assert_eq!(manifest.start_step, 2);
-    assert_eq!(manifest.bodies.len(), 193);
+    assert_eq!(
+        manifest.bodies.len(),
+        78,
+        "F-66 (P7.5 S2): the target and 77 tether bodies"
+    );
     assert_eq!(manifest.keyframe_interval_steps, 16);
     // Its project gives the run's inputs back (the dataset is not needed).
     let inputs = manifest.project.as_ref().unwrap().sim_inputs().unwrap();
@@ -217,7 +221,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
     // Rows and size: 116 bytes per body per frame.
     let loaded = read_recording(&folder).unwrap();
     assert_eq!(loaded.frames.len(), 401);
-    let rows = 193 * loaded.frames.len() as u64;
+    let rows = 78 * loaded.frames.len() as u64;
     let size = std::fs::metadata(folder.join("keyframes.parquet"))
         .unwrap()
         .len();
@@ -243,7 +247,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
         (transition, "approach")
     );
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(transition, 4769); // F-66 (P7.5 S1): provisional until S4
+        assert_eq!(transition, 4695); // F-66 (P7.5 S2): provisional until S4
     }
     // The folder passes the checks.
     let check = check_recording(&folder, "recordings/r");
@@ -263,7 +267,7 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
     let project = manifest_project("phase", block.clone());
     let args = [
         "--steps",
-        "4900", // F-66 (P7.5 S1): provisional until S4 (the first transition is at 4,769)
+        "4900", // F-66 (P7.5 S2): provisional until S4 (the first transition is at 4,695)
         "--record",
         "p",
         "--record-from-phase",

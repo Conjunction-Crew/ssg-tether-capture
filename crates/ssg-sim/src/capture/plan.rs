@@ -11,8 +11,9 @@ pub const PLAN_SCHEMA_VERSION: u32 = 1;
 
 const DEFAULT_DEVICE_TYPE: &str = "tether";
 pub(crate) const DEFAULT_TETHER_LENGTH_M: f64 = 20.0;
-pub(crate) const DEFAULT_SEGMENT_SPACING_M: f64 = 0.1;
-const DEFAULT_SEGMENT_MASS_KG: f64 = 0.1;
+// F-66 (design D2, E6): a 0.25 m rope at 1 kg/m.
+pub(crate) const DEFAULT_SEGMENT_SPACING_M: f64 = 0.25;
+const DEFAULT_SEGMENT_MASS_KG: f64 = 0.25;
 const DEFAULT_END_MASS_KG: f64 = 2.0;
 const DEFAULT_JOINT_DAMPING: f64 = 1.0;
 /// Radius of the root and tail spheres (the spawner's `root_tail_radius`).
@@ -63,11 +64,11 @@ pub struct CapturePlanDevice {
     /// Physical length of the tether in metres. Default 20.0; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tether_length_m: Option<f64>,
-    /// Distance between tether joints in metres. Default 0.1; greater than 0, and the
+    /// Distance between tether joints in metres. Default 0.25; greater than 0, and the
     /// tether may have at most 1,000 bodies (a warning above 200).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_spacing_m: Option<f64>,
-    /// Mass of each interior tether node in kg. Default 0.1; greater than 0.
+    /// Mass of each interior tether node in kg. Default 0.25; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_mass_kg: Option<f64>,
     /// Mass of the tail, and of the root unless `project.json` gives the chaser a
@@ -77,7 +78,8 @@ pub struct CapturePlanDevice {
     /// Linear damping of each tether joint. Default 1.0; not negative.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_damping_linear: Option<f64>,
-    /// Angular damping of each tether joint. Default 1.0; not negative.
+    /// Angular damping of each tether joint. Default 1.0; not negative. No effect on
+    /// the rope model (point masses); kept for file compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_damping_angular: Option<f64>,
 }
@@ -93,12 +95,12 @@ impl CapturePlanDevice {
         self.tether_length_m.unwrap_or(DEFAULT_TETHER_LENGTH_M)
     }
 
-    /// The joint spacing in metres, 0.1 when absent.
+    /// The joint spacing in metres, 0.25 when absent.
     pub fn segment_spacing_m(&self) -> f64 {
         self.segment_spacing_m.unwrap_or(DEFAULT_SEGMENT_SPACING_M)
     }
 
-    /// The interior node mass in kg, 0.1 when absent.
+    /// The interior node mass in kg, 0.25 when absent.
     pub fn segment_mass_kg(&self) -> f64 {
         self.segment_mass_kg.unwrap_or(DEFAULT_SEGMENT_MASS_KG)
     }
@@ -118,12 +120,14 @@ impl CapturePlanDevice {
         self.joint_damping_angular.unwrap_or(DEFAULT_JOINT_DAMPING)
     }
 
-    /// Root + tail + interior nodes, as the spawner counts them.
+    /// Root + tail + interior nodes, as the spawner counts them: the rope between
+    /// the end spheres in `max(1, round(rope / spacing))` intervals, one node fewer.
     fn tether_body_count(&self) -> u64 {
-        let interior = ((self.tether_length_m() - 2.0 * END_SPHERE_RADIUS_M)
+        let intervals = ((self.tether_length_m() - 2.0 * END_SPHERE_RADIUS_M)
             / self.segment_spacing_m())
-        .max(0.0) as u64;
-        interior.saturating_add(2)
+        .round()
+        .max(1.0) as u64;
+        intervals.saturating_add(1)
     }
 }
 

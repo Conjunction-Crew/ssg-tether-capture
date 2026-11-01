@@ -16,9 +16,11 @@ pub const FIXED_HZ: f64 = 64.0;
 pub const PHYS_DT: f64 = 1.0 / FIXED_HZ;
 
 /// Fixed steps one `FixedUpdate` run may execute, whatever the requested warp
-/// (F-12). Chosen so one run stays under about 50 ms: the Q13 scenario costs
+/// (F-12). Chosen so one run stays under about 50 ms: the Q13 scenario cost
 /// 0.576 ms per step in release on an Apple M1 (three 6400-step CLI runs, P4 S1),
-/// so 64 steps take about 37 ms and 128 about 74 ms.
+/// so 64 steps took about 37 ms and 128 about 74 ms. The rope (P7.5 S2) costs
+/// 0.354 ms per step (the same measure; 0.661 on the rod chain at P7.5 S1), so 64
+/// steps take about 23 ms and 128 about 45 ms.
 pub const MAX_STEPS_PER_UPDATE: u32 = 64;
 
 /// The fixed steps one `FixedUpdate` run may execute (F-46, R9); default
@@ -148,7 +150,9 @@ impl Plugin for TimePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(PhysicsPlugins::new(ManualPhysics))
             .insert_resource(Gravity(DVec3::ZERO))
-            .insert_resource(SubstepCount(4)) // Avian3d Substep Count
+            // Avian3d Substep Count. F-66 (P7.5 design D3): 8 holds the rope to
+            // 0.4 mm of stretch under the capture force (4: 1.5 mm, 16: 0.1 mm).
+            .insert_resource(SubstepCount(8))
             .insert_resource(Time::<Fixed>::from_hz(FIXED_HZ)) // FixedUpdate rate
             .init_resource::<StepCap>()
             .add_systems(

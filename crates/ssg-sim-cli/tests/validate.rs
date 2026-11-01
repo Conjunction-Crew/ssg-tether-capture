@@ -353,7 +353,7 @@ fn a_recording_is_checked_and_summarised() {
         [
             "info: no project.json: the folder is read as a v0 project (plans only)",
             "info: no plan files in the project folder (the example plans are used)",
-            "info: recordings/r: 8 frames, 193 bodies, steps 2..202",
+            "info: recordings/r: 8 frames, 78 bodies, steps 2..202",
             "0 errors, 0 warnings",
         ]
     );

@@ -1,7 +1,7 @@
 //! The tether and the debris: the two bodies a capture run spawns.
 
 use avian3d::prelude::*;
-use bevy::{math::DVec3, prelude::*};
+use bevy::{platform::collections::HashMap, prelude::*};
 
 use crate::SimSet;
 use crate::anchor::SimAnchor;
@@ -30,6 +30,29 @@ pub struct TetherNode {
 pub enum TetherShape {
     Sphere { radius: f64 },
     Cylinder { radius: f64, length: f64 },
+}
+
+/// The collision layer of every tether body (root, nodes, tail); tether bodies
+/// filter [`DEBRIS_LAYER`] only, so the rope never touches itself (design D10).
+pub const TETHER_LAYER: LayerMask = LayerMask(0b01);
+/// The collision layer of the debris.
+pub const DEBRIS_LAYER: LayerMask = LayerMask(0b10);
+
+/// The tether's bodies in chain order: from `root` along the distance joints
+/// (`body1` → `body2`, spawn order) to the tail. A cycle ends the walk.
+pub fn chain_from_joints<'a>(
+    root: Entity,
+    joints: impl Iterator<Item = &'a DistanceJoint>,
+) -> Vec<Entity> {
+    let next: HashMap<Entity, Entity> = joints.map(|j| (j.body1, j.body2)).collect();
+    let mut chain = vec![root];
+    while let Some(&node) = next.get(chain.last().expect("the root is in the chain")) {
+        if chain.contains(&node) {
+            break;
+        }
+        chain.push(node);
+    }
+    chain
 }
 
 /// A debris body; the renderer attaches the scene at `model_path` (D2).
@@ -135,32 +158,36 @@ pub fn spawn_tether(
         .unwrap_or(DEFAULT_SEGMENT_SPACING_M);
     let segment_mass = device.segment_mass_kg() as f32;
     let end_mass = device.end_mass_kg() as f32;
+    // C1: no angular damping on the chain. avian 0.6.1's joint damping
+    // (`dynamics/solver/plugin.rs:785-792`) writes the angular term into both
+    // joined bodies' angular velocity without a `LockedAxes` check, so a plan's
+    // angular damping would leak spin into the rotation-locked nodes after any
+    // contact. The linear term is the rope's internal viscosity when slack.
     let joint_damping = JointDamping {
         linear: device.joint_damping_linear(),
-        angular: device.joint_damping_angular(),
+        angular: 0.0,
     };
 
-    let interior_node_count: u32 =
-        ((tether_length - 2.0 * root_tail_radius) / segment_spacing).max(0.0) as u32;
-
-    // Segment length is derived: distribute the interior length evenly across joints.
-    let tether_node_length = if interior_node_count > 0 {
-        (tether_length - 2.0 * root_tail_radius) / interior_node_count as f64
-    } else {
-        segment_spacing
-    };
-    let tether_node_half_length = tether_node_length * 0.5;
+    // F-66 (design D1, D2): a rope of point masses. The rope between the two end
+    // spheres' surfaces is cut into `interval_count` equal intervals, as close to
+    // the spacing as its length allows; the interior nodes sit between them. With
+    // one interval the root and the tail are joined directly at the tether length
+    // (they overlap when it is shorter than the two end spheres).
+    let rope_length = tether_length - 2.0 * root_tail_radius;
+    let interval_count = (rope_length / segment_spacing).round().max(1.0) as u32;
+    let interval = rope_length / interval_count as f64;
 
     let sphere_shape = TetherShape::Sphere {
         radius: root_tail_radius,
     };
     let sphere_collider = Collider::sphere(root_tail_radius);
 
-    let tether_node_shape = TetherShape::Cylinder {
+    let tether_node_shape = TetherShape::Sphere {
         radius: rope_radius / 8.0,
-        length: tether_node_length,
     };
-    let tether_node_collider = Collider::cylinder(rope_radius / 8.0, tether_node_length);
+    let tether_node_collider = Collider::sphere(rope_radius / 8.0);
+    // D10: tether bodies touch the debris only (no tether–tether contact).
+    let tether_layers = CollisionLayers::new(TETHER_LAYER, DEBRIS_LAYER);
 
     // The root tether node. The root is the chaser (design D8): it takes the
     // chaser's `mass_kg` and `inertia_kg_m2` from `project.json` when given (Q10 row 11).
@@ -172,6 +199,7 @@ pub fn spawn_tether(
         sphere_shape,
         RigidBody::Dynamic,
         sphere_collider.clone(),
+        tether_layers,
         Mass::from(root_mass),
         Transform::from_xyz(0.0, 0.0, 0.0),
         initial_orbit(selected),
@@ -187,61 +215,45 @@ pub fn spawn_tether(
         .insert(tether_name.clone(), vec![tether_root]);
 
     let mut prev_sphere = tether_root;
-    let mut prev_half_extent = root_tail_radius;
     let mut prev_y = 0.0;
-    let interval_count = interior_node_count + 1;
-    let surface_gap = if interval_count > 0 {
-        (tether_length - 2.0 * root_tail_radius - interior_node_count as f64 * tether_node_length)
-            / interval_count as f64
-    } else {
-        0.0
-    };
-    let tail_index = interior_node_count + 1;
 
-    for i in 1..=tail_index {
-        let (shape, collider, mass, curr_half_extent) = if i == tail_index {
-            (
-                sphere_shape,
-                sphere_collider.clone(),
-                end_mass,
-                root_tail_radius,
-            )
+    for i in 1..=interval_count {
+        let is_tail = i == interval_count;
+        let y = if is_tail {
+            tether_length
         } else {
-            (
-                tether_node_shape,
-                tether_node_collider.clone(),
-                segment_mass,
-                tether_node_half_length,
-            )
+            root_tail_radius + interval * i as f64
         };
 
-        let link_spacing = prev_half_extent + curr_half_extent + surface_gap;
-        let y = prev_y + link_spacing;
+        let mut body = commands.spawn((
+            DespawnOnExit(UiScreen::Sim),
+            TetherNode { root: tether_root },
+            RigidBody::Dynamic,
+            tether_layers,
+            Transform::from_xyz(0.0, y as f32, 0.0),
+        ));
+        if is_tail {
+            body.insert((sphere_shape, sphere_collider.clone(), Mass::from(end_mass)));
+        } else {
+            // A point mass: the node never rotates (D1).
+            body.insert((
+                tether_node_shape,
+                tether_node_collider.clone(),
+                Mass::from(segment_mass),
+                LockedAxes::ROTATION_LOCKED,
+            ));
+        }
+        let sphere = body.id();
 
-        let sphere = commands
-            .spawn((
-                DespawnOnExit(UiScreen::Sim),
-                TetherNode { root: tether_root },
-                shape,
-                RigidBody::Dynamic,
-                collider,
-                Mass::from(mass),
-                Transform::from_xyz(0.0, y as f32, 0.0),
-            ))
-            .id();
-
-        let anchor = DVec3::new(0.0, prev_y + prev_half_extent + surface_gap * 0.5, 0.0);
-
+        // Centre to centre, slack below the spawn distance and a hard stop at it.
         commands.spawn((
             DespawnOnExit(UiScreen::Sim),
-            // SphericalJoint::new(prev_sphere, sphere).with_anchor(anchor),
-            DistanceJoint::new(prev_sphere, sphere).with_anchor(anchor),
+            DistanceJoint::new(prev_sphere, sphere).with_limits(0.0, y - prev_y),
             joint_damping,
             JointCollisionDisabled,
         ));
 
         prev_sphere = sphere;
-        prev_half_extent = curr_half_extent;
         prev_y = y;
     }
 

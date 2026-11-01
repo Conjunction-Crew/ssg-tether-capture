@@ -1,10 +1,11 @@
-use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
+use avian3d::prelude::{DistanceJoint, RigidBodyDisabled, RigidBodyQuery};
 use bevy::{camera::visibility::RenderLayers, ecs::system::SystemParam, math::DVec3, prelude::*};
 use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::render::floating_origin_visuals::floating_origin_update_visuals;
 use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map};
 use crate::ui::catalog_state::SpaceCatalogUiState;
+use crate::ui::replay::ReplayBody;
 use crate::ui::settings::Settings;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, CaptureForce, CaptureSphereRadius};
@@ -19,6 +20,7 @@ use ssg_sim::orbit::selection::{
 };
 use ssg_sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
 use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::tether::{TetherShape, chain_from_joints};
 use ssg_sim::time::WorldTime;
 
 #[derive(Default, Reflect, GizmoConfigGroup)]
@@ -301,6 +303,61 @@ pub fn capture_gizmos(
     }
 }
 
+/// The running tethers' body positions in chain order: each tether's root
+/// (`OrbitalCache.tethers[_][0]`) along its distance joints to the tail.
+pub(crate) fn running_tether_chains(
+    cache: &OrbitalCache,
+    joints: &Query<&DistanceJoint>,
+    transforms: &Query<&Transform>,
+) -> Vec<Vec<Vec3>> {
+    cache
+        .tethers
+        .values()
+        .filter_map(|nodes| nodes.first())
+        .map(|&root| {
+            chain_from_joints(root, joints.iter())
+                .into_iter()
+                .filter_map(|body| transforms.get(body).ok())
+                .map(|transform| transform.translation)
+                .collect()
+        })
+        .collect()
+}
+
+/// The replay's tether body positions in body-table order (root, nodes, tail):
+/// the replay bodies with a tether shape (the target has none).
+pub(crate) fn replay_tether_chain(
+    bodies: &Query<(&ReplayBody, &Transform), With<TetherShape>>,
+) -> Vec<Vec3> {
+    let mut chain: Vec<(usize, Vec3)> = bodies
+        .iter()
+        .map(|(body, transform)| (body.index, transform.translation))
+        .collect();
+    chain.sort_by_key(|(index, _)| *index);
+    chain.into_iter().map(|(_, position)| position).collect()
+}
+
+/// A line between consecutive tether bodies, in the running sim and in a replay:
+/// the rope's nodes are 3 cm point masses, so the line is what shows the rope
+/// (P7.5 S2). Drawn in the scene view only, in the tether's red.
+pub fn tether_segments(
+    state: Res<State<SimState>>,
+    cache: Res<OrbitalCache>,
+    joints: Query<&DistanceJoint>,
+    transforms: Query<&Transform>,
+    replay_bodies: Query<(&ReplayBody, &Transform), With<TetherShape>>,
+    mut gizmos: Gizmos<CaptureGizmoConfigGroup>,
+) {
+    let chains = match state.get() {
+        SimState::Running => running_tether_chains(&cache, &joints, &transforms),
+        SimState::Replay => vec![replay_tether_chain(&replay_bodies)],
+        SimState::Setup => return,
+    };
+    for chain in chains {
+        gizmos.linestrip(chain, Srgba::new(1.0, 0.0, 0.0, 1.0));
+    }
+}
+
 pub fn dev_gizmos(
     true_params_query: Query<(&Orbital, &Transform), Without<RigidBodyDisabled>>,
     mut gizmos: Gizmos,
@@ -373,6 +430,7 @@ impl Plugin for GizmoPlugin {
                 .run_if(in_state(UiScreen::Sim))
                 .run_if(in_state(SimState::Running)),
         )
+        .add_systems(Update, tether_segments.run_if(in_state(UiScreen::Sim)))
         .add_systems(Last, orbital_gizmos.run_if(in_state(UiScreen::Sim)))
         .insert_gizmo_config(
             DefaultGizmoConfigGroup,
