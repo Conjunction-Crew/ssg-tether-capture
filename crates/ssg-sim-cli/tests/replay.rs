@@ -372,7 +372,7 @@ fn a_run_record_recording_replays_and_each_edit_gives_its_exit_code() {
     // Frames at steps 2, 34, 66, 98 and 130 (K = 32).
     println!("ssg-sim run --record r, then replay:");
     let out = expect_exit(&replay(&original, &[]), 0);
-    assert!(out.contains("193 bodies, 5 frames, steps 2–130"), "{out}");
+    assert!(out.contains("78 bodies, 5 frames, steps 2–130"), "{out}");
     assert!(out.contains("built with: this build"), "{out}");
     assert!(
         out.contains(&format!("with k = 1: {}", identical(5))),
@@ -455,7 +455,7 @@ fn a_run_record_recording_replays_and_each_edit_gives_its_exit_code() {
         .unwrap();
     row.values[7] = f64::from_bits(row.values[7].to_bits() ^ 1);
     let mut writer = KeyframeWriter::create(&table).unwrap();
-    for frame in rows.chunks(193) {
+    for frame in rows.chunks(78) {
         let bodies: Vec<_> = frame.iter().map(KeyframeRow::state).collect();
         writer.push_frame(frame[0].step as u64, &bodies).unwrap();
     }

@@ -963,8 +963,8 @@ fn a_q13_run_through_the_file_sink_matches_the_memory_sink_bit_for_bit() {
     assert_eq!(loaded.frames.len(), expected.frames.len());
     assert_eq!(
         loaded.manifest.bodies.len(),
-        193,
-        "the target and 192 tether bodies"
+        78,
+        "the target and 77 tether bodies (F-66, P7.5 S2)"
     );
     assert_eq!(
         loaded.manifest.end_reason,
@@ -1023,7 +1023,8 @@ fn the_size_cap_ends_a_file_recording_and_the_manifest_says_so() {
     let recordings = dir.path().join("recordings");
     let settings = RecordingSettings {
         keyframe_interval_steps: 8,
-        // Four frames of 193 bodies (22,388 bytes each) fit; the fifth does not.
+        // Eleven frames of 78 bodies (9,048 bytes each) fit; the twelfth does not
+        // (F-66, P7.5 S2: four of 193 bodies with the rod).
         max_size_mb: 0.1,
         ..RecordingSettings::default()
     };
@@ -1037,13 +1038,13 @@ fn the_size_cap_ends_a_file_recording_and_the_manifest_says_so() {
         &[(100, RecorderCommand::Start { name: "cap".into() })],
     );
     let loaded = read_recording(&recordings.join("cap")).unwrap();
-    assert_eq!(loaded.frames.len(), 4);
+    assert_eq!(loaded.frames.len(), 11);
     assert_eq!(
         loaded.manifest.end_reason,
         Some(RecordingEndReason::MaxSize)
     );
     assert_eq!(loaded.manifest.limits.max_size_mb, Some(0.1));
-    assert_eq!(loaded.manifest.end_step, Some(124));
+    assert_eq!(loaded.manifest.end_step, Some(180));
     let report = read_recording_file(&recordings.join("cap")).unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
 }

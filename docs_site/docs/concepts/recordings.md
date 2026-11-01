@@ -58,7 +58,7 @@ The app names a recording `<plan-id>-<UTC time>`, for example `example_plan-2026
 
 ## Sizes
 
-A frame takes 116 bytes per body (the Parquet file adds about 0.2 %). The default 20 m tether has 192 bodies, so with the target a frame is 22.4 KB. With a 200-body tether and the target (201 bodies):
+A frame takes 116 bytes per body (the Parquet file adds about 0.2 %). The default 20 m tether has 77 bodies, so with the target a frame is 9.0 KB. With a 200-body tether and the target (201 bodies):
 
 | Frame interval K | Frames per simulated second | MB per simulated minute | 30-minute segment | Longest segment under 100 MB |
 |---|---|---|---|---|
@@ -95,7 +95,7 @@ ssg-sim replay my-project/recordings/r
 checks the recording's files, re-simulates the run from step 0 with the recorded scenario, plan and inputs (including the spawn-update step count k), and compares every frame of every body bit for bit:
 
 ```text
-recording my-project/recordings/r: 193 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
+recording my-project/recordings/r: 78 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
 built with: this build
 re-simulated steps 0–130 with k = 1: frames: 5, identical: 5
 ```
