@@ -42,6 +42,12 @@ pub const TETHER_LAYER: LayerMask = LayerMask(0b01);
 /// The collision layer of the debris.
 pub const DEBRIS_LAYER: LayerMask = LayerMask(0b10);
 
+/// The debris collider, a stated primitive (F-64, design D10): an HST-sized
+/// cylinder of this radius and length along its local Y axis. The debris keeps
+/// the identity `Rotation`, so the long axis is the sim's Y axis at spawn.
+pub const DEBRIS_RADIUS_M: f64 = 2.1;
+pub const DEBRIS_LENGTH_M: f64 = 13.2;
+
 /// The tether's bodies in chain order: from `root` along the distance joints
 /// (`body1` → `body2`, spawn order) to the tail. A cycle ends the walk.
 pub fn chain_from_joints<'a>(
@@ -103,7 +109,8 @@ pub fn spawn_debris(
         RigidBody::Dynamic,
         RigidBodyDisabled,
         initial_orbit(selected),
-        ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+        Collider::cylinder(DEBRIS_RADIUS_M, DEBRIS_LENGTH_M),
+        CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER),
         CenterOfMass(Vec3::ZERO),
         Mass::from(selected.mass_kg.unwrap_or(DEFAULT_TARGET_MASS_KG) as f32),
         Transform::from_xyz(
@@ -112,7 +119,8 @@ pub fn spawn_debris(
             PHYSICS_DISABLE_RADIUS as f32 + 10.0,
         ),
     ));
-    // Q10 row 11: the manifest's tensor replaces the collider's scaled inertia
+    // The explicit `Mass` replaces the cylinder's density mass and scales its
+    // inertia. Q10 row 11: the manifest's tensor replaces that scaled inertia
     // (avian recomputes the mass properties in the first step's Prepare set).
     if let Some(tensor) = &selected.inertia_kg_m2 {
         debris.insert(angular_inertia(tensor));

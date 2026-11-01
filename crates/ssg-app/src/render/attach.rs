@@ -3,9 +3,8 @@
 //! The sim spawns bodies with [`TetherShape`] / [`DebrisBody`] markers; these
 //! systems attach the visuals in the same `OnEnter(SimState::Running)` schedule,
 //! after the spawn set. A replay (`SimState::Replay`) attaches the same visuals
-//! to its visual-only bodies. Not in `Update`: avian's
-//! `init_collider_constructor_hierarchies` runs there and strips
-//! `ColliderConstructorHierarchy` from a body that has no `SceneRoot` yet.
+//! to its visual-only bodies. Visuals only: the debris collider is the sim's
+//! primitive (F-64), so the glTF scene adds no collider.
 
 use bevy::{camera::visibility::RenderLayers, platform::collections::HashMap, prelude::*};
 
