@@ -10,7 +10,7 @@
 
 use avian3d::prelude::*;
 use bevy::ecs::message::Messages;
-use bevy::math::DVec3;
+use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 
 use crate::capture::{CaptureComponent, CaptureForce};
@@ -213,7 +213,9 @@ fn tether_steady_at_capture_start() {
 
 /// F-64: headless, the colliders are the rope's 77 bodies and the debris's
 /// primitive cylinder, each on its layer, and no collider is built from a mesh. The
-/// explicit 2,500 kg replaces the cylinder's density mass and scales its inertia.
+/// cylinder's long axis is the debris body's X (D11): its AABB at the identity pose
+/// is 6.6 m along X and 2.1 m along Y and Z, and the explicit 2,500 kg replaces its
+/// density mass and scales its inertia (axial on X, transverse on Y and Z).
 #[test]
 fn the_headless_collider_set_is_the_rope_and_the_debris_cylinder() {
     let mut app = test_app();
@@ -244,6 +246,19 @@ fn the_headless_collider_set_is_the_rope_and_the_debris_cylinder() {
         world.get::<CollisionLayers>(handles.debris),
         Some(&CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER))
     );
+    let aabb = world
+        .get::<Collider>(handles.debris)
+        .expect("debris Collider")
+        .aabb(DVec3::ZERO, DQuat::IDENTITY);
+    let half_extents = (aabb.max - aabb.min) / 2.0;
+    println!("debris collider AABB half-extents {half_extents} m");
+    assert!(
+        (half_extents - DVec3::new(6.6, 2.1, 2.1))
+            .abs()
+            .max_element()
+            < 1e-9,
+        "the long axis is X: {half_extents}"
+    );
     let mass = world
         .get::<ComputedMass>(handles.debris)
         .expect("ComputedMass")
@@ -261,8 +276,8 @@ fn the_headless_collider_set_is_the_rope_and_the_debris_cylinder() {
     let transverse = 2500.0 * (3.0 * r * r + l * l) / 12.0;
     for (actual, expected, what) in [
         (mass, 2500.0, "mass"),
-        (inertia.m11, axial, "axial inertia (local Y)"),
-        (inertia.m00, transverse, "transverse inertia (X)"),
+        (inertia.m00, axial, "axial inertia (X)"),
+        (inertia.m11, transverse, "transverse inertia (Y)"),
         (inertia.m22, transverse, "transverse inertia (Z)"),
     ] {
         assert!(

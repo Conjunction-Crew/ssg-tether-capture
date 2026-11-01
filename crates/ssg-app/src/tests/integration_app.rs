@@ -1,5 +1,6 @@
 //! App-side integration tests (P3 S2): they need the camera plugin.
 
+use crate::render::attach::debris_scene_transform;
 use crate::render::camera::{CameraTarget, OrbitCamera, OrbitCameraParams};
 use crate::render::celestial::Earth;
 use crate::render::floating_origin_visuals::floating_origin_update_visuals;
@@ -467,14 +468,38 @@ fn the_app_with_its_attach_systems_holds_the_clis_collider_set() {
         };
         assert_eq!(*layers, expected);
     }
-    // The attach systems ran: every tether body has its mesh, the debris its scene.
+    // The attach systems ran: every tether body has its mesh, and the debris its
+    // scene on a child turned 90° about Y that carries no sim component (D11).
     let meshes = world
         .query_filtered::<(), (With<TetherShape>, With<Mesh3d>)>()
         .iter(world)
         .count();
-    let scenes = world
-        .query_filtered::<(), (With<DebrisBody>, With<SceneRoot>)>()
+    assert_eq!(meshes, 77);
+    assert_debris_scene_on_a_rotated_child(world);
+}
+
+/// The debris's glTF scene hangs on one child of the debris, rotated so the model's
+/// tube lies along the collider's X (design D11), with no collider or rigid body.
+pub(crate) fn assert_debris_scene_on_a_rotated_child(world: &mut World) {
+    let debris = world
+        .query_filtered::<Entity, With<DebrisBody>>()
+        .single(world)
+        .expect("one debris");
+    assert!(world.get::<SceneRoot>(debris).is_none(), "not on the body");
+    let scenes: Vec<(Entity, Transform, Entity)> = world
+        .query_filtered::<(Entity, &Transform, &ChildOf), With<SceneRoot>>()
         .iter(world)
-        .count();
-    assert_eq!((meshes, scenes), (77, 1));
+        .map(|(entity, transform, parent)| (entity, *transform, parent.parent()))
+        .collect();
+    assert_eq!(scenes.len(), 1, "one scene");
+    let (child, transform, parent) = scenes[0];
+    assert_eq!(parent, debris);
+    assert_eq!(transform, debris_scene_transform());
+    let tube = transform.rotation * Vec3::Z;
+    assert!(
+        tube.abs_diff_eq(Vec3::X, 1e-6),
+        "the glTF's Z onto X: {tube}"
+    );
+    assert!(world.get::<Collider>(child).is_none());
+    assert!(world.get::<RigidBody>(child).is_none());
 }

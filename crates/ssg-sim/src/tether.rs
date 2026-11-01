@@ -1,7 +1,11 @@
 //! The tether and the debris: the two bodies a capture run spawns.
 
 use avian3d::prelude::*;
-use bevy::{math::DVec3, platform::collections::HashMap, prelude::*};
+use bevy::{
+    math::{DQuat, DVec3},
+    platform::collections::HashMap,
+    prelude::*,
+};
 use brahe::Epoch;
 
 use crate::SimSet;
@@ -42,11 +46,25 @@ pub const TETHER_LAYER: LayerMask = LayerMask(0b01);
 /// The collision layer of the debris.
 pub const DEBRIS_LAYER: LayerMask = LayerMask(0b10);
 
-/// The debris collider, a stated primitive (F-64, design D10): an HST-sized
-/// cylinder of this radius and length along its local Y axis. The debris keeps
-/// the identity `Rotation`, so the long axis is the sim's Y axis at spawn.
+/// The debris collider, a stated primitive (F-64, design D10, D11): an HST-sized
+/// cylinder of this radius and length. Its long axis is the debris body's X, the
+/// axis the controller circles the root about (`capture/mod.rs`, `up = Rotation ×
+/// X`), so the terminal-phase circle meets the cylinder's side, never its end caps,
+/// and the rope winds around the side. The debris keeps the identity `Rotation`
+/// (C3), so the long axis is the sim's X at spawn.
 pub const DEBRIS_RADIUS_M: f64 = 2.1;
 pub const DEBRIS_LENGTH_M: f64 = 13.2;
+
+/// The debris's primitive with its long axis along the body's local X: avian's
+/// `Collider::cylinder` lies along local Y, so a one-shape compound turns it 90°
+/// about Z and the body itself keeps the identity `Rotation` (D11, C3).
+fn debris_collider() -> Collider {
+    Collider::compound(vec![(
+        Position::from(DVec3::ZERO),
+        Rotation::from(DQuat::from_rotation_z(std::f64::consts::FRAC_PI_2)),
+        Collider::cylinder(DEBRIS_RADIUS_M, DEBRIS_LENGTH_M),
+    )])
+}
 
 /// The tether's bodies in chain order: from `root` along the distance joints
 /// (`body1` → `body2`, spawn order) to the tail. A cycle ends the walk.
@@ -109,7 +127,7 @@ pub fn spawn_debris(
         RigidBody::Dynamic,
         RigidBodyDisabled,
         initial_orbit(selected),
-        Collider::cylinder(DEBRIS_RADIUS_M, DEBRIS_LENGTH_M),
+        debris_collider(),
         CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER),
         CenterOfMass(Vec3::ZERO),
         Mass::from(selected.mass_kg.unwrap_or(DEFAULT_TARGET_MASS_KG) as f32),

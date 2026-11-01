@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use crate::render::celestial::replay_earth_translation;
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
 use crate::tests::app_support::{enter_sim, test_app, test_app_with_attach};
+use crate::tests::integration_app::assert_debris_scene_on_a_rotated_child;
 use crate::ui::replay::{
     ReplayBody, ReplaySession, ReturnToSim, TransportAction, apply_transport, epoch_at,
     exit_replay, followed_body, relative_state, replay_shapes, return_to_sim,
@@ -381,4 +382,6 @@ fn a_replay_with_the_attach_systems_has_no_collider() {
         .count();
     assert_eq!((replayed, meshes), (78, 77), "the bodies and their meshes");
     assert_eq!((colliders, hulls), (0, 0));
+    // The replayed debris's model on the same rotated child as live (D11).
+    assert_debris_scene_on_a_rotated_child(world);
 }

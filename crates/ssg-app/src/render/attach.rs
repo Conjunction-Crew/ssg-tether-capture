@@ -73,6 +73,14 @@ pub fn attach_tether_visuals(
     }
 }
 
+/// The debris model rides on a child of the debris body, turned 90° about Y so the
+/// model's telescope tube (the glTF's Z) lies along the collider's long axis, the
+/// body's X (design D11). Visual only: the child carries no sim component and is
+/// despawned with its parent.
+pub fn debris_scene_transform() -> Transform {
+    Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2))
+}
+
 pub fn attach_debris_scene(
     mut commands: Commands,
     debris: Query<(Entity, &DebrisBody), Added<DebrisBody>>,
@@ -81,7 +89,10 @@ pub fn attach_debris_scene(
     for (entity, body) in &debris {
         let scene: Handle<Scene> =
             asset_server.load(GltfAssetLabel::Scene(0).from_asset(body.model_path.clone()));
-        commands.entity(entity).insert(SceneRoot(scene));
+        commands
+            .entity(entity)
+            .insert(Visibility::default())
+            .with_child((SceneRoot(scene), debris_scene_transform()));
     }
 }
 
