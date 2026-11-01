@@ -18,7 +18,6 @@ use crate::render::camera::{CameraTarget, set_map_view};
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
 use crate::ui::events::UiEvent;
 use crate::ui::recording::{WINDOW_POS, megabytes};
-use ssg_sim::capture::plan::CapturePlan;
 use ssg_sim::project::manifest::BuiltWith;
 use ssg_sim::project::recording::{
     RECORDING_PARTIAL_SUFFIX, RECORDING_TRANSITIONS_FILE, RecordingBodyRole, RecordingManifest,
@@ -148,22 +147,11 @@ pub(crate) fn scan_recordings(recordings_dir: &Path) -> Vec<RecordingEntry> {
 
 const MANIFEST_NAME: &str = ssg_sim::project::recording::RECORDING_MANIFEST_FILE;
 
-/// The shape of each body as `spawn_tether` builds it for `plan`: spheres at the
-/// root and the tail, cylinders between, and no shape for the target (it shows
-/// the debris model).
-pub(crate) fn replay_shapes(
-    plan: &CapturePlan,
-    roles: &[RecordingBodyRole],
-) -> Vec<Option<TetherShape>> {
-    let device = plan.device.clone().unwrap_or_default();
-    let length = device.tether_length_m();
-    let spacing = device.segment_spacing_m().max(1e-3);
-    let interior = ((length - 2.0 * END_SPHERE_RADIUS_M) / spacing).max(0.0) as u32;
-    let node_length = if interior > 0 {
-        (length - 2.0 * END_SPHERE_RADIUS_M) / f64::from(interior)
-    } else {
-        spacing
-    };
+/// The shape of each body as `spawn_tether` builds it: spheres at the root and
+/// the tail, the rope's point masses between (F-66, P7.5 S2), and no shape for
+/// the target (it shows the debris model). A recording of the rod chain (before
+/// P7.5) draws its links as the same small spheres.
+pub(crate) fn replay_shapes(roles: &[RecordingBodyRole]) -> Vec<Option<TetherShape>> {
     roles
         .iter()
         .map(|role| match role {
@@ -173,9 +161,8 @@ pub(crate) fn replay_shapes(
                     radius: END_SPHERE_RADIUS_M,
                 })
             }
-            RecordingBodyRole::TetherNode => Some(TetherShape::Cylinder {
+            RecordingBodyRole::TetherNode => Some(TetherShape::Sphere {
                 radius: ROPE_RADIUS_M / 8.0,
-                length: node_length,
             }),
         })
         .collect()
@@ -196,7 +183,7 @@ pub(crate) fn load_replay_session(dir: &Path) -> Result<ReplaySession, String> {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default(),
-        shapes: replay_shapes(&manifest.plan, &roles),
+        shapes: replay_shapes(&roles),
         epochs: recording
             .frames
             .iter()
