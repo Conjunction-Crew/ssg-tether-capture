@@ -19,7 +19,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use avian3d::prelude::DistanceJoint;
 use bevy::math::{DQuat, DVec3};
-use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use brahe::Epoch;
 use nalgebra::Vector6;
@@ -30,6 +29,7 @@ use crate::project::SelectedProject;
 use crate::project::recording::RecordingBodyRole;
 use crate::session::{SimState, UiScreen};
 use crate::telemetry::LogEntry;
+use crate::tether::chain_from_joints;
 use crate::{SimSet, SimStep};
 use inputs::{RecordedInput, SimInputLog, reset_sim_input_log};
 use recorder::{
@@ -266,14 +266,7 @@ pub fn build_recording_bodies(
     ) else {
         return;
     };
-    let next: HashMap<Entity, Entity> = joints.iter().map(|j| (j.body1, j.body2)).collect();
-    let mut tether = vec![root];
-    while let Some(&node) = next.get(tether.last().expect("the root is in the chain")) {
-        if tether.contains(&node) {
-            break;
-        }
-        tether.push(node);
-    }
+    let tether = chain_from_joints(root, joints.iter());
     let mut bodies = RecordingBodies {
         entities: vec![target],
         roles: vec![RecordingBodyRole::Target],

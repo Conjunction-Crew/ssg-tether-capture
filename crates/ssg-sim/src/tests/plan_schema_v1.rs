@@ -165,7 +165,8 @@ fn each_validation_rule_reports_its_message() {
             "body count",
             |d| d["device"] = json!({"tether_length_m": 101.0, "segment_spacing_m": 0.1}),
             vec![
-                "[p] /device/segment_spacing_m: gives 1002 tether bodies; at most 1000 are allowed",
+                // F-66 (P7.5 S2): the rope counts round(100 / 0.1) + 1 bodies (the rod: 1002).
+                "[p] /device/segment_spacing_m: gives 1001 tether bodies; at most 1000 are allowed",
             ],
         ),
         (
@@ -290,8 +291,9 @@ fn a_blank_tether_is_refused_in_v0_and_v1_files() {
 fn an_end_phase_and_a_tether_between_200_and_1000_bodies_load() {
     let mut d = doc();
     d["phases"][1]["end"] = json!("success");
-    // Bodies = floor((length - 2 x 0.5 m end spheres) / spacing) + 2.
-    d["device"] = json!({"tether_length_m": 500.0, "segment_spacing_m": 0.5});
+    // Bodies = max(1, round((length - 2 x 0.5 m end spheres) / spacing)) + 1: the
+    // rope's intervals plus one (F-66, P7.5 S2; the rod's floor(…) + 2 before).
+    d["device"] = json!({"tether_length_m": 500.5, "segment_spacing_m": 0.5});
     let report = read_plan_value(ID, &d);
     assert_eq!(report.errors, Vec::<String>::new());
     assert_eq!(
@@ -303,20 +305,20 @@ fn an_end_phase_and_a_tether_between_200_and_1000_bodies_load() {
     );
     assert_eq!(report.plan.unwrap().phases[1].end, Some(PhaseEnd::Success));
 
-    d["device"] = json!({"tether_length_m": 500.5, "segment_spacing_m": 0.5});
+    d["device"] = json!({"tether_length_m": 501.0, "segment_spacing_m": 0.5});
     assert_eq!(
         read_plan_value(ID, &d).errors,
         ["[p] /device/segment_spacing_m: gives 1001 tether bodies; at most 1000 are allowed"]
     );
-    d["device"] = json!({"tether_length_m": 100.0, "segment_spacing_m": 0.5});
+    d["device"] = json!({"tether_length_m": 100.5, "segment_spacing_m": 0.5});
     assert_eq!(
         read_plan_value(ID, &d).warnings,
         Vec::<String>::new(),
         "200 bodies"
     );
-    d["device"] = json!({"tether_length_m": 100.5, "segment_spacing_m": 0.5});
+    d["device"] = json!({"tether_length_m": 101.0, "segment_spacing_m": 0.5});
     assert_eq!(read_plan_value(ID, &d).warnings.len(), 1, "201 bodies");
-    // The default 20 m tether at 0.1 m spacing (191 bodies) does not warn.
+    // The default 20 m tether at 0.25 m spacing (77 bodies) does not warn.
     d["device"] = json!({});
     assert_eq!(read_plan_value(ID, &d).warnings, Vec::<String>::new());
 }
@@ -326,8 +328,9 @@ fn absent_optional_fields_take_the_documented_defaults() {
     let device = CapturePlanDevice::default();
     assert_eq!(device.device_type(), "tether");
     assert_eq!(device.tether_length_m(), 20.0);
-    assert_eq!(device.segment_spacing_m(), 0.1);
-    assert_eq!(device.segment_mass_kg(), 0.1);
+    // F-66 (P7.5 S2, design D2): the rope's defaults (the rod's were 0.1 and 0.1).
+    assert_eq!(device.segment_spacing_m(), 0.25);
+    assert_eq!(device.segment_mass_kg(), 0.25);
     assert_eq!(device.end_mass_kg(), 2.0);
     assert_eq!(device.joint_damping_linear(), 1.0);
     assert_eq!(device.joint_damping_angular(), 1.0);

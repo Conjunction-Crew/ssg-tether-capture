@@ -13,7 +13,7 @@
           ]
         },
         "joint_damping_angular": {
-          "description": "Angular damping of each tether joint. Default 1.0; not negative.",
+          "description": "Angular damping of each tether joint. Default 1.0; not negative. No effect on\nthe rope model (point masses); kept for file compatibility.",
           "format": "double",
           "type": [
             "number",
@@ -29,7 +29,7 @@
           ]
         },
         "segment_mass_kg": {
-          "description": "Mass of each interior tether node in kg. Default 0.1; greater than 0.",
+          "description": "Mass of each interior tether node in kg. Default 0.25; greater than 0.",
           "format": "double",
           "type": [
             "number",
@@ -37,7 +37,7 @@
           ]
         },
         "segment_spacing_m": {
-          "description": "Distance between tether joints in metres. Default 0.1; greater than 0, and the\ntether may have at most 1,000 bodies (a warning above 200).",
+          "description": "Distance between tether joints in metres. Default 0.25; greater than 0, and the\ntether may have at most 1,000 bodies (a warning above 200).",
           "format": "double",
           "type": [
             "number",
