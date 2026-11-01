@@ -295,7 +295,9 @@ jobs:
           - os: macos-latest
             name: macOS
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # A full Windows run with a cold cache builds for ~30 min and then runs the
+    # to-capture tests and the two tether tests: ~85-95 min in all (P7.5 S4).
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
