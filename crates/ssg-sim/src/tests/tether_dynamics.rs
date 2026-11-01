@@ -1,7 +1,7 @@
-//! The tether's dynamics on the Q13 scenario (P7.5 S2, S3; F-66, F-64): the §4
-//! acceptance measurements in the 10 s after the capture start, the collider set,
-//! the rope at rest, and two `#[ignore]`d long runs (a 10-minute rest; the run to
-//! the capture phase with its contact count).
+//! The tether's dynamics on the Q13 scenario (P7.5 S2, S3, S6; F-66, F-64): the §4
+//! acceptance measurements in the 10 s after the capture start, the collider set
+//! and the debris's mass properties, the rope at rest, and two `#[ignore]`d long
+//! runs (a 10-minute rest; the run to the capture phase with its contact count).
 //!
 //! "Relative to the root" is a body's velocity minus the root's. A floating-origin
 //! reset shifts every enabled body by the same `(com_r, com_v)`, so the relative
@@ -20,7 +20,8 @@ use crate::orbit::selection::OrbitalSelectionState;
 use crate::project::SelectedProject;
 use crate::test_support::{enter_sim, load_example_plans, q13, start_running, test_app, tick};
 use crate::tether::{
-    DEBRIS_LAYER, DEBRIS_LENGTH_M, DEBRIS_RADIUS_M, TETHER_LAYER, chain_from_joints,
+    DEBRIS_ARRAY_A, DEBRIS_ARRAY_B, DEBRIS_BUS, DEBRIS_LAYER, DebrisBox, TETHER_FILTERS,
+    TETHER_LAYER, chain_from_joints, debris_angular_inertia,
 };
 use crate::time::PHYS_DT;
 
@@ -222,24 +223,68 @@ fn tether_steady_at_capture_start() {
     assert_eq!(reset_count, 0, "origin resets in the window");
 }
 
-/// F-64: headless, the colliders are the rope's 77 bodies and the debris's
-/// primitive cylinder, each on its layer, and no collider is built from a mesh. The
-/// cylinder's long axis is the debris body's X (D11): its AABB at the identity pose
-/// is 6.6 m along X and 2.1 m along Y and Z, and the explicit 2,500 kg replaces its
-/// density mass and scales its inertia (axial on X, transverse on Y and Z).
+/// The debris's two array children (P7.5 S6): every collider entity whose parent
+/// is the debris, as `(array A, array B)` (A on +Z, B on −Z of the body).
+fn debris_arrays(app: &mut App, debris: Entity) -> (Entity, Entity) {
+    let world = app.world_mut();
+    let children: Vec<(Entity, f32)> = world
+        .query_filtered::<(Entity, &ChildOf, &Transform), With<Collider>>()
+        .iter(world)
+        .filter(|(_, child_of, _)| child_of.parent() == debris)
+        .map(|(entity, _, transform)| (entity, transform.translation.z))
+        .collect();
+    assert_eq!(children.len(), 2, "two array children: {children:?}");
+    let a = children.iter().find(|(_, z)| *z > 0.0).expect("array A").0;
+    let b = children.iter().find(|(_, z)| *z < 0.0).expect("array B").0;
+    (a, b)
+}
+
+/// The world AABB of a box rotated about X, as avian's `Collider::aabb` gives it:
+/// the half-extents `(hx, hy cos θ + hz |sin θ|, hy |sin θ| + hz cos θ)`.
+fn rotated_half_extents(b: &DebrisBox) -> DVec3 {
+    let (sin, cos) = b.rotation_about_x_rad.sin_cos();
+    let h = b.half_extents;
+    DVec3::new(
+        h.x,
+        h.y * cos + h.z * sin.abs(),
+        h.y * sin.abs() + h.z * cos,
+    )
+}
+
+/// F-64, design D13 (P7.5 S6, v0.7): headless, the colliders are the rope's 77
+/// bodies, the debris's bus (its own collider, a one-shape compound) and the two
+/// arrays (child collider entities attached to the debris by avian), each on its
+/// layer, and no collider is built from a mesh. The debris's mass properties are the
+/// stated ones with the children present: 2,500 kg, the centre at the origin and
+/// the three-shape compound's tensor about the origin (C1, E21).
 #[test]
-fn the_headless_collider_set_is_the_rope_and_the_debris_cylinder() {
+fn the_headless_collider_set_is_the_rope_the_bus_and_the_two_arrays() {
     let mut app = test_app();
     let handles = q13::build(&mut app);
     let chain = chain(&mut app, handles.root);
+    let (array_a, array_b) = debris_arrays(&mut app, handles.debris);
     let world = app.world_mut();
     let colliders: Vec<Entity> = world
         .query_filtered::<Entity, With<Collider>>()
         .iter(world)
         .collect();
-    assert_eq!(colliders.len(), 78, "77 tether bodies + the debris");
+    assert_eq!(
+        colliders.len(),
+        80,
+        "77 tether bodies + the bus + two arrays"
+    );
     assert!(chain.iter().all(|body| colliders.contains(body)));
-    assert!(colliders.contains(&handles.debris));
+    for collider in [handles.debris, array_a, array_b] {
+        assert!(colliders.contains(&collider));
+    }
+    assert_eq!(
+        world
+            .query_filtered::<Entity, (With<RigidBody>, With<crate::tether::DebrisBody>)>()
+            .iter(world)
+            .count(),
+        1,
+        "one debris rigid body"
+    );
     assert_eq!(
         world
             .query::<&ColliderConstructorHierarchy>()
@@ -250,50 +295,114 @@ fn the_headless_collider_set_is_the_rope_and_the_debris_cylinder() {
     for &body in &chain {
         assert_eq!(
             world.get::<CollisionLayers>(body),
-            Some(&CollisionLayers::new(TETHER_LAYER, DEBRIS_LAYER))
+            Some(&CollisionLayers::new(TETHER_LAYER, TETHER_FILTERS))
         );
     }
-    assert_eq!(
-        world.get::<CollisionLayers>(handles.debris),
-        Some(&CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER))
-    );
-    let aabb = world
-        .get::<Collider>(handles.debris)
-        .expect("debris Collider")
-        .aabb(DVec3::ZERO, DQuat::IDENTITY);
-    let half_extents = (aabb.max - aabb.min) / 2.0;
-    println!("debris collider AABB half-extents {half_extents} m");
-    assert!(
-        (half_extents - DVec3::new(6.6, 2.1, 2.1))
-            .abs()
-            .max_element()
-            < 1e-9,
-        "the long axis is X: {half_extents}"
-    );
+    for collider in [handles.debris, array_a, array_b] {
+        assert_eq!(
+            world.get::<CollisionLayers>(collider),
+            Some(&CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER))
+        );
+    }
+    for array in [array_a, array_b] {
+        assert!(
+            world.get::<RigidBody>(array).is_none(),
+            "a child has no body"
+        );
+        assert_eq!(
+            world.get::<ChildOf>(array).map(ChildOf::parent),
+            Some(handles.debris)
+        );
+        assert_eq!(
+            world.get::<ColliderOf>(array),
+            Some(&ColliderOf {
+                body: handles.debris
+            }),
+            "avian attached the child to the debris"
+        );
+    }
+
+    // The shapes in their own frames: the bus compound's box (with its offset) and
+    // each array's own box (its rotation lives in the child's `Transform`).
+    for (collider, b, what) in [
+        (handles.debris, DEBRIS_BUS, "bus"),
+        (array_a, DEBRIS_ARRAY_A, "array A"),
+        (array_b, DEBRIS_ARRAY_B, "array B"),
+    ] {
+        let aabb = world
+            .get::<Collider>(collider)
+            .expect("Collider")
+            .aabb(DVec3::ZERO, DQuat::IDENTITY);
+        let half = (aabb.max - aabb.min) / 2.0;
+        let centre = (aabb.max + aabb.min) / 2.0;
+        println!("{what}: local AABB half-extents {half}, centre {centre} m");
+        assert!(
+            (half - b.half_extents).abs().max_element() < 1e-9,
+            "{what}: half-extents {half}"
+        );
+        let expected_centre = if collider == handles.debris {
+            b.centre
+        } else {
+            DVec3::ZERO
+        };
+        assert!(
+            (centre - expected_centre).abs().max_element() < 1e-9,
+            "{what}: centre {centre}"
+        );
+    }
+
+    // The mass properties with the children present (C1, E21).
+    assert!(world.get::<NoAutoMass>(handles.debris).is_some());
+    assert!(world.get::<NoAutoCenterOfMass>(handles.debris).is_some());
+    assert!(world.get::<NoAutoAngularInertia>(handles.debris).is_some());
     let mass = world
         .get::<ComputedMass>(handles.debris)
         .expect("ComputedMass")
         .value();
+    let centre = world
+        .get::<ComputedCenterOfMass>(handles.debris)
+        .expect("ComputedCenterOfMass")
+        .0;
     let inertia = world
         .get::<ComputedAngularInertia>(handles.debris)
         .expect("ComputedAngularInertia")
         .tensor();
-    println!(
-        "debris: ComputedMass {mass} kg; ComputedAngularInertia diag ({}, {}, {}) kg m2",
-        inertia.m00, inertia.m11, inertia.m22
+    // The diagonal and the off-diagonal (xy, xz, yz), kg·m².
+    let (diag, off) = (
+        [inertia.m00, inertia.m11, inertia.m22],
+        [inertia.m01, inertia.m02, inertia.m12],
     );
-    let (r, l) = (2.1f64, 13.2f64);
-    let axial = 2500.0 * r * r / 2.0;
-    let transverse = 2500.0 * (3.0 * r * r + l * l) / 12.0;
-    for (actual, expected, what) in [
-        (mass, 2500.0, "mass"),
-        (inertia.m00, axial, "axial inertia (X)"),
-        (inertia.m11, transverse, "transverse inertia (Y)"),
-        (inertia.m22, transverse, "transverse inertia (Z)"),
+    println!(
+        "debris: ComputedMass {mass} kg; ComputedCenterOfMass {centre} m; \
+         ComputedAngularInertia diag ({:.4}, {:.4}, {:.4}) off (xy {:.4}, xz {:.4}, yz {:.4}) kg m2",
+        diag[0], diag[1], diag[2], off[0], off[1], off[2]
+    );
+    assert!((mass / 2500.0 - 1.0).abs() < 1e-9, "ComputedMass {mass}");
+    assert!(
+        f64::from(centre.length()) < 1e-9,
+        "ComputedCenterOfMass {centre}"
+    );
+    // The compound's tensor about the origin (design D12 G2b printed it to 0.1).
+    let want = debris_angular_inertia(2500.0).tensor();
+    let (want_diag, want_off) = (
+        [want.m00, want.m11, want.m22].map(f64::from),
+        [want.m01, want.m02, want.m12].map(f64::from),
+    );
+    for (actual, expected, printed, what) in [
+        (diag[0], want_diag[0], 28_110.5, "Ixx"),
+        (diag[1], want_diag[1], 29_584.0, "Iyy"),
+        (diag[2], want_diag[2], 5_792.8, "Izz"),
+        (off[0], want_off[0], -109.7, "Ixy"),
+        (off[1], want_off[1], -623.4, "Ixz"),
+        (off[2], want_off[2], -4_135.1, "Iyz"),
     ] {
         assert!(
             (actual / expected - 1.0).abs() < 1e-4,
-            "{what}: {actual} vs {expected}"
+            "{what}: {actual} vs the compound's {expected}"
+        );
+        assert!(
+            (actual - printed).abs() <= 0.05 + 1e-6 * printed.abs(),
+            "{what}: {actual} vs the planner's {printed}"
         );
     }
 }
@@ -417,31 +526,132 @@ fn role_pairs(app: &App, chain: &[Entity]) -> RolePairs {
     pairs
 }
 
-/// The clearance of a sphere tether body from the debris cylinder's surface, m:
-/// the distance from its centre to the cylinder (long axis the debris's X, D11),
-/// in the debris's axes, minus the sphere's radius. Negative inside or touching.
+/// The signed distance from `local` (a point in the debris's axes) to the box `b`'s
+/// surface, m: the point is turned into the box's frame about its centre first
+/// (array B: +0.26 rad about X). Negative inside.
+fn signed_distance_to_box(local: DVec3, b: &DebrisBox) -> f64 {
+    let p = DQuat::from_rotation_x(-b.rotation_about_x_rad) * (local - b.centre);
+    let q = p.abs() - b.half_extents;
+    q.max(DVec3::ZERO).length() + q.max_element().min(0.0)
+}
+
+/// The clearance of a sphere tether body from the debris's nearest box, m: the
+/// signed distance from its centre to the bus, array A or array B (design D13), in
+/// the debris's axes, minus the sphere's radius. Negative inside or touching.
 fn clearance_from_debris(app: &App, body: Entity, debris: Entity) -> f64 {
     let rotation = app.world().get::<Rotation>(debris).expect("Rotation").0;
     let local = rotation.inverse() * (position(app, body) - position(app, debris));
-    let along = local.x.abs() - DEBRIS_LENGTH_M / 2.0;
-    let across = (local.y * local.y + local.z * local.z).sqrt() - DEBRIS_RADIUS_M;
-    let to_surface = if along <= 0.0 && across <= 0.0 {
-        along.max(across)
-    } else {
-        (along.max(0.0).powi(2) + across.max(0.0).powi(2)).sqrt()
-    };
+    let to_surface = [DEBRIS_BUS, DEBRIS_ARRAY_A, DEBRIS_ARRAY_B]
+        .iter()
+        .map(|b| signed_distance_to_box(local, b))
+        .fold(f64::INFINITY, f64::min);
     let collider = app.world().get::<Collider>(body).expect("Collider");
     let aabb = collider.aabb(DVec3::ZERO, DQuat::IDENTITY);
     to_surface - (aabb.max.x - aabb.min.x) / 2.0
 }
 
+#[test]
+fn clearance_from_debris_measures_to_the_nearest_box() {
+    // The bus's +X face is at x = 1.49; array A's +Y face at y = 0.05 over z
+    // 1.5–9.5; array B is rotated −0.26 rad about X about (−0.18, −0.95, −5.4).
+    let d = |p: DVec3| {
+        [DEBRIS_BUS, DEBRIS_ARRAY_A, DEBRIS_ARRAY_B]
+            .iter()
+            .map(|b| signed_distance_to_box(p, b))
+            .fold(f64::INFINITY, f64::min)
+    };
+    assert!((d(DVec3::new(3.49, 0.0, 0.0)) - 2.0).abs() < 1e-12);
+    assert!((d(DVec3::new(0.0, 1.05, 5.5)) - 1.0).abs() < 1e-12);
+    assert!(
+        (d(DVec3::new(-0.585, 0.0, 0.0)) + 1.5).abs() < 1e-12,
+        "inside the bus"
+    );
+    // 1 m along array B's own +Y normal from its centre: 0.7 m outside its face.
+    let normal = DQuat::from_rotation_x(-0.26) * DVec3::Y;
+    let p = DEBRIS_ARRAY_B.centre + normal;
+    assert!((signed_distance_to_box(p, &DEBRIS_ARRAY_B) - 0.7).abs() < 1e-12);
+}
+
+/// What a tether body touches, by the collider entity: the debris body's own
+/// collider is the bus, a child collider an array.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+struct ShapePairs {
+    node_bus: usize,
+    node_array: usize,
+}
+
+fn shape_pairs(app: &App, chain: &[Entity], debris: Entity) -> ShapePairs {
+    let (root, tail) = (chain[0], chain[chain.len() - 1]);
+    let mut pairs = ShapePairs::default();
+    for pair in app
+        .world()
+        .resource::<ContactGraph>()
+        .iter_active_touching()
+    {
+        let (body, other) = match (
+            chain.contains(&pair.collider1),
+            chain.contains(&pair.collider2),
+        ) {
+            (true, false) => (pair.collider1, pair.collider2),
+            (false, true) => (pair.collider2, pair.collider1),
+            _ => continue,
+        };
+        if body == root || body == tail {
+            continue;
+        }
+        if other == debris {
+            pairs.node_bus += 1;
+        } else {
+            pairs.node_array += 1;
+        }
+    }
+    pairs
+}
+
+/// The three debris colliders' world placement relative to the debris centre, in
+/// its axes: for the bus (the body's own collider) and each array child, avian's
+/// shape AABB at the collider's own `Position`/`Rotation` (which avian derives for a
+/// child from its `ColliderTransform` every step) and avian's `ColliderAabb` (the
+/// broad phase's box, enlarged by avian's margins). Rows `(what, centre, half,
+/// collider_aabb_centre, collider_aabb_half)`.
+fn debris_world_boxes(
+    app: &mut App,
+    debris: Entity,
+) -> Vec<(&'static str, DVec3, DVec3, DVec3, DVec3)> {
+    let (array_a, array_b) = debris_arrays(app, debris);
+    let world = app.world();
+    let debris_p = world.get::<Position>(debris).expect("Position").0;
+    let debris_r = world.get::<Rotation>(debris).expect("Rotation").0;
+    [("bus", debris), ("array A", array_a), ("array B", array_b)]
+        .into_iter()
+        .map(|(what, entity)| {
+            let p = world.get::<Position>(entity).expect("collider Position").0;
+            let r = world.get::<Rotation>(entity).expect("collider Rotation").0;
+            let aabb = world
+                .get::<Collider>(entity)
+                .expect("Collider")
+                .aabb(debris_r.inverse() * (p - debris_p), debris_r.inverse() * r);
+            let collider_aabb = world.get::<ColliderAabb>(entity).expect("ColliderAabb");
+            (
+                what,
+                (aabb.min + aabb.max) / 2.0,
+                (aabb.max - aabb.min) / 2.0,
+                debris_r.inverse() * ((collider_aabb.min + collider_aabb.max) / 2.0 - debris_p),
+                (collider_aabb.max - collider_aabb.min) / 2.0,
+            )
+        })
+        .collect()
+}
+
 /// The scenario run to the capture phase, as `baseline_q13_to_capture` runs it
-/// (review C8; the debris has its collider from S3 on). Decision (a) of
-/// 2026-11-01 as an asserted outcome: in a successful capture neither the root nor
-/// the tail touches the debris, only the interior nodes wrap, so up to the capture
-/// transition no root–debris, tail–debris or tether–tether pair touches, and at the
-/// transition the root and the tail are clear of the cylinder (design D11). The
-/// first node–debris touching step and the peak node–debris pairs are printed.
+/// (review C8). Decision (a) of 2026-11-01 as an asserted outcome up to the capture
+/// transition: no root–debris or tail–debris pair touches, and at the transition
+/// the root and the tail are clear of the debris's boxes. Self-contact is on (P7.5
+/// S6, design D13): the tether–tether pair-steps per phase are printed, not
+/// asserted, with the node–bus and node–array counts. At the transition (no contact
+/// and no torque before it, so the debris's `Rotation` is still the identity) the
+/// three debris colliders' world placement is printed and asserted against the
+/// `tether.rs` tables: the proof that avian placed the children where they say.
 #[test]
 #[ignore = "P7.5 contact count to capture (~1.5 min release): cargo test -p ssg-sim --locked tether_to_capture_contacts -- --ignored --nocapture"]
 fn tether_to_capture_contacts() {
@@ -455,7 +665,9 @@ fn tether_to_capture_contacts() {
     let mut first_tether_debris_contact: Option<u64> = None;
     let mut totals = RolePairs::default();
     let mut peak = RolePairs::default();
-    let mut tether_tether_steps = 0u64;
+    let mut shape_steps = ShapePairs::default();
+    // Steps with a tether–tether pair, per phase.
+    let mut tether_tether_steps: Vec<(String, u64)> = Vec::new();
     let mut transitions = Vec::new();
     let mut ticks = 0;
     let mut state = String::new();
@@ -463,9 +675,13 @@ fn tether_to_capture_contacts() {
         tick(&mut app);
         ticks += 1;
         let pairs = role_pairs(&app, &chain);
+        let shapes = shape_pairs(&app, &chain, handles.debris);
         let sample = q13::sample(&app, &handles);
         if pairs.tether_tether > 0 {
-            tether_tether_steps += 1;
+            match tether_tether_steps.last_mut() {
+                Some((phase, steps)) if *phase == sample.state => *steps += 1,
+                _ => tether_tether_steps.push((sample.state.clone(), 1)),
+            }
         }
         if pairs.node_debris > 0 && first_node_contact.is_none() {
             first_node_contact = Some(sample.step);
@@ -475,6 +691,8 @@ fn tether_to_capture_contacts() {
         {
             first_tether_debris_contact = Some(sample.step);
         }
+        shape_steps.node_bus += usize::from(shapes.node_bus > 0);
+        shape_steps.node_array += usize::from(shapes.node_array > 0);
         totals.root_debris += pairs.root_debris;
         totals.tail_debris += pairs.tail_debris;
         totals.node_debris += pairs.node_debris;
@@ -496,21 +714,36 @@ fn tether_to_capture_contacts() {
     let end = q13::sample(&app, &handles);
     let root_clearance = clearance_from_debris(&app, handles.root, handles.debris);
     let tail_clearance = clearance_from_debris(&app, tail, handles.debris);
+    let debris_rotation = app
+        .world()
+        .get::<Rotation>(handles.debris)
+        .expect("Rotation")
+        .0;
+    let boxes = debris_world_boxes(&mut app, handles.debris);
     let wall = started.elapsed().as_secs_f64();
     println!(
         "tether_to_capture_contacts: {ticks} ticks to '{state}' at step {}, range {} m; \
          transitions {transitions:?}; first tether-debris touching step \
          {first_tether_debris_contact:?}; first node-debris touching step \
          {first_node_contact:?}; peak pairs {peak:?}; pair-steps summed {totals:?}; \
-         steps with a tether-tether pair {tether_tether_steps}; at the capture \
-         transition the root is {root_clearance:.4} m and the tail {tail_clearance:.4} m \
-         clear of the debris; wall {wall:.1} s ({:.3} ms/step)",
+         steps with a node-bus / node-array pair {} / {}; steps with a tether-tether \
+         pair per phase {tether_tether_steps:?}; at the capture transition the root is \
+         {root_clearance:.4} m and the tail {tail_clearance:.4} m clear of the debris; \
+         wall {wall:.1} s ({:.3} ms/step)",
         end.step,
         end.range_m,
+        shape_steps.node_bus,
+        shape_steps.node_array,
         1000.0 * wall / ticks as f64,
     );
+    println!("debris rotation at the capture transition {debris_rotation:?}");
+    for (what, centre, half, aabb_centre, aabb_half) in &boxes {
+        println!(
+            "debris {what} at the capture transition, relative to the debris centre: \
+             centre {centre} half {half} m (ColliderAabb: centre {aabb_centre} half {aabb_half} m)"
+        );
+    }
     assert_eq!(state, "capture", "the run reached the capture phase");
-    assert_eq!(tether_tether_steps, 0, "steps with a tether-tether pair");
     assert_eq!(
         (totals.root_debris, totals.tail_debris),
         (0, 0),
@@ -524,4 +757,25 @@ fn tether_to_capture_contacts() {
         tail_clearance > 0.0,
         "the tail is {tail_clearance} m from the debris at the capture"
     );
+    assert_eq!(
+        debris_rotation,
+        DQuat::IDENTITY,
+        "no torque on the debris before the capture"
+    );
+    for ((what, centre, half, _, _), b) in
+        boxes
+            .iter()
+            .zip([DEBRIS_BUS, DEBRIS_ARRAY_A, DEBRIS_ARRAY_B])
+    {
+        assert!(
+            (*centre - b.centre).abs().max_element() < 1e-6,
+            "{what}: centre {centre} against {}",
+            b.centre
+        );
+        let want = rotated_half_extents(&b);
+        assert!(
+            (*half - want).abs().max_element() < 1e-6,
+            "{what}: half-extents {half} against {want}"
+        );
+    }
 }

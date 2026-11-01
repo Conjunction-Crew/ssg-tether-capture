@@ -24,7 +24,8 @@ use ssg_sim::orbit::{ISS_ORBIT, Orbital};
 use ssg_sim::test_support::q13;
 use ssg_sim::test_support::{disable_relative_gravity, fixed_epoch, fixed_propagator, kepler_eci};
 use ssg_sim::tether::{
-    DEBRIS_LAYER, DebrisBody, TETHER_LAYER, TetherNode, TetherRoot, TetherShape,
+    DEBRIS_ARRAY_A, DEBRIS_ARRAY_B, DEBRIS_BUS, DEBRIS_LAYER, DebrisBody, DebrisBox,
+    TETHER_FILTERS, TETHER_LAYER, TetherNode, TetherRoot, TetherShape,
 };
 
 #[test]
@@ -429,9 +430,10 @@ fn hud_altitude_uses_wgs84_radius() {
     assert_eq!(altitude, 521_863.0);
 }
 
-/// F-64 (P7.5 S3, C5): the app's world, with its attach systems, holds the CLI's
-/// collider set: the 77 tether bodies and the debris's cylinder, on their layers,
-/// and the attach path adds no collider (no mesh-hull constructor).
+/// F-64 (P7.5 S3, C5; S6, design D13): the app's world, with its attach systems,
+/// holds the CLI's collider set: the 77 tether bodies, the debris's bus and its two
+/// array children, on their layers, and the attach path adds no collider (no
+/// mesh-hull constructor).
 #[test]
 fn the_app_with_its_attach_systems_holds_the_clis_collider_set() {
     let mut app = test_app_with_attach();
@@ -445,11 +447,20 @@ fn the_app_with_its_attach_systems_holds_the_clis_collider_set() {
         .query_filtered::<Entity, (With<Collider>, With<DebrisBody>)>()
         .iter(world)
         .count();
+    let debris_body = world
+        .query_filtered::<Entity, With<DebrisBody>>()
+        .single(world)
+        .expect("one debris");
+    let children = world
+        .query_filtered::<&ChildOf, With<Collider>>()
+        .iter(world)
+        .filter(|child_of| child_of.parent() == debris_body)
+        .count();
     let all = world
         .query_filtered::<(), With<Collider>>()
         .iter(world)
         .count();
-    assert_eq!((tether, debris, all), (77, 1, 78));
+    assert_eq!((tether, debris, children, all), (77, 1, 2, 80));
     assert_eq!(
         world
             .query::<&ColliderConstructorHierarchy>()
@@ -462,7 +473,7 @@ fn the_app_with_its_attach_systems_holds_the_clis_collider_set() {
         .iter(world)
     {
         let expected = if root || node {
-            CollisionLayers::new(TETHER_LAYER, DEBRIS_LAYER)
+            CollisionLayers::new(TETHER_LAYER, TETHER_FILTERS)
         } else {
             CollisionLayers::new(DEBRIS_LAYER, TETHER_LAYER)
         };
@@ -502,4 +513,154 @@ pub(crate) fn assert_debris_scene_on_a_rotated_child(world: &mut World) {
     );
     assert!(world.get::<Collider>(child).is_none());
     assert!(world.get::<RigidBody>(child).is_none());
+}
+
+/// The world AABB of a debris box in the body's axes, as `(min, max)`.
+fn box_aabb(b: &DebrisBox) -> (DVec3, DVec3) {
+    let (sin, cos) = b.rotation_about_x_rad.sin_cos();
+    let h = b.half_extents;
+    let half = DVec3::new(
+        h.x,
+        h.y * cos + h.z * sin.abs(),
+        h.y * sin.abs() + h.z * cos,
+    );
+    (b.centre - half, b.centre + half)
+}
+
+/// How far `p` lies outside the box `(min, max)` along the worst axis, m (0 inside).
+fn overshoot(p: DVec3, (min, max): (DVec3, DVec3)) -> f64 {
+    (min - p).max(p - max).max(DVec3::ZERO).max_element()
+}
+
+/// The glTF's JSON chunk: a 12-byte header (magic `glTF`, version, length), then
+/// the first chunk's length and type (`JSON`) and its bytes.
+fn glb_json(bytes: &[u8]) -> serde_json::Value {
+    let word = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+    assert_eq!(&bytes[0..4], b"glTF", "a binary glTF");
+    assert_eq!(word(4), 2, "glTF 2.0");
+    let (length, kind) = (word(12) as usize, word(16));
+    assert_eq!(kind, 0x4E4F_534A, "the first chunk is JSON");
+    serde_json::from_slice(&bytes[20..20 + length]).expect("the GLB's JSON chunk")
+}
+
+/// The drift guard for the stated debris collider (P7.5 S6, design D13, C3, E23):
+/// every corner of every mesh node's bounding box in `broken_satellite.glb`, with
+/// the node's translation, rotation and scale and the attach's
+/// `debris_scene_transform()` applied, lies inside at least one of that node's boxes
+/// in `tether.rs` expanded by 0.15 m. The GLB is read directly (no asset server: the
+/// test world has no glTF loader or render device). A moved or rescaled model, or a
+/// new node, fails and names the node and the box to re-fit.
+#[test]
+fn the_debris_collider_boxes_follow_the_glb_model() {
+    const SLACK_M: f64 = 0.15;
+    // `debris_scene_transform()` is a pure rotation, glTF (x, y, z) → body (z, y, −x).
+    let scene = debris_scene_transform();
+    assert_eq!(scene.translation, Vec3::ZERO, "no offset on the attach");
+    assert_eq!(scene.scale, Vec3::ONE, "no scale on the attach");
+    for (from, to) in [
+        (Vec3::X, Vec3::NEG_Z),
+        (Vec3::Y, Vec3::Y),
+        (Vec3::Z, Vec3::X),
+    ] {
+        let mapped = scene.rotation * from;
+        assert!(mapped.abs_diff_eq(to, 1e-6), "{from} → {mapped}, not {to}");
+    }
+
+    let (bus, a, b) = (
+        ("bus", box_aabb(&DEBRIS_BUS)),
+        ("array A", box_aabb(&DEBRIS_ARRAY_A)),
+        ("array B", box_aabb(&DEBRIS_ARRAY_B)),
+    );
+    let boxes_of = |node: &str| match node {
+        "Cube" | "NurbsCurve" | "Cylinder" | "NurbsCurve.001" | "Cylinder.003" => vec![bus],
+        "Plane.001" => vec![a],
+        "Cylinder.002" => vec![a, bus],
+        "Plane" => vec![b],
+        "Cylinder.001" => vec![b, bus],
+        other => panic!("node '{other}' has no box: re-fit the collider in tether.rs"),
+    };
+
+    let path = ssg_sim::test_support::repo_root().join("assets/models/broken_satellite.glb");
+    let gltf = glb_json(&std::fs::read(&path).expect("read the GLB"));
+    let floats = |value: &serde_json::Value| -> Vec<f32> {
+        value
+            .as_array()
+            .expect("an array")
+            .iter()
+            .map(|v| v.as_f64().expect("a number") as f32)
+            .collect()
+    };
+    let mut checked = 0;
+    let mut worst = (0.0f64, String::new());
+    for node in gltf["nodes"].as_array().expect("nodes") {
+        let Some(mesh) = node.get("mesh").and_then(serde_json::Value::as_u64) else {
+            continue;
+        };
+        let name = node["name"].as_str().expect("a named node");
+        assert!(node.get("matrix").is_none(), "{name}: TRS only");
+        assert!(node.get("children").is_none(), "{name}: the scene is flat");
+        let mut trs = Transform::IDENTITY;
+        if let Some(t) = node.get("translation") {
+            trs.translation = Vec3::from_slice(&floats(t));
+        }
+        if let Some(r) = node.get("rotation") {
+            trs.rotation = Quat::from_slice(&floats(r));
+        }
+        if let Some(s) = node.get("scale") {
+            trs.scale = Vec3::from_slice(&floats(s));
+        }
+        let boxes = boxes_of(name);
+        for primitive in gltf["meshes"][mesh as usize]["primitives"]
+            .as_array()
+            .expect("primitives")
+        {
+            let accessor = &gltf["accessors"][primitive["attributes"]["POSITION"]
+                .as_u64()
+                .expect("a POSITION accessor")
+                as usize];
+            let (min, max) = (
+                Vec3::from_slice(&floats(&accessor["min"])),
+                Vec3::from_slice(&floats(&accessor["max"])),
+            );
+            let corners: Vec<DVec3> = (0..8)
+                .map(|i| {
+                    let corner = Vec3::new(
+                        if i & 1 == 0 { min.x } else { max.x },
+                        if i & 2 == 0 { min.y } else { max.y },
+                        if i & 4 == 0 { min.z } else { max.z },
+                    );
+                    scene
+                        .transform_point(trs.transform_point(corner))
+                        .as_dvec3()
+                })
+                .collect();
+            let names: Vec<&str> = boxes.iter().map(|(n, _)| *n).collect();
+            let node_min = corners.iter().fold(DVec3::INFINITY, |m, c| m.min(*c));
+            let node_max = corners.iter().fold(DVec3::NEG_INFINITY, |m, c| m.max(*c));
+            println!("{name}: corners {node_min:.3} … {node_max:.3} m; boxes {names:?}");
+            for corner in &corners {
+                let (best, box_name) = boxes
+                    .iter()
+                    .map(|(n, aabb)| (overshoot(*corner, *aabb), *n))
+                    .fold(
+                        (f64::INFINITY, ""),
+                        |acc, x| if x.0 < acc.0 { x } else { acc },
+                    );
+                if best > worst.0 {
+                    worst = (
+                        best,
+                        format!("{name} corner {corner:.3} against {box_name}"),
+                    );
+                }
+                assert!(
+                    best <= SLACK_M,
+                    "{name}: corner {corner:.3} is {best:.3} m outside {names:?} \
+                     (slack {SLACK_M} m): re-fit {box_name} in tether.rs"
+                );
+            }
+            checked += 1;
+        }
+    }
+    println!("worst overshoot {:.3} m: {}", worst.0, worst.1);
+    assert_eq!(checked, 9, "the nine mesh nodes' primitives");
 }
