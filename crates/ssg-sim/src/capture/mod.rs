@@ -71,6 +71,28 @@ pub const BRANCH_DEAD_BAND: f64 = 0.02;
 /// (one unit beside the branch direction); proportional below it (design D16).
 pub const PLANE_HOLD_BAND_M: f64 = 1.0;
 
+/// The circle law (design D18): the radius error about a body's sphere, in m, at
+/// which its radial term reaches full weight; proportional below it.
+pub const RADIUS_HOLD_BAND_M: f64 = 2.0;
+
+/// The circle law (design D18): the radial speed against the sphere's own shrink,
+/// in m/s, at which its rate term reaches full weight; proportional below it.
+pub const RADIAL_RATE_BAND_MPS: f64 = 0.1;
+
+/// The tail's lag law (design D18): the error in the chord from the root to the
+/// tail, in m, at which the tail's tangent weight saturates.
+pub const SPACING_BAND_M: f64 = 3.0;
+
+/// The tail's lag law (design D18): the difference in the ends' speeds along their
+/// forward tangents, in m/s, at which the rate term saturates the tail's tangent
+/// weight.
+pub const SPACING_RATE_BAND_MPS: f64 = 0.3;
+
+/// The tail's lag law (design D18): the largest half-angle of arc, in rad (75°),
+/// the held chord spans on the tail's sphere, so a chord longer than a small
+/// sphere allows is held at 150° of arc behind the root.
+pub const SPACING_MAX_HALF_ANGLE: f64 = 75.0_f64.to_radians();
+
 /// The debris body's axis the controller circles the root about: the axis the
 /// model's solar arrays span (their booms), so the root circles in the bus's X–Y
 /// plane between the arrays and the rope wraps the bus. The debris keeps the
@@ -96,9 +118,12 @@ pub struct CaptureForce {
     pub ramp_n: f64,
     /// The unit direction of the last non-zero applied force. Drives nothing.
     pub direction: DVec3,
-    /// Inside the inner edge (`0.8 R`), with the dead band.
+    /// Inside the inner edge (`0.8 R`), with the dead band. Drives no force in a
+    /// phase with a shrink rate, where the circle law replaces the branches (design
+    /// D18); kept as the branch state.
     pub inner: bool,
-    /// Outside the outer edge (`R`), with the dead band.
+    /// Outside the outer edge (`R`), with the dead band. Drives no force in a phase
+    /// with a shrink rate (design D18); kept as the branch state.
     pub outer: bool,
     /// Above the velocity limit, with the dead band. Drives no force since the
     /// proportional limiter (design D16); kept as the branch state.
@@ -200,6 +225,75 @@ fn node_relative_velocity(frame: Option<&LvlhFrame>, rel_r: DVec3, rel_v: DVec3)
         Some(frame) => frame.relative_velocity_in_frame(rel_r, rel_v),
         None => rel_v,
     }
+}
+
+/// The unit forward tangent of a body at `rel_r` (from the body to the target)
+/// circling about `up`: `up × rel_r`, or `X × rel_r` on the axis.
+pub(crate) fn forward_tangent(rel_r: DVec3, up: DVec3) -> DVec3 {
+    let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
+        up
+    } else {
+        DVec3::X
+    };
+    tangent_axis.cross(rel_r).normalize_or_zero()
+}
+
+/// The tail's lag law (design D18): the weight of the tail's forward tangent term
+/// that holds the chord from the root to the tail at `spacing` behind the root.
+/// `root` and `tail` are each end's `(rel_r, rel_v)` (from the end to the target;
+/// the LVLH velocity), `tail_radius` the tail's sphere.
+///
+/// With `a`, `b` the root's and the tail's outward radials projected on the
+/// circling plane, `θ = atan2(up · (a × b), a · b)` is the tail's angle behind the
+/// root (positive behind), `c_lag = 2 R_t sin(θ / 2)` its chord, the held chord
+/// `c* = min(spacing, 2 R_t sin(SPACING_MAX_HALF_ANGLE))` and `Δv` the tail's speed
+/// along its forward tangent less the root's along its own:
+/// `w = clamp((c_lag − c*) / SPACING_BAND_M − Δv / SPACING_RATE_BAND_MPS, −1, 1)`.
+/// The weight does not depend on the radius error: the tail swings to its place
+/// while it closes on its sphere.
+pub(crate) fn tail_lag_weight(
+    root: (DVec3, DVec3),
+    tail: (DVec3, DVec3),
+    up: DVec3,
+    tail_radius: f64,
+    spacing: f64,
+) -> f64 {
+    let ((root_r, root_v), (tail_r, tail_v)) = (root, tail);
+    let (out_root, out_tail) = (-root_r, -tail_r);
+    let a = out_root - up * out_root.dot(up);
+    let b = out_tail - up * out_tail.dot(up);
+    let theta = up.dot(a.cross(b)).atan2(a.dot(b));
+    let chord = 2.0 * tail_radius * (theta / 2.0).sin();
+    let held = spacing.min(2.0 * tail_radius * SPACING_MAX_HALF_ANGLE.sin());
+    let dv = tail_v.dot(forward_tangent(tail_r, up)) - root_v.dot(forward_tangent(root_r, up));
+    ((chord - held) / SPACING_BAND_M - dv / SPACING_RATE_BAND_MPS).clamp(-1.0, 1.0)
+}
+
+/// The circle law (design D18): the composed force direction, before the plane term
+/// and the limiter, of a body at `rel_r` (from the body to the target) with LVLH
+/// velocity `rel_v` on a sphere of `radius` shrinking at `shrink_rate` m/s, with the
+/// body's tangent term `tangent_term` (the forward or counter tangent, or the lag
+/// law's weighted one).
+///
+/// `w_r = clamp((|rel_r| − radius) / RADIUS_HOLD_BAND_M, −1, 1)` holds the radius,
+/// `w_v = clamp(v_out / RADIAL_RATE_BAND_MPS, −1, 1)` damps the outward speed
+/// measured against the sphere's own shrink (`v_out = −rel_v · r̂_in + shrink_rate`),
+/// and the tangent term fades in as the radius error vanishes (`1 − |w_r|`), at full
+/// weight under the lag law: `t × w_t + r̂_in × clamp(w_r + w_v, −1, 1)`.
+pub(crate) fn circle_law(
+    rel_r: DVec3,
+    rel_v: DVec3,
+    radius: f64,
+    shrink_rate: f64,
+    tangent_term: DVec3,
+    lag: bool,
+) -> DVec3 {
+    let r_in = rel_r.normalize_or_zero();
+    let w_r = ((rel_r.length() - radius) / RADIUS_HOLD_BAND_M).clamp(-1.0, 1.0);
+    let v_out = -rel_v.dot(r_in) + shrink_rate;
+    let w_v = (v_out / RADIAL_RATE_BAND_MPS).clamp(-1.0, 1.0);
+    let w_t = if lag { 1.0 } else { 1.0 - w_r.abs() };
+    tangent_term * w_t + r_in * (w_r + w_v).clamp(-1.0, 1.0)
 }
 
 pub fn capture_state_machine_update(
@@ -327,6 +421,9 @@ pub fn capture_state_machine_update(
                 let up = (capture_entity_rotation * CAPTURE_CIRCLING_AXIS)
                     .normalize_or(CAPTURE_CIRCLING_AXIS);
 
+                // D18: the root's `rel_r` and `rel_v` of this step, for the tail's lag
+                // law (the root is index 0).
+                let mut root_rel: Option<(DVec3, DVec3)> = None;
                 for (idx, &node) in nodes.iter().enumerate() {
                     let (rel_r, rel_v, mass) = {
                         let rb_query = rb_forces.p0();
@@ -349,6 +446,9 @@ pub fn capture_state_machine_update(
                     };
                     let rel_r_len = rel_r.length();
                     let rel_v_len = rel_v.length();
+                    if idx == 0 {
+                        root_rel = Some((rel_r, rel_v));
+                    }
 
                     // Insert current pos and vel into tracking vectors
                     if idx == 0 {
@@ -436,10 +536,39 @@ pub fn capture_state_machine_update(
                         continue;
                     }
 
+                    // D18: the tail's lag law, in a phase that pushes the tail with
+                    // `tail_spacing_m`, outside `capture` (the counter-tangent wrap)
+                    // and `hold`: the weight of its tangent term.
+                    let counter = idx != 0 && capture_component.current_state == "capture";
+                    let lag_weight = match (shared_state_parameters.tail_spacing_m, root_rel) {
+                        (Some(spacing), Some(root)) if idx != 0 && !counter && !hold => Some(
+                            tail_lag_weight(root, (rel_r, rel_v), up, capture_radius, spacing),
+                        ),
+                        _ => None,
+                    };
+
                     // D16: the hold law brakes the body to rest, continuously (no
                     // dead band), in place of the branches.
                     if hold {
                         force_vec = -rel_v.normalize_or_zero() * across_band(rel_v_len);
+                    }
+                    // D18: the circle law, in a phase that shrinks the sphere, in
+                    // place of the three branches (whose states are still updated).
+                    else if let Some(shrink_rate) = shared_state_parameters.shrink_rate {
+                        let tangent = forward_tangent(rel_r, up);
+                        let tangent_term = match lag_weight {
+                            Some(w) => tangent * w,
+                            None if counter => -tangent,
+                            None => tangent,
+                        };
+                        force_vec += circle_law(
+                            rel_r,
+                            rel_v,
+                            capture_radius,
+                            shrink_rate,
+                            tangent_term,
+                            lag_weight.is_some(),
+                        );
                     }
                     // If too close, force in opposite dir
                     else if state.inner {
@@ -454,16 +583,13 @@ pub fn capture_state_machine_update(
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
-                        let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
-                            up
+                        let tangent = forward_tangent(rel_r, up);
+                        if let Some(w) = lag_weight {
+                            force_vec += tangent * w;
+                        } else if counter {
+                            force_vec -= tangent;
                         } else {
-                            DVec3::X
-                        };
-
-                        if idx != 0 && capture_component.current_state == "capture" {
-                            force_vec -= tangent_axis.cross(rel_r).normalize_or_zero();
-                        } else {
-                            force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
+                            force_vec += tangent;
                         }
                     }
 
@@ -488,9 +614,22 @@ pub fn capture_state_machine_update(
                         // that drifts off the push direction is still corrected; the
                         // brake acts on the speed above the limit.
                         // F-11: a zero vector gives a zero force, not NaN.
+                        //
+                        // D18, the magnitude rule: the push keeps the composed law's
+                        // magnitude, clamped to 1, so a proportional term is a
+                        // proportional force (normalising it turned every small
+                        // correction of the circle and lag laws into a full-force flip:
+                        // 96,994 tail reversals per terminal phase). A vector within
+                        // 1e-9 of unit length or longer counts as 1, so the branch law's
+                        // unit sums give the same force as before, bit for bit.
                         let push_direction = force_vec.normalize_or_zero();
+                        let magnitude = if force_vec.length_squared() >= 1.0 - 1e-9 {
+                            1.0
+                        } else {
+                            force_vec.length()
+                        };
                         let along = rel_v.dot(push_direction);
-                        let push = push_direction * across_band(max_velocity - along);
+                        let push = push_direction * magnitude * across_band(max_velocity - along);
                         let brake =
                             -rel_v.normalize_or_zero() * across_band(rel_v_len - max_velocity);
                         (push + brake).clamp_length_max(1.0) * state.ramp_n

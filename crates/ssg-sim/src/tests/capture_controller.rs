@@ -992,7 +992,15 @@ fn controller_without_a_root_body_skips_the_state_check_but_forces_the_other_nod
         .resource_mut::<OrbitalCache>()
         .tethers
         .insert("T".to_string(), vec![dead_root, rig.tail]);
-    place(&mut app, &rig, DVec3::new(0.0, 5.0, 0.0), DVec3::ZERO);
+    // The tail closes at the phase's shrink rate (0.5 m/s), so the circle law's
+    // rate term is 0 and its radius term (21 m inside R + 1) is at full weight
+    // (design D18; at rest the two cancel).
+    place(
+        &mut app,
+        &rig,
+        DVec3::new(0.0, 5.0, 0.0),
+        DVec3::new(0.0, 0.5, 0.0),
+    );
 
     let events = rig_step(&mut app, &rig);
 
@@ -1006,8 +1014,8 @@ fn controller_without_a_root_body_skips_the_state_check_but_forces_the_other_nod
         25.0,
         "no shrink without a root-relative range"
     );
-    // The tail is still driven with the current state's limits: 5 m < 0.8 × 26 m,
-    // pushed away along −Y.
+    // The tail is still driven with the current state's limits: 5 m inside its
+    // 26 m sphere, pushed away along −Y.
     assert_force_along(applied_force(&mut app, rig.tail), -DVec3::Y, "tail");
 }
 
