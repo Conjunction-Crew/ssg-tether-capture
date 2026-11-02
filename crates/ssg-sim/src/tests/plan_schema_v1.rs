@@ -6,8 +6,8 @@
 use serde_json::{Value, json};
 
 use crate::capture::plan::{
-    CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, MigratedFromV0, Phase,
-    PhaseEnd, SpawnOrientation, Transition, TransitionConditions, UnmappedValue,
+    Actuation, CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, MigratedFromV0,
+    Phase, PhaseEnd, SpawnOrientation, Transition, TransitionConditions, UnmappedValue,
     validate_capture_plan,
 };
 use crate::project::plan_files::{plan_file_reports, plan_to_json, read_plan_value, save_plan};
@@ -477,8 +477,12 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                             let mut all_of = TransitionConditions {
                                 distance_m: bounds(rng, 5_000.0),
                                 relative_speed_mps: bounds(rng, 50.0),
+                                time_in_phase_s: bounds(rng, 600.0),
                             };
-                            if all_of.distance_m.is_none() && all_of.relative_speed_mps.is_none() {
+                            if all_of.distance_m.is_none()
+                                && all_of.relative_speed_mps.is_none()
+                                && all_of.time_in_phase_s.is_none()
+                            {
                                 all_of.distance_m = Some(ConditionBounds {
                                     less_than: Some(short(rng.range(0.0, 5_000.0))),
                                     greater_than: None,
@@ -501,6 +505,10 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                 end,
                 tail_actuation: rng.chance(0.5).then(|| rng.chance(0.5)),
                 velocity_scales_with_sphere: None,
+                hold_plane: rng.chance(0.5).then(|| rng.chance(0.5)),
+                actuation: rng
+                    .chance(0.5)
+                    .then(|| [Actuation::Circle, Actuation::Hold][rng.below(2)]),
             }
         })
         .collect();
@@ -703,6 +711,113 @@ fn velocity_scales_with_sphere_is_a_phase_key_that_round_trips_and_is_absent_by_
     assert!(
         schema["$defs"]["Phase"]["properties"]["velocity_scales_with_sphere"].is_object(),
         "{schema}"
+    );
+}
+
+#[test]
+fn hold_plane_actuation_and_time_in_phase_round_trip_and_are_absent_by_default() {
+    // P7.5 S9 (design D16): `phases[].hold_plane`, `phases[].actuation` and
+    // `transitions[].all_of.time_in_phase_s` are optional, written only when set and
+    // compiled (false, `circle` and no bound when absent).
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(
+        plan.phases
+            .iter()
+            .all(|p| p.hold_plane.is_none() && p.actuation.is_none())
+    );
+    let text = plan_to_json(&plan);
+    for key in ["hold_plane", "actuation", "time_in_phase_s"] {
+        assert!(!text.contains(key), "{key}: {text}");
+    }
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    for state in &compiled.states {
+        assert!(!state.parameters.hold_plane);
+        assert_eq!(state.parameters.actuation, Actuation::Circle);
+        for transition in &state.transitions {
+            assert_eq!(transition.time_in_phase_less_than, None);
+            assert_eq!(transition.time_in_phase_greater_than, None);
+        }
+    }
+
+    let mut value = doc();
+    value["phases"][1]["hold_plane"] = json!(true);
+    value["phases"][1]["actuation"] = json!("hold");
+    value["phases"][0]["transitions"][0]["all_of"]["time_in_phase_s"] =
+        json!({"greater_than": 90.0, "less_than": 120.0});
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].hold_plane, None);
+    assert_eq!(plan.phases[1].hold_plane, Some(true));
+    assert_eq!(plan.phases[0].actuation, None);
+    assert_eq!(plan.phases[1].actuation, Some(Actuation::Hold));
+    let text = plan_to_json(&plan);
+    assert!(text.contains(r#""actuation": "hold""#), "{text}");
+    for key in ["hold_plane", "actuation", "time_in_phase_s"] {
+        assert_eq!(text.matches(key).count(), 1, "{key}: {text}");
+    }
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(!compiled.states[0].parameters.hold_plane);
+    assert!(compiled.states[1].parameters.hold_plane);
+    assert_eq!(compiled.states[0].parameters.actuation, Actuation::Circle);
+    assert_eq!(compiled.states[1].parameters.actuation, Actuation::Hold);
+    let transition = &compiled.states[0].transitions[0];
+    assert_eq!(transition.time_in_phase_greater_than, Some(90.0));
+    assert_eq!(transition.time_in_phase_less_than, Some(120.0));
+
+    // `circle` is written as such; an unknown law is refused.
+    let mut value = doc();
+    value["phases"][0]["actuation"] = json!("circle");
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].actuation, Some(Actuation::Circle));
+    assert!(plan_to_json(&plan).contains(r#""actuation": "circle""#));
+    value["phases"][0]["actuation"] = json!("orbit");
+    assert!(read_plan_value(ID, &value).plan.is_none());
+
+    // The time condition alone satisfies "at least one condition", and is
+    // validated like the other two.
+    let mut value = doc();
+    value["phases"][0]["transitions"][0]["all_of"] =
+        json!({"time_in_phase_s": {"greater_than": 90.0}});
+    assert!(errors_of(&value).is_empty(), "{:?}", errors_of(&value));
+    value["phases"][0]["transitions"][0]["all_of"] = json!({"time_in_phase_s": {}});
+    assert_eq!(
+        errors_of(&value),
+        vec![
+            "[p] /phases/0/transitions/0/all_of/time_in_phase_s: at least one of \
+             less_than, greater_than is required"
+                .to_string()
+        ]
+    );
+    value["phases"][0]["transitions"][0]["all_of"] =
+        json!({"time_in_phase_s": {"less_than": -1.0, "greater_than": -2.0}});
+    assert_eq!(
+        errors_of(&value),
+        vec![
+            "[p] /phases/0/transitions/0/all_of/time_in_phase_s/less_than: must not be negative"
+                .to_string(),
+            "[p] /phases/0/transitions/0/all_of/time_in_phase_s/greater_than: must not be negative"
+                .to_string(),
+        ]
+    );
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    let phase = &schema["$defs"]["Phase"]["properties"];
+    assert!(phase["hold_plane"].is_object(), "{schema}");
+    assert!(phase["actuation"].is_object(), "{schema}");
+    assert!(
+        schema["$defs"]["TransitionConditions"]["properties"]["time_in_phase_s"].is_object(),
+        "{schema}"
+    );
+    assert!(
+        schema["$defs"]["CapturePlanDevice"]["properties"]
+            .get("hold_plane")
+            .is_none()
+            && schema["$defs"]["CapturePlanDevice"]["properties"]
+                .get("actuation")
+                .is_none()
     );
 }
 

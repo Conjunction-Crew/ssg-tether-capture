@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::capture::plan::{
-    CompiledCapturePlan, CompiledCaptureState, CompiledCaptureStateParameters,
+    Actuation, CompiledCapturePlan, CompiledCaptureState, CompiledCaptureStateParameters,
     CompiledCaptureTransition,
 };
 
@@ -63,6 +63,8 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                 shrink_rate: parameter_value(&state.parameters, "shrink_rate"),
                 tail_actuation: false,
                 velocity_scales_with_sphere: false,
+                hold_plane: false,
+                actuation: Actuation::Circle,
             },
             transitions: state
                 .transitions
@@ -85,6 +87,9 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                             "relative_velocity",
                             "greater_than",
                         ),
+                        // v0 has no time condition.
+                        time_in_phase_less_than: None,
+                        time_in_phase_greater_than: None,
                     })
                 })
                 .collect(),

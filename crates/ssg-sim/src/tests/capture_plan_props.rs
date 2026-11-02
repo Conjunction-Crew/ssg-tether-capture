@@ -112,6 +112,7 @@ fn transition(transition: &TransitionSpec) -> Transition {
                 transition.relative_velocity_less_than,
                 transition.relative_velocity_greater_than,
             ),
+            time_in_phase_s: None,
         },
     }
 }
@@ -142,6 +143,8 @@ fn build_plan(spec: &PlanSpec, case: usize) -> CapturePlan {
                 end: None,
                 tail_actuation: None,
                 velocity_scales_with_sphere: None,
+                hold_plane: None,
+                actuation: None,
             })
             .collect(),
         migrated_from_v0: None,
