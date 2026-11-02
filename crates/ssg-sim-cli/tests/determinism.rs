@@ -141,9 +141,9 @@ fn cli_three_runs_to_capture_identical() {
     let children: Vec<_> = runs
         .iter()
         .map(|(out, warp)| {
-            // F-66 (P7.5 S10): provisional until S8. The capture entry moved to step
-            // 191,186 (the O5 corrections; S9: 190,101), past S6's 172,032:
-            // 196,608 = 3,072 × 64 ends in `capture`, before the hold entry (196,947).
+            // The capture entry moved to step 191,186 (the O5 corrections; S9:
+            // 190,101), past S6's 172,032: 196,608 = 3,072 × 64 ends in `capture`,
+            // before the hold entry (196,947).
             command(&project, out, &["--steps", "196608", "--warp", warp])
                 .spawn()
                 .expect("the binary starts")

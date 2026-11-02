@@ -463,14 +463,14 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     assert_eq!(
         as_v0.capture_sphere.as_ref().unwrap().initial_radius_m,
         Some(100.0)
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     as_v0.capture_sphere.as_mut().unwrap().initial_radius_m = None;
     let hold = as_v0.phases.pop().unwrap();
     assert_eq!(hold.id, "hold");
     assert_eq!(
         (hold.max_velocity_mps, hold.max_force_n, hold.end),
         (0.0, 2.0, Some(PhaseEnd::Success))
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     assert_eq!(
         (hold.tail_actuation, hold.hold_plane, hold.actuation),
         (Some(true), Some(true), Some(Actuation::Hold))
@@ -480,17 +480,17 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     assert_eq!(
         (final_approach.max_velocity_mps, final_approach.max_force_n),
         (0.3, 3.0)
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     let to_terminal = &final_approach.transitions.as_ref().unwrap()[0];
     assert_eq!(to_terminal.to, "terminal");
     assert_eq!(
         to_terminal.all_of.distance_m.unwrap().less_than,
         Some(120.0)
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     assert_eq!(
         to_terminal.all_of.relative_speed_mps.unwrap().less_than,
         Some(0.35)
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     let to_final = &mut as_v0.phases[1].transitions.as_mut().unwrap()[0];
     assert_eq!(
         (
@@ -498,15 +498,15 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
             to_final.all_of.distance_m.unwrap().less_than
         ),
         ("final_approach", Some(300.0))
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     to_final.to = "terminal".to_string();
     to_final.all_of.distance_m.as_mut().unwrap().less_than = Some(50.0);
     let terminal = &mut as_v0.phases[2];
-    assert_eq!(terminal.shrink_rate_mps, Some(0.05)); // F-66 (P7.5 S9): provisional until S8
+    assert_eq!(terminal.shrink_rate_mps, Some(0.05));
     terminal.shrink_rate_mps = Some(0.01);
     assert_eq!(terminal.hold_plane, Some(true));
     terminal.hold_plane = None;
-    assert_eq!(terminal.tail_spacing_m, Some(12.0)); // F-66 (P7.5 S10): provisional until S8
+    assert_eq!(terminal.tail_spacing_m, Some(12.0));
     terminal.tail_spacing_m = None;
     assert_eq!(terminal.velocity_scales_with_sphere, None);
     terminal.velocity_scales_with_sphere = Some(true);
@@ -517,7 +517,7 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
             back_out.all_of.distance_m.unwrap().greater_than
         ),
         ("final_approach", Some(120.0))
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     back_out.to = "approach".to_string();
     back_out.all_of.distance_m.as_mut().unwrap().greater_than = Some(50.0);
     let capture = &mut as_v0.phases[3];
@@ -529,7 +529,7 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     assert_eq!(
         to_hold[0].all_of.time_in_phase_s.unwrap().greater_than,
         Some(90.0)
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     assert_eq!(capture.end, None);
     capture.end = Some(PhaseEnd::Success);
 
