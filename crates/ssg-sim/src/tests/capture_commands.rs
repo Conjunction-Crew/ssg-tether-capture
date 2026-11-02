@@ -342,3 +342,22 @@ fn start_capture_handles_each_queued_command_in_order() {
     );
     assert_eq!(marked_entities(&mut app), vec![target]);
 }
+
+#[test]
+fn the_q13_harness_seeds_the_capture_sphere_from_the_plan() {
+    // Rule 33 (P7.5 S9): both harness entry points start the sphere at the plan's
+    // `capture_sphere.initial_radius_m`, as `apply_sim_commands` does in the app
+    // and the CLI; the example plan sets 100 m.
+    use crate::test_support::{load_example_plans, q13};
+    let mut app = test_app();
+    let handles = q13::build(&mut app);
+    let plan = &app.world().resource::<CapturePlanLibrary>().plans[q13::PLAN_ID];
+    assert_eq!(plan.initial_capture_radius_m(), 100.0);
+    assert_eq!(q13::sample(&app, &handles).state, "rendezvous");
+    assert_eq!(app.world().resource::<CaptureSphereRadius>().radius, 100.0);
+
+    let mut app = test_app();
+    load_example_plans(&mut app);
+    q13::build_with_command(&mut app, q13::PLAN_ID);
+    assert_eq!(app.world().resource::<CaptureSphereRadius>().radius, 100.0);
+}

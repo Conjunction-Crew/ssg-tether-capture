@@ -498,7 +498,7 @@ pub mod q13 {
 
     use super::{enter_sim, fixed_epoch, load_example_plans, start_running, test_app, tick};
     use crate::capture::plan::{CapturePlanLibrary, build_capture_component};
-    use crate::capture::{CaptureComponent, CaptureTransition, SimCommand};
+    use crate::capture::{CaptureComponent, CaptureSphereRadius, CaptureTransition, SimCommand};
     use crate::orbit::cache::OrbitalCache;
     use crate::orbit::catalog::{JsonOrbital, JsonOrbitalData, gp_record_to_elements};
     use crate::orbit::selection::{
@@ -641,6 +641,10 @@ pub mod q13 {
         let component =
             build_capture_component(PLAN_ID, &plan, start_time).expect("example_plan has states");
         app.world_mut().entity_mut(handles.debris).insert(component);
+        // As `apply_sim_commands` does (F-11, rule 33): the sphere starts at the plan's
+        // `capture_sphere.initial_radius_m`.
+        app.world_mut().resource_mut::<CaptureSphereRadius>().radius =
+            plan.initial_capture_radius_m();
         // As `apply_sim_commands` does: the controller's state on the root and the tail.
         let nodes = app.world().resource::<OrbitalCache>().tethers[&plan.tether].clone();
         for node in nodes {
@@ -679,6 +683,15 @@ pub mod q13 {
             plan_id: plan_id.to_string(),
         });
         tick(app);
+        // Rule 33: `apply_sim_commands` seeded the sphere from the plan, before the
+        // controller's first step.
+        let initial_radius =
+            app.world().resource::<CapturePlanLibrary>().plans[plan_id].initial_capture_radius_m();
+        assert_eq!(
+            app.world().resource::<CaptureSphereRadius>().radius,
+            initial_radius,
+            "the capture sphere starts at the plan's initial radius"
+        );
         tick(app);
         handles
     }
