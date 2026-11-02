@@ -90,7 +90,7 @@ ssg-sim replay my-project/recordings/r [--assets DIR] [--frames-only]
 checks the recording's files, re-simulates it from step 0 with the scenario, plan and inputs stored in it (no dataset lookup; the number of steps the spawn update ran is reproduced), and compares every frame of every body bit for bit:
 
 ```text
-recording my-project/recordings/r: 193 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
+recording my-project/recordings/r: 78 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
 built with: this build
 re-simulated steps 0–130 with k = 1: frames: 5, identical: 5
 ```
@@ -105,7 +105,7 @@ same target and version: a defect, or a different C library or toolchain (F-48)
 
 `--frames-only` checks the files and does not re-simulate. The exit code is 0 when every frame is identical; 1 for a difference although the recording was made by this target and version (a defect, or a different C library or toolchain); 3 for a difference when it was made by another target or version (expected across platforms and versions); 2 for a usage error or an invalid recording, including an app recording without the spawn-update step count.
 
-On the machine that recorded it, a recording made by `ssg-sim run --record` replays with exit 0. A recording made in the app does not re-simulate bit for bit yet, even on that machine (F-65); see [Recordings](../concepts/recordings#what-re-simulation-promises).
+On the machine and the build that recorded it, a recording replays with exit 0, whether `ssg-sim run --record` or the app made it; see [Recordings](../concepts/recordings#what-re-simulation-promises).
 
 ## Checking a project
 
