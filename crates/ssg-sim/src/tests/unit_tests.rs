@@ -26,6 +26,8 @@ mod tests {
             end: None,
             tail_actuation: None,
             velocity_scales_with_sphere: None,
+            hold_plane: None,
+            actuation: None,
         }
     }
 
@@ -51,6 +53,7 @@ mod tests {
                     greater_than: None,
                 }),
                 relative_speed_mps: None,
+                time_in_phase_s: None,
             },
         }
     }

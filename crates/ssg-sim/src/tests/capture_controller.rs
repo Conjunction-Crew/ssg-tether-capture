@@ -6,7 +6,9 @@
 //! log events of the paths where the controller gives up; then the P7.5 force law
 //! (F-31, C2, C7): who is pushed, the ramp, the dead bands; and the O2 revision's
 //! touches (P7.5 S6): the circling axis, the speed limit that scales with the
-//! sphere, the absolute kill band and the sphere floor. Geometry: the nodes sit at
+//! sphere, the absolute kill band and the sphere floor; and the O4 revision's
+//! (P7.5 S9, design D16): the proportional limiter, the plane hold, the hold law
+//! and the time-in-phase condition. Geometry: the nodes sit at
 //! the origin and the capture target at `(0, r, 0)`, so `rel_r` (node to target)
 //! points along +Y and `up` (the target's `CAPTURE_CIRCLING_AXIS`, +Z) is
 //! perpendicular to it: the tangent push `up × rel_r` is −X.
@@ -21,7 +23,7 @@ use bevy::prelude::*;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::capture::{
     BRANCH_DEAD_BAND, CAPTURE_CIRCLING_AXIS, CaptureComponent, CaptureForce, CaptureSphereRadius,
-    FORCE_RAMP_S,
+    FORCE_RAMP_S, PLANE_HOLD_BAND_M,
 };
 use crate::orbit::cache::OrbitalCache;
 use crate::telemetry::LogLevel;
@@ -229,10 +231,17 @@ fn controller_adds_a_braking_term_when_receding_outside_the_radius() {
 
 #[test]
 fn controller_kills_velocity_above_the_state_limit() {
-    // 3.04 m/s relative speed against a 1.0 m/s limit: `−2 v̂` joins the pull.
+    // 3.04 m/s relative speed against a 1.0 m/s limit: the root is in the kill
+    // branch, and the proportional limiter (P7.5 S9, design D16) brakes it at full
+    // weight beside the pull (0.5 m/s along +Y is below the limit, so the pull
+    // keeps its full weight): `Y − v̂`, bounded by the ramp.
     let velocity = DVec3::new(0.0, 0.5, 3.0);
-    let (root, _) = drive(DVec3::new(0.0, 100.0, 0.0), velocity);
-    assert_force_along(root, DVec3::Y - 2.0 * velocity.normalize(), "velocity kill");
+    let (mut app, rig) = branch_rig();
+    place(&mut app, &rig, DVec3::new(0.0, 100.0, 0.0), velocity);
+    rig_step(&mut app, &rig);
+    assert!(capture_force(&app, rig.root).kill, "the kill branch state");
+    let root = applied_force(&mut app, rig.root);
+    assert_force_along(root, DVec3::Y - velocity.normalize(), "velocity kill");
 }
 
 /// Runs the controller `steps` times without advancing the physics and returns
@@ -447,10 +456,10 @@ fn assert_force_direction(app: &App, node: Entity, direction: DVec3, what: &str)
 }
 
 #[test]
-fn controller_pushes_the_tail_only_in_the_example_plans_terminal_and_capture_phases() {
+fn controller_pushes_the_tail_only_in_the_example_plans_terminal_capture_and_hold_phases() {
     // (a), C7: the root gets a force in every phase; the tail only in the phases
     // where `example_plan` sets `tail_actuation` (P7.5 S6, E9: `terminal` and
-    // `capture`), and only those forces reach avian.
+    // `capture`; S9, design D16: `hold`), and only those forces reach avian.
     let mut app = test_app();
     load_example_plans(&mut app);
     let rig = capture_rig(&mut app, "example_plan");
@@ -459,19 +468,36 @@ fn controller_pushes_the_tail_only_in_the_example_plans_terminal_and_capture_pha
         .iter()
         .map(|p| p.id.clone())
         .collect();
-    assert!(phases.len() >= 4, "{phases:?}");
+    assert_eq!(
+        phases,
+        [
+            "rendezvous",
+            "approach",
+            "final_approach",
+            "terminal",
+            "capture",
+            "hold"
+        ]
+    );
     for phase in &phases {
         set_state(&mut app, &rig, phase);
         // A range at which this phase's transitions do not fire.
         let range = match phase.as_str() {
             "rendezvous" => 3_000.0,
-            "approach" => 100.0,
+            "approach" => 1_000.0,
+            "final_approach" => 200.0,
             _ => 20.0,
         };
-        place(&mut app, &rig, DVec3::new(0.0, range, 0.0), DVec3::ZERO);
+        // The hold law brakes a moving body; a body at rest gets no force.
+        let velocity = if phase == "hold" {
+            DVec3::new(0.0, 0.0, 0.1)
+        } else {
+            DVec3::ZERO
+        };
+        place(&mut app, &rig, DVec3::new(0.0, range, 0.0), velocity);
         let tail_before = applied_force(&mut app, rig.tail);
         run_controller(&mut app);
-        let tail_pushed = matches!(phase.as_str(), "terminal" | "capture");
+        let tail_pushed = matches!(phase.as_str(), "terminal" | "capture" | "hold");
         assert_eq!(
             capture_force(&app, rig.tail).applied.length() > 0.0,
             tail_pushed,
@@ -737,6 +763,190 @@ fn controller_kill_band_is_at_least_one_steps_dv_of_the_pushed_body() {
         !branches_after(&mut app, &rig, 22.0, 0.489).2,
         "500 kg: 0.489 leaves"
     );
+}
+
+/// A rig on one phase at 0.5 m/s and 2 N with the extra phase keys `keys` (e.g.
+/// `, "hold_plane": true`), the root's `ComputedMass` at 2 kg: the kill band is
+/// `2 × 2 N × PHYS_DT / 2 kg` = 0.03125 m/s.
+fn d16_rig(keys: &str) -> (App, CaptureRig) {
+    let mut app = test_app();
+    insert_plan_json(
+        &mut app,
+        "d16",
+        &format!(
+            r#"{{"schema_version": 1, "name": "d16", "tether": "T", "phases": [
+  {{"id": "p", "max_velocity_mps": 0.5, "max_force_n": 2.0{keys}}}
+]}}"#
+        ),
+    );
+    let rig = capture_rig(&mut app, "d16");
+    app.world_mut()
+        .entity_mut(rig.root)
+        .insert(ComputedMass::new(2.0));
+    (app, rig)
+}
+
+const D16_KILL_BAND: f64 = 2.0 * 2.0 * PHYS_DT / 2.0;
+
+/// Places the target at 22 m along +Y (inside the tangent band of R = 25 m: the
+/// branch push is `TANGENT`), the root `height_m` above the circling plane
+/// (along `CAPTURE_CIRCLING_AXIS`, +Z) moving at `velocity`; runs the controller
+/// once and returns the root's applied force over its ramped bound.
+fn root_force_over_ramp(app: &mut App, rig: &CaptureRig, height_m: f64, velocity: DVec3) -> DVec3 {
+    place(app, rig, DVec3::new(0.0, 22.0, 0.0), velocity);
+    app.world_mut()
+        .entity_mut(rig.root)
+        .insert(Position(DVec3::new(0.0, 0.0, height_m)));
+    run_controller(app);
+    let state = capture_force(app, rig.root);
+    assert!(
+        state.applied.length() <= state.ramp_n * (1.0 + 1e-12),
+        "|{:?}| above the ramp {}",
+        state.applied,
+        state.ramp_n
+    );
+    state.applied / state.ramp_n
+}
+
+#[test]
+fn controller_limiter_fades_the_push_at_the_limit_and_brakes_above_it() {
+    // P7.5 S9 (a), design D16 (F-31): a 2 kg root under 2 N, limit 0.5 m/s, kill
+    // band 0.03125 m/s, pushed along `TANGENT` (−X).
+    assert_close(D16_KILL_BAND, 0.03125, 0.0, "the kill band");
+    let (mut app, rig) = d16_rig("");
+    // At the limit along the push: no push and no brake.
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, TANGENT * 0.5);
+    assert_close_dvec3(f, DVec3::ZERO, 1e-12, "0.5 m/s along the push");
+    // At the limit sideways to the push: the full push (nothing along it yet).
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, DVec3::new(0.0, 0.0, 0.5));
+    assert_close_dvec3(f, TANGENT, 1e-12, "0.5 m/s sideways");
+    // 0.1 m/s above the limit: (0.6 − 0.5) / 0.03125 clamps to 1, a brake of the
+    // full ramp along −v̂, and no push.
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, TANGENT * 0.6);
+    assert_close_dvec3(f, -TANGENT, 1e-12, "0.6 m/s along the push");
+    // 0.01 m/s below the limit: (0.5 − 0.49) / 0.03125 = 0.32 of the push.
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, TANGENT * 0.49);
+    assert_close_dvec3(f, TANGENT * 0.32, 1e-12, "0.49 m/s along the push");
+    // Never above the ramp, whatever the velocity (checked in the helper).
+    for speed in [0.0, 0.2, 0.47, 0.5, 0.53, 0.8, 3.0] {
+        for direction in [TANGENT, -TANGENT, DVec3::Y, DVec3::new(-0.6, 0.0, 0.8)] {
+            root_force_over_ramp(&mut app, &rig, 0.0, direction * speed);
+        }
+    }
+}
+
+#[test]
+fn controller_plane_hold_pulls_toward_the_circling_plane_only_in_a_phase_that_asks() {
+    // P7.5 S9 (b), design D16: `−up × clamp(h / PLANE_HOLD_BAND_M, −1, 1)` beside the
+    // branch term, before normalisation: 2 m above the plane weight 1, 0.5 m above
+    // weight 0.5, below the plane the other way; no term without the key.
+    assert_close(PLANE_HOLD_BAND_M, 1.0, 0.0, "the band");
+    let up = CAPTURE_CIRCLING_AXIS;
+    let (mut app, rig) = d16_rig(r#", "hold_plane": true"#);
+    for (height, expected) in [
+        (2.0, TANGENT - up),
+        (0.5, TANGENT - 0.5 * up),
+        (-0.5, TANGENT + 0.5 * up),
+        (0.0, TANGENT),
+    ] {
+        let f = root_force_over_ramp(&mut app, &rig, height, DVec3::ZERO);
+        assert_close_dvec3(f, expected.normalize(), 1e-9, &format!("{height} m"));
+    }
+    let (mut app, rig) = d16_rig("");
+    let f = root_force_over_ramp(&mut app, &rig, 2.0, DVec3::ZERO);
+    assert_close_dvec3(f, TANGENT, 1e-9, "no key");
+}
+
+#[test]
+fn controller_hold_law_brakes_to_rest_and_holds_the_plane() {
+    // P7.5 S9 (c), design D16: in a `hold` phase the branches are skipped and the
+    // limit is 0: `−v̂ × clamp(|v| / kill_band, 0, 1)` plus the plane term, then
+    // bounded by the ramp (not normalised).
+    let up = CAPTURE_CIRCLING_AXIS;
+    let (mut app, rig) = d16_rig(r#", "actuation": "hold""#);
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, DVec3::ZERO);
+    assert_close_dvec3(f, DVec3::ZERO, 1e-12, "at rest");
+    let velocity = DVec3::new(0.06, 0.0, 0.08);
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, velocity);
+    assert_close_dvec3(f, -velocity.normalize(), 1e-12, "0.1 m/s: the full ramp");
+    let f = root_force_over_ramp(&mut app, &rig, 0.0, TANGENT * 0.01);
+    assert_close_dvec3(f, -TANGENT * 0.32, 1e-12, "0.01 m/s: 0.32 of it");
+    // Without the key the height changes nothing.
+    let f = root_force_over_ramp(&mut app, &rig, 2.0, DVec3::ZERO);
+    assert_close_dvec3(f, DVec3::ZERO, 1e-12, "2 m above, no key");
+    assert!(capture_force(&app, rig.root).kill, "the limit is read as 0");
+
+    let (mut app, rig) = d16_rig(r#", "actuation": "hold", "hold_plane": true"#);
+    let f = root_force_over_ramp(&mut app, &rig, 2.0, DVec3::ZERO);
+    assert_close_dvec3(f, -up, 1e-12, "2 m above: the plane term");
+    let f = root_force_over_ramp(&mut app, &rig, 0.5, DVec3::ZERO);
+    assert_close_dvec3(f, -0.5 * up, 1e-12, "0.5 m above: half of it");
+    let f = root_force_over_ramp(&mut app, &rig, 2.0, TANGENT * 0.1);
+    assert_close_dvec3(
+        f,
+        (-TANGENT - up).normalize(),
+        1e-12,
+        "moving and above: the sum, bounded",
+    );
+}
+
+/// `a` → `capture` below 10 m; `capture` → `hold` after 90 s in phase.
+const TIME_PLAN: &str = r#"{"schema_version": 1, "name": "time", "tether": "T", "phases": [
+  {"id": "a", "max_velocity_mps": 1.0, "max_force_n": 10.0,
+   "transitions": [{"to": "capture", "all_of": {"distance_m": {"less_than": 10.0}}}]},
+  {"id": "capture", "max_velocity_mps": 1.0, "max_force_n": 10.0,
+   "transitions": [{"to": "hold", "all_of": {"time_in_phase_s": {"greater_than": 90.0}}}]},
+  {"id": "hold", "max_velocity_mps": 0.0, "max_force_n": 10.0, "actuation": "hold",
+   "end": "success"}
+]}"#;
+
+#[test]
+fn transition_fires_on_time_in_phase_and_a_phase_entry_resets_the_clock() {
+    // P7.5 S9 (d), design D16: the time in phase is `state_elapsed_time_s`, advanced
+    // by one step before the check.
+    let mut app = test_app();
+    insert_plan_json(&mut app, "time", TIME_PLAN);
+    let rig = capture_rig(&mut app, "time");
+    let set_elapsed = |app: &mut App, seconds: f64| {
+        app.world_mut()
+            .get_mut::<CaptureComponent>(rig.capture)
+            .unwrap()
+            .state_elapsed_time_s = seconds - PHYS_DT;
+    };
+    let elapsed = |app: &App| {
+        app.world()
+            .get::<CaptureComponent>(rig.capture)
+            .unwrap()
+            .state_elapsed_time_s
+    };
+
+    // A phase entry resets the clock: 1,000 s in `a`, then the range condition.
+    set_elapsed(&mut app, 1_000.0);
+    rig_set(&mut app, &rig, 5.0, 0.0);
+    assert_eq!(
+        rig_step(&mut app, &rig),
+        vec![(
+            "a".to_string(),
+            "capture".to_string(),
+            "distance 5.0 m < 10.0 m".to_string()
+        )]
+    );
+    assert_eq!(elapsed(&app), 0.0, "the entry resets it");
+    assert!(rig_step(&mut app, &rig).is_empty(), "one step into capture");
+    assert_eq!(elapsed(&app), PHYS_DT);
+
+    set_elapsed(&mut app, 89.99);
+    assert!(rig_step(&mut app, &rig).is_empty(), "89.99 s");
+    set_elapsed(&mut app, 90.01);
+    assert_eq!(
+        rig_step(&mut app, &rig),
+        vec![(
+            "capture".to_string(),
+            "hold".to_string(),
+            "time in phase 90.0 s > 90.0 s".to_string()
+        )]
+    );
+    assert_eq!(elapsed(&app), 0.0);
 }
 
 #[test]

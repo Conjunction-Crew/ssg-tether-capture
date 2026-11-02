@@ -220,6 +220,29 @@ pub struct Phase {
     /// was entered). Default false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub velocity_scales_with_sphere: Option<bool>,
+    /// Hold the pushed bodies in the circling plane through the target: a
+    /// proportional force component toward the plane, full at `PLANE_HOLD_BAND_M`
+    /// of height. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold_plane: Option<bool>,
+    /// `circle`: the range and tangent branches (the default); `hold`: brake every
+    /// pushed body to rest relative to the target and hold the plane;
+    /// `max_velocity_mps` is read as 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actuation: Option<Actuation>,
+}
+
+/// The force law of a phase (P7.5 design D16).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum Actuation {
+    /// The range and tangent branches (the default).
+    #[default]
+    Circle,
+    /// Brake every pushed body to rest relative to the target and hold the plane;
+    /// `max_velocity_mps` is read as 0.
+    Hold,
 }
 
 /// How an end phase ends the capture.
@@ -253,6 +276,9 @@ pub struct TransitionConditions {
     /// Magnitude of the LVLH relative velocity in m/s.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relative_speed_mps: Option<ConditionBounds>,
+    /// Seconds since the current phase was entered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_in_phase_s: Option<ConditionBounds>,
 }
 
 /// Bounds on one quantity; at least one, neither negative. Both strict.
@@ -296,6 +322,8 @@ pub struct CompiledCaptureTransition {
     pub distance_greater_than: Option<f64>,
     pub relative_velocity_less_than: Option<f64>,
     pub relative_velocity_greater_than: Option<f64>,
+    pub time_in_phase_less_than: Option<f64>,
+    pub time_in_phase_greater_than: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -310,6 +338,11 @@ pub struct CompiledCaptureStateParameters {
     /// at the sphere radius the phase was entered at, scaled by the current radius
     /// over that one. `false` when the phase leaves it out.
     pub velocity_scales_with_sphere: bool,
+    /// The phase's `hold_plane`: every pushed body gets a component toward the
+    /// circling plane. `false` when the phase leaves it out.
+    pub hold_plane: bool,
+    /// The phase's `actuation`, [`Actuation::Circle`] when the phase leaves it out.
+    pub actuation: Actuation,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -470,6 +503,7 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             let conditions = [
                 ("distance_m", transition.all_of.distance_m),
                 ("relative_speed_mps", transition.all_of.relative_speed_mps),
+                ("time_in_phase_s", transition.all_of.time_in_phase_s),
             ];
             if conditions.iter().all(|(_, bounds)| bounds.is_none()) {
                 error(&at("all_of"), "at least one condition is required");
@@ -548,6 +582,8 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 shrink_rate: phase.shrink_rate_mps,
                 tail_actuation: phase.tail_actuation.unwrap_or(false),
                 velocity_scales_with_sphere: phase.velocity_scales_with_sphere.unwrap_or(false),
+                hold_plane: phase.hold_plane.unwrap_or(false),
+                actuation: phase.actuation.unwrap_or_default(),
             },
             transitions: phase
                 .transitions
@@ -556,12 +592,15 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 .map(|transition| {
                     let distance = transition.all_of.distance_m.unwrap_or_default();
                     let speed = transition.all_of.relative_speed_mps.unwrap_or_default();
+                    let time = transition.all_of.time_in_phase_s.unwrap_or_default();
                     CompiledCaptureTransition {
                         to: transition.to.clone(),
                         distance_less_than: distance.less_than,
                         distance_greater_than: distance.greater_than,
                         relative_velocity_less_than: speed.less_than,
                         relative_velocity_greater_than: speed.greater_than,
+                        time_in_phase_less_than: time.less_than,
+                        time_in_phase_greater_than: time.greater_than,
                     }
                 })
                 .collect(),

@@ -1,5 +1,20 @@
 {
   "$defs": {
+    "Actuation": {
+      "description": "The force law of a phase (P7.5 design D16).",
+      "oneOf": [
+        {
+          "const": "circle",
+          "description": "The range and tangent branches (the default).",
+          "type": "string"
+        },
+        {
+          "const": "hold",
+          "description": "Brake every pushed body to rest relative to the target and hold the plane;\n`max_velocity_mps` is read as 0.",
+          "type": "string"
+        }
+      ]
+    },
     "CapturePlanDevice": {
       "additionalProperties": false,
       "description": "The capture device. Every field is optional; an absent field takes its default.",
@@ -140,6 +155,17 @@
       "additionalProperties": false,
       "description": "One phase of the plan: the controller's limits while in it and its transitions.",
       "properties": {
+        "actuation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Actuation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`circle`: the range and tangent branches (the default); `hold`: brake every\npushed body to rest relative to the target and hold the plane;\n`max_velocity_mps` is read as 0."
+        },
         "end": {
           "anyOf": [
             {
@@ -150,6 +176,13 @@
             }
           ],
           "description": "Marks an end phase (`success` or `abort`); an end phase has no transitions."
+        },
+        "hold_plane": {
+          "description": "Hold the pushed bodies in the circling plane through the target: a\nproportional force component toward the plane, full at `PLANE_HOLD_BAND_M`\nof height. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "id": {
           "description": "Phase id, unique in the plan and not blank.",
@@ -277,6 +310,17 @@
             }
           ],
           "description": "Magnitude of the LVLH relative velocity in m/s."
+        },
+        "time_in_phase_s": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Seconds since the current phase was entered."
         }
       },
       "type": "object"

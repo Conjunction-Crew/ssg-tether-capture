@@ -7,6 +7,7 @@
     "tether_length_m": 20.0
   },
   "capture_sphere": {
+    "initial_radius_m": 100.0,
     "min_radius_m": 4.5
   },
   "phases": [
@@ -31,10 +32,28 @@
       "max_force_n": 3.0,
       "transitions": [
         {
+          "to": "final_approach",
+          "all_of": {
+            "distance_m": {
+              "less_than": 300.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "final_approach",
+      "max_velocity_mps": 0.3,
+      "max_force_n": 3.0,
+      "transitions": [
+        {
           "to": "terminal",
           "all_of": {
             "distance_m": {
-              "less_than": 50.0
+              "less_than": 120.0
+            },
+            "relative_speed_mps": {
+              "less_than": 0.35
             }
           }
         }
@@ -44,7 +63,7 @@
       "id": "terminal",
       "max_velocity_mps": 0.5,
       "max_force_n": 2.0,
-      "shrink_rate_mps": 0.01,
+      "shrink_rate_mps": 0.05,
       "transitions": [
         {
           "to": "capture",
@@ -55,24 +74,43 @@
           }
         },
         {
-          "to": "approach",
+          "to": "final_approach",
           "all_of": {
             "distance_m": {
-              "greater_than": 50.0
+              "greater_than": 120.0
             }
           }
         }
       ],
       "tail_actuation": true,
-      "velocity_scales_with_sphere": true
+      "hold_plane": true
     },
     {
       "id": "capture",
       "max_velocity_mps": 0.5,
       "max_force_n": 2.0,
       "shrink_rate_mps": 0.005,
+      "transitions": [
+        {
+          "to": "hold",
+          "all_of": {
+            "time_in_phase_s": {
+              "greater_than": 90.0
+            }
+          }
+        }
+      ],
+      "tail_actuation": true,
+      "hold_plane": true
+    },
+    {
+      "id": "hold",
+      "max_velocity_mps": 0.0,
+      "max_force_n": 2.0,
       "end": "success",
-      "tail_actuation": true
+      "tail_actuation": true,
+      "hold_plane": true,
+      "actuation": "hold"
     }
   ]
 }
