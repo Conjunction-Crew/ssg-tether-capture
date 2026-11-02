@@ -232,6 +232,16 @@ fn char_plans_example_compiled_shape() {
         ]
     );
     assert_eq!(compiled.min_capture_radius_m, 4.5); // F-66 (P7.5 S6): provisional until S8
+    // S10 (design D18): the chord the tail's lag law holds, in terminal only.
+    let spacing: Vec<Option<f64>> = compiled
+        .states
+        .iter()
+        .map(|s| s.parameters.tail_spacing_m)
+        .collect();
+    assert_eq!(
+        spacing,
+        [None, None, None, Some(12.0), None, None] // F-66 (P7.5 S10): provisional until S8
+    );
 
     // (to, distance <, distance >, rel velocity <, rel velocity >, time in phase >)
     // per transition (no example transition has a time-in-phase `less_than`).
