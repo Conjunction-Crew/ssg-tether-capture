@@ -187,12 +187,28 @@ fn char_plans_example_compiled_shape() {
     assert_eq!(
         params,
         [
-            (25.0, 25.0, None),
+            (18.0, 25.0, None), // F-66 (P7.5 S6): provisional until S8
             (2.0, 3.0, None),
             (0.5, 2.0, Some(0.01)),
             (0.5, 2.0, Some(0.005)),
         ]
     );
+    // P7.5 S6 (E9, E13b): the tail and the speed scaling per state, and the floor.
+    let flags: Vec<(bool, bool)> = compiled
+        .states
+        .iter()
+        .map(|s| {
+            (
+                s.parameters.tail_actuation,
+                s.parameters.velocity_scales_with_sphere,
+            )
+        })
+        .collect();
+    assert_eq!(
+        flags,
+        [(false, false), (false, false), (true, true), (true, false)] // F-66 (P7.5 S6): provisional until S8
+    );
+    assert_eq!(compiled.min_capture_radius_m, 4.5); // F-66 (P7.5 S6): provisional until S8
 
     // (to, distance <, distance >, rel velocity <, rel velocity >) per transition.
     type Limits = (String, Option<f64>, Option<f64>, Option<f64>, Option<f64>);

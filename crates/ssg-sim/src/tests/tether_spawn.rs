@@ -26,8 +26,8 @@ use crate::test_support::{
     start_running, test_app, tick,
 };
 use crate::tether::{
-    DEBRIS_LAYER, DebrisBody, TETHER_LAYER, TetherNode, TetherRoot, TetherShape, chain_from_joints,
-    spawn_debris, spawn_selected_bodies, spawn_tether,
+    DEBRIS_LAYER, DebrisBody, TETHER_FILTERS, TETHER_LAYER, TetherNode, TetherRoot, TetherShape,
+    chain_from_joints, spawn_debris, spawn_selected_bodies, spawn_tether,
 };
 use crate::time::ManualPhysics;
 use brahe::utils::DOrbitStateProvider;
@@ -146,10 +146,13 @@ fn spawn_tether_without_a_project_builds_the_default_20_m_tether() {
 }
 
 #[test]
-fn spawn_tether_default_rope_is_point_masses_on_slack_joints_that_touch_the_debris_only() {
-    // F-66 (P7.5 S2, design D1, D2, D10): 77 bodies from the root along the
-    // joints; centre-to-centre joints slack below the spawn distance; interior
-    // nodes rotation-locked; every tether body on the tether layer.
+fn spawn_tether_default_rope_is_locked_point_masses_on_slack_joints_that_touch_each_other_and_the_debris()
+ {
+    // F-66 (P7.5 S2, design D1, D2; S6, design D13): 77 bodies from the root along
+    // the joints; centre-to-centre joints slack below the spawn distance; every
+    // tether body rotation-locked (the nodes are point masses; the root and the tail
+    // hold their attitude) and on the tether layer, filtering the tether and the
+    // debris (self-contact on).
     let mut app = spawn_app();
     run_spawn_tether(&mut app, None, hst()).expect("spawn failed");
 
@@ -178,7 +181,8 @@ fn spawn_tether_default_rope_is_point_masses_on_slack_joints_that_touch_the_debr
             "centre to centre"
         );
     }
-    let layers = CollisionLayers::new(TETHER_LAYER, DEBRIS_LAYER);
+    let layers = CollisionLayers::new(TETHER_LAYER, TETHER_LAYER | DEBRIS_LAYER);
+    assert_eq!(TETHER_FILTERS, TETHER_LAYER | DEBRIS_LAYER);
     for (i, &body) in chain.iter().enumerate() {
         assert_eq!(
             world.get::<CollisionLayers>(body),
@@ -188,11 +192,7 @@ fn spawn_tether_default_rope_is_point_masses_on_slack_joints_that_touch_the_debr
         let locked = world
             .get::<LockedAxes>(body)
             .is_some_and(|axes| axes.is_rotation_locked());
-        assert_eq!(
-            locked,
-            i != 0 && i != 76,
-            "only the interior nodes are locked: body {i}"
-        );
+        assert!(locked, "every tether body is rotation-locked: body {i}");
     }
     let tail_mass = world.get::<Mass>(chain[76]).unwrap().0;
     let mass: f32 = chain.iter().map(|&e| world.get::<Mass>(e).unwrap().0).sum();
@@ -841,10 +841,13 @@ fn assert_tensor(actual: [f64; 6], expected: &[[f64; 3]; 3], what: &str) {
     }
 }
 
+/// A storage check (P7.5 S6, C9, E18): the root is the chaser (design D8). With a
+/// stated mass and tensor the root carries them (Q10 row 11); the tail keeps the
+/// plan's end mass. The root is `LockedAxes::ROTATION_LOCKED` (design D13), so its
+/// `AngularInertia` is stored and inert until an attitude model exists (P12): this
+/// test checks what is stored, not the dynamics.
 #[test]
-fn spawn_tether_gives_the_root_the_chasers_mass_and_inertia() {
-    // P7.5 S1 (Q10 row 11): the root is the chaser (design D8). With a stated mass
-    // and tensor the root carries them; the tail keeps the plan's end mass.
+fn the_chaser_inertia_tensor_is_stored_on_the_locked_root() {
     let mut app = spawn_app();
     let mut chaser = q13::catalog_pick("CHASER", q13::CHASER_NORAD_ID);
     chaser.mass_kg = Some(500.0);
@@ -869,6 +872,12 @@ fn spawn_tether_gives_the_root_the_chasers_mass_and_inertia() {
         "root ComputedMass",
     );
     assert_tensor(computed_tensor(&app, root), &CHASER_TENSOR, "root inertia");
+    assert!(
+        world
+            .get::<LockedAxes>(root)
+            .is_some_and(|axes| axes.is_rotation_locked()),
+        "the root holds its attitude: the tensor is stored and inert"
+    );
     assert_eq!(
         app.world().get::<Rotation>(root).unwrap().0,
         bevy::math::DQuat::IDENTITY,
@@ -907,6 +916,9 @@ fn spawn_tether_gives_the_root_the_chasers_mass_and_inertia() {
 
 #[test]
 fn spawn_debris_takes_the_targets_inertia_from_the_selection() {
+    // P7.5 S6 (C1, E21): with a manifest tensor the debris's computed inertia is
+    // that tensor, not the tensor plus the array children's (the debris carries
+    // `NoAutoAngularInertia`); its mass and centre are the stated ones too.
     let mut app = spawn_app();
     let mut pick = hst();
     pick.inertia_kg_m2 = Some(CHASER_TENSOR);
@@ -919,13 +931,37 @@ fn spawn_debris_takes_the_targets_inertia_from_the_selection() {
         .expect("the spawn system failed to run")
         .expect("spawn failed");
     app.update();
+    // Avian recomputes the mass properties with the children attached.
+    app.world_mut().run_schedule(ManualPhysics);
     let debris = app.world().resource::<OrbitalCache>().debris["Satellite1"];
-    assert!(app.world().get::<AngularInertia>(debris).is_some());
+    let world = app.world_mut();
+    let attached = world
+        .query::<&ColliderOf>()
+        .iter(world)
+        .filter(|of| of.body == debris)
+        .count();
+    assert_eq!(attached, 3, "the bus and the two array children");
+    let world = app.world();
+    assert!(world.get::<AngularInertia>(debris).is_some());
+    assert!(world.get::<NoAutoAngularInertia>(debris).is_some());
+    assert_tensor(
+        computed_tensor(&app, debris),
+        &CHASER_TENSOR,
+        "debris inertia",
+    );
     assert_close(
-        app.world().get::<Mass>(debris).unwrap().0 as f64,
+        world.get::<ComputedMass>(debris).unwrap().value(),
         2500.0,
         1e-3,
         "default mass",
+    );
+    assert!(
+        world
+            .get::<ComputedCenterOfMass>(debris)
+            .unwrap()
+            .0
+            .length()
+            < 1e-9
     );
 }
 

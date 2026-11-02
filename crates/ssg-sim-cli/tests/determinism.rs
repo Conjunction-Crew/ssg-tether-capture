@@ -130,7 +130,7 @@ fn cli_steps_must_be_multiple_of_warp() {
 }
 
 /// The P0 capture scenario to `capture`: three runs at warp 1 and one at warp 16
-/// end in bit-identical output. `--steps 163840` without `--stop-at-capture`, so
+/// end in bit-identical output. `--steps 172032` without `--stop-at-capture`, so
 /// all four runs cover the same steps whatever the warp. The four processes run
 /// at the same time.
 #[test]
@@ -141,7 +141,9 @@ fn cli_three_runs_to_capture_identical() {
     let children: Vec<_> = runs
         .iter()
         .map(|(out, warp)| {
-            command(&project, out, &["--steps", "163840", "--warp", warp])
+            // F-66 (P7.5 S6): provisional until S8. The capture entry moved to step
+            // 167,091 (the 18 m/s rendezvous), past the old 163,840.
+            command(&project, out, &["--steps", "172032", "--warp", warp])
                 .spawn()
                 .expect("the binary starts")
         })

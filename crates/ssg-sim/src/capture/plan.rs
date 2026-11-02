@@ -4,7 +4,9 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::capture::{CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M};
+use crate::capture::{
+    CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M, MIN_CAPTURE_SPHERE_RADIUS_M,
+};
 
 /// The `schema_version` of the plan files this build reads and writes.
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
@@ -165,6 +167,9 @@ pub struct CaptureSphere {
     /// Radius in metres at the start of every capture. Default 25.0; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_radius_m: Option<f64>,
+    /// The radius the capture sphere stops shrinking at, m. Default 0.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_radius_m: Option<f64>,
 }
 
 impl CapturePlan {
@@ -174,6 +179,15 @@ impl CapturePlan {
             .as_ref()
             .and_then(|sphere| sphere.initial_radius_m)
             .unwrap_or(INITIAL_CAPTURE_SPHERE_RADIUS_M)
+    }
+
+    /// The radius in metres the capture sphere stops shrinking at
+    /// (`capture_sphere.min_radius_m`), 0.1 when absent.
+    pub fn min_capture_radius_m(&self) -> f64 {
+        self.capture_sphere
+            .as_ref()
+            .and_then(|sphere| sphere.min_radius_m)
+            .unwrap_or(MIN_CAPTURE_SPHERE_RADIUS_M)
     }
 }
 
@@ -200,6 +214,12 @@ pub struct Phase {
     /// Push the tail in this phase as well as the root. Default false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_actuation: Option<bool>,
+    /// The phase's speed limit is `max_velocity_mps` at the capture-sphere radius
+    /// the phase was entered at and falls in proportion as the sphere shrinks.
+    /// A no-op in a phase without `shrink_rate_mps` (the radius stays where it
+    /// was entered). Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub velocity_scales_with_sphere: Option<bool>,
 }
 
 /// How an end phase ends the capture.
@@ -286,6 +306,10 @@ pub struct CompiledCaptureStateParameters {
     /// The phase's `tail_actuation`: the controller pushes the tail as well as the
     /// root (C7). `false` when the phase leaves it out.
     pub tail_actuation: bool,
+    /// The phase's `velocity_scales_with_sphere`: the speed limit is `max_velocity`
+    /// at the sphere radius the phase was entered at, scaled by the current radius
+    /// over that one. `false` when the phase leaves it out.
+    pub velocity_scales_with_sphere: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -302,6 +326,9 @@ pub struct CompiledCapturePlan {
     pub tether: String,
     pub states: Vec<CompiledCaptureState>,
     pub state_indices: HashMap<String, usize>,
+    /// The plan's [`CapturePlan::min_capture_radius_m`]: the capture sphere shrinks
+    /// while its radius is above this.
+    pub min_capture_radius_m: f64,
 }
 
 impl CompiledCapturePlan {
@@ -392,10 +419,23 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             }
         }
     }
-    if let Some(sphere) = &plan.capture_sphere
-        && sphere.initial_radius_m.is_some_and(|r| r <= 0.0)
-    {
-        error("/capture_sphere/initial_radius_m", POSITIVE);
+    if let Some(sphere) = &plan.capture_sphere {
+        if sphere.initial_radius_m.is_some_and(|r| r <= 0.0) {
+            error("/capture_sphere/initial_radius_m", POSITIVE);
+        }
+        if let Some(min_radius) = sphere.min_radius_m {
+            let initial_radius = plan.initial_capture_radius_m();
+            if !min_radius.is_finite() {
+                error("/capture_sphere/min_radius_m", "must be a finite number");
+            } else if min_radius <= 0.0 {
+                error("/capture_sphere/min_radius_m", POSITIVE);
+            } else if min_radius >= initial_radius {
+                error(
+                    "/capture_sphere/min_radius_m",
+                    &format!("must be less than initial_radius_m ({initial_radius} m)"),
+                );
+            }
+        }
     }
     if plan.phases.is_empty() {
         error("/phases", "at least one phase is required");
@@ -490,6 +530,7 @@ pub fn build_capture_component(
         current_state: first_phase.id.clone(),
         state_enter_time_s: sim_time_s,
         state_elapsed_time_s: 0.0,
+        sphere_radius_at_entry_m: plan.initial_capture_radius_m(),
     })
 }
 
@@ -506,6 +547,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 max_force: phase.max_force_n,
                 shrink_rate: phase.shrink_rate_mps,
                 tail_actuation: phase.tail_actuation.unwrap_or(false),
+                velocity_scales_with_sphere: phase.velocity_scales_with_sphere.unwrap_or(false),
             },
             transitions: phase
                 .transitions
@@ -531,5 +573,6 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
         tether: plan.tether.clone(),
         states,
         state_indices,
+        min_capture_radius_m: plan.min_capture_radius_m(),
     }
 }

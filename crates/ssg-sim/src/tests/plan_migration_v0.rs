@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
-use crate::capture::plan::{CapturePlan, CompiledCapturePlan, compile_capture_plan};
+use crate::capture::plan::{CapturePlan, CaptureSphere, CompiledCapturePlan, compile_capture_plan};
 use crate::project::load_plans_from_dir_with_errors;
 use crate::project::plan_files::{plan_file_reports, plan_to_json, read_plan_value};
 use crate::test_support::{Lcg, repo_root};
@@ -454,15 +454,37 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     assert!(errors.is_empty(), "{errors:?}");
     let v1 = &plans["example_plan"];
     assert_eq!(v1.schema_version, 1);
+    // P7.5 S6 (E8, E9, E13b): the v1 example differs from the v0 original in the
+    // five values the O2 revision set, and in nothing else: with them reverted it
+    // compiles like the v0 file.
+    let mut as_v0 = v1.clone();
+    assert_eq!(as_v0.phases[0].max_velocity_mps, 18.0);
+    as_v0.phases[0].max_velocity_mps = 25.0;
+    assert_eq!(as_v0.phases[2].tail_actuation, Some(true));
+    as_v0.phases[2].tail_actuation = None;
+    assert_eq!(as_v0.phases[2].velocity_scales_with_sphere, Some(true));
+    as_v0.phases[2].velocity_scales_with_sphere = None;
+    assert_eq!(as_v0.phases[3].tail_actuation, Some(true));
+    as_v0.phases[3].tail_actuation = None;
+    assert_eq!(
+        as_v0.capture_sphere,
+        Some(CaptureSphere {
+            initial_radius_m: None,
+            min_radius_m: Some(4.5),
+        })
+    );
+    as_v0.capture_sphere = None;
     assert_same_compiled(
-        &compile_capture_plan(v1),
+        &compile_capture_plan(&as_v0),
         &oracle_compile(&v0),
         "example_plan",
     );
+    assert_eq!(compile_capture_plan(v1).min_capture_radius_m, 4.5);
+    assert_eq!(oracle_compile(&v0).min_capture_radius_m, 0.1);
     // And the migrated v0 file is the v1 file apart from what v1 adds or drops:
     // the `end` marker and the unmapped `units`.
     let migrated = read_plan_value("example_plan", &v0).plan.unwrap();
-    let mut expected = v1.clone();
+    let mut expected = as_v0.clone();
     expected.phases[3].end = None;
     expected.migrated_from_v0 = migrated.migrated_from_v0.clone();
     assert_eq!(migrated, expected);

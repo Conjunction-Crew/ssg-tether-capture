@@ -367,6 +367,7 @@ fn absent_optional_fields_take_the_documented_defaults() {
     assert_eq!(plan.initial_capture_radius_m(), 25.0);
     plan.capture_sphere = Some(CaptureSphere {
         initial_radius_m: Some(7.5),
+        min_radius_m: None,
     });
     assert_eq!(plan.initial_capture_radius_m(), 7.5);
 }
@@ -499,6 +500,7 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                 transitions,
                 end,
                 tail_actuation: rng.chance(0.5).then(|| rng.chance(0.5)),
+                velocity_scales_with_sphere: None,
             }
         })
         .collect();
@@ -526,6 +528,7 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
         device,
         capture_sphere: rng.chance(0.3).then(|| CaptureSphere {
             initial_radius_m: maybe(rng, 1.0, 50.0),
+            min_radius_m: None,
         }),
         phases,
         migrated_from_v0: rng.chance(0.2).then(|| MigratedFromV0 {
@@ -662,6 +665,127 @@ fn tail_actuation_is_a_phase_key_that_round_trips_and_not_a_device_key() {
         schema["$defs"]["CapturePlanDevice"]["properties"]
             .get("tail_actuation")
             .is_none()
+    );
+}
+
+#[test]
+fn velocity_scales_with_sphere_is_a_phase_key_that_round_trips_and_is_absent_by_default() {
+    // P7.5 S6 (design D14): `phases[].velocity_scales_with_sphere` is optional,
+    // written only when set and compiled per phase (false when absent).
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(
+        plan.phases
+            .iter()
+            .all(|p| p.velocity_scales_with_sphere.is_none())
+    );
+    assert!(!plan_to_json(&plan).contains("velocity_scales_with_sphere"));
+
+    let mut value = doc();
+    value["phases"][1]["velocity_scales_with_sphere"] = json!(true);
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].velocity_scales_with_sphere, None);
+    assert_eq!(plan.phases[1].velocity_scales_with_sphere, Some(true));
+    let text = plan_to_json(&plan);
+    assert_eq!(
+        text.matches("velocity_scales_with_sphere").count(),
+        1,
+        "{text}"
+    );
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(!compiled.states[0].parameters.velocity_scales_with_sphere);
+    assert!(compiled.states[1].parameters.velocity_scales_with_sphere);
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    assert!(
+        schema["$defs"]["Phase"]["properties"]["velocity_scales_with_sphere"].is_object(),
+        "{schema}"
+    );
+}
+
+#[test]
+fn capture_sphere_min_radius_round_trips_defaults_to_0_1_and_is_validated() {
+    // P7.5 S6 (design D13, D14): `capture_sphere.min_radius_m` is optional (0.1 m
+    // when absent), compiled into the plan, and must be finite, above 0 and below
+    // the initial radius.
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert_eq!(plan.min_capture_radius_m(), 0.1);
+    assert_eq!(
+        crate::capture::plan::compile_capture_plan(&plan).min_capture_radius_m,
+        0.1
+    );
+    let mut sphere_only_initial = plan.clone();
+    sphere_only_initial.capture_sphere = Some(CaptureSphere {
+        initial_radius_m: Some(7.5),
+        min_radius_m: None,
+    });
+    assert_eq!(sphere_only_initial.min_capture_radius_m(), 0.1);
+
+    let mut value = doc();
+    value["capture_sphere"] = json!({ "min_radius_m": 4.5 });
+    let report = read_plan_value(ID, &value);
+    assert_eq!(report.errors, Vec::<String>::new());
+    let plan = report.plan.expect("loads");
+    assert_eq!(plan.min_capture_radius_m(), 4.5);
+    assert_eq!(plan.initial_capture_radius_m(), 25.0);
+    assert_eq!(
+        crate::capture::plan::compile_capture_plan(&plan).min_capture_radius_m,
+        4.5
+    );
+    let text = plan_to_json(&plan);
+    assert_eq!(text.matches("min_radius_m").count(), 1, "{text}");
+    assert!(!text.contains("initial_radius_m"), "{text}");
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+
+    for (sphere, message) in [
+        (json!({ "min_radius_m": 0.0 }), "must be greater than 0"),
+        (json!({ "min_radius_m": -1.0 }), "must be greater than 0"),
+        (
+            json!({ "min_radius_m": 25.0 }),
+            "must be less than initial_radius_m (25 m)",
+        ),
+        (
+            json!({ "initial_radius_m": 7.5, "min_radius_m": 8.0 }),
+            "must be less than initial_radius_m (7.5 m)",
+        ),
+    ] {
+        let mut value = doc();
+        value["capture_sphere"] = sphere.clone();
+        assert_eq!(
+            errors_of(&value),
+            [format!("[{ID}] /capture_sphere/min_radius_m: {message}")],
+            "{sphere}"
+        );
+    }
+    let mut value = doc();
+    value["capture_sphere"] = json!({ "initial_radius_m": 50.0, "min_radius_m": 30.0 });
+    assert_eq!(errors_of(&value), Vec::<String>::new());
+
+    // JSON has no NaN or infinity; a plan built in code can.
+    let mut plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    for bad in [f64::NAN, f64::INFINITY] {
+        plan.capture_sphere = Some(CaptureSphere {
+            initial_radius_m: None,
+            min_radius_m: Some(bad),
+        });
+        assert_eq!(
+            crate::capture::plan::validate_capture_plan(ID, &plan),
+            [format!(
+                "[{ID}] /capture_sphere/min_radius_m: must be a finite number"
+            )]
+        );
+    }
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    assert!(
+        schema["$defs"]["CaptureSphere"]["properties"]["min_radius_m"].is_object(),
+        "{schema}"
     );
 }
 

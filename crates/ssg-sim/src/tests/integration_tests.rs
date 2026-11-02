@@ -116,6 +116,7 @@ fn apply_force_to_target() {
                 .clone(),
             state_enter_time_s: 0.0,
             state_elapsed_time_s: 0.0,
+            sphere_radius_at_entry_m: plan.initial_capture_radius_m(),
         });
     // As `apply_sim_commands` does at the capture start.
     app.world_mut()

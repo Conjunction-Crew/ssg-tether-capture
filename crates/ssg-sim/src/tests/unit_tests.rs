@@ -25,6 +25,7 @@ mod tests {
             transitions: None,
             end: None,
             tail_actuation: None,
+            velocity_scales_with_sphere: None,
         }
     }
 

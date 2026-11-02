@@ -6,10 +6,13 @@
     "type": "tether",
     "tether_length_m": 20.0
   },
+  "capture_sphere": {
+    "min_radius_m": 4.5
+  },
   "phases": [
     {
       "id": "rendezvous",
-      "max_velocity_mps": 25.0,
+      "max_velocity_mps": 18.0,
       "max_force_n": 25.0,
       "transitions": [
         {
@@ -59,14 +62,17 @@
             }
           }
         }
-      ]
+      ],
+      "tail_actuation": true,
+      "velocity_scales_with_sphere": true
     },
     {
       "id": "capture",
       "max_velocity_mps": 0.5,
       "max_force_n": 2.0,
       "shrink_rate_mps": 0.005,
-      "end": "success"
+      "end": "success",
+      "tail_actuation": true
     }
   ]
 }

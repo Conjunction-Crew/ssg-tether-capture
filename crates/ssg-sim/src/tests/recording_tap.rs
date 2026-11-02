@@ -219,11 +219,11 @@ fn a_recording_does_not_change_the_run() {
     assert_eq!(single.segments[0].end, None, "still recording at the end");
 
     // The single recording (640 to the end) holds the one transition the sim wrote
-    // inside it (4,695 on macOS, F-17), and the frames' phase follows it.
+    // inside it (6,050 on macOS, F-17), and the frames' phase follows it.
     let approach = single.transitions[0].0;
     assert_eq!(single.transitions.len(), 1);
     if MACOS_GOLDENS {
-        assert_eq!(approach, 4_703);
+        assert_eq!(approach, 6_050); // F-66 (P7.5 S6): provisional until S8
     }
     let recorded: Vec<(u64, &str, &str)> = single.segments[0]
         .transitions
@@ -251,7 +251,7 @@ fn a_recording_does_not_change_the_run() {
         );
     }
 
-    // The automatic start is the step the sim entered `approach` (4,695 on macOS).
+    // The automatic start is the step the sim entered `approach` (6,050 on macOS).
     let approach = multi
         .transitions
         .iter()
@@ -260,7 +260,7 @@ fn a_recording_does_not_change_the_run() {
         .0;
     println!("approach entered at step {approach}");
     if MACOS_GOLDENS {
-        assert_eq!(approach, 4_703);
+        assert_eq!(approach, 6_050); // F-66 (P7.5 S6): provisional until S8
     }
     let starts: Vec<(u64, StartTrigger)> = multi
         .segments
@@ -304,9 +304,10 @@ fn a_frame_carries_the_origin_shift_since_the_previous_frame() {
         keyframe_interval_steps: 16,
         ..RecordingSettings::default()
     };
-    // 1,400 ticks after build: steps 4 ..= 1,403.
+    // 1,500 ticks after build: steps 4 ..= 1,503, past the second reset (P7.5 S6:
+    // the 18 m/s rendezvous moves it from step 1,314 to 1,407).
     let run = run_q13(
-        1_400,
+        1_500,
         settings,
         &[(400, RecorderCommand::Start { name: "o".into() })],
     );
@@ -325,7 +326,7 @@ fn a_frame_carries_the_origin_shift_since_the_previous_frame() {
         run.resets.iter().map(|r| r.step).collect::<Vec<_>>()
     );
     if MACOS_GOLDENS {
-        assert_eq!((first.step, second.step), (703, 1_314), "the Q13 resets");
+        assert_eq!((first.step, second.step), (703, 1_407), "the Q13 resets"); // F-66 (P7.5 S6): provisional until S8
     }
     let frames = &run.segments[0].frames;
     let shifted = frames
