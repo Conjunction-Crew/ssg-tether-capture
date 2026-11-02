@@ -526,13 +526,13 @@ struct TerminalTrace {
     samples: Vec<TerminalSample>,
     /// The reorientation's end: the first sample with both ends inside the bands
     /// `ends_apart_on_the_sphere` asserts after it (the root within 1.0 m of R, the
-    /// tail at R + 0.5 … 1.5 m), if one came within 12,800 ticks. (The plan's v4
+    /// tail at R + 0.5 … 1.5 m), if one came within the cap. (The plan's v4
     /// wording, the root within 2 m of R and the tail within 3 m of R + 1, ends it
     /// while the tail is still settling from +4 m, which design D18's C14 fails too;
     /// operator, Run 7, 2026-11-02, AskUserQuestion.)
     reorientation_end: Option<usize>,
     /// Pair-steps (root–tail, end–node, node–node) through the reorientation (to its
-    /// end, or 12,800 ticks) and through the phase.
+    /// end, or the cap) and through the phase.
     reorientation_pairs: (u64, u64, u64),
     phase_pairs: (u64, u64, u64),
     /// Per 6,400-tick window (end step, root, tail force reversals) after the
@@ -541,8 +541,11 @@ struct TerminalTrace {
     phase_reversals: (u64, u64),
 }
 
-/// The reorientation is over by this many ticks after the terminal entry.
-const REORIENTATION_CAP_TICKS: u64 = 12_800;
+/// The reorientation is over by this many ticks after the terminal entry. F-66
+/// (P7.5 S8): 25,600, not 12,800 (operator, Run 8, 2026-11-02, AskUserQuestion):
+/// macOS settles at 10,657 ticks and Windows at 11,682, and Linux had not settled
+/// by 12,800 (the root +1.27 m, the tail +7.05 m from R).
+const REORIENTATION_CAP_TICKS: u64 = 25_600;
 
 impl TerminalTrace {
     /// Runs `run` to the terminal entry and through the phase.
@@ -656,7 +659,19 @@ impl TerminalTrace {
                     "ends at step {} ({} ticks)",
                     self.samples[end].step, self.samples[end].ticks_in
                 ),
-                None => format!("does not end within {REORIENTATION_CAP_TICKS} ticks"),
+                None => format!(
+                    "does not end within {REORIENTATION_CAP_TICKS} ticks (ticks in, root \
+                     and tail radius error m, every 1,600 ticks to the capture entry: {:?})",
+                    self.samples
+                        .iter()
+                        .step_by((1_600 / SAMPLE_EVERY) as usize)
+                        .map(|s| (
+                            s.ticks_in,
+                            (s.ends.root_radius_error * 1e3).round() / 1e3,
+                            (s.ends.tail_radius_error * 1e3).round() / 1e3
+                        ))
+                        .collect::<Vec<_>>()
+                ),
             }
         )
     }
@@ -909,7 +924,7 @@ fn approach_range_never_grows() {
 /// rendezvous line to engage" (O5 walk N10; E33): from the terminal entry to the
 /// first 64-tick sample with the root within 1.0 m of R and the tail at R + 0.5 …
 /// 1.5 m (both ends settled on their spheres), the reorientation is over within
-/// 12,800 ticks, the root and the tail never
+/// 25,600 ticks, the root and the tail never
 /// touch (0 pair-steps), an end touches an interior node on at most 500 steps, and
 /// the ends' separation is at least 9 m at every sample.
 ///

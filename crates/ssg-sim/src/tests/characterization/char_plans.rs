@@ -176,11 +176,11 @@ fn char_plans_example_compiled_shape() {
             "capture",
             "hold"
         ]
-    ); // F-66 (P7.5 S9): provisional until S8
+    );
     for (i, id) in ids.iter().enumerate() {
         assert_eq!(compiled.state_indices[*id], i, "state index of {id}");
     }
-    assert_eq!(compiled.state_indices.len(), 6); // F-66 (P7.5 S9): provisional until S8
+    assert_eq!(compiled.state_indices.len(), 6);
 
     // (max_velocity, max_force, shrink_rate) per state.
     let params: Vec<(f64, f64, Option<f64>)> = compiled
@@ -197,12 +197,12 @@ fn char_plans_example_compiled_shape() {
     assert_eq!(
         params,
         [
-            (18.0, 25.0, None), // F-66 (P7.5 S6): provisional until S8
+            (18.0, 25.0, None),
             (2.0, 3.0, None),
-            (0.3, 3.0, None),       // F-66 (P7.5 S9): provisional until S8
-            (0.5, 2.0, Some(0.05)), // F-66 (P7.5 S9): provisional until S8
+            (0.3, 3.0, None),
+            (0.5, 2.0, Some(0.05)),
             (0.5, 2.0, Some(0.005)),
-            (0.0, 2.0, None), // F-66 (P7.5 S9): provisional until S8
+            (0.0, 2.0, None),
         ]
     );
     // P7.5 S6 (E9, E13b): the tail and the speed scaling per state, and the floor;
@@ -225,23 +225,20 @@ fn char_plans_example_compiled_shape() {
         [
             (false, false, false, circle),
             (false, false, false, circle),
-            (false, false, false, circle), // F-66 (P7.5 S9): provisional until S8
-            (true, false, true, circle),   // F-66 (P7.5 S9): provisional until S8
-            (true, false, true, circle),   // F-66 (P7.5 S9): provisional until S8
-            (true, false, true, Actuation::Hold), // F-66 (P7.5 S9): provisional until S8
+            (false, false, false, circle),
+            (true, false, true, circle),
+            (true, false, true, circle),
+            (true, false, true, Actuation::Hold),
         ]
     );
-    assert_eq!(compiled.min_capture_radius_m, 4.5); // F-66 (P7.5 S6): provisional until S8
+    assert_eq!(compiled.min_capture_radius_m, 4.5);
     // S10 (design D18): the chord the tail's lag law holds, in terminal only.
     let spacing: Vec<Option<f64>> = compiled
         .states
         .iter()
         .map(|s| s.parameters.tail_spacing_m)
         .collect();
-    assert_eq!(
-        spacing,
-        [None, None, None, Some(12.0), None, None] // F-66 (P7.5 S10): provisional until S8
-    );
+    assert_eq!(spacing, [None, None, None, Some(12.0), None, None]);
 
     // (to, distance <, distance >, rel velocity <, rel velocity >, time in phase >)
     // per transition (no example transition has a time-in-phase `less_than`).
@@ -288,7 +285,7 @@ fn char_plans_example_compiled_shape() {
         transitions,
         vec![
             vec![limits("approach", Some(2000.0), None)],
-            vec![limits("final_approach", Some(300.0), None)], // F-66 (P7.5 S9): provisional until S8
+            vec![limits("final_approach", Some(300.0), None)],
             vec![(
                 "terminal".to_string(),
                 Some(120.0),
@@ -296,12 +293,12 @@ fn char_plans_example_compiled_shape() {
                 Some(0.35),
                 None,
                 None
-            )], // F-66 (P7.5 S9): provisional until S8
+            )],
             vec![
                 limits("capture", Some(5.0), None),
-                limits("final_approach", None, Some(120.0)), // F-66 (P7.5 S9): provisional until S8
+                limits("final_approach", None, Some(120.0)),
             ],
-            vec![("hold".to_string(), None, None, None, None, Some(90.0))], // F-66 (P7.5 S9): provisional until S8
+            vec![("hold".to_string(), None, None, None, None, Some(90.0))],
             vec![],
         ]
     );

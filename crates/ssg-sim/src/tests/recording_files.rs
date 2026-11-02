@@ -978,7 +978,7 @@ fn a_q13_run_through_the_file_sink_matches_the_memory_sink_bit_for_bit() {
         }
     }
     // Resets inside the segment (Q13 steps 703 and 1,407; P7.5 S6: the 1,500-tick
-    // run reaches the second) are in the frames' shifts. // F-66 (P7.5 S6): provisional until S8
+    // run reaches the second) are in the frames' shifts.
     let shifted: Vec<u64> = loaded
         .frames
         .iter()

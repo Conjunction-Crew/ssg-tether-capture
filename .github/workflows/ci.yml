@@ -96,7 +96,9 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A full run adds the to-capture, tether and capture behaviour tests:
+    # ~70 min in all (P7.5 S8).
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -197,11 +199,14 @@ jobs:
         # (the release PR always carries it), so these long tests check the code
         # before it is released.  Runs on every platform: it compares runs on the
         # same platform (see docs_site/docs/concepts/determinism.md).  The tether
-        # tests: no contact of the ends to capture, and the 10-minute rest.
+        # tests: no contact of the ends to capture, and the 10-minute rest.  The
+        # capture behaviour tests: what the operator sees from the rendezvous to
+        # the hold (every platform must pass them).
         if: needs.changes.outputs.full == 'true'
         run: >-
           cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
           && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_to_capture_contacts tether_rest_ten_minutes
+          && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_taut_in_rendezvous approach_range_never_grows ends_clear_through_the_reorientation ends_apart_on_the_sphere root_orbits_cleanly tether_flung_out_while_circling capture_phase_wraps_with_contacts hold_phase_stops_the_ends
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
@@ -296,8 +301,9 @@ jobs:
             name: macOS
     runs-on: ${{ matrix.os }}
     # A full Windows run with a cold cache builds for ~30 min and then runs the
-    # to-capture tests and the two tether tests: ~85-95 min in all (P7.5 S4).
-    timeout-minutes: 120
+    # to-capture tests, the two tether tests and the eight capture behaviour
+    # tests: ~110 min in all (P7.5 S8).
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -355,13 +361,16 @@ jobs:
       - name: Determinism to capture (ignored tests)
         # Per-platform identity everywhere: three runs at 1x and one at 16x must
         # be bit-identical on the same platform.  The tether tests: no contact of
-        # the ends to capture, and the 10-minute rest.  One command line joined
-        # by `&&` (a folded scalar), so a failure of either fails the step in
-        # PowerShell on Windows as in bash.
+        # the ends to capture, and the 10-minute rest.  The capture behaviour
+        # tests: what the operator sees from the rendezvous to the hold (every
+        # platform must pass them).  One command line joined by `&&` (a folded
+        # scalar), so a failure of any fails the step in PowerShell on Windows as
+        # in bash.
         if: needs.changes.outputs.full == 'true'
         run: >-
           cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
           && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_to_capture_contacts tether_rest_ten_minutes
+          && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_taut_in_rendezvous approach_range_never_grows ends_clear_through_the_reorientation ends_apart_on_the_sphere root_orbits_cleanly tether_flung_out_while_circling capture_phase_wraps_with_contacts hold_phase_stops_the_ends
 
       - name: macOS goldens to capture
         # The goldens hold on macOS/aarch64 only (Q29 as replaced, F-48): there

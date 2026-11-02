@@ -27,7 +27,7 @@ fn q13_runs_through_the_first_transition_with_finite_states_and_a_closing_range(
         .collect();
     assert_eq!(order, [("rendezvous", "approach")]);
     assert!(
-        (5_965..6_045).contains(&run.transitions[0].0), // F-66 (P7.5 S9): provisional until S8
+        (5_965..6_045).contains(&run.transitions[0].0),
         "the first transition fires near step 6,005 (macOS): {:?}",
         run.transitions
     );
