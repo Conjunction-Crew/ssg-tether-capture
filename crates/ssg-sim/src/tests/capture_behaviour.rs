@@ -1,20 +1,28 @@
-//! Behavioural acceptance of the capture (P7.5 S7, S9; design D12–D16, the plan's
-//! "O2 revision" and "O4 revision"): what the operator asked to see, as five
-//! `#[ignore]`d tests on the Q13 scenario with the example plan (the O4 plan).
+//! Behavioural acceptance of the capture (P7.5 S7, S9, S10; design D12–D18, the
+//! plan's "O2 revision", "O4 revision" and "O5 revision"): what the operator asked
+//! to see, as eight `#[ignore]`d tests on the Q13 scenario with the example plan
+//! (the O4 plan with the O5 `tail_spacing_m`). Each names the failure it rejects
+//! (rule 35).
 //!
 //! - `tether_taut_in_rendezvous`: the rope stays taut behind the root (N1).
 //! - `approach_range_never_grows`: no overshoot; the root alone pushes through
 //!   `approach` and `final_approach`, and enters `terminal` slow (N6).
+//! - `ends_clear_through_the_reorientation`: the ends do not meet as the rope turns
+//!   from the approach line onto the circle (N10).
+//! - `ends_apart_on_the_sphere`: the ends held apart at the plan's spacing, each on
+//!   its sphere (N11, N13).
+//! - `root_orbits_cleanly`: the root follows the shrinking sphere on a clean orbit,
+//!   neither end's force flapping (N12).
 //! - `tether_flung_out_while_circling`: the rope is flung outward and clear of the
-//!   model while the ends circle at a constant speed (N3).
+//!   model while the ends circle at a constant speed, the ends apart (N3).
 //! - `capture_phase_wraps_with_contacts`: the counter-tangent tail push wraps the
 //!   rope around the centre of the bus, the ends held in the circling plane (N4).
 //! - `hold_phase_stops_the_ends`: in `hold` the ends come to rest and the wrap holds
 //!   (N5).
 //!
-//! The thresholds are the plan's (behavioural acceptance v3, from design D15's
-//! H10b/H11b with margin); a failing one is a stop for the planner (rule 30), never
-//! a re-fit. Rule 31: a panic inside avian fails the test; the step it happened at
+//! The thresholds are the plan's (behavioural acceptance v4, from design D18's C14
+//! with margin; v3's from D15's H10b/H11b); a failing one is a stop for the planner
+//! (rule 30), never a re-fit. Rule 31: a panic inside avian fails the test; the step it happened at
 //! is printed before the message.
 //!
 //! Sampling follows the planner's probes (`probe_o2`, `probe_o4`) so the numbers
@@ -29,6 +37,7 @@ use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 
+use crate::capture::plan::CapturePlanLibrary;
 use crate::capture::{CAPTURE_CIRCLING_AXIS, CaptureForce, CaptureSphereRadius};
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::lvlh::LvlhFrame;
@@ -274,6 +283,11 @@ impl Run {
 
     /// A body's speed relative to the target in the target's LVLH frame.
     fn lvlh_speed(&self, body: Entity) -> f64 {
+        self.lvlh_velocity(body).length()
+    }
+
+    /// A body's velocity relative to the target in the target's LVLH frame.
+    fn lvlh_velocity(&self, body: Entity) -> DVec3 {
         let debris = self.handles.debris;
         let world = self.app.world();
         let target = body_eci_state(
@@ -285,12 +299,77 @@ impl Run {
         )
         .expect("the target's cached ECI state");
         let frame = LvlhFrame::from_eci(&target).expect("the target's LVLH frame");
-        frame
-            .relative_velocity_in_frame(
-                position(&self.app, body) - position(&self.app, debris),
-                velocity(&self.app, body) - velocity(&self.app, debris),
-            )
-            .length()
+        frame.relative_velocity_in_frame(
+            position(&self.app, body) - position(&self.app, debris),
+            velocity(&self.app, body) - velocity(&self.app, debris),
+        )
+    }
+
+    /// A body's position relative to the debris centre.
+    fn relative(&self, body: Entity) -> DVec3 {
+        position(&self.app, body) - position(&self.app, self.handles.debris)
+    }
+
+    /// The ends on the sphere now (design D17's metrics, the planner's `probe_o5`).
+    fn ends(&self) -> Ends {
+        let up = CAPTURE_CIRCLING_AXIS;
+        let (e1, e2) = (
+            up.any_orthonormal_vector(),
+            up.cross(up.any_orthonormal_vector()),
+        );
+        let (rel_root, rel_tail) = (self.relative(self.handles.root), self.relative(self.tail));
+        let a = rel_root - up * rel_root.dot(up);
+        let b = rel_tail - up * rel_tail.dot(up);
+        let r = self.sphere_radius();
+        Ends {
+            r,
+            separation: (rel_tail - rel_root).length(),
+            behind_deg: up.dot(a.cross(b)).atan2(a.dot(b)).to_degrees(),
+            root_radius_error: rel_root.length() - r,
+            tail_radius_error: rel_tail.length() - r,
+            azimuth_deg: a.dot(e2).atan2(a.dot(e1)).to_degrees(),
+            closing: -self
+                .lvlh_velocity(self.handles.root)
+                .dot(rel_root.normalize_or_zero()),
+        }
+    }
+
+    /// This step's touching pairs within the rope by kind: (root–tail, an end with an
+    /// interior node, two interior nodes).
+    fn self_pairs(&self) -> (usize, usize, usize) {
+        let last = self.chain.len() - 1;
+        let index = |e: Entity| self.chain.iter().position(|&c| c == e);
+        let (mut root_tail, mut end_node, mut node_node) = (0, 0, 0);
+        for pair in self
+            .app
+            .world()
+            .resource::<ContactGraph>()
+            .iter_active_touching()
+        {
+            if let (Some(i), Some(j)) = (index(pair.collider1), index(pair.collider2)) {
+                match (i == 0 || i == last, j == 0 || j == last) {
+                    (true, true) => root_tail += 1,
+                    (true, false) | (false, true) => end_node += 1,
+                    (false, false) => node_node += 1,
+                }
+            }
+        }
+        (root_tail, end_node, node_node)
+    }
+
+    /// A key of the example plan's `phase`, compiled.
+    fn phase_parameters(
+        &self,
+        phase: &str,
+    ) -> crate::capture::plan::CompiledCaptureStateParameters {
+        self.app
+            .world()
+            .resource::<CapturePlanLibrary>()
+            .compiled_plans
+            .get("example_plan")
+            .and_then(|plan| plan.state(phase))
+            .map(|state| state.parameters)
+            .expect("the example plan's phase")
     }
 
     /// The rope's shape now (design D15's metrics, the planner's `o4_sample`).
@@ -405,6 +484,213 @@ struct Shape {
     h_tail: f64,
     /// The tail's speed relative to the root, m/s.
     tail_relative_speed: f64,
+}
+
+/// The ends on the sphere at one sample (design D17's metrics).
+#[derive(Debug, Clone, Copy)]
+struct Ends {
+    /// The capture sphere's radius R, m.
+    r: f64,
+    /// The root→tail distance, m.
+    separation: f64,
+    /// The tail's angle behind the root about the circling axis, degrees (positive
+    /// behind, in the root's forward sense).
+    behind_deg: f64,
+    /// Each end's range from the debris centre less R, m.
+    root_radius_error: f64,
+    tail_radius_error: f64,
+    /// The root's azimuth about the circling axis, degrees.
+    azimuth_deg: f64,
+    /// The root's closing rate: its LVLH velocity toward the debris centre, m/s.
+    closing: f64,
+}
+
+/// One 64-tick sample of the terminal phase.
+#[derive(Debug, Clone, Copy)]
+struct TerminalSample {
+    step: u64,
+    /// Ticks since the terminal entry.
+    ticks_in: u64,
+    ends: Ends,
+    /// The root's path relative to the debris centre since the previous sample, m.
+    path: f64,
+}
+
+/// The terminal phase, from its entry to the capture entry (design D17's metrics,
+/// the plan's behavioural acceptance v4).
+struct TerminalTrace {
+    entry: u64,
+    capture_entry: u64,
+    shrink_rate: f64,
+    spacing: f64,
+    samples: Vec<TerminalSample>,
+    /// The reorientation's end: the first sample with both ends inside the bands
+    /// `ends_apart_on_the_sphere` asserts after it (the root within 1.0 m of R, the
+    /// tail at R + 0.5 … 1.5 m), if one came within 12,800 ticks. (The plan's v4
+    /// wording, the root within 2 m of R and the tail within 3 m of R + 1, ends it
+    /// while the tail is still settling from +4 m, which design D18's C14 fails too;
+    /// operator, Run 7, 2026-11-02, AskUserQuestion.)
+    reorientation_end: Option<usize>,
+    /// Pair-steps (root–tail, end–node, node–node) through the reorientation (to its
+    /// end, or 12,800 ticks) and through the phase.
+    reorientation_pairs: (u64, u64, u64),
+    phase_pairs: (u64, u64, u64),
+    /// Per 6,400-tick window (end step, root, tail force reversals) after the
+    /// reorientation, and the phase's totals.
+    windows: Vec<(u64, u64, u64)>,
+    phase_reversals: (u64, u64),
+}
+
+/// The reorientation is over by this many ticks after the terminal entry.
+const REORIENTATION_CAP_TICKS: u64 = 12_800;
+
+impl TerminalTrace {
+    /// Runs `run` to the terminal entry and through the phase.
+    fn record(run: &mut Run) -> Self {
+        run.tick_until("terminal");
+        let terminal = run.phase_parameters("terminal");
+        let (entry, entry_ticks) = (run.step, run.ticks);
+        let mut samples = vec![TerminalSample {
+            step: run.step,
+            ticks_in: 0,
+            ends: run.ends(),
+            path: 0.0,
+        }];
+        let mut previous = run.relative(run.handles.root);
+        let mut path = 0.0;
+        let (mut root, mut tail) = (Reversals::default(), Reversals::default());
+        let (mut root_all, mut tail_all) = (Reversals::default(), Reversals::default());
+        let mut reorientation_end = None;
+        let (mut reorientation_pairs, mut phase_pairs) = ((0, 0, 0), (0, 0, 0));
+        let mut windows = Vec::new();
+        let add = |acc: &mut (u64, u64, u64), (rt, en, nn): (usize, usize, usize)| {
+            acc.0 += u64::from(rt > 0);
+            acc.1 += u64::from(en > 0);
+            acc.2 += u64::from(nn > 0);
+        };
+        loop {
+            let changed = run.tick();
+            let ticks_in = run.ticks - entry_ticks;
+            let after = reorientation_end.is_some();
+            root.feed(run.force(run.handles.root).applied, !changed && after);
+            tail.feed(run.force(run.tail).applied, !changed && after);
+            root_all.feed(run.force(run.handles.root).applied, !changed);
+            tail_all.feed(run.force(run.tail).applied, !changed);
+            if changed {
+                if after {
+                    windows.push((run.step, root.take(), tail.take()));
+                }
+                break;
+            }
+            let pairs = run.self_pairs();
+            add(&mut phase_pairs, pairs);
+            if !after && ticks_in <= REORIENTATION_CAP_TICKS {
+                add(&mut reorientation_pairs, pairs);
+            }
+            let now = run.relative(run.handles.root);
+            path += (now - previous).length();
+            previous = now;
+            if run.ticks.is_multiple_of(SAMPLE_EVERY) {
+                let ends = run.ends();
+                samples.push(TerminalSample {
+                    step: run.step,
+                    ticks_in,
+                    ends,
+                    path: std::mem::take(&mut path),
+                });
+                if !after
+                    && ticks_in <= REORIENTATION_CAP_TICKS
+                    && ends.root_radius_error.abs() <= 1.0
+                    && (0.5..=1.5).contains(&ends.tail_radius_error)
+                {
+                    reorientation_end = Some(samples.len() - 1);
+                }
+            }
+            if after && run.ticks.is_multiple_of(WINDOW) {
+                windows.push((run.step, root.take(), tail.take()));
+            }
+        }
+        assert_eq!(run.state, "capture", "terminal ends in capture");
+        Self {
+            entry,
+            capture_entry: run.step,
+            shrink_rate: terminal.shrink_rate.expect("terminal shrinks the sphere"),
+            spacing: terminal.tail_spacing_m.expect("terminal holds the spacing"),
+            samples,
+            reorientation_end,
+            reorientation_pairs,
+            phase_pairs,
+            windows,
+            phase_reversals: (root_all.take(), tail_all.take()),
+        }
+    }
+
+    /// The samples through the reorientation (to its end, or the cap).
+    fn reorientation(&self) -> &[TerminalSample] {
+        match self.reorientation_end {
+            Some(end) => &self.samples[..=end],
+            None => {
+                let n = self
+                    .samples
+                    .iter()
+                    .take_while(|s| s.ticks_in <= REORIENTATION_CAP_TICKS)
+                    .count();
+                &self.samples[..n]
+            }
+        }
+    }
+
+    /// The samples after the reorientation (empty if it never ended).
+    fn after_reorientation(&self) -> &[TerminalSample] {
+        self.reorientation_end
+            .map_or(&[][..], |end| &self.samples[end + 1..])
+    }
+
+    fn header(&self) -> String {
+        format!(
+            "terminal entry step {}, capture entry step {}; the reorientation {}",
+            self.entry,
+            self.capture_entry,
+            match self.reorientation_end {
+                Some(end) => format!(
+                    "ends at step {} ({} ticks)",
+                    self.samples[end].step, self.samples[end].ticks_in
+                ),
+                None => format!("does not end within {REORIENTATION_CAP_TICKS} ticks"),
+            }
+        )
+    }
+}
+
+/// The root's closing-rate sign flips over consecutive samples (a flip: the sign
+/// differs from the previous sample's and |closing| > 0.02 m/s, the planner's
+/// `probe-table` rule).
+fn closing_flips(samples: &[TerminalSample]) -> u64 {
+    samples
+        .windows(2)
+        .filter(|w| {
+            (w[1].ends.closing > 0.0) != (w[0].ends.closing > 0.0) && w[1].ends.closing.abs() > 0.02
+        })
+        .count() as u64
+}
+
+/// The root's orbit efficiency over consecutive samples: `R̄ · |net Δazimuth| /
+/// path` (1 on a circle at R; less when it wanders off the circle).
+fn orbit_efficiency(samples: &[TerminalSample]) -> f64 {
+    let (mut net, mut path, mut r) = (0.0f64, 0.0, Stat::default());
+    for w in samples.windows(2) {
+        let mut d = w[1].ends.azimuth_deg - w[0].ends.azimuth_deg;
+        while d > 180.0 {
+            d -= 360.0;
+        }
+        while d < -180.0 {
+            d += 360.0;
+        }
+        net += d;
+        path += w[1].path;
+        r.add(w[1].ends.r);
+    }
+    r.mean() * net.to_radians().abs() / path
 }
 
 /// Minimum, mean and maximum of a sampled quantity.
@@ -619,6 +905,218 @@ fn approach_range_never_grows() {
     );
 }
 
+/// "The root and the tail collide as the rope reorients from the straight
+/// rendezvous line to engage" (O5 walk N10; E33): from the terminal entry to the
+/// first 64-tick sample with the root within 1.0 m of R and the tail at R + 0.5 …
+/// 1.5 m (both ends settled on their spheres), the reorientation is over within
+/// 12,800 ticks, the root and the tail never
+/// touch (0 pair-steps), an end touches an interior node on at most 500 steps, and
+/// the ends' separation is at least 9 m at every sample.
+///
+/// Rejects: the ends arriving on one radial line and meeting as the root turns
+/// onto its circle (the S9 build: 11.4 m then 2.0 m; the tail pushed in final
+/// approach, D17 P1: 3.6 m then 1.0 m; the lag weighted away outside its band, C3:
+/// 1.2 m and 75 end–node pair-steps).
+#[test]
+#[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture ends_clear_through_the_reorientation"]
+fn ends_clear_through_the_reorientation() {
+    let mut run = Run::new();
+    let trace = TerminalTrace::record(&mut run);
+    let reorientation = trace.reorientation();
+    let mut separation = Stat::default();
+    let mut too_close: Vec<(u64, f64)> = Vec::new();
+    for sample in reorientation {
+        separation.add(sample.ends.separation);
+        if sample.ends.separation < 9.0 {
+            too_close.push((sample.step, sample.ends.separation));
+        }
+    }
+    let (root_tail, end_node, node_node) = trace.reorientation_pairs;
+    let last = reorientation.last().expect("a terminal sample");
+    println!(
+        "ends_clear_through_the_reorientation: {}; {} samples to step {}; the ends' separation \
+         m {separation}; pair-steps root-tail {root_tail}, end-node {end_node}, node-node \
+         {node_node} over {} ticks; at the end the root {:+.3} m and the tail {:+.3} m from R; \
+         terminal pair-steps (root-tail, end-node, node-node) {:?}",
+        trace.header(),
+        reorientation.len(),
+        last.step,
+        last.ticks_in,
+        last.ends.root_radius_error,
+        last.ends.tail_radius_error,
+        trace.phase_pairs,
+    );
+    assert!(
+        trace.reorientation_end.is_some(),
+        "the reorientation is not over within {REORIENTATION_CAP_TICKS} ticks"
+    );
+    assert_eq!(root_tail, 0, "root-tail pair-steps in the reorientation");
+    assert!(
+        end_node <= 500,
+        "{end_node} end-node pair-steps in the reorientation > 500"
+    );
+    assert_eq!(
+        too_close,
+        Vec::new(),
+        "reorientation samples with the ends closer than 9 m"
+    );
+}
+
+/// "When the chaser slows to circle … the root and the tail should stay well
+/// apart", "both end nodes on the capture sphere and spaced apart" (O5 walk N11,
+/// N13; E33, E34): through terminal, at every 64-tick sample with R ≥ 20 m the ends'
+/// separation is at least 9 m and its mean is within ±25 % of the plan's
+/// `tail_spacing_m`; after the reorientation the root's range is within ±1.0 m of
+/// R and the tail's within +0.5 … +1.5 m of R at every sample.
+///
+/// Rejects: the ends side by side with the rope hanging out as a loop (the S9
+/// build: 2.0–6.0 m apart, mean 3.65 m at R 40–60 m; the circle law alone, C2:
+/// 1.0–2.9 m), and a rope held radially (a large separation with the tail far off
+/// its sphere; the O2 walk's F2) by the radius errors (the S9 build: the root
+/// −4.3 … +1.2 m, the tail −3.3 … +2.2 m).
+#[test]
+#[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture ends_apart_on_the_sphere"]
+fn ends_apart_on_the_sphere() {
+    let mut run = Run::new();
+    let trace = TerminalTrace::record(&mut run);
+    let (mut sep_far, mut sep_near, mut behind_far) =
+        (Stat::default(), Stat::default(), Stat::default());
+    let mut too_close: Vec<(u64, f64, f64)> = Vec::new();
+    for sample in &trace.samples {
+        let e = sample.ends;
+        if e.r >= 20.0 {
+            sep_far.add(e.separation);
+            behind_far.add(e.behind_deg);
+            if e.separation < 9.0 {
+                too_close.push((sample.step, e.r, e.separation));
+            }
+        } else {
+            sep_near.add(e.separation);
+        }
+    }
+    let (mut root_error, mut tail_error) = (Stat::default(), Stat::default());
+    let mut off_sphere: Vec<(u64, f64, f64, f64)> = Vec::new();
+    for sample in trace.after_reorientation() {
+        let e = sample.ends;
+        root_error.add(e.root_radius_error);
+        tail_error.add(e.tail_radius_error);
+        if e.root_radius_error.abs() > 1.0 || !(0.5..=1.5).contains(&e.tail_radius_error) {
+            off_sphere.push((sample.step, e.r, e.root_radius_error, e.tail_radius_error));
+        }
+    }
+    let spacing = trace.spacing;
+    println!(
+        "ends_apart_on_the_sphere: {}; tail_spacing_m {spacing}; the ends' separation m with \
+         R >= 20 m {sep_far}, with R < 20 m {sep_near}; the tail's angle behind the root with \
+         R >= 20 m deg {behind_far}; after the reorientation the radius error m: root \
+         {root_error}, tail {tail_error}; samples off the sphere {}",
+        trace.header(),
+        off_sphere.len(),
+    );
+    assert!(sep_far.n > 0, "terminal samples with R >= 20 m");
+    assert_eq!(
+        too_close,
+        Vec::new(),
+        "samples with R >= 20 m and the ends closer than 9 m (step, R, separation)"
+    );
+    assert!(
+        (0.75 * spacing..=1.25 * spacing).contains(&sep_far.mean()),
+        "the mean separation with R >= 20 m {:.3} m is outside {spacing} m ± 25 %",
+        sep_far.mean()
+    );
+    assert!(trace.reorientation_end.is_some(), "the reorientation ends");
+    assert!(root_error.n > 0, "samples after the reorientation");
+    assert_eq!(
+        off_sphere,
+        Vec::new(),
+        "samples after the reorientation with the root off R ± 1.0 m or the tail off \
+         R + 0.5 … 1.5 m (step, R, root, tail)"
+    );
+}
+
+/// "The root does not enter a clean orbit … it should enter an orbit and then
+/// hold the capture sphere's radius as it shrinks" (O5 walk N12; E34): after the
+/// reorientation, the root's closing rate never changes sign (ignoring |v| < 0.02
+/// m/s; 0 flips in every 6,400-tick window), stays within the terminal shrink rate
+/// ± 0.05 m/s at every sample, and the root's and the tail's forces each reverse
+/// fewer than 250 times in every 6,400-tick window. The orbit efficiency per full
+/// window is printed.
+///
+/// Rejects: the root running straight between the branch law's band edges (the
+/// S9 build: 0–22 flips per window, closing −0.19 … +0.51 m/s; the March 2026 law
+/// on the rope, M1: 246 flips) and a proportional law turned bang-bang by the
+/// normalised direction (C7: 96,994 tail reversals in the phase).
+#[test]
+#[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture root_orbits_cleanly"]
+fn root_orbits_cleanly() {
+    let mut run = Run::new();
+    let trace = TerminalTrace::record(&mut run);
+    let after = trace.after_reorientation();
+    let (lo, hi) = (trace.shrink_rate - 0.05, trace.shrink_rate + 0.05);
+    let mut closing = Stat::default();
+    let mut off_rate: Vec<(u64, f64)> = Vec::new();
+    for sample in after {
+        closing.add(sample.ends.closing);
+        if !(lo..=hi).contains(&sample.ends.closing) {
+            off_rate.push((sample.step, sample.ends.closing));
+        }
+    }
+    // Per full 6,400-tick window of the phase (from its entry): (end step, R̄,
+    // closing flips after the reorientation, orbit efficiency).
+    let after_start = after.first().map_or(u64::MAX, |s| s.ticks_in);
+    let mut per_window: Vec<(u64, f64, u64, f64)> = Vec::new();
+    let full = trace.samples.last().map_or(0, |s| s.ticks_in / WINDOW);
+    for w in 0..full {
+        let window: Vec<TerminalSample> = trace
+            .samples
+            .iter()
+            .filter(|s| s.ticks_in >= w * WINDOW && s.ticks_in <= (w + 1) * WINDOW)
+            .copied()
+            .collect();
+        let flips_after: Vec<TerminalSample> = window
+            .iter()
+            .filter(|s| s.ticks_in >= after_start)
+            .copied()
+            .collect();
+        let r = window.iter().map(|s| s.ends.r).sum::<f64>() / window.len() as f64;
+        per_window.push((
+            window.last().map_or(0, |s| s.step),
+            r,
+            closing_flips(&flips_after),
+            orbit_efficiency(&window),
+        ));
+    }
+    let flips = closing_flips(after);
+    println!(
+        "root_orbits_cleanly: {}; after the reorientation: the root's closing rate m/s \
+         {closing} (shrink rate {}), {flips} sign flips, {} samples outside {lo:.3}..{hi:.3}; \
+         per full window (end step, mean R m, flips, orbit efficiency) {per_window:.3?}; force \
+         reversals per window after the reorientation (end step, root, tail) {:?}; in the \
+         phase root {} tail {}",
+        trace.header(),
+        trace.shrink_rate,
+        off_rate.len(),
+        trace.windows,
+        trace.phase_reversals.0,
+        trace.phase_reversals.1,
+    );
+    assert!(trace.reorientation_end.is_some(), "the reorientation ends");
+    assert!(closing.n > 0, "samples after the reorientation");
+    assert_eq!(flips, 0, "closing-rate sign flips after the reorientation");
+    assert_eq!(
+        off_rate,
+        Vec::new(),
+        "samples after the reorientation with the closing rate outside the shrink rate ± \
+         0.05 m/s (step, m/s)"
+    );
+    for (end, root, tail) in &trace.windows {
+        assert!(
+            *root < 250 && *tail < 250,
+            "force reversals in the window ending at step {end}: root {root}, tail {tail}"
+        );
+    }
+}
+
 /// "The slack should whip out … and stay out as the sphere shrinks", clear of the
 /// RSO (O4 walk N3; E24, E29): through `terminal`, at every 64-tick sample the
 /// smallest clearance of any chain body from the model is at least 1.0 m, and no
@@ -628,7 +1126,15 @@ fn approach_range_never_grows() {
 /// per-sample band, E29); the root's LVLH speed at the first 64-tick sample with
 /// R ≤ 6 m is at least 0.3 m/s (the limit is constant); the tail is pushed on every
 /// terminal tick; and the root's force reverses fewer than 250 times in every
-/// 6,400-tick window.
+/// 6,400-tick window. v4 (O5 walk N11; rule 35): at every sample with R ≥ 20 m the
+/// ends' separation is at least 9 m and its mean within ±25 % of the plan's
+/// `tail_spacing_m`, and the tail's force, like the root's, reverses fewer than 250
+/// times in every window.
+///
+/// Rejects: a rope slung radially or lying on the model (the O2 walk's F2;
+/// clearance), and, with the separation, a loop hanging out beside bunched ends,
+/// which the bulge alone rewards (the S9 build: bulge 2.19 m mean, 4.3 m below
+/// R = 24 m, with the ends 3.7 m apart).
 #[test]
 #[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture tether_flung_out_while_circling"]
 fn tether_flung_out_while_circling() {
@@ -661,6 +1167,12 @@ fn tether_flung_out_while_circling() {
     let mut speed_at_6m: Option<(u64, f64, f64)> = None;
     let mut tail_unpushed: Vec<u64> = Vec::new();
     let mut tether_tether_steps = 0u64;
+    let spacing = run
+        .phase_parameters("terminal")
+        .tail_spacing_m
+        .expect("terminal holds the spacing");
+    let mut separation = Stat::default();
+    let mut ends_close: Vec<(u64, f64, f64)> = Vec::new();
     loop {
         let changed = run.tick();
         let in_terminal = !changed;
@@ -694,6 +1206,13 @@ fn tether_flung_out_while_circling() {
             root_speed.add(speed);
             if r <= 6.0 {
                 speed_at_6m.get_or_insert((run.step, r, speed));
+            }
+            if r >= 20.0 {
+                let ends = run.ends();
+                separation.add(ends.separation);
+                if ends.separation < 9.0 {
+                    ends_close.push((run.step, r, ends.separation));
+                }
             }
         }
         if run.ticks.is_multiple_of(WINDOW) {
@@ -735,6 +1254,11 @@ fn tether_flung_out_while_circling() {
         "  force reversals per window (end step, root, tail): {windows:?}; root {}–{}",
         root_counts.iter().min().unwrap(),
         root_counts.iter().max().unwrap(),
+    );
+    println!(
+        "  the ends' separation with R >= 20 m (tail_spacing_m {spacing}) m {separation}; \
+         samples below 9 m {}",
+        ends_close.len()
     );
     println!(
         "  tether-debris pair-steps before the capture {tether_debris_steps} (first \
@@ -780,12 +1304,23 @@ fn tether_flung_out_while_circling() {
         Vec::<u64>::new(),
         "terminal ticks without a tail force"
     );
-    for (end, root_reversals, _) in &windows {
+    for (end, root_reversals, tail_reversals) in &windows {
         assert!(
-            *root_reversals < 250,
-            "{root_reversals} root force reversals in the window ending at step {end}"
+            *root_reversals < 250 && *tail_reversals < 250,
+            "force reversals in the window ending at step {end}: root {root_reversals}, tail \
+             {tail_reversals}"
         );
     }
+    assert_eq!(
+        ends_close,
+        Vec::new(),
+        "samples with R >= 20 m and the ends closer than 9 m (step, R, separation)"
+    );
+    assert!(
+        (0.75 * spacing..=1.25 * spacing).contains(&separation.mean()),
+        "the mean separation with R >= 20 m {:.3} m is outside {spacing} m ± 25 %",
+        separation.mean()
+    );
 }
 
 /// "Initiate capture by actuating the tail in the opposite direction causing a
@@ -971,7 +1506,12 @@ fn capture_phase_wraps_with_contacts() {
 /// entry and 40,000 steps) the ends' LVLH speed, sampled every 64 ticks after the
 /// hold's first minute, has a mean below 0.1 m/s for each end, each end's force
 /// reverses fewer than 50 times, and the rope's |winding| is at least 0.5 turn at
-/// every sample. The ends' creep from their hold-entry positions is printed.
+/// every sample. The ends' creep from their hold-entry positions is printed; v4
+/// (O5 revision) also prints the ends' separation and each end's debris pair-steps
+/// in hold.
+///
+/// Rejects: the ends still pushed round after the wrap, unwinding it (the O4
+/// walk's N5; the dead-banded hold, H11b: 1.19 → 0.77 turns).
 #[test]
 #[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture hold_phase_stops_the_ends"]
 fn hold_phase_stops_the_ends() {
@@ -992,11 +1532,15 @@ fn hold_phase_stops_the_ends() {
     let (mut root_speed, mut tail_speed, mut winding) =
         (Stat::default(), Stat::default(), Stat::default());
     let mut unwound: Vec<(u64, f64)> = Vec::new();
+    let mut separation = Stat::default();
+    let mut end_contacts = Contacts::default();
     while run.step < capture_entry + CAPTURE_WINDOW_STEPS {
         assert!(!run.tick(), "hold is an end phase: no transition out of it");
         root.feed(run.force(run.handles.root).applied, true);
         tail.feed(run.force(run.tail).applied, true);
+        end_contacts.add_steps(run.contacts());
         if run.ticks.is_multiple_of(SAMPLE_EVERY) {
+            separation.add(run.ends().separation);
             let w = run.winding();
             winding.add(w);
             if w.abs() < 0.5 {
@@ -1019,11 +1563,14 @@ fn hold_phase_stops_the_ends() {
          root {root_speed}, tail {tail_speed}; force reversals root {root_reversals} tail \
          {tail_reversals}; winding turns {winding} ({winding_at_entry:+.3} at the hold entry, \
          {:+.3} at the end); samples below 0.5 turn {unwound:?}; the ends' creep from their \
-         hold-entry positions m: root {:.3}, tail {:.3}",
+         hold-entry positions m: root {:.3}, tail {:.3}; the ends' separation m {separation}; \
+         debris pair-steps in hold: root {}, tail {}",
         run.step,
         run.winding(),
         creep.0,
         creep.1,
+        end_contacts.root_debris,
+        end_contacts.tail_debris,
     );
     assert!(
         root_speed.n > 0,

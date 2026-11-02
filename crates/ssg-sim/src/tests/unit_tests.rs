@@ -28,6 +28,7 @@ mod tests {
             velocity_scales_with_sphere: None,
             hold_plane: None,
             actuation: None,
+            tail_spacing_m: None,
         }
     }
 

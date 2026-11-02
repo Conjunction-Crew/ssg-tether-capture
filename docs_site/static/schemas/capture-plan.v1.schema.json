@@ -5,7 +5,7 @@
       "oneOf": [
         {
           "const": "circle",
-          "description": "The range and tangent branches (the default).",
+          "description": "The range and tangent branches, or in a phase with `shrink_rate_mps` the\ncircle law: a continuous hold of the body's sphere radius (the default).",
           "type": "string"
         },
         {
@@ -164,7 +164,7 @@
               "type": "null"
             }
           ],
-          "description": "`circle`: the range and tangent branches (the default); `hold`: brake every\npushed body to rest relative to the target and hold the plane;\n`max_velocity_mps` is read as 0."
+          "description": "`circle`: the range and tangent branches, or in a phase with\n`shrink_rate_mps` the circle law (the default); `hold`: brake every pushed\nbody to rest relative to the target and hold the plane; `max_velocity_mps`\nis read as 0."
         },
         "end": {
           "anyOf": [
@@ -210,6 +210,14 @@
           "description": "Push the tail in this phase as well as the root. Default false.",
           "type": [
             "boolean",
+            "null"
+          ]
+        },
+        "tail_spacing_m": {
+          "description": "The chord from the root to the tail the controller holds, in m, the tail\nbehind the root in the sense of circling, in a phase that pushes the tail.\nWithout it the tail circles on its own sphere with no spacing held (the\npre-O5 law). Greater than 0 and less than `device.tether_length_m`.",
+          "format": "double",
+          "type": [
+            "number",
             "null"
           ]
         },

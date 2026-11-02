@@ -8,7 +8,9 @@
 //! touches (P7.5 S6): the circling axis, the speed limit that scales with the
 //! sphere, the absolute kill band and the sphere floor; and the O4 revision's
 //! (P7.5 S9, design D16): the proportional limiter, the plane hold, the hold law
-//! and the time-in-phase condition. Geometry: the nodes sit at
+//! and the time-in-phase condition; and the O5 revision's (P7.5 S10, design D18):
+//! the tail's lag law, the circle law and the limiter's magnitude rule. Geometry:
+//! the nodes sit at
 //! the origin and the capture target at `(0, r, 0)`, so `rel_r` (node to target)
 //! points along +Y and `up` (the target's `CAPTURE_CIRCLING_AXIS`, +Z) is
 //! perpendicular to it: the tangent push `up × rel_r` is −X.
@@ -23,7 +25,8 @@ use bevy::prelude::*;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::capture::{
     BRANCH_DEAD_BAND, CAPTURE_CIRCLING_AXIS, CaptureComponent, CaptureForce, CaptureSphereRadius,
-    FORCE_RAMP_S, PLANE_HOLD_BAND_M,
+    FORCE_RAMP_S, PLANE_HOLD_BAND_M, RADIAL_RATE_BAND_MPS, RADIUS_HOLD_BAND_M, SPACING_BAND_M,
+    SPACING_MAX_HALF_ANGLE, SPACING_RATE_BAND_MPS, circle_law, forward_tangent, tail_lag_weight,
 };
 use crate::orbit::cache::OrbitalCache;
 use crate::telemetry::LogLevel;
@@ -890,6 +893,221 @@ fn controller_hold_law_brakes_to_rest_and_holds_the_plane() {
     );
 }
 
+/// The ends for the lag law's cases: the target at the origin, the root on +X
+/// (`tail_radius − 1` out) and the tail on its sphere of `tail_radius`, `theta`
+/// about +Z from the root (positive: behind it, since the root's forward tangent
+/// there is −Y), each moving at the given speed along its own forward tangent.
+/// Returns each end's `(rel_r, rel_v)` (from the end to the target).
+fn lag_ends(
+    tail_radius: f64,
+    theta: f64,
+    root_speed: f64,
+    tail_speed: f64,
+) -> ((DVec3, DVec3), (DVec3, DVec3)) {
+    let up = CAPTURE_CIRCLING_AXIS;
+    let root_r = -DVec3::X * (tail_radius - 1.0);
+    let tail_r = -DVec3::new(theta.cos(), theta.sin(), 0.0) * tail_radius;
+    (
+        (root_r, forward_tangent(root_r, up) * root_speed),
+        (tail_r, forward_tangent(tail_r, up) * tail_speed),
+    )
+}
+
+/// The angle of arc that spans `chord` on a sphere of `radius`.
+fn arc_of(chord: f64, radius: f64) -> f64 {
+    2.0 * (chord / (2.0 * radius)).asin()
+}
+
+#[test]
+fn tail_lag_weight_holds_the_chord_behind_the_root() {
+    // P7.5 S10 (a), design D18: `w = clamp((c_lag − c*) / 3 m − Δv / 0.3 m/s, −1, 1)`
+    // on a 50 m tail sphere with `tail_spacing_m` 12 m.
+    assert_eq!((SPACING_BAND_M, SPACING_RATE_BAND_MPS), (3.0, 0.3));
+    let up = CAPTURE_CIRCLING_AXIS;
+    let w = |chord: f64, root_speed: f64, tail_speed: f64, spacing: f64| {
+        let (root, tail) = lag_ends(50.0, arc_of(chord, 50.0), root_speed, tail_speed);
+        tail_lag_weight(root, tail, up, 50.0, spacing)
+    };
+    assert_close(
+        w(12.0, 0.0, 0.0, 12.0),
+        0.0,
+        1e-12,
+        "12 m behind, same speed",
+    );
+    assert_close(
+        w(15.0, 0.0, 0.0, 12.0),
+        1.0,
+        1e-12,
+        "15 m behind: saturated",
+    );
+    assert_close(w(9.0, 0.0, 0.0, 12.0), -1.0, 1e-12, "9 m behind");
+    assert_close(w(12.0, 0.5, 0.8, 12.0), -1.0, 1e-12, "0.3 m/s faster");
+    assert_close(w(12.0, 0.5, 0.35, 12.0), 0.5, 1e-12, "0.15 m/s slower");
+    // θ is positive behind the root, negative ahead of it.
+    assert_close(w(1.5, 0.0, 0.0, 1e-3), 1.499 / 3.0, 1e-12, "1.5 m behind");
+    assert_close(w(-1.5, 0.0, 0.0, 1e-3), -1.501 / 3.0, 1e-12, "1.5 m ahead");
+
+    // On a 5 m sphere 12 m (or 19 m) of chord is held at 150° of arc.
+    assert_close(SPACING_MAX_HALF_ANGLE, 75.0_f64.to_radians(), 0.0, "75°");
+    let on_5m = |theta_deg: f64, spacing: f64| {
+        let (root, tail) = lag_ends(5.0, theta_deg.to_radians(), 0.0, 0.0);
+        tail_lag_weight(root, tail, up, 5.0, spacing)
+    };
+    assert_close(on_5m(150.0, 12.0), 0.0, 1e-12, "150° with 12 m");
+    assert_close(on_5m(150.0, 19.0), 0.0, 1e-12, "150° with 19 m");
+    let at_120 = (2.0 * 5.0 * 60f64.to_radians().sin() - 2.0 * 5.0 * 75f64.to_radians().sin())
+        / SPACING_BAND_M;
+    assert_close(on_5m(120.0, 12.0), at_120, 1e-12, "120° with 12 m");
+}
+
+/// The tail pushed in every phase, `tail_spacing_m` 0.9 m: `p` the branch law, then
+/// `capture` (the counter-tangent wrap) and `hold` (the brake); `shrink` the circle
+/// law (0.05 m/s); `branches` the same as `p` without the key.
+const D18_PLAN: &str = r#"{"schema_version": 1, "name": "d18", "tether": "T", "phases": [
+  {"id": "p", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true,
+   "tail_spacing_m": 0.9},
+  {"id": "capture", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true,
+   "tail_spacing_m": 0.9},
+  {"id": "hold", "max_velocity_mps": 0.0, "max_force_n": 10.0, "tail_actuation": true,
+   "tail_spacing_m": 0.9, "actuation": "hold"},
+  {"id": "shrink", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true,
+   "shrink_rate_mps": 0.05},
+  {"id": "branches", "max_velocity_mps": 1.0, "max_force_n": 10.0, "tail_actuation": true}
+]}"#;
+
+/// Runs the controller once in `state` with the target at `target` and both ends
+/// at the origin at rest; returns the root's and the tail's applied force over
+/// their ramped bounds.
+fn d18_forces_over_ramp(state: &str, target: DVec3) -> (DVec3, DVec3) {
+    let mut app = test_app();
+    insert_plan_json(&mut app, "d18", D18_PLAN);
+    let rig = capture_rig(&mut app, "d18");
+    set_state(&mut app, &rig, state);
+    place(&mut app, &rig, target, DVec3::ZERO);
+    run_controller(&mut app);
+    let (root, tail) = (capture_force(&app, rig.root), capture_force(&app, rig.tail));
+    (root.applied / root.ramp_n, tail.applied / tail.ramp_n)
+}
+
+#[test]
+fn controller_lag_law_weights_the_tail_tangent_only_where_it_applies() {
+    // P7.5 S10 (a), design D18: both ends at one point (θ = 0, the chord 0) 22 m
+    // from the target, in the tangent branch: `w = (0 − 0.9) / 3 = −0.3`, so the
+    // tail is pushed back along its tangent at 0.3 of the ramp (the magnitude rule)
+    // while the root keeps its full tangent push.
+    let target = DVec3::new(0.0, 22.0, 0.0);
+    let (root, tail) = d18_forces_over_ramp("p", target);
+    assert_close_dvec3(root, TANGENT, 1e-12, "the root: no lag term");
+    assert_close_dvec3(tail, TANGENT * -0.3, 1e-12, "the tail: the lag weight");
+    // Not in `capture` (the counter-tangent), `hold` (the brake), or without the key.
+    let (root, tail) = d18_forces_over_ramp("capture", target);
+    assert_close_dvec3(root, TANGENT, 1e-12, "capture: the root");
+    assert_close_dvec3(tail, -TANGENT, 1e-12, "capture: the counter-tangent");
+    let (root, tail) = d18_forces_over_ramp("hold", target);
+    assert_close_dvec3(root, DVec3::ZERO, 1e-12, "hold: the root at rest");
+    assert_close_dvec3(tail, DVec3::ZERO, 1e-12, "hold: the tail at rest");
+    let (_, tail) = d18_forces_over_ramp("branches", target);
+    assert_close_dvec3(tail, TANGENT, 1e-12, "no key: the full tangent");
+}
+
+#[test]
+fn circle_law_holds_the_radius_against_the_shrink() {
+    // P7.5 S10 (b), design D18, on a 25 m sphere shrinking at 0.05 m/s; the target
+    // at +Y (`r̂_in`), the tangent `TANGENT`:
+    // `t × (1 − |w_r|) + r̂_in × clamp(w_r + w_v, −1, 1)`.
+    assert_eq!((RADIUS_HOLD_BAND_M, RADIAL_RATE_BAND_MPS), (2.0, 0.1));
+    let r_in = DVec3::Y;
+    let law = |range: f64, rel_v: DVec3, tangent: DVec3, lag: bool| {
+        circle_law(r_in * range, rel_v, 25.0, 0.05, tangent, lag)
+    };
+    // 2 m outside at rest (w_r 1, w_v 0.5): inward at full weight, no tangent.
+    assert_close_dvec3(
+        law(27.0, DVec3::ZERO, TANGENT, false),
+        r_in,
+        1e-12,
+        "2 m out",
+    );
+    // On R closing at the shrink rate (w_r 0, w_v 0): the tangent only.
+    assert_close_dvec3(
+        law(25.0, r_in * 0.05, TANGENT, false),
+        TANGENT,
+        1e-12,
+        "on R",
+    );
+    // On R moving outward at 0.1 m/s (w_v 1): inward at full weight beside the tangent.
+    assert_close_dvec3(
+        law(25.0, -r_in * 0.1, TANGENT, false),
+        TANGENT + r_in,
+        1e-12,
+        "on R, outward",
+    );
+    // 1 m inside closing at the shrink rate (w_r −0.5): out at half, half the tangent.
+    assert_close_dvec3(
+        law(24.0, r_in * 0.05, TANGENT, false),
+        TANGENT * 0.5 - r_in * 0.5,
+        1e-12,
+        "1 m in",
+    );
+    // Under the lag law the tangent term keeps its weight off the radius.
+    assert_close_dvec3(
+        law(26.0, DVec3::ZERO, TANGENT * 0.3, true),
+        TANGENT * 0.3 + r_in,
+        1e-12,
+        "1 m out, the lag law",
+    );
+}
+
+#[test]
+fn controller_circle_law_replaces_the_branches_in_a_shrinking_phase() {
+    // P7.5 S10 (b), design D18: 19 m from the target, inside both ends' inner edges
+    // (0.8 R): the branch law pushes straight out at full weight; the circle law at
+    // rest (w_r −1, w_v 0.5) pushes out at half weight and no tangent, while the
+    // branch state is still updated.
+    let target = DVec3::new(0.0, 19.0, 0.0);
+    let (root, tail) = d18_forces_over_ramp("branches", target);
+    assert_close_dvec3(root, -DVec3::Y, 1e-12, "the branch law: the root");
+    assert_close_dvec3(tail, -DVec3::Y, 1e-12, "the branch law: the tail");
+    let mut app = test_app();
+    insert_plan_json(&mut app, "d18", D18_PLAN);
+    let rig = capture_rig(&mut app, "d18");
+    set_state(&mut app, &rig, "shrink");
+    place(&mut app, &rig, target, DVec3::ZERO);
+    run_controller(&mut app);
+    assert!(
+        app.world().resource::<CaptureSphereRadius>().radius < 25.0,
+        "the sphere shrinks"
+    );
+    for (node, what) in [(rig.root, "root"), (rig.tail, "tail")] {
+        let state = capture_force(&app, node);
+        assert_close_dvec3(
+            state.applied / state.ramp_n,
+            -DVec3::Y * 0.5,
+            1e-12,
+            &format!("the circle law: the {what}"),
+        );
+        assert!(state.inner, "the {what}'s inner branch state is updated");
+    }
+}
+
+#[test]
+fn controller_magnitude_rule_keeps_a_proportional_push_and_the_unit_branch_push() {
+    // P7.5 S10 (c), design D18: a composed vector of length 0.3 gives 0.3 of the
+    // ramp at zero speed (the lag weight above); a branch push whose normalised
+    // direction is a hair short of unit length (|d̂|² = 0.9999999999999999, the
+    // target at (10, 20, 0)) gives exactly the S9 force `d̂ × ramp`.
+    let (_, tail) = d18_forces_over_ramp("p", DVec3::new(0.0, 22.0, 0.0));
+    assert_close(tail.length(), 0.3, 1e-12, "0.3 of the ramp");
+
+    let (mut app, rig) = branch_rig();
+    let target = DVec3::new(10.0, 20.0, 0.0);
+    place(&mut app, &rig, target, DVec3::ZERO);
+    run_controller(&mut app);
+    let d = CAPTURE_CIRCLING_AXIS.cross(target).normalize();
+    assert!(d.length() < 1.0, "the case bites: |d| = {}", d.length());
+    let state = capture_force(&app, rig.root);
+    assert_eq!(state.applied, d * state.ramp_n, "bit for bit the S9 force");
+}
+
 /// `a` → `capture` below 10 m; `capture` → `hold` after 90 s in phase.
 const TIME_PLAN: &str = r#"{"schema_version": 1, "name": "time", "tether": "T", "phases": [
   {"id": "a", "max_velocity_mps": 1.0, "max_force_n": 10.0,
@@ -992,7 +1210,15 @@ fn controller_without_a_root_body_skips_the_state_check_but_forces_the_other_nod
         .resource_mut::<OrbitalCache>()
         .tethers
         .insert("T".to_string(), vec![dead_root, rig.tail]);
-    place(&mut app, &rig, DVec3::new(0.0, 5.0, 0.0), DVec3::ZERO);
+    // The tail closes at the phase's shrink rate (0.5 m/s), so the circle law's
+    // rate term is 0 and its radius term (21 m inside R + 1) is at full weight
+    // (design D18; at rest the two cancel).
+    place(
+        &mut app,
+        &rig,
+        DVec3::new(0.0, 5.0, 0.0),
+        DVec3::new(0.0, 0.5, 0.0),
+    );
 
     let events = rig_step(&mut app, &rig);
 
@@ -1006,8 +1232,8 @@ fn controller_without_a_root_body_skips_the_state_check_but_forces_the_other_nod
         25.0,
         "no shrink without a root-relative range"
     );
-    // The tail is still driven with the current state's limits: 5 m < 0.8 × 26 m,
-    // pushed away along −Y.
+    // The tail is still driven with the current state's limits: 5 m inside its
+    // 26 m sphere, pushed away along −Y.
     assert_force_along(applied_force(&mut app, rig.tail), -DVec3::Y, "tail");
 }
 

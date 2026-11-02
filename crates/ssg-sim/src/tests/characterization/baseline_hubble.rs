@@ -148,7 +148,9 @@ const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
 // ramped force bound; S6's circling axis Z, self-contact and the debris collider
 // fitted to the model; S9's proportional speed limiter and the O4 example plan (a
 // 100 m sphere, `final_approach` from 300 m, terminal from 120 m below 0.35 m/s at
-// a constant speed with the plane held, `hold` 90 s after the capture entry);
+// a constant speed with the plane held, `hold` 90 s after the capture entry); S10's
+// circle law, the tail's lag law at 12 m and the magnitude rule, which move only
+// the capture entry and its range);
 // F-66, F-64 and F-31). Provisional until S8 (rule 30). They hold on macOS/aarch64
 // only: Linux and Windows CI reach `approach` at a nearby step with different
 // ranges (P4 S6 lever run, F-17; the measured tolerance is in
@@ -173,9 +175,9 @@ const CAPTURE_TRANSITIONS: &[(u64, &str, &str)] = &[
     (6_005, "rendezvous", "approach"), // F-66 (P7.5 S9): provisional until S8
     (31_274, "approach", "final_approach"), // F-66 (P7.5 S9): provisional until S8
     (68_770, "final_approach", "terminal"), // F-66 (P7.5 S9): provisional until S8
-    (190_101, "terminal", "capture"),  // F-66 (P7.5 S9): provisional until S8
+    (191_186, "terminal", "capture"),  // F-66 (P7.5 S10): provisional until S8
 ];
-const CAPTURE_FINAL_RANGE_M: f64 = 4.995987402389989; // F-66 (P7.5 S9): provisional until S8
+const CAPTURE_FINAL_RANGE_M: f64 = 4.999341418497718; // F-66 (P7.5 S10): provisional until S8
 /// Baseline ranges carry 1e-6 m (A-3).
 const RANGE_TOL_M: f64 = 1e-6;
 

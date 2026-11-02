@@ -131,6 +131,7 @@ impl Migrator<'_> {
             velocity_scales_with_sphere: None,
             hold_plane: None,
             actuation: None,
+            tail_spacing_m: None,
         };
         let parameters = state.get("parameters").and_then(Value::as_object);
         for (key, slot) in [
