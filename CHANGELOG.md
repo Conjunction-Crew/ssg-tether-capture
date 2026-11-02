@@ -5,7 +5,20 @@ All notable changes to **ssg-tether-capture** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Contributors:** add a bullet for your change under `## [Unreleased]
+**Contributors:** add a bullet for your change under `## [Unreleased]` in every
+PR, grouped under `### Added`, `### Changed`, `### Fixed` or `### Removed`. The CI
+`Changelog entry` check fails PRs that do not change that section (docs-only PRs
+and PRs labelled `no-changelog` are exempt). Do not bump the version or add
+version headings by hand.
+
+**Releases:** maintainers run the **Release** workflow in GitHub Actions. It
+renames `## [Unreleased]` to `## [vX.Y.Z] - date`, leaves a fresh empty
+`## [Unreleased]` above it, bumps `Cargo.toml`, and uses that section as the
+GitHub Release description.
+
+---
+
+## [Unreleased]
 
 ### Added
 - Capture plan keys, all optional: `device.spawn_orientation` lays the tether out at spawn with the tail away from the target along the chaser-to-target line (`toward_target`, the default), behind the chaser along its velocity axis (`v_bar`) or below it toward the Earth (`r_bar`); `capture_sphere.min_radius_m` is the radius the capture sphere stops shrinking at (default 0.1 m); per phase, `tail_actuation` pushes the tail as well as the root (in a phase named `capture` the tail circles the other way, which wraps the rope), `tail_spacing_m` holds the straight-line distance from the root to the tail with the tail behind, `hold_plane` adds a push toward the circling plane through the target (full at 1 m of height), `velocity_scales_with_sphere` lowers the speed limit with the sphere, and `actuation: "hold"` brakes every pushed end to rest; transitions gain the condition `time_in_phase_s`. The plan and recording-manifest JSON Schemas are regenerated.
