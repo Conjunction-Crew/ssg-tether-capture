@@ -17,7 +17,7 @@ use brahe::Epoch;
 use crate::SimSet;
 use crate::SimStep;
 use crate::capture::plan::{
-    CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
+    Actuation, CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
     CompiledCaptureTransition, PhaseEnd, build_capture_component,
 };
 use crate::orbit::cache::OrbitalCache;
@@ -66,6 +66,11 @@ pub const FORCE_RAMP_S: f64 = 1.0;
 /// branch toggled on 56–97 % of the terminal-phase steps (design D7).
 pub const BRANCH_DEAD_BAND: f64 = 0.02;
 
+/// The height above or below the circling plane through the target, in m, at
+/// which a phase's `hold_plane` component toward the plane reaches full weight
+/// (one unit beside the branch direction); proportional below it (design D16).
+pub const PLANE_HOLD_BAND_M: f64 = 1.0;
+
 /// The debris body's axis the controller circles the root about: the axis the
 /// model's solar arrays span (their booms), so the root circles in the bus's X–Y
 /// plane between the arrays and the rope wraps the bus. The debris keeps the
@@ -95,7 +100,8 @@ pub struct CaptureForce {
     pub inner: bool,
     /// Outside the outer edge (`R`), with the dead band.
     pub outer: bool,
-    /// Above the velocity limit, with the dead band.
+    /// Above the velocity limit, with the dead band. Drives no force since the
+    /// proportional limiter (design D16); kept as the branch state.
     pub kill: bool,
 }
 
@@ -382,18 +388,25 @@ pub fn capture_state_machine_update(
                     };
 
                     let mut force_vec = DVec3::ZERO;
+                    // D16: a `hold` phase reads its speed limit as 0.
+                    let hold = shared_state_parameters.actuation == Actuation::Hold;
+                    let phase_max_velocity = if hold {
+                        0.0
+                    } else {
+                        shared_state_parameters.max_velocity
+                    };
                     // D14: the limit falls with the sphere in a phase that asks for it.
                     let max_velocity = if shared_state_parameters.velocity_scales_with_sphere {
-                        shared_state_parameters.max_velocity
+                        phase_max_velocity
                             * (capture_sphere_radius.radius
                                 / capture_component.sphere_radius_at_entry_m)
                     } else {
-                        shared_state_parameters.max_velocity
+                        phase_max_velocity
                     };
                     let max_force = shared_state_parameters.max_force;
                     // D7 (C4): the kill band is at least one step's Δv of this body at
                     // the phase's force, from the unscaled limit.
-                    let kill_band = (BRANCH_DEAD_BAND * shared_state_parameters.max_velocity)
+                    let kill_band = (BRANCH_DEAD_BAND * phase_max_velocity)
                         .max(2.0 * max_force * PHYS_DT / mass);
                     let capture_radius = if idx == 0 {
                         root_capture_radius
@@ -413,12 +426,14 @@ pub fn capture_state_machine_update(
                         continue;
                     }
 
-                    // If vel is high, kill vel
-                    if state.kill {
-                        force_vec += -rel_v.normalize_or_zero() * 2.0;
+                    // D16: the hold law brakes the body to rest, continuously (no
+                    // dead band), in place of the branches.
+                    if hold {
+                        force_vec =
+                            -rel_v.normalize_or_zero() * (rel_v_len / kill_band).clamp(0.0, 1.0);
                     }
                     // If too close, force in opposite dir
-                    if state.inner {
+                    else if state.inner {
                         force_vec += -rel_r.normalize_or_zero();
                     }
                     // If we are outside the sphere radius, force in target dir (or slow down)
@@ -443,12 +458,36 @@ pub fn capture_state_machine_update(
                         }
                     }
 
+                    // D16: in a phase with `hold_plane`, a component toward the
+                    // circling plane through the target, proportional to the height.
+                    if shared_state_parameters.hold_plane {
+                        let h = -rel_r.dot(up);
+                        force_vec += -up * (h / PLANE_HOLD_BAND_M).clamp(-1.0, 1.0);
+                    }
+
                     // F-31: `max_force_n` is an upper bound reached through the ramp.
                     state.ramp_n =
                         (state.ramp_n + max_force * PHYS_DT / FORCE_RAMP_S).min(max_force);
-                    // F-11: a zero vector gives a zero force, not NaN.
-                    let direction = force_vec.normalize_or_zero();
-                    let force = direction * state.ramp_n;
+                    let force = if hold {
+                        force_vec.clamp_length_max(1.0) * state.ramp_n
+                    } else {
+                        // D16 (F-31), the proportional limiter: the push along its own
+                        // direction fades over one kill band as the velocity component
+                        // along it reaches the limit, so a body at the limit is not
+                        // re-pushed and re-braked every step (D7's measured 41,595
+                        // reversals per terminal phase were this), while a velocity
+                        // that drifts off the push direction is still corrected; the
+                        // brake acts on the speed above the limit.
+                        // F-11: a zero vector gives a zero force, not NaN.
+                        let push_direction = force_vec.normalize_or_zero();
+                        let along = rel_v.dot(push_direction);
+                        let push =
+                            push_direction * ((max_velocity - along) / kill_band).clamp(0.0, 1.0);
+                        let brake = -rel_v.normalize_or_zero()
+                            * ((rel_v_len - max_velocity) / kill_band).clamp(0.0, 1.0);
+                        (push + brake).clamp_length_max(1.0) * state.ramp_n
+                    };
+                    let direction = force.normalize_or_zero();
                     debug_assert!(
                         force.is_finite() && force.length() <= max_force * (1.0 + 1e-12),
                         "force {force:?} on tether node {idx} is not finite or above {max_force} N"
@@ -542,8 +581,13 @@ fn resolve_root_state(
     };
 
     let fired = state.transitions.iter().find_map(|transition| {
-        transition_satisfied(transition, rel_r_length, rel_v_length)
-            .map(|reason| (transition.to.clone(), reason))
+        transition_satisfied(
+            transition,
+            rel_r_length,
+            rel_v_length,
+            capture_component.state_elapsed_time_s,
+        )
+        .map(|reason| (transition.to.clone(), reason))
     });
     let entered_phase = fired.is_some();
     if let Some((to, reason)) = fired {
@@ -572,11 +616,13 @@ fn resolve_root_state(
 
 /// The reason string if every condition of `transition` holds (`None` if one does
 /// not, or if it has no condition), e.g. `distance 1500.0 m < 2000.0 m, rel vel
-/// 1.00 m/s < 5.00 m/s`.
+/// 1.00 m/s < 5.00 m/s`. `state_elapsed_time_s` is the time in the current phase,
+/// already advanced this step.
 fn transition_satisfied(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
+    state_elapsed_time_s: f64,
 ) -> Option<String> {
     let checks = [
         transition.distance_less_than.map(|limit| {
@@ -601,6 +647,24 @@ fn transition_satisfied(
             (
                 rel_v_length > limit,
                 format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
+            )
+        }),
+        transition.time_in_phase_less_than.map(|limit| {
+            (
+                state_elapsed_time_s < limit,
+                format!(
+                    "time in phase {:.1} s < {:.1} s",
+                    state_elapsed_time_s, limit
+                ),
+            )
+        }),
+        transition.time_in_phase_greater_than.map(|limit| {
+            (
+                state_elapsed_time_s > limit,
+                format!(
+                    "time in phase {:.1} s > {:.1} s",
+                    state_elapsed_time_s, limit
+                ),
             )
         }),
     ];
