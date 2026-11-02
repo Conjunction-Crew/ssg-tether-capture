@@ -225,11 +225,18 @@ pub struct Phase {
     /// of height. Default false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hold_plane: Option<bool>,
-    /// `circle`: the range and tangent branches (the default); `hold`: brake every
-    /// pushed body to rest relative to the target and hold the plane;
-    /// `max_velocity_mps` is read as 0.
+    /// `circle`: the range and tangent branches, or in a phase with
+    /// `shrink_rate_mps` the circle law (the default); `hold`: brake every pushed
+    /// body to rest relative to the target and hold the plane; `max_velocity_mps`
+    /// is read as 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actuation: Option<Actuation>,
+    /// The chord from the root to the tail the controller holds, in m, the tail
+    /// behind the root in the sense of circling, in a phase that pushes the tail.
+    /// Without it the tail circles on its own sphere with no spacing held (the
+    /// pre-O5 law). Greater than 0 and less than `device.tether_length_m`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_spacing_m: Option<f64>,
 }
 
 /// The force law of a phase (P7.5 design D16).
@@ -237,7 +244,8 @@ pub struct Phase {
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Actuation {
-    /// The range and tangent branches (the default).
+    /// The range and tangent branches, or in a phase with `shrink_rate_mps` the
+    /// circle law: a continuous hold of the body's sphere radius (the default).
     #[default]
     Circle,
     /// Brake every pushed body to rest relative to the target and hold the plane;
@@ -343,6 +351,9 @@ pub struct CompiledCaptureStateParameters {
     pub hold_plane: bool,
     /// The phase's `actuation`, [`Actuation::Circle`] when the phase leaves it out.
     pub actuation: Actuation,
+    /// The phase's `tail_spacing_m`: the chord from the root to the tail the
+    /// tail's lag law holds (design D18). `None` when the phase leaves it out.
+    pub tail_spacing_m: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -529,6 +540,21 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
         if phase.end.is_some() && !transitions.is_empty() {
             error(&at("transitions"), "an end phase has no transitions");
         }
+        // D18: the chord the lag law holds fits on the tether.
+        if let Some(spacing) = phase.tail_spacing_m {
+            let tether_length = plan
+                .device
+                .as_ref()
+                .map_or(DEFAULT_TETHER_LENGTH_M, CapturePlanDevice::tether_length_m);
+            if !(spacing > 0.0 && spacing < tether_length) {
+                error(
+                    &at("tail_spacing_m"),
+                    &format!(
+                        "must be greater than 0 and less than device.tether_length_m ({tether_length} m)"
+                    ),
+                );
+            }
+        }
     }
 
     errors
@@ -584,6 +610,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 velocity_scales_with_sphere: phase.velocity_scales_with_sphere.unwrap_or(false),
                 hold_plane: phase.hold_plane.unwrap_or(false),
                 actuation: phase.actuation.unwrap_or_default(),
+                tail_spacing_m: phase.tail_spacing_m,
             },
             transitions: phase
                 .transitions

@@ -145,6 +145,7 @@ fn build_plan(spec: &PlanSpec, case: usize) -> CapturePlan {
                 velocity_scales_with_sphere: None,
                 hold_plane: None,
                 actuation: None,
+                tail_spacing_m: None,
             })
             .collect(),
         migrated_from_v0: None,

@@ -509,6 +509,8 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                 actuation: rng
                     .chance(0.5)
                     .then(|| [Actuation::Circle, Actuation::Hold][rng.below(2)]),
+                // Below the shortest generated tether (1 m), so every plan validates.
+                tail_spacing_m: maybe(rng, 0.1, 0.9),
             }
         })
         .collect();
@@ -818,6 +820,69 @@ fn hold_plane_actuation_and_time_in_phase_round_trip_and_are_absent_by_default()
             && schema["$defs"]["CapturePlanDevice"]["properties"]
                 .get("actuation")
                 .is_none()
+    );
+}
+
+#[test]
+fn tail_spacing_round_trips_is_absent_by_default_and_is_validated() {
+    // P7.5 S10 (design D18): `phases[].tail_spacing_m` is optional, written only
+    // when set, compiled (`None` when absent), and must be above 0 and below the
+    // tether's length.
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(plan.phases.iter().all(|p| p.tail_spacing_m.is_none()));
+    assert!(!plan_to_json(&plan).contains("tail_spacing_m"));
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(
+        compiled
+            .states
+            .iter()
+            .all(|s| s.parameters.tail_spacing_m.is_none())
+    );
+
+    let mut value = doc();
+    value["phases"][1]["tail_spacing_m"] = json!(12.0);
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].tail_spacing_m, None);
+    assert_eq!(plan.phases[1].tail_spacing_m, Some(12.0));
+    let text = plan_to_json(&plan);
+    assert!(text.contains(r#""tail_spacing_m": 12.0"#), "{text}");
+    assert_eq!(text.matches("tail_spacing_m").count(), 1, "{text}");
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert_eq!(compiled.states[0].parameters.tail_spacing_m, None);
+    assert_eq!(compiled.states[1].parameters.tail_spacing_m, Some(12.0));
+
+    // Above 0 and below the tether's length: the default 20 m, or the device's.
+    let message = |length: &str| {
+        vec![format!(
+            "[p] /phases/1/tail_spacing_m: must be greater than 0 and less than \
+             device.tether_length_m ({length} m)"
+        )]
+    };
+    for bad in [0.0, -1.0, 20.0, 25.0] {
+        let mut value = doc();
+        value["phases"][1]["tail_spacing_m"] = json!(bad);
+        assert_eq!(errors_of(&value), message("20"), "{bad}");
+    }
+    let mut value = doc();
+    value["device"] = json!({"tether_length_m": 10.0});
+    value["phases"][1]["tail_spacing_m"] = json!(12.0);
+    assert_eq!(errors_of(&value), message("10"));
+    value["phases"][1]["tail_spacing_m"] = json!(9.5);
+    assert!(errors_of(&value).is_empty(), "{:?}", errors_of(&value));
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    assert!(
+        schema["$defs"]["Phase"]["properties"]["tail_spacing_m"].is_object(),
+        "{schema}"
+    );
+    assert!(
+        schema["$defs"]["CapturePlanDevice"]["properties"]
+            .get("tail_spacing_m")
+            .is_none()
     );
 }
 

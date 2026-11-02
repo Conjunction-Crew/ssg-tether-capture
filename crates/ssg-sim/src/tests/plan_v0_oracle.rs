@@ -65,6 +65,7 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                 velocity_scales_with_sphere: false,
                 hold_plane: false,
                 actuation: Actuation::Circle,
+                tail_spacing_m: None,
             },
             transitions: state
                 .transitions
