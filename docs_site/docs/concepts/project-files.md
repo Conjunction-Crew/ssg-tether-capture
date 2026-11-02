@@ -64,11 +64,12 @@ The manifest records what a run needs besides the plan: the start epoch, the act
 | `orbit.elements` | Osculating Keplerian elements in **metres and radians** at `epoch_utc`. |
 | `orbit.relative_to_target` | Chaser only: `preset` (`v_bar` or `r_bar`) and `offset_m`. Not applied yet (see below). |
 | `source` | Where the orbit came from (dataset path and NORAD id). Provenance only; a missing dataset file is a warning. |
-| `mass_kg` | Mass in kg. The target's is applied; the chaser's is not yet. |
+| `mass_kg` | Mass in kg, greater than 0. The target's is the debris's (2,500 kg without it); the chaser's is the tether root's (the root is the chaser; without it the root takes the plan's `end_mass_kg`). |
+| `inertia_kg_m2` | Inertia tensor in kg m², row-major: finite, symmetric and positive definite. It is taken in the simulation's ECI-aligned axes at spawn, because every body starts with the identity attitude and there is no attitude model. The target's is the debris's (without it, that of its collider boxes at its mass). The chaser's is loaded onto the root and has no effect while the root's rotation is locked ([Tether System](./tether-system#the-rope)). |
 | `built_with` | The build that wrote the file. Only `ssg-sim validate` reads it, to say when the build or platform differs: results are bit-identical only on the same build and platform ([Determinism](./determinism)). |
 | `recording` | Optional: the project's recording settings ([below](#the-recording-block)). Absent: recordings start and stop only by hand. |
 
-The chaser's `mass_kg`, both `inertia_kg_m2` and `orbit.relative_to_target` are part of the schema but refused with "applied from v0.4.0-rc.4" until the release that implements them. A file never silently simulates differently from what it says.
+`orbit.relative_to_target` is part of the schema but refused with "applied from v0.4.0-rc.5" until the release that implements it. A file never silently simulates differently from what it says.
 
 The application writes `project.json` when you start a simulation (keeping its `recording` block) and starts from what it wrote; opening the project restores the start epoch and the two bodies. `ssg-sim run <project>` reads the same file, so the same files give the same inputs in both ([Running without a window](../getting-started/headless-cli#running-from-projectjson)).
 
@@ -97,19 +98,26 @@ A capture plan describes the **phases** of a capture (the application used to ca
 | `tether` | yes | none | Id the tether is registered under; not blank. |
 | `device.type` | no | `"tether"` | Free text. |
 | `device.tether_length_m` | no | 20.0 | Greater than 0. |
-| `device.segment_spacing_m` | no | 0.1 | Greater than 0. The tether's body count (interior nodes plus root and tail) may not exceed 1,000; above 200 it is a warning, because recordings become large. |
-| `device.segment_mass_kg` | no | 0.1 | Greater than 0. |
-| `device.end_mass_kg` | no | 2.0 | Mass of the root and of the tail; greater than 0. |
-| `device.joint_damping_linear`, `device.joint_damping_angular` | no | 1.0, 1.0 | At least 0. |
+| `device.segment_spacing_m` | no | 0.25 | Greater than 0. The tether's body count (interior nodes plus root and tail) may not exceed 1,000; above 200 it is a warning, because recordings become large. |
+| `device.segment_mass_kg` | no | 0.25 | Mass of each interior node; greater than 0. |
+| `device.end_mass_kg` | no | 2.0 | Mass of the tail, and of the root unless `project.json` gives the chaser a `mass_kg`; greater than 0. |
+| `device.joint_damping_linear`, `device.joint_damping_angular` | no | 1.0, 1.0 | At least 0. The linear damping is the rope's viscosity when slack; the angular damping has no effect on the rope (its nodes do not rotate) and is kept so older plans load. |
+| `device.spawn_orientation` | no | `"toward_target"` | How the rope is laid out at spawn: `toward_target` (the tail away from the target along the chaser-to-target line), `v_bar` (behind the chaser along its velocity axis) or `r_bar` (below it, toward the Earth). A spawn condition, not a held attitude ([Tether System](./tether-system#orientation-at-spawn)). |
 | `capture_sphere.initial_radius_m` | no | 25.0 | Greater than 0. |
+| `capture_sphere.min_radius_m` | no | 0.1 | The radius the sphere stops shrinking at; greater than 0 and less than `initial_radius_m`. |
 | `phases` | yes | none | At least one; the capture starts in the first. Ids are not blank and unique. |
 | `phases[].max_velocity_mps`, `phases[].max_force_n` | yes | none | At least 0. |
-| `phases[].shrink_rate_mps` | no | none | At least 0. |
+| `phases[].shrink_rate_mps` | no | none | At least 0. A phase with it runs the circle law ([Tether System](./tether-system#the-push-in-each-phase)). |
+| `phases[].tail_actuation` | no | false | Push the tail as well as the root. In a phase whose id is `capture`, the tail circles the other way, which wraps the rope. |
+| `phases[].tail_spacing_m` | no | none | The chord from the root to the tail held in a phase that pushes the tail (not in `capture` or `hold`), the tail behind the root; greater than 0 and less than `device.tether_length_m`. |
+| `phases[].hold_plane` | no | false | A push toward the circling plane through the target, proportional to the height, full at 1 m. |
+| `phases[].velocity_scales_with_sphere` | no | false | The speed limit falls in proportion to the sphere's radius from the radius the phase was entered at. No effect without `shrink_rate_mps`. |
+| `phases[].actuation` | no | `"circle"` | `circle`: the branch law, or the circle law in a phase with `shrink_rate_mps`. `hold`: brake every pushed end to rest relative to the target; `max_velocity_mps` is read as 0. |
 | `phases[].transitions[]` | no | none | `to` names a phase; `all_of` holds at least one condition. |
-| `…all_of.distance_m`, `…all_of.relative_speed_mps` | no | none | `{ "less_than": …, "greater_than": … }` with at least one bound, each at least 0. `relative_speed_mps` is the magnitude of the relative velocity in the target's LVLH frame. |
+| `…all_of.distance_m`, `…all_of.relative_speed_mps`, `…all_of.time_in_phase_s` | no | none | `{ "less_than": …, "greater_than": … }` with at least one bound, each at least 0. `relative_speed_mps` is the magnitude of the relative velocity in the target's LVLH frame; `time_in_phase_s` the seconds since the phase was entered. |
 | `phases[].end` | no | none | `"success"` or `"abort"`. An end phase has no transitions. |
 
-The defaults are the values the simulation used before they became configurable, so a plan that sets none of them runs exactly as before.
+A key that is left out takes its default. In v0.4.0-rc.3 the controller changed for every plan, keys or not (the speed limit, the circle law in a shrinking phase; [Tether System](./tether-system#the-capture-controller)), and the rope's defaults changed with the rope model, from 0.1 m and 0.1 kg to 0.25 m and 0.25 kg (the same 1 kg per metre).
 
 **All conditions of a transition must hold** (logical AND). In each step at most one transition fires: the first one, in file order, whose conditions hold.
 
