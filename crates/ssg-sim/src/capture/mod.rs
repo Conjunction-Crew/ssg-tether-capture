@@ -408,6 +408,16 @@ pub fn capture_state_machine_update(
                     // the phase's force, from the unscaled limit.
                     let kill_band = (BRANCH_DEAD_BAND * phase_max_velocity)
                         .max(2.0 * max_force * PHYS_DT / mass);
+                    // D16: how far `x` is across one kill band, in 0..=1. A band of 0
+                    // (`max_force_n` and `max_velocity_mps` both 0, where the ramp is
+                    // 0 too) is the step the law tends to, not 0 / 0 (F-11).
+                    let across_band = |x: f64| {
+                        if kill_band > 0.0 {
+                            (x / kill_band).clamp(0.0, 1.0)
+                        } else {
+                            f64::from(u8::from(x > 0.0))
+                        }
+                    };
                     let capture_radius = if idx == 0 {
                         root_capture_radius
                     } else {
@@ -429,8 +439,7 @@ pub fn capture_state_machine_update(
                     // D16: the hold law brakes the body to rest, continuously (no
                     // dead band), in place of the branches.
                     if hold {
-                        force_vec =
-                            -rel_v.normalize_or_zero() * (rel_v_len / kill_band).clamp(0.0, 1.0);
+                        force_vec = -rel_v.normalize_or_zero() * across_band(rel_v_len);
                     }
                     // If too close, force in opposite dir
                     else if state.inner {
@@ -481,10 +490,9 @@ pub fn capture_state_machine_update(
                         // F-11: a zero vector gives a zero force, not NaN.
                         let push_direction = force_vec.normalize_or_zero();
                         let along = rel_v.dot(push_direction);
-                        let push =
-                            push_direction * ((max_velocity - along) / kill_band).clamp(0.0, 1.0);
-                        let brake = -rel_v.normalize_or_zero()
-                            * ((rel_v_len - max_velocity) / kill_band).clamp(0.0, 1.0);
+                        let push = push_direction * across_band(max_velocity - along);
+                        let brake =
+                            -rel_v.normalize_or_zero() * across_band(rel_v_len - max_velocity);
                         (push + brake).clamp_length_max(1.0) * state.ramp_n
                     };
                     let direction = force.normalize_or_zero();
