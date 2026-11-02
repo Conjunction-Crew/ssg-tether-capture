@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use crate::capture::plan::{
-    CapturePlan, CompiledCapturePlan, compile_capture_plan, validate_capture_plan,
+    Actuation, CapturePlan, CompiledCapturePlan, compile_capture_plan, validate_capture_plan,
 };
 use crate::project::load_plans_from_dir_with_errors;
 use crate::test_support::repo_root;
@@ -166,11 +166,21 @@ fn char_plans_example_compiled_shape() {
 
     assert_eq!(compiled.tether, "Tether1");
     let ids: Vec<&str> = compiled.states.iter().map(|s| s.id.as_str()).collect();
-    assert_eq!(ids, ["rendezvous", "approach", "terminal", "capture"]);
+    assert_eq!(
+        ids,
+        [
+            "rendezvous",
+            "approach",
+            "final_approach",
+            "terminal",
+            "capture",
+            "hold"
+        ]
+    ); // F-66 (P7.5 S9): provisional until S8
     for (i, id) in ids.iter().enumerate() {
         assert_eq!(compiled.state_indices[*id], i, "state index of {id}");
     }
-    assert_eq!(compiled.state_indices.len(), 4);
+    assert_eq!(compiled.state_indices.len(), 6); // F-66 (P7.5 S9): provisional until S8
 
     // (max_velocity, max_force, shrink_rate) per state.
     let params: Vec<(f64, f64, Option<f64>)> = compiled
@@ -189,29 +199,50 @@ fn char_plans_example_compiled_shape() {
         [
             (18.0, 25.0, None), // F-66 (P7.5 S6): provisional until S8
             (2.0, 3.0, None),
-            (0.5, 2.0, Some(0.01)),
+            (0.3, 3.0, None),       // F-66 (P7.5 S9): provisional until S8
+            (0.5, 2.0, Some(0.05)), // F-66 (P7.5 S9): provisional until S8
             (0.5, 2.0, Some(0.005)),
+            (0.0, 2.0, None), // F-66 (P7.5 S9): provisional until S8
         ]
     );
-    // P7.5 S6 (E9, E13b): the tail and the speed scaling per state, and the floor.
-    let flags: Vec<(bool, bool)> = compiled
+    // P7.5 S6 (E9, E13b): the tail and the speed scaling per state, and the floor;
+    // S9 (design D16): the plane hold and the hold law.
+    let flags: Vec<(bool, bool, bool, Actuation)> = compiled
         .states
         .iter()
         .map(|s| {
             (
                 s.parameters.tail_actuation,
                 s.parameters.velocity_scales_with_sphere,
+                s.parameters.hold_plane,
+                s.parameters.actuation,
             )
         })
         .collect();
+    let circle = Actuation::Circle;
     assert_eq!(
         flags,
-        [(false, false), (false, false), (true, true), (true, false)] // F-66 (P7.5 S6): provisional until S8
+        [
+            (false, false, false, circle),
+            (false, false, false, circle),
+            (false, false, false, circle), // F-66 (P7.5 S9): provisional until S8
+            (true, false, true, circle),   // F-66 (P7.5 S9): provisional until S8
+            (true, false, true, circle),   // F-66 (P7.5 S9): provisional until S8
+            (true, false, true, Actuation::Hold), // F-66 (P7.5 S9): provisional until S8
+        ]
     );
     assert_eq!(compiled.min_capture_radius_m, 4.5); // F-66 (P7.5 S6): provisional until S8
 
-    // (to, distance <, distance >, rel velocity <, rel velocity >) per transition.
-    type Limits = (String, Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+    // (to, distance <, distance >, rel velocity <, rel velocity >, time in phase >)
+    // per transition (no example transition has a time-in-phase `less_than`).
+    type Limits = (
+        String,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+    );
     let transitions: Vec<Vec<Limits>> = compiled
         .states
         .iter()
@@ -225,12 +256,21 @@ fn char_plans_example_compiled_shape() {
                         t.distance_greater_than,
                         t.relative_velocity_less_than,
                         t.relative_velocity_greater_than,
+                        t.time_in_phase_greater_than,
                     )
                 })
                 .collect()
         })
         .collect();
-    let limits = |to: &str, d_lt, d_gt| -> Limits { (to.to_string(), d_lt, d_gt, None, None) };
+    let limits =
+        |to: &str, d_lt, d_gt| -> Limits { (to.to_string(), d_lt, d_gt, None, None, None) };
+    assert!(
+        compiled
+            .states
+            .iter()
+            .flat_map(|s| &s.transitions)
+            .all(|t| t.time_in_phase_less_than.is_none())
+    );
     // F-15 (P6): the v1 example has no unit key (metres only); the v0 file's
     // `units: "m"` on the terminal -> capture transition was never applied, so
     // the compiled limits are the same: only `distance_less_than` is set.
@@ -238,11 +278,20 @@ fn char_plans_example_compiled_shape() {
         transitions,
         vec![
             vec![limits("approach", Some(2000.0), None)],
-            vec![limits("terminal", Some(50.0), None)],
+            vec![limits("final_approach", Some(300.0), None)], // F-66 (P7.5 S9): provisional until S8
+            vec![(
+                "terminal".to_string(),
+                Some(120.0),
+                None,
+                Some(0.35),
+                None,
+                None
+            )], // F-66 (P7.5 S9): provisional until S8
             vec![
                 limits("capture", Some(5.0), None),
-                limits("approach", None, Some(50.0)),
+                limits("final_approach", None, Some(120.0)), // F-66 (P7.5 S9): provisional until S8
             ],
+            vec![("hold".to_string(), None, None, None, None, Some(90.0))], // F-66 (P7.5 S9): provisional until S8
             vec![],
         ]
     );

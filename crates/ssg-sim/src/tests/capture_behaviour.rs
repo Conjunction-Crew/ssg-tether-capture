@@ -1,23 +1,26 @@
-//! Behavioural acceptance of the capture (P7.5 S7; design D12–D14, the plan's "O2
-//! revision"): what the operator asked to see, as three `#[ignore]`d tests on the
-//! Q13 scenario with the example plan.
+//! Behavioural acceptance of the capture (P7.5 S7, S9; design D12–D16, the plan's
+//! "O2 revision" and "O4 revision"): what the operator asked to see, as five
+//! `#[ignore]`d tests on the Q13 scenario with the example plan (the O4 plan).
 //!
-//! - `approach_range_never_grows`: no overshoot; the root alone pushes in approach.
-//! - `tether_near_tangent_while_circling`: the rope lies near the circle while the
-//!   sphere is large, the speed falls with the sphere, nothing touches the debris
-//!   before the capture phase, and the root's force no longer reverses every step.
+//! - `tether_taut_in_rendezvous`: the rope stays taut behind the root (N1).
+//! - `approach_range_never_grows`: no overshoot; the root alone pushes through
+//!   `approach` and `final_approach`, and enters `terminal` slow (N6).
+//! - `tether_flung_out_while_circling`: the rope is flung outward and clear of the
+//!   model while the ends circle at a constant speed (N3).
 //! - `capture_phase_wraps_with_contacts`: the counter-tangent tail push wraps the
-//!   rope around the bus with node–bus, node–array and tether–tether contacts, and
-//!   the ends stay clear of the debris before the capture phase.
+//!   rope around the centre of the bus, the ends held in the circling plane (N4).
+//! - `hold_phase_stops_the_ends`: in `hold` the ends come to rest and the wrap holds
+//!   (N5).
 //!
-//! The thresholds are the plan's (from design D12's G2b with margin); a failing one
-//! is a stop for the planner (rule 30), never a re-fit. Rule 31: a panic inside
-//! avian fails the test; the step it happened at is printed before the message.
+//! The thresholds are the plan's (behavioural acceptance v3, from design D15's
+//! H10b/H11b with margin); a failing one is a stop for the planner (rule 30), never
+//! a re-fit. Rule 31: a panic inside avian fails the test; the step it happened at
+//! is printed before the message.
 //!
-//! Sampling follows the planner's probe (`probe_o2`) so the numbers line up with
-//! D12: `ticks` counts the ticks after `q13::build`; the range and the winding are
-//! sampled when `ticks` is a multiple of 64, the attitude, the speed and the
-//! force-reversal windows when it is a multiple of 6,400.
+//! Sampling follows the planner's probes (`probe_o2`, `probe_o4`) so the numbers
+//! line up with D12 and D15: `ticks` counts the ticks after `q13::build`; the range,
+//! the winding and the rope's shape are sampled when `ticks` is a multiple of 64,
+//! the attitude and the force-reversal windows when it is a multiple of 6,400.
 
 use std::cell::Cell;
 use std::sync::Once;
@@ -31,16 +34,24 @@ use crate::orbit::cache::OrbitalCache;
 use crate::orbit::lvlh::LvlhFrame;
 use crate::physics_bubble::body_eci_state;
 use crate::test_support::{q13, test_app, tick};
-use crate::tests::tether_dynamics::{chain, debris_pose, debris_world_boxes, position, velocity};
+use crate::tests::tether_dynamics::{
+    chain, clearance_from_debris, debris_pose, debris_world_boxes, position, velocity,
+};
 
 /// The range and the winding are sampled every this many ticks.
 const SAMPLE_EVERY: u64 = 64;
 /// The attitude, the speed and the force reversals: every this many ticks.
 const WINDOW: u64 = 6_400;
-/// The capture window: the capture entry and this many steps beyond.
+/// The capture window: the capture entry and this many steps beyond (the capture
+/// phase's 90 s, then `hold`).
 const CAPTURE_WINDOW_STEPS: u64 = 40_000;
-/// Every run reaches the capture phase well inside this (G2b: step 167,091).
+/// Every run reaches the end of the capture window well inside this.
 const MAX_TICKS: u64 = 260_000;
+/// The tether's length, m (the example plan's `tether_length_m`).
+const TETHER_LENGTH_M: f64 = 20.0;
+/// The bus spans ±1.5 m along the array axis (the debris body's Z, design D13): a
+/// node–debris contact at a larger |z| is on an array's inner end.
+const BUS_HALF_Z_M: f64 = 1.5;
 
 // ---------------------------------------------------------------------------
 // Rule 31: name the step of a panic
@@ -258,7 +269,12 @@ impl Run {
     /// The root's speed relative to the target in the target's LVLH frame, as the
     /// controller measures it (`rel_v − ω × rel_r`; the HUD's relative speed).
     fn root_lvlh_speed(&self) -> f64 {
-        let (debris, root) = (self.handles.debris, self.handles.root);
+        self.lvlh_speed(self.handles.root)
+    }
+
+    /// A body's speed relative to the target in the target's LVLH frame.
+    fn lvlh_speed(&self, body: Entity) -> f64 {
+        let debris = self.handles.debris;
         let world = self.app.world();
         let target = body_eci_state(
             world.resource::<OrbitalCache>(),
@@ -271,10 +287,69 @@ impl Run {
         let frame = LvlhFrame::from_eci(&target).expect("the target's LVLH frame");
         frame
             .relative_velocity_in_frame(
-                position(&self.app, root) - position(&self.app, debris),
-                velocity(&self.app, root) - velocity(&self.app, debris),
+                position(&self.app, body) - position(&self.app, debris),
+                velocity(&self.app, body) - velocity(&self.app, debris),
             )
             .length()
+    }
+
+    /// The rope's shape now (design D15's metrics, the planner's `o4_sample`).
+    fn shape(&self) -> Shape {
+        let (root, tail, debris) = (self.handles.root, self.tail, self.handles.debris);
+        let (p_d, r_d) = debris_pose(&self.app, debris);
+        let up = (r_d * CAPTURE_CIRCLING_AXIS).normalize_or(CAPTURE_CIRCLING_AXIS);
+        let (p_root, p_tail) = (position(&self.app, root), position(&self.app, tail));
+        let axis = (p_tail - p_root).normalize_or_zero();
+        let end_range = (p_root - p_d).length().max((p_tail - p_d).length());
+        let mut shape = Shape {
+            slack: TETHER_LENGTH_M - (p_tail - p_root).length(),
+            lateral: 0.0,
+            bulge: f64::NEG_INFINITY,
+            clearance: f64::INFINITY,
+            h_root: (p_root - p_d).dot(up),
+            h_tail: (p_tail - p_d).dot(up),
+            tail_relative_speed: (velocity(&self.app, tail) - velocity(&self.app, root)).length(),
+        };
+        let last = self.chain.len() - 1;
+        for (i, &body) in self.chain.iter().enumerate() {
+            let p = position(&self.app, body);
+            let d = p - p_root;
+            shape.lateral = shape.lateral.max((d - axis * d.dot(axis)).length());
+            shape.clearance = shape
+                .clearance
+                .min(clearance_from_debris(&self.app, body, debris));
+            if i != 0 && i != last {
+                shape.bulge = shape.bulge.max((p - p_d).length() - end_range);
+            }
+        }
+        shape
+    }
+
+    /// Whether this step has a pair between a tether body and the debris whose tether
+    /// body lies at |z| ≥ [`BUS_HALF_Z_M`] in the debris's axes (off the bus), and
+    /// whether it has any tether–debris pair: `(any, off the bus)`.
+    fn debris_contact_off_the_bus(&self) -> (bool, bool) {
+        let (p_d, r_d) = debris_pose(&self.app, self.handles.debris);
+        let (mut any, mut off) = (false, false);
+        for pair in self
+            .app
+            .world()
+            .resource::<ContactGraph>()
+            .iter_active_touching()
+        {
+            let body = match (
+                self.chain.contains(&pair.collider1),
+                self.chain.contains(&pair.collider2),
+            ) {
+                (true, false) => pair.collider1,
+                (false, true) => pair.collider2,
+                _ => continue,
+            };
+            any = true;
+            let z = (r_d.inverse() * (position(&self.app, body) - p_d)).z.abs();
+            off |= z >= BUS_HALF_Z_M;
+        }
+        (any, off)
     }
 
     fn attitude(&self) -> f64 {
@@ -313,6 +388,71 @@ impl Run {
     }
 }
 
+/// The rope's shape at one sample (design D15's metrics).
+#[derive(Debug, Clone, Copy)]
+struct Shape {
+    /// 20 m minus the root→tail distance: the rope's slack, m.
+    slack: f64,
+    /// The largest distance of a chain body from the root→tail line, m.
+    lateral: f64,
+    /// How far the farthest interior node lies beyond the farther end's range from
+    /// the debris centre, m (positive: the rope is flung out beyond the ends).
+    bulge: f64,
+    /// The smallest clearance of any chain body from the debris's boxes, m.
+    clearance: f64,
+    /// The ends' height above the circling plane through the debris centre, m.
+    h_root: f64,
+    h_tail: f64,
+    /// The tail's speed relative to the root, m/s.
+    tail_relative_speed: f64,
+}
+
+/// Minimum, mean and maximum of a sampled quantity.
+#[derive(Debug, Clone, Copy)]
+struct Stat {
+    n: u64,
+    sum: f64,
+    min: f64,
+    max: f64,
+}
+
+impl Default for Stat {
+    fn default() -> Self {
+        Self {
+            n: 0,
+            sum: 0.0,
+            min: f64::INFINITY,
+            max: f64::NEG_INFINITY,
+        }
+    }
+}
+
+impl Stat {
+    fn add(&mut self, v: f64) {
+        self.n += 1;
+        self.sum += v;
+        self.min = self.min.min(v);
+        self.max = self.max.max(v);
+    }
+
+    fn mean(&self) -> f64 {
+        self.sum / self.n as f64
+    }
+}
+
+impl std::fmt::Display for Stat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:.3}/{:.3}/{:.3} (min/mean/max of {})",
+            self.min,
+            self.mean(),
+            self.max,
+            self.n
+        )
+    }
+}
+
 /// Counts the direction reversals of a body's applied force: a non-zero force whose
 /// dot product with the previous non-zero force is negative.
 #[derive(Debug, Default)]
@@ -346,23 +486,93 @@ impl Reversals {
 // The tests
 // ---------------------------------------------------------------------------
 
-/// "Approach actuated only from the root", no overshoot (O2 walk F1; E8): from the
+/// "Control the tail so the tether stays taut behind the root" in rendezvous (O4
+/// walk N1; E26): from the capture start to the approach entry the rope's slack
+/// (20 m − root→tail) is at most 2.0 m at every 64-tick sample, and the root's
+/// force reverses fewer than 250 times in every 6,400-tick window. The tail's speed
+/// relative to the root and the lateral sag are printed.
+#[test]
+#[ignore = "P7.5 behaviour (~1 min): cargo test -p ssg-sim --locked -- --ignored --nocapture tether_taut_in_rendezvous"]
+fn tether_taut_in_rendezvous() {
+    let mut run = Run::new();
+    let start = run.step;
+    let mut root = Reversals::default();
+    let (mut slack, mut lateral, mut tail_relative) =
+        (Stat::default(), Stat::default(), Stat::default());
+    let mut slack_over: Vec<(u64, f64)> = Vec::new();
+    // (window end step, root reversals)
+    let mut windows: Vec<(u64, u64)> = Vec::new();
+    loop {
+        let changed = run.tick();
+        root.feed(run.force(run.handles.root).applied, !changed);
+        if changed {
+            windows.push((run.step, root.take()));
+            break;
+        }
+        if run.ticks.is_multiple_of(SAMPLE_EVERY) {
+            let shape = run.shape();
+            slack.add(shape.slack);
+            lateral.add(shape.lateral);
+            tail_relative.add(shape.tail_relative_speed);
+            if shape.slack > 2.0 {
+                slack_over.push((run.step, shape.slack));
+            }
+        }
+        if run.ticks.is_multiple_of(WINDOW) {
+            windows.push((run.step, root.take()));
+        }
+    }
+    assert_eq!(run.state, "approach", "rendezvous ends in approach");
+    println!(
+        "tether_taut_in_rendezvous: steps {start}..{} (approach entry); slack m {slack}; \
+         lateral sag m {lateral}; tail speed relative to the root m/s {tail_relative}; root \
+         force reversals per window (end step, count) {windows:?}",
+        run.step
+    );
+    assert!(slack.n > 0, "rendezvous was sampled");
+    assert_eq!(
+        slack_over,
+        Vec::new(),
+        "samples with more than 2.0 m of slack"
+    );
+    for (end, reversals) in &windows {
+        assert!(
+            *reversals < 250,
+            "{reversals} root force reversals in the window ending at step {end}"
+        );
+    }
+}
+
+/// "Approach actuated only from the root", no overshoot (O2 walk F1; E8), and "slow
+/// … and roughly zero its relative velocity before terminal" (O4 walk N6; E25):
+/// the phases run rendezvous → approach → final_approach → terminal; from the
 /// approach entry to the terminal entry the root's range, sampled every 64 ticks,
 /// never exceeds the previous sample, the closest approach is the last sample, and
-/// the tail's applied force is zero on every approach tick.
+/// the tail's applied force is zero on every approach and final-approach tick; the
+/// root enters terminal at 120 ± 1 m and below 0.5 m/s (LVLH).
 #[test]
-#[ignore = "P7.5 behaviour (~2 min): cargo test -p ssg-sim --locked -- --ignored --nocapture approach_range_never_grows"]
+#[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture approach_range_never_grows"]
 fn approach_range_never_grows() {
     let mut run = Run::new();
+    let mut order = vec![run.state.clone()];
     run.tick_until("approach");
+    order.push(run.state.clone());
     let approach_entry = run.step;
+    let mut final_approach_entry = None;
     let mut last = run.range_m;
     let mut samples = 0u64;
     let mut growing: Vec<(u64, f64, f64)> = Vec::new();
     let mut closest = f64::INFINITY;
     let mut tail_pushed: Vec<u64> = Vec::new();
     let mut peak_relative_speed = 0.0f64;
-    while !run.tick() {
+    loop {
+        if run.tick() {
+            order.push(run.state.clone());
+            if run.state != "final_approach" {
+                break;
+            }
+            final_approach_entry = Some((run.step, run.range_m, run.root_lvlh_speed()));
+        }
         if run.force(run.tail).applied != DVec3::ZERO {
             tail_pushed.push(run.step);
         }
@@ -376,34 +586,52 @@ fn approach_range_never_grows() {
             peak_relative_speed = peak_relative_speed.max(run.peak_relative_speed());
         }
     }
-    assert_eq!(run.state, "terminal", "approach ends in terminal");
+    let entry_speed = run.root_lvlh_speed();
     println!(
-        "approach_range_never_grows: approach entry step {approach_entry}, terminal entry \
-         step {} (range {:.3} m); {samples} samples, {} growing {growing:?}; the last \
-         sample {last:.3} m, the closest {closest:.3} m; the tail pushed on {} approach \
-         ticks; peak node speed relative to the root {peak_relative_speed:.3} m/s",
+        "approach_range_never_grows: phases {order:?}; approach entry step {approach_entry}, \
+         final_approach entry (step, range m, root LVLH speed m/s) {final_approach_entry:.3?}, \
+         terminal entry step {} at range {:.3} m and root LVLH speed {entry_speed:.3} m/s; \
+         {samples} samples, {} growing {growing:?}; the last sample {last:.3} m, the closest \
+         {closest:.3} m; the tail pushed on {} approach ticks; peak node speed relative to \
+         the root {peak_relative_speed:.3} m/s",
         run.step,
         run.range_m,
         growing.len(),
         tail_pushed.len(),
     );
+    assert_eq!(
+        order,
+        ["rendezvous", "approach", "final_approach", "terminal"],
+        "the phase order"
+    );
     assert!(samples > 0, "the approach was sampled");
     assert_eq!(growing, Vec::new(), "approach samples with a growing range");
-    assert_eq!(last, closest, "the closest approach is the phase's end");
+    assert_eq!(last, closest, "the closest approach is the phases' end");
     assert_eq!(tail_pushed, Vec::<u64>::new(), "steps with a tail force");
+    assert!(
+        (119.0..=121.0).contains(&run.range_m),
+        "terminal entered at {:.3} m, not 120 ± 1 m",
+        run.range_m
+    );
+    assert!(
+        entry_speed < 0.5,
+        "terminal entered at a root LVLH speed of {entry_speed:.3} m/s"
+    );
 }
 
-/// "Orbit the RSO with the tether roughly straight tangent" and "lower its
-/// tangential velocity as the sphere shrinks" (O2 walk F2; E9, E17, E19, E22): in
-/// `terminal`, every 6,400-tick sample while the sphere is at least 12 m has the
-/// rope 45–140° off the outward radial and their mean is 80–125°; no tether body
-/// touches the debris before the capture phase; the tail is pushed on every
-/// terminal tick; the root's LVLH speed at the first sample with R ≤ 6 m is below
-/// 0.2 m/s and below half its value at the first sample with R ≥ 20 m; and the
-/// root's force reverses fewer than 3,200 times in every 6,400-tick window.
+/// "The slack should whip out … and stay out as the sphere shrinks", clear of the
+/// RSO (O4 walk N3; E24, E29): through `terminal`, at every 64-tick sample the
+/// smallest clearance of any chain body from the model is at least 1.0 m, and no
+/// tether body touches the debris before the capture phase; the bulge's mean over
+/// the phase is at least 1.0 m and over the samples with R < 24 m at least 2.0 m;
+/// the attitude's mean over the 6,400-tick samples while R ≥ 12 m is 60–125° (no
+/// per-sample band, E29); the root's LVLH speed at the first 64-tick sample with
+/// R ≤ 6 m is at least 0.3 m/s (the limit is constant); the tail is pushed on every
+/// terminal tick; and the root's force reverses fewer than 250 times in every
+/// 6,400-tick window.
 #[test]
-#[ignore = "P7.5 behaviour (~2 min): cargo test -p ssg-sim --locked -- --ignored --nocapture tether_near_tangent_while_circling"]
-fn tether_near_tangent_while_circling() {
+#[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture tether_flung_out_while_circling"]
+fn tether_flung_out_while_circling() {
     let mut run = Run::new();
     let mut root = Reversals::default();
     let mut tail = Reversals::default();
@@ -419,10 +647,18 @@ fn tether_near_tangent_while_circling() {
         }
     }
     let terminal_entry = run.step;
-    // (step, R, attitude °, root LVLH speed m/s, root speed in sim axes m/s)
-    let mut samples: Vec<(u64, f64, f64, f64, f64)> = Vec::new();
+    // (step, R, attitude °, root LVLH speed m/s) every 6,400 ticks.
+    let mut attitudes: Vec<(u64, f64, f64, f64)> = Vec::new();
     // (window end step, root reversals, tail reversals)
     let mut windows: Vec<(u64, u64, u64)> = Vec::new();
+    let (mut clearance, mut bulge, mut bulge_small_r, mut root_speed) = (
+        Stat::default(),
+        Stat::default(),
+        Stat::default(),
+        Stat::default(),
+    );
+    let mut too_close: Vec<(u64, f64)> = Vec::new();
+    let mut speed_at_6m: Option<(u64, f64, f64)> = None;
     let mut tail_unpushed: Vec<u64> = Vec::new();
     let mut tether_tether_steps = 0u64;
     loop {
@@ -443,55 +679,57 @@ fn tether_near_tangent_while_circling() {
         if run.force(run.tail).applied == DVec3::ZERO {
             tail_unpushed.push(run.step);
         }
+        if run.ticks.is_multiple_of(SAMPLE_EVERY) {
+            let shape = run.shape();
+            let r = run.sphere_radius();
+            let speed = run.root_lvlh_speed();
+            clearance.add(shape.clearance);
+            if shape.clearance < 1.0 {
+                too_close.push((run.step, shape.clearance));
+            }
+            bulge.add(shape.bulge);
+            if r < 24.0 {
+                bulge_small_r.add(shape.bulge);
+            }
+            root_speed.add(speed);
+            if r <= 6.0 {
+                speed_at_6m.get_or_insert((run.step, r, speed));
+            }
+        }
         if run.ticks.is_multiple_of(WINDOW) {
             windows.push((run.step, root.take(), tail.take()));
-            let plain = (velocity(&run.app, run.handles.root)
-                - velocity(&run.app, run.handles.debris))
-            .length();
-            samples.push((
+            attitudes.push((
                 run.step,
                 run.sphere_radius(),
                 run.attitude(),
                 run.root_lvlh_speed(),
-                plain,
             ));
         }
     }
     assert_eq!(run.state, "capture", "terminal ends in capture");
-    let circling: Vec<f64> = samples
+    let circling: Vec<f64> = attitudes
         .iter()
         .filter(|(_, r, ..)| *r >= 12.0)
-        .map(|(_, _, att, ..)| *att)
+        .map(|(_, _, att, _)| *att)
         .collect();
     let mean = circling.iter().sum::<f64>() / circling.len() as f64;
-    let speed_at = |pick: &dyn Fn(f64) -> bool| {
-        samples
-            .iter()
-            .find(|(_, r, ..)| pick(*r))
-            .map(|&(step, r, _, v, _)| (step, r, v))
-    };
-    let large = speed_at(&|r| r >= 20.0).expect("a sample with R >= 20 m");
-    let small = speed_at(&|r| r <= 6.0).expect("a sample with R <= 6 m");
     let root_counts: Vec<u64> = windows.iter().map(|w| w.1).collect();
     println!(
-        "tether_near_tangent_while_circling: terminal entry step {terminal_entry}, capture \
-         entry step {}; samples (step, R m, attitude deg, root LVLH speed m/s, root speed \
-         m/s) {samples:.3?}",
+        "tether_flung_out_while_circling: terminal entry step {terminal_entry}, capture entry \
+         step {}; samples every 6,400 ticks (step, R m, attitude deg, root LVLH speed m/s) \
+         {attitudes:.3?}",
         run.step
     );
     println!(
-        "  attitude while R >= 12 m: {} samples, {:.1}–{:.1} deg, mean {mean:.1} deg; root \
-         LVLH speed {:.3} m/s at R = {:.1} m (step {}) against {:.3} m/s at R = {:.1} m \
-         (step {})",
+        "  every 64 ticks: clearance m {clearance}; bulge m {bulge}; bulge with R < 24 m \
+         {bulge_small_r}; root LVLH speed m/s {root_speed}; the first sample with R <= 6 m \
+         (step, R m, root LVLH speed m/s) {speed_at_6m:.3?}"
+    );
+    println!(
+        "  attitude while R >= 12 m: {} samples, {:.1}–{:.1} deg, mean {mean:.1} deg",
         circling.len(),
         circling.iter().copied().fold(f64::INFINITY, f64::min),
         circling.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-        small.2,
-        small.1,
-        small.0,
-        large.2,
-        large.1,
-        large.0,
     );
     println!(
         "  force reversals per window (end step, root, tail): {windows:?}; root {}–{}",
@@ -501,55 +739,65 @@ fn tether_near_tangent_while_circling() {
     println!(
         "  tether-debris pair-steps before the capture {tether_debris_steps} (first \
          {first_tether_debris:?}); terminal tether-tether pair-steps {tether_tether_steps}; \
-         terminal ticks without a tail force {}",
-        tail_unpushed.len()
+         terminal ticks without a tail force {}; samples with a clearance below 1.0 m {}",
+        tail_unpushed.len(),
+        too_close.len(),
     );
 
-    assert!(!circling.is_empty(), "attitude samples while R >= 12 m");
-    for (step, r, att, ..) in samples.iter().filter(|(_, r, ..)| *r >= 12.0) {
-        assert!(
-            (45.0..=140.0).contains(att),
-            "attitude {att:.1} deg at step {step} (R = {r:.2} m) is outside 45–140 deg"
-        );
-    }
-    assert!(
-        (80.0..=125.0).contains(&mean),
-        "the mean attitude {mean:.1} deg is outside 80–125 deg"
+    assert_eq!(
+        too_close,
+        Vec::new(),
+        "terminal samples with a chain body within 1.0 m of the model"
     );
     assert_eq!(
         (tether_debris_steps, first_tether_debris),
         (0, None),
         "tether-debris pairs before the capture phase"
     );
+    assert!(
+        bulge.mean() >= 1.0,
+        "the bulge's mean over terminal {:.3} m < 1.0 m",
+        bulge.mean()
+    );
+    assert!(
+        bulge_small_r.n > 0 && bulge_small_r.mean() >= 2.0,
+        "the bulge's mean while R < 24 m {:.3} m < 2.0 m ({} samples)",
+        bulge_small_r.mean(),
+        bulge_small_r.n
+    );
+    assert!(!circling.is_empty(), "attitude samples while R >= 12 m");
+    assert!(
+        (60.0..=125.0).contains(&mean),
+        "the mean attitude {mean:.1} deg is outside 60–125 deg"
+    );
+    let (step, r, speed) = speed_at_6m.expect("a terminal sample with R <= 6 m");
+    assert!(
+        speed >= 0.3,
+        "root LVLH speed {speed:.3} m/s at R = {r:.2} m (step {step}) < 0.3 m/s"
+    );
     assert_eq!(
         tail_unpushed,
         Vec::<u64>::new(),
         "terminal ticks without a tail force"
     );
-    assert!(
-        small.2 < 0.2 && small.2 < 0.5 * large.2,
-        "root LVLH speed {:.3} m/s at R = {:.2} m against {:.3} m/s at R = {:.2} m",
-        small.2,
-        small.1,
-        large.2,
-        large.1
-    );
     for (end, root_reversals, _) in &windows {
         assert!(
-            *root_reversals < 3_200,
+            *root_reversals < 250,
             "{root_reversals} root force reversals in the window ending at step {end}"
         );
     }
 }
 
 /// "Initiate capture by actuating the tail in the opposite direction causing a
-/// wrap", with collisions (O2 walk F3, F4; E9–E13b, C6): in the capture entry and
-/// the 40,000 steps after it the rope's `max |winding|` about the circling axis is
-/// at least one turn, nodes touch the bus on at least 2,000 steps and the arrays on
-/// at least 10,000, the rope touches itself at least once in the run, the tail is
-/// pushed against the circling sense, and neither end touches the debris in
-/// approach or terminal. The ends' capture-phase contacts are printed, not asserted
-/// (E13b: a capture-assessment metric for a later stage).
+/// wrap", with collisions (O2 walk F3, F4; E9–E13b, C6), on "the centre section"
+/// (O4 walk N4; E27): over the capture phase (its 90 s, to the `hold` entry) the
+/// rope's `max |winding|` about the circling axis is at least one turn, nodes touch
+/// the bus on at least 2,000 steps, at most 10 % of the node–debris contact steps
+/// have a tether body at |z| ≥ 1.5 m (off the bus), both ends stay within ±1.0 m of
+/// the circling plane at every 64-tick sample, the rope touches itself at least once
+/// in the run, the tail is pushed against the circling sense, and neither end
+/// touches the debris in approach, final approach or terminal. The ends' and the
+/// arrays' capture-phase contacts are printed, not asserted (E13b).
 #[test]
 #[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture capture_phase_wraps_with_contacts"]
 fn capture_phase_wraps_with_contacts() {
@@ -560,11 +808,18 @@ fn capture_phase_wraps_with_contacts() {
     let mut first_contact: Option<(u64, String)> = None;
     let mut capture_entry: Option<u64> = None;
     let mut windings: Vec<(u64, f64)> = Vec::new();
+    let (mut h_root, mut h_tail) = (Stat::default(), Stat::default());
+    let mut off_plane: Vec<(u64, f64, f64)> = Vec::new();
+    // Capture-phase steps with a tether–debris pair, and those with one off the bus.
+    let (mut contact_steps, mut off_bus_steps) = (0u64, 0u64);
     // The first capture tick with both ends pushed and the tail in its tangent
     // branch: (step, the tail's force along its tangent, the root's along its own).
     let mut counter_tangent: Option<(u64, f64, f64)> = None;
     loop {
         if run.tick() {
+            if capture_entry.is_some() {
+                break;
+            }
             phases.push((run.state.clone(), Contacts::default(), Contacts::default()));
             if run.state == "capture" {
                 capture_entry = Some(run.step);
@@ -582,11 +837,20 @@ fn capture_phase_wraps_with_contacts() {
             );
             run.print_debris_boxes("at the first contact");
         }
-        let Some(entry) = capture_entry else {
+        if capture_entry.is_none() {
             continue;
-        };
+        }
+        let (any, off) = run.debris_contact_off_the_bus();
+        contact_steps += u64::from(any);
+        off_bus_steps += u64::from(off);
         if run.ticks.is_multiple_of(SAMPLE_EVERY) {
             windings.push((run.step, run.winding()));
+            let shape = run.shape();
+            h_root.add(shape.h_root);
+            h_tail.add(shape.h_tail);
+            if shape.h_root.abs() > 1.0 || shape.h_tail.abs() > 1.0 {
+                off_plane.push((run.step, shape.h_root, shape.h_tail));
+            }
         }
         let (root_force, tail_force) = (run.force(run.handles.root), run.force(run.tail));
         if counter_tangent.is_none()
@@ -615,10 +879,8 @@ fn capture_phase_wraps_with_contacts() {
                 root_force.inner, root_force.outer, root_force.kill
             );
         }
-        if run.step >= entry + CAPTURE_WINDOW_STEPS {
-            break;
-        }
     }
+    let hold_entry = (run.state == "hold").then_some(run.step);
     let phase = |name: &str| {
         phases
             .iter()
@@ -626,8 +888,6 @@ fn capture_phase_wraps_with_contacts() {
             .map(|(_, steps, peak)| (*steps, *peak))
             .unwrap_or_default()
     };
-    let (approach, _) = phase("approach");
-    let (terminal, _) = phase("terminal");
     let (capture, capture_peak) = phase("capture");
     let tether_tether: usize = phases.iter().map(|(_, steps, _)| steps.tether_tether).sum();
     let positive = windings
@@ -637,18 +897,19 @@ fn capture_phase_wraps_with_contacts() {
     let negative = windings.iter().map(|w| w.1).fold(f64::INFINITY, f64::min);
     let max_abs = positive.abs().max(negative.abs());
     let at_peak = windings.iter().find(|w| w.1.abs() == max_abs).map(|w| w.0);
+    let off_bus_share = off_bus_steps as f64 / contact_steps.max(1) as f64;
     println!(
-        "capture_phase_wraps_with_contacts: capture entry step {:?}, window to step {}; \
-         max |winding| {max_abs:.3} turns (signed peaks {positive:+.3} / {negative:+.3}; \
-         at step {at_peak:?}); first tether-debris contact {first_contact:?}",
-        capture_entry, run.step
+        "capture_phase_wraps_with_contacts: capture entry step {capture_entry:?}, hold entry \
+         step {hold_entry:?}; max |winding| before the hold {max_abs:.3} turns (signed peaks \
+         {positive:+.3} / {negative:+.3}; at step {at_peak:?}); first tether-debris contact \
+         {first_contact:?}"
     );
     for (name, steps, peak) in &phases {
         println!("  {name}: pair-steps {steps:?}; peak pairs {peak:?}");
     }
     println!(
-        "  capture window: node-bus {} node-array {} tether-tether {} pair-steps; root {} \
-         and tail {} debris pair-steps (reported, not asserted); tether-tether in the run \
+        "  capture phase: node-bus {} node-array {} tether-tether {} pair-steps; root {} and \
+         tail {} debris pair-steps (reported, not asserted); tether-tether in the run \
          {tether_tether}; peak pairs {capture_peak:?}",
         capture.node_bus,
         capture.node_array,
@@ -657,22 +918,37 @@ fn capture_phase_wraps_with_contacts() {
         capture.tail_debris,
     );
     println!(
+        "  capture phase: {contact_steps} steps with a tether-debris pair, {off_bus_steps} of \
+         them with a tether body at |z| >= {BUS_HALF_Z_M} m ({:.1} %); the ends' height above \
+         the circling plane m: root {h_root}, tail {h_tail}; samples off ±1.0 m {off_plane:?}",
+        100.0 * off_bus_share
+    );
+    println!(
         "  the first capture tick with both ends pushed and the tail on its tangent branch: \
          {counter_tangent:?} (step, the tail's force along its tangent N, the root's along \
          its own N)"
     );
 
     assert!(capture_entry.is_some(), "the run reached the capture phase");
-    assert!(max_abs >= 1.0, "max |winding| {max_abs:.3} turns < 1.0");
+    assert!(hold_entry.is_some(), "the capture phase ends in hold");
+    assert!(
+        max_abs >= 1.0,
+        "max |winding| before the hold {max_abs:.3} turns < 1.0"
+    );
     assert!(
         capture.node_bus >= 2_000,
         "node-bus pair-steps {} < 2,000",
         capture.node_bus
     );
     assert!(
-        capture.node_array >= 10_000,
-        "node-array pair-steps {} < 10,000",
-        capture.node_array
+        off_bus_share <= 0.10,
+        "{off_bus_steps} of {contact_steps} capture contact steps off the bus ({:.1} % > 10 %)",
+        100.0 * off_bus_share
+    );
+    assert_eq!(
+        off_plane,
+        Vec::new(),
+        "capture samples with an end more than 1.0 m off the circling plane"
     );
     assert!(tether_tether >= 1, "no tether-tether contact in the run");
     let (step, tail_along, _) = counter_tangent.expect("a capture tick with both ends pushed");
@@ -680,11 +956,92 @@ fn capture_phase_wraps_with_contacts() {
         tail_along < 0.0,
         "at step {step} the tail is pushed along its tangent ({tail_along} N), not against it"
     );
-    for (name, steps) in [("approach", approach), ("terminal", terminal)] {
+    for name in ["approach", "final_approach", "terminal"] {
+        let (steps, _) = phase(name);
         assert_eq!(
             (steps.root_debris, steps.tail_debris),
             (0, 0),
             "root and tail debris pair-steps in {name}"
         );
     }
+}
+
+/// "Once the capture is complete the nodes must change their actuation" (O4 walk
+/// N5; E28): from the `hold` entry to the end of the capture window (the capture
+/// entry and 40,000 steps) the ends' LVLH speed, sampled every 64 ticks after the
+/// hold's first minute, has a mean below 0.1 m/s for each end, each end's force
+/// reverses fewer than 50 times, and the rope's |winding| is at least 0.5 turn at
+/// every sample. The ends' creep from their hold-entry positions is printed.
+#[test]
+#[ignore = "P7.5 behaviour (~3 min): cargo test -p ssg-sim --locked -- --ignored --nocapture hold_phase_stops_the_ends"]
+fn hold_phase_stops_the_ends() {
+    const FIRST_MINUTE_TICKS: u64 = 60 * 64;
+    let mut run = Run::new();
+    run.tick_until("capture");
+    let capture_entry = run.step;
+    run.tick_until("hold");
+    let hold_entry = run.step;
+    let hold_ticks = run.ticks;
+    let debris = run.handles.debris;
+    let relative = |run: &Run, body: Entity| position(&run.app, body) - position(&run.app, debris);
+    let (root_at_entry, tail_at_entry) =
+        (relative(&run, run.handles.root), relative(&run, run.tail));
+    let winding_at_entry = run.winding();
+    let mut root = Reversals::default();
+    let mut tail = Reversals::default();
+    let (mut root_speed, mut tail_speed, mut winding) =
+        (Stat::default(), Stat::default(), Stat::default());
+    let mut unwound: Vec<(u64, f64)> = Vec::new();
+    while run.step < capture_entry + CAPTURE_WINDOW_STEPS {
+        assert!(!run.tick(), "hold is an end phase: no transition out of it");
+        root.feed(run.force(run.handles.root).applied, true);
+        tail.feed(run.force(run.tail).applied, true);
+        if run.ticks.is_multiple_of(SAMPLE_EVERY) {
+            let w = run.winding();
+            winding.add(w);
+            if w.abs() < 0.5 {
+                unwound.push((run.step, w));
+            }
+            if run.ticks - hold_ticks > FIRST_MINUTE_TICKS {
+                root_speed.add(run.root_lvlh_speed());
+                tail_speed.add(run.lvlh_speed(run.tail));
+            }
+        }
+    }
+    let (root_reversals, tail_reversals) = (root.take(), tail.take());
+    let creep = (
+        (relative(&run, run.handles.root) - root_at_entry).length(),
+        (relative(&run, run.tail) - tail_at_entry).length(),
+    );
+    println!(
+        "hold_phase_stops_the_ends: capture entry step {capture_entry}, hold entry step \
+         {hold_entry}, window to step {}; after the first minute the ends' LVLH speed m/s: \
+         root {root_speed}, tail {tail_speed}; force reversals root {root_reversals} tail \
+         {tail_reversals}; winding turns {winding} ({winding_at_entry:+.3} at the hold entry, \
+         {:+.3} at the end); samples below 0.5 turn {unwound:?}; the ends' creep from their \
+         hold-entry positions m: root {:.3}, tail {:.3}",
+        run.step,
+        run.winding(),
+        creep.0,
+        creep.1,
+    );
+    assert!(
+        root_speed.n > 0,
+        "the hold was sampled after its first minute"
+    );
+    assert!(
+        root_speed.mean() < 0.1 && tail_speed.mean() < 0.1,
+        "the ends' mean LVLH speed after the first minute: root {:.3} m/s, tail {:.3} m/s",
+        root_speed.mean(),
+        tail_speed.mean()
+    );
+    assert!(
+        root_reversals < 50 && tail_reversals < 50,
+        "force reversals in hold: root {root_reversals}, tail {tail_reversals}"
+    );
+    assert_eq!(
+        unwound,
+        Vec::new(),
+        "hold samples with |winding| below 0.5 turn"
+    );
 }

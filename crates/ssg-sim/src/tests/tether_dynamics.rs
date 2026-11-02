@@ -535,7 +535,7 @@ fn signed_distance_to_box(local: DVec3, b: &DebrisBox) -> f64 {
 /// The clearance of a sphere tether body from the debris's nearest box, m: the
 /// signed distance from its centre to the bus, array A or array B (design D13), in
 /// the debris's axes, minus the sphere's radius. Negative inside or touching.
-fn clearance_from_debris(app: &App, body: Entity, debris: Entity) -> f64 {
+pub(super) fn clearance_from_debris(app: &App, body: Entity, debris: Entity) -> f64 {
     let rotation = app.world().get::<Rotation>(debris).expect("Rotation").0;
     let local = rotation.inverse() * (position(app, body) - position(app, debris));
     let to_surface = [DEBRIS_BUS, DEBRIS_ARRAY_A, DEBRIS_ARRAY_B]
