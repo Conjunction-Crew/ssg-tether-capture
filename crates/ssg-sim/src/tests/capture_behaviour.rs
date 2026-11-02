@@ -524,8 +524,12 @@ struct TerminalTrace {
     shrink_rate: f64,
     spacing: f64,
     samples: Vec<TerminalSample>,
-    /// The reorientation's end: the first sample with the root within 2 m of R and
-    /// the tail within 3 m of R + 1, if one came within 12,800 ticks.
+    /// The reorientation's end: the first sample with both ends inside the bands
+    /// `ends_apart_on_the_sphere` asserts after it (the root within 1.0 m of R, the
+    /// tail at R + 0.5 … 1.5 m), if one came within 12,800 ticks. (The plan's v4
+    /// wording, the root within 2 m of R and the tail within 3 m of R + 1, ends it
+    /// while the tail is still settling from +4 m, which design D18's C14 fails too;
+    /// operator, Run 7, 2026-11-02, AskUserQuestion.)
     reorientation_end: Option<usize>,
     /// Pair-steps (root–tail, end–node, node–node) through the reorientation (to its
     /// end, or 12,800 ticks) and through the phase.
@@ -596,8 +600,8 @@ impl TerminalTrace {
                 });
                 if !after
                     && ticks_in <= REORIENTATION_CAP_TICKS
-                    && ends.root_radius_error.abs() < 2.0
-                    && (ends.tail_radius_error - 1.0).abs() < 3.0
+                    && ends.root_radius_error.abs() <= 1.0
+                    && (0.5..=1.5).contains(&ends.tail_radius_error)
                 {
                     reorientation_end = Some(samples.len() - 1);
                 }
@@ -903,8 +907,9 @@ fn approach_range_never_grows() {
 
 /// "The root and the tail collide as the rope reorients from the straight
 /// rendezvous line to engage" (O5 walk N10; E33): from the terminal entry to the
-/// first 64-tick sample with the root within 2 m of R and the tail within 3 m of
-/// R + 1, the reorientation is over within 12,800 ticks, the root and the tail never
+/// first 64-tick sample with the root within 1.0 m of R and the tail at R + 0.5 …
+/// 1.5 m (both ends settled on their spheres), the reorientation is over within
+/// 12,800 ticks, the root and the tail never
 /// touch (0 pair-steps), an end touches an interior node on at most 500 steps, and
 /// the ends' separation is at least 9 m at every sample.
 ///
