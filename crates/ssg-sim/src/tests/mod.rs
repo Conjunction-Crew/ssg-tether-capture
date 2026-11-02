@@ -1,3 +1,4 @@
+pub mod capture_behaviour;
 pub mod capture_commands;
 pub mod capture_controller;
 pub mod capture_plan_props;
