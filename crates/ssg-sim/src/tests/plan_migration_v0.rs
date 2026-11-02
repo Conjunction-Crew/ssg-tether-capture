@@ -457,7 +457,8 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     let v1 = &plans["example_plan"];
     assert_eq!(v1.schema_version, 1);
     // P7.5 S9 (design D16): the O4 plan differs from S6's in the phases, values
-    // and keys reverted here, and in nothing else.
+    // and keys reverted here, and in nothing else; S10 (design D18) adds the
+    // terminal phase's `tail_spacing_m`.
     let mut as_v0 = v1.clone();
     assert_eq!(
         as_v0.capture_sphere.as_ref().unwrap().initial_radius_m,
@@ -505,6 +506,8 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     terminal.shrink_rate_mps = Some(0.01);
     assert_eq!(terminal.hold_plane, Some(true));
     terminal.hold_plane = None;
+    assert_eq!(terminal.tail_spacing_m, Some(12.0)); // F-66 (P7.5 S10): provisional until S8
+    terminal.tail_spacing_m = None;
     assert_eq!(terminal.velocity_scales_with_sphere, None);
     terminal.velocity_scales_with_sphere = Some(true);
     let back_out = &mut terminal.transitions.as_mut().unwrap()[1];
