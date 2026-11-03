@@ -16,6 +16,7 @@ use crate::render::layers::UI_LAYER;
 use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
 use crate::ui::egui::{CsvExportState, egui_plots};
 use crate::ui::egui_terminal::egui_terminal_panel;
+use crate::ui::egui_theme::apply_egui_theme;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
 use crate::ui::hud::{
@@ -246,6 +247,7 @@ impl Plugin for UiPlugin {
                     handle_ui_events.before(SimSet::ApplyCommands),
                 ),
             )
+            .add_systems(EguiPrimaryContextPass, apply_egui_theme)
             .add_systems(
                 EguiPrimaryContextPass,
                 (egui_terminal_panel, egui_plots)

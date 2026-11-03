@@ -28,6 +28,7 @@ dirs = { workspace = true }
 
 [dev-dependencies]
 ssg-sim = { workspace = true, features = ["test-support"] }
+egui_kittest = { version = "=0.33.3", features = ["wgpu", "snapshot"] }
 
 [[bin]]
 name = "ssg_tether_capture"

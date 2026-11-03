@@ -1,6 +1,7 @@
 pub mod catalog_state;
 pub mod egui;
 pub mod egui_terminal;
+pub mod egui_theme;
 pub mod events;
 pub mod form;
 pub mod hud;

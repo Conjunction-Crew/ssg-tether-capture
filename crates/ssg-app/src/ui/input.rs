@@ -3,6 +3,7 @@ use bevy::{
     pbr::{Atmosphere, AtmosphereSettings},
     prelude::*,
 };
+use bevy_egui::input::EguiWantsInput;
 
 use crate::render::camera::set_map_view;
 use crate::ui::catalog_state::SpaceCatalogUiState;
@@ -10,6 +11,13 @@ use crate::ui::settings::Settings;
 use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::{WarpChange, WorldTime};
+
+/// Run condition: egui is taking keyboard input (a focused text field or an
+/// open popup), so the sim hotkeys must not act. Replaces
+/// `SpaceCatalogUiState::search_focused` as each screen moves to egui (P8).
+pub fn egui_wants_keyboard(egui_wants_input: Option<Res<EguiWantsInput>>) -> bool {
+    egui_wants_input.is_some_and(|wants| wants.wants_any_keyboard_input())
+}
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,
