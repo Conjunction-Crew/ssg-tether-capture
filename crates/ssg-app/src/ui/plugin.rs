@@ -35,6 +35,7 @@ use crate::ui::replay::{
     remove_replay_session, reset_recordings_list, return_to_sim, scan_recordings_system,
     show_replay_frame, show_replay_in_scene_view, spawn_replay_bodies, transport_window,
 };
+use crate::ui::screen::{ScreenPlugin, UiScreen};
 use crate::ui::screens::capture_plan::{
     CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
     dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
@@ -75,7 +76,7 @@ use ssg_sim::project::{
     SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, now_utc,
     set_working_directory,
 };
-use ssg_sim::session::{PauseState, SimState, UiScreen};
+use ssg_sim::session::{PauseState, SimState};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::{SimConfig, WorldTime};
 
@@ -101,7 +102,8 @@ struct UiCamera;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<UiTheme>()
+        app.add_plugins(ScreenPlugin)
+            .init_resource::<UiTheme>()
             .init_resource::<WorkingDirectory>()
             .init_resource::<NewCapturePlanForm>()
             .init_resource::<FileDialogTask>()

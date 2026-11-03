@@ -35,7 +35,7 @@ use crate::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_compon
 use crate::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::orbit::cache::OrbitalCache;
 use crate::project::{AssetsDir, load_plans_from_dir};
-use crate::session::{SimState, UiScreen};
+use crate::session::{SimSession, SimState};
 use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
 use crate::time::{ManualPhysics, PHYS_DT, SimConfig, WorldTime};
 
@@ -90,12 +90,12 @@ pub fn test_app() -> App {
     app
 }
 
-/// Switch to the sim screen; `setup_time` starts the clock at the app's
-/// [`SimConfig`] epoch ([`fixed_epoch`] in [`test_app`]).
+/// Start a sim session (`SimSession::Active`, as the app's sim screen does);
+/// `setup_time` starts the clock at the app's [`SimConfig`] epoch ([`fixed_epoch`] in [`test_app`]).
 pub fn enter_sim(app: &mut App) {
     app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Sim);
+        .resource_mut::<NextState<SimSession>>()
+        .set(SimSession::Active);
     app.update();
 }
 

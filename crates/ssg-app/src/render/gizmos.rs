@@ -6,6 +6,7 @@ use crate::render::floating_origin_visuals::floating_origin_update_visuals;
 use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map};
 use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::replay::ReplayBody;
+use crate::ui::screen::UiScreen;
 use crate::ui::settings::Settings;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::capture::{CaptureComponent, CaptureForce, CaptureSphereRadius};
@@ -19,7 +20,7 @@ use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
 };
 use ssg_sim::physics_bubble::PHYSICS_ENABLE_RADIUS;
-use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::session::SimState;
 use ssg_sim::tether::{TetherShape, chain_from_joints};
 use ssg_sim::time::WorldTime;
 

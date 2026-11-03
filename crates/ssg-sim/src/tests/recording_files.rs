@@ -932,8 +932,8 @@ fn run_q13_with(
     }
     // Leave the sim screen, as a session ends.
     app.world_mut()
-        .resource_mut::<bevy::state::state::NextState<crate::session::UiScreen>>()
-        .set(crate::session::UiScreen::Home);
+        .resource_mut::<bevy::state::state::NextState<crate::session::SimSession>>()
+        .set(crate::session::SimSession::Idle);
     app.update();
 }
 

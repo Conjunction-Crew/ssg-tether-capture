@@ -9,7 +9,7 @@ use crate::orbit::cache::OrbitalCache;
 use crate::project::recording::RecordingBodyRole;
 use crate::recording::recorder::{Recorder, RecorderCommand, RecorderEvent, RecordingSettings};
 use crate::recording::{EndReason, RecordingBodies, RecordingEnd, StartTrigger};
-use crate::session::UiScreen;
+use crate::session::SimSession;
 use crate::test_support::{
     insert_plan_json, install_memory_sink, load_example_plans, q13, test_app, tick,
 };
@@ -281,8 +281,8 @@ fn leaving_the_sim_ends_the_recording() {
         tick(&mut app);
     }
     app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Home);
+        .resource_mut::<NextState<SimSession>>()
+        .set(SimSession::Idle);
     app.update();
     let segments = sink.segments();
     let last = segments[0].frames.last().expect("frames").step;

@@ -1,4 +1,4 @@
-//! Session lifecycle: the screen and sim states and the per-session resources.
+//! Session lifecycle: the session and sim states and the per-session resources.
 
 use bevy::prelude::*;
 
@@ -8,12 +8,14 @@ use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::load_dataset_entities;
 use crate::time::{SimConfig, WorldTime, setup_time};
 
+/// Whether a sim session exists (Q35, P8): `Active` holds the session
+/// resources, the bodies and the clock. The app drives it from its own screen
+/// state; the CLI and the tests set it directly.
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
-pub enum UiScreen {
+pub enum SimSession {
     #[default]
-    WorkingDirectorySetup,
-    Home,
-    Sim,
+    Idle,
+    Active,
 }
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
@@ -38,17 +40,17 @@ pub struct SessionPlugin;
 
 impl Plugin for SessionPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<UiScreen>()
+        app.init_state::<SimSession>()
             .init_state::<SimState>()
             .init_state::<PauseState>()
-            .configure_sets(OnEnter(UiScreen::Sim), SimSet::SessionInit)
+            .configure_sets(OnEnter(SimSession::Active), SimSet::SessionInit)
             .add_systems(
-                OnEnter(UiScreen::Sim),
+                OnEnter(SimSession::Active),
                 (init_sim_resources, load_dataset_entities, setup_time)
                     .chain()
                     .in_set(SimSet::SessionInit),
             )
-            .add_systems(OnExit(UiScreen::Sim), remove_sim_resources);
+            .add_systems(OnExit(SimSession::Active), remove_sim_resources);
     }
 }
 

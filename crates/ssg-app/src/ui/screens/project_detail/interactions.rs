@@ -26,13 +26,13 @@ pub fn project_detail_interactions(
     exit_modal_query: Query<Entity, With<ExitSimConfirmModal>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     mut events: MessageWriter<UiEvent>,
-    screen: Res<State<ssg_sim::session::UiScreen>>,
+    screen: Res<State<crate::ui::screen::UiScreen>>,
     theme: Res<UiTheme>,
     form: Res<NewCapturePlanForm>,
     restart_modal_query: Query<Entity, With<RestartPromptModal>>,
     selection: Res<OrbitalSelectionState>,
 ) {
-    if *screen.get() != ssg_sim::session::UiScreen::Sim {
+    if *screen.get() != crate::ui::screen::UiScreen::Sim {
         return;
     }
 
@@ -168,7 +168,7 @@ pub fn restart_prompt_interactions(
     mut commands: Commands,
     modal_query: Query<Entity, With<RestartPromptModal>>,
     mut sync_state: ResMut<SimPlanSyncState>,
-    mut next_screen: ResMut<NextState<ssg_sim::session::UiScreen>>,
+    mut next_screen: ResMut<NextState<crate::ui::screen::UiScreen>>,
     mut next_sim_state: ResMut<NextState<SimState>>,
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     theme: Res<UiTheme>,
@@ -194,7 +194,7 @@ pub fn restart_prompt_interactions(
                     });
                     // Transition Home → Sim to trigger full cleanup and re-setup
                     next_sim_state.set(SimState::Setup);
-                    next_screen.set(ssg_sim::session::UiScreen::Home);
+                    next_screen.set(crate::ui::screen::UiScreen::Home);
                 } else if recompile_btn.is_some() {
                     // Apply changes live without restarting the sim.
                     let refreshed: Vec<_> = capture_plan_lib
