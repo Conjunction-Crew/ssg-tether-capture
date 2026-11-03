@@ -18,7 +18,7 @@ use crate::SimStep;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::GpElements;
 use crate::recording::inputs::SimInputLog;
-use crate::session::UiScreen;
+use crate::session::SimSession;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::{ManualPhysics, WorldTime};
 
@@ -201,7 +201,7 @@ impl Plugin for OrbitPlugin {
         // rotation, so their relative state is unaffected (A-3). Never call
         // `brahe::initialize_eop()`: it reads files or the network.
         set_global_eop_provider(StaticEOPProvider::from_zero());
-        app.add_systems(First, init_orbitals.run_if(in_state(UiScreen::Sim)))
+        app.add_systems(First, init_orbitals.run_if(in_state(SimSession::Active)))
             .add_systems(ManualPhysics, cache_eci_states.in_set(SimStep::CacheEci));
     }
 }

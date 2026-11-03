@@ -78,7 +78,7 @@ impl SimInputLog {
     }
 }
 
-/// Clears the log for a new session (`OnEnter(UiScreen::Sim)`).
+/// Clears the log for a new session (`OnEnter(SimSession::Active)`).
 pub(crate) fn reset_sim_input_log(mut log: ResMut<SimInputLog>) {
     *log = SimInputLog::default();
 }

@@ -13,9 +13,9 @@ use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar};
 
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::ui::screen::UiScreen;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::{InputField, InputFieldText};
-use ssg_sim::session::UiScreen;
 
 // ── Marker components ──────────────────────────────────────────────────────
 

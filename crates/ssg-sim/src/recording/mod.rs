@@ -27,7 +27,7 @@ use crate::capture::plan::CapturePlanLibrary;
 use crate::orbit::cache::OrbitalCache;
 use crate::project::SelectedProject;
 use crate::project::recording::RecordingBodyRole;
-use crate::session::{SimState, UiScreen};
+use crate::session::{SimSession, SimState};
 use crate::telemetry::LogEntry;
 use crate::tether::chain_from_joints;
 use crate::{SimSet, SimStep};
@@ -299,7 +299,7 @@ impl Plugin for RecordingPlugin {
             .add_message::<RecorderCommand>()
             .add_message::<RecorderEvent>()
             .add_systems(
-                OnEnter(UiScreen::Sim),
+                OnEnter(SimSession::Active),
                 (reset_sim_input_log, reset_recorder).before(SimSet::SessionInit),
             )
             .add_systems(
@@ -307,7 +307,7 @@ impl Plugin for RecordingPlugin {
                 build_recording_bodies.after(SimSet::SpawnBodies),
             )
             .add_systems(
-                OnExit(UiScreen::Sim),
+                OnExit(SimSession::Active),
                 (end_recording_on_exit, remove_recording_bodies).chain(),
             )
             .add_systems(
@@ -318,7 +318,7 @@ impl Plugin for RecordingPlugin {
                 Last,
                 apply_recorder_commands
                     .after(SimSet::ApplyCommands)
-                    .run_if(in_state(UiScreen::Sim)),
+                    .run_if(in_state(SimSession::Active)),
             );
     }
 }

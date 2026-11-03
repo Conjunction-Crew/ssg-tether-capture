@@ -10,6 +10,7 @@ pub mod log_ui;
 pub mod plugin;
 pub mod recording;
 pub mod replay;
+pub mod screen;
 pub mod screens;
 pub mod settings;
 pub mod theme;
