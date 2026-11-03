@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- egui foundation for the UI port (P8 S1): the egui panels and windows take their colours from the app theme (`UiTheme`), a run condition tells the hotkeys when egui has the keyboard, and the app tests gain an `egui_kittest` screen harness with a local snapshot test (`p8_screen_snapshots`, ignored on CI).
 
 ## [v0.4.0-rc.3] 🔬 - 2026-11-03
 
