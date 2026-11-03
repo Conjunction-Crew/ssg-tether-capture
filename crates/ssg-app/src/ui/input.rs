@@ -15,6 +15,10 @@ use ssg_sim::time::{WarpChange, WorldTime};
 /// Run condition: egui is taking keyboard input (a focused text field or an
 /// open popup), so the sim hotkeys must not act. Replaces
 /// `SpaceCatalogUiState::search_focused` as each screen moves to egui (P8).
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "wired to the hotkeys as the P8 port slices land")
+)]
 pub fn egui_wants_keyboard(egui_wants_input: Option<Res<EguiWantsInput>>) -> bool {
     egui_wants_input.is_some_and(|wants| wants.wants_any_keyboard_input())
 }

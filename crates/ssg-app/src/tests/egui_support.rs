@@ -28,8 +28,13 @@ fn build<'a, V: 'a>(
     if gpu {
         builder = builder.wgpu();
     }
-    let mut harness = builder.build_ui_state(
-        move |ui, state: &mut ScreenState<V>| screen(ui, &state.view, &mut state.events),
+    // A central panel fills the frame with the theme's panel colour, as the
+    // app's panels do.
+    let mut harness = builder.build_state(
+        move |ctx, state: &mut ScreenState<V>| {
+            egui::CentralPanel::default()
+                .show(ctx, |ui| screen(ui, &state.view, &mut state.events));
+        },
         ScreenState {
             view,
             events: Vec::new(),
