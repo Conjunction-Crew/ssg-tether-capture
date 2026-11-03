@@ -127,6 +127,11 @@ impl Migrator<'_> {
             shrink_rate_mps: None,
             transitions: None,
             end: None,
+            tail_actuation: None,
+            velocity_scales_with_sphere: None,
+            hold_plane: None,
+            actuation: None,
+            tail_spacing_m: None,
         };
         let parameters = state.get("parameters").and_then(Value::as_object);
         for (key, slot) in [
@@ -208,6 +213,7 @@ impl Migrator<'_> {
                 all_of: TransitionConditions {
                     distance_m: distance,
                     relative_speed_mps: speed,
+                    time_in_phase_s: None,
                 },
             });
         }

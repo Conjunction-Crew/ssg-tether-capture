@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
-use crate::capture::plan::{CapturePlan, CompiledCapturePlan, compile_capture_plan};
+use crate::capture::plan::{
+    Actuation, CapturePlan, CaptureSphere, CompiledCapturePlan, PhaseEnd, compile_capture_plan,
+};
 use crate::project::load_plans_from_dir_with_errors;
 use crate::project::plan_files::{plan_file_reports, plan_to_json, read_plan_value};
 use crate::test_support::{Lcg, repo_root};
@@ -454,15 +456,113 @@ fn the_v1_example_plan_compiles_like_the_v0_original() {
     assert!(errors.is_empty(), "{errors:?}");
     let v1 = &plans["example_plan"];
     assert_eq!(v1.schema_version, 1);
+    // P7.5 S9 (design D16): the O4 plan differs from S6's in the phases, values
+    // and keys reverted here, and in nothing else; S10 (design D18) adds the
+    // terminal phase's `tail_spacing_m`.
+    let mut as_v0 = v1.clone();
+    assert_eq!(
+        as_v0.capture_sphere.as_ref().unwrap().initial_radius_m,
+        Some(100.0)
+    );
+    as_v0.capture_sphere.as_mut().unwrap().initial_radius_m = None;
+    let hold = as_v0.phases.pop().unwrap();
+    assert_eq!(hold.id, "hold");
+    assert_eq!(
+        (hold.max_velocity_mps, hold.max_force_n, hold.end),
+        (0.0, 2.0, Some(PhaseEnd::Success))
+    );
+    assert_eq!(
+        (hold.tail_actuation, hold.hold_plane, hold.actuation),
+        (Some(true), Some(true), Some(Actuation::Hold))
+    );
+    let final_approach = as_v0.phases.remove(2);
+    assert_eq!(final_approach.id, "final_approach");
+    assert_eq!(
+        (final_approach.max_velocity_mps, final_approach.max_force_n),
+        (0.3, 3.0)
+    );
+    let to_terminal = &final_approach.transitions.as_ref().unwrap()[0];
+    assert_eq!(to_terminal.to, "terminal");
+    assert_eq!(
+        to_terminal.all_of.distance_m.unwrap().less_than,
+        Some(120.0)
+    );
+    assert_eq!(
+        to_terminal.all_of.relative_speed_mps.unwrap().less_than,
+        Some(0.35)
+    );
+    let to_final = &mut as_v0.phases[1].transitions.as_mut().unwrap()[0];
+    assert_eq!(
+        (
+            to_final.to.as_str(),
+            to_final.all_of.distance_m.unwrap().less_than
+        ),
+        ("final_approach", Some(300.0))
+    );
+    to_final.to = "terminal".to_string();
+    to_final.all_of.distance_m.as_mut().unwrap().less_than = Some(50.0);
+    let terminal = &mut as_v0.phases[2];
+    assert_eq!(terminal.shrink_rate_mps, Some(0.05));
+    terminal.shrink_rate_mps = Some(0.01);
+    assert_eq!(terminal.hold_plane, Some(true));
+    terminal.hold_plane = None;
+    assert_eq!(terminal.tail_spacing_m, Some(12.0));
+    terminal.tail_spacing_m = None;
+    assert_eq!(terminal.velocity_scales_with_sphere, None);
+    terminal.velocity_scales_with_sphere = Some(true);
+    let back_out = &mut terminal.transitions.as_mut().unwrap()[1];
+    assert_eq!(
+        (
+            back_out.to.as_str(),
+            back_out.all_of.distance_m.unwrap().greater_than
+        ),
+        ("final_approach", Some(120.0))
+    );
+    back_out.to = "approach".to_string();
+    back_out.all_of.distance_m.as_mut().unwrap().greater_than = Some(50.0);
+    let capture = &mut as_v0.phases[3];
+    assert_eq!(capture.hold_plane, Some(true));
+    capture.hold_plane = None;
+    let to_hold = capture.transitions.take().unwrap();
+    assert_eq!(to_hold.len(), 1);
+    assert_eq!(to_hold[0].to, "hold");
+    assert_eq!(
+        to_hold[0].all_of.time_in_phase_s.unwrap().greater_than,
+        Some(90.0)
+    );
+    assert_eq!(capture.end, None);
+    capture.end = Some(PhaseEnd::Success);
+
+    // P7.5 S6 (E8, E9, E13b): the v1 example differs from the v0 original in the
+    // five values the O2 revision set, and in nothing else: with them reverted it
+    // compiles like the v0 file.
+    assert_eq!(as_v0.phases[0].max_velocity_mps, 18.0);
+    as_v0.phases[0].max_velocity_mps = 25.0;
+    assert_eq!(as_v0.phases[2].tail_actuation, Some(true));
+    as_v0.phases[2].tail_actuation = None;
+    assert_eq!(as_v0.phases[2].velocity_scales_with_sphere, Some(true));
+    as_v0.phases[2].velocity_scales_with_sphere = None;
+    assert_eq!(as_v0.phases[3].tail_actuation, Some(true));
+    as_v0.phases[3].tail_actuation = None;
+    assert_eq!(
+        as_v0.capture_sphere,
+        Some(CaptureSphere {
+            initial_radius_m: None,
+            min_radius_m: Some(4.5),
+        })
+    );
+    as_v0.capture_sphere = None;
     assert_same_compiled(
-        &compile_capture_plan(v1),
+        &compile_capture_plan(&as_v0),
         &oracle_compile(&v0),
         "example_plan",
     );
+    assert_eq!(compile_capture_plan(v1).min_capture_radius_m, 4.5);
+    assert_eq!(oracle_compile(&v0).min_capture_radius_m, 0.1);
     // And the migrated v0 file is the v1 file apart from what v1 adds or drops:
     // the `end` marker and the unmapped `units`.
     let migrated = read_plan_value("example_plan", &v0).plan.unwrap();
-    let mut expected = v1.clone();
+    let mut expected = as_v0.clone();
     expected.phases[3].end = None;
     expected.migrated_from_v0 = migrated.migrated_from_v0.clone();
     assert_eq!(migrated, expected);

@@ -4,15 +4,18 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::capture::{CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M};
+use crate::capture::{
+    CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M, MIN_CAPTURE_SPHERE_RADIUS_M,
+};
 
 /// The `schema_version` of the plan files this build reads and writes.
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
 
 const DEFAULT_DEVICE_TYPE: &str = "tether";
 pub(crate) const DEFAULT_TETHER_LENGTH_M: f64 = 20.0;
-pub(crate) const DEFAULT_SEGMENT_SPACING_M: f64 = 0.1;
-const DEFAULT_SEGMENT_MASS_KG: f64 = 0.1;
+// F-66 (design D2, E6): a 0.25 m rope at 1 kg/m.
+pub(crate) const DEFAULT_SEGMENT_SPACING_M: f64 = 0.25;
+const DEFAULT_SEGMENT_MASS_KG: f64 = 0.25;
 const DEFAULT_END_MASS_KG: f64 = 2.0;
 const DEFAULT_JOINT_DAMPING: f64 = 1.0;
 /// Radius of the root and tail spheres (the spawner's `root_tail_radius`).
@@ -63,22 +66,45 @@ pub struct CapturePlanDevice {
     /// Physical length of the tether in metres. Default 20.0; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tether_length_m: Option<f64>,
-    /// Distance between tether joints in metres. Default 0.1; greater than 0, and the
+    /// Distance between tether joints in metres. Default 0.25; greater than 0, and the
     /// tether may have at most 1,000 bodies (a warning above 200).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_spacing_m: Option<f64>,
-    /// Mass of each interior tether node in kg. Default 0.1; greater than 0.
+    /// Mass of each interior tether node in kg. Default 0.25; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_mass_kg: Option<f64>,
-    /// Mass of the root and of the tail in kg. Default 2.0; greater than 0.
+    /// Mass of the tail, and of the root unless `project.json` gives the chaser a
+    /// `mass_kg`, in kg. Default 2.0; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_mass_kg: Option<f64>,
     /// Linear damping of each tether joint. Default 1.0; not negative.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_damping_linear: Option<f64>,
-    /// Angular damping of each tether joint. Default 1.0; not negative.
+    /// Angular damping of each tether joint. Default 1.0; not negative. No effect on
+    /// the rope model (point masses); kept for file compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_damping_angular: Option<f64>,
+    /// How the tether is laid out at spawn, from both bodies' states at the start
+    /// epoch: `toward_target` (the tail trails along the root-to-target line, away
+    /// from the target), `v_bar` (behind the chaser along its velocity axis) or
+    /// `r_bar` (below it, toward the Earth). Default `toward_target`. A spawn
+    /// condition, not a held attitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawn_orientation: Option<SpawnOrientation>,
+}
+
+/// The axis the tether is laid along at spawn (P7.5 design D9).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum SpawnOrientation {
+    /// The tail trails along the root-to-target line, away from the target.
+    #[default]
+    TowardTarget,
+    /// The tail trails along the chaser's −V-bar (its LVLH along-track axis).
+    VBar,
+    /// The tail hangs along the chaser's −R-bar (its LVLH radial axis).
+    RBar,
 }
 
 impl CapturePlanDevice {
@@ -92,12 +118,12 @@ impl CapturePlanDevice {
         self.tether_length_m.unwrap_or(DEFAULT_TETHER_LENGTH_M)
     }
 
-    /// The joint spacing in metres, 0.1 when absent.
+    /// The joint spacing in metres, 0.25 when absent.
     pub fn segment_spacing_m(&self) -> f64 {
         self.segment_spacing_m.unwrap_or(DEFAULT_SEGMENT_SPACING_M)
     }
 
-    /// The interior node mass in kg, 0.1 when absent.
+    /// The interior node mass in kg, 0.25 when absent.
     pub fn segment_mass_kg(&self) -> f64 {
         self.segment_mass_kg.unwrap_or(DEFAULT_SEGMENT_MASS_KG)
     }
@@ -117,12 +143,19 @@ impl CapturePlanDevice {
         self.joint_damping_angular.unwrap_or(DEFAULT_JOINT_DAMPING)
     }
 
-    /// Root + tail + interior nodes, as the spawner counts them.
+    /// The spawn orientation, `toward_target` when absent.
+    pub fn spawn_orientation(&self) -> SpawnOrientation {
+        self.spawn_orientation.unwrap_or_default()
+    }
+
+    /// Root + tail + interior nodes, as the spawner counts them: the rope between
+    /// the end spheres in `max(1, round(rope / spacing))` intervals, one node fewer.
     fn tether_body_count(&self) -> u64 {
-        let interior = ((self.tether_length_m() - 2.0 * END_SPHERE_RADIUS_M)
+        let intervals = ((self.tether_length_m() - 2.0 * END_SPHERE_RADIUS_M)
             / self.segment_spacing_m())
-        .max(0.0) as u64;
-        interior.saturating_add(2)
+        .round()
+        .max(1.0) as u64;
+        intervals.saturating_add(1)
     }
 }
 
@@ -134,6 +167,9 @@ pub struct CaptureSphere {
     /// Radius in metres at the start of every capture. Default 25.0; greater than 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_radius_m: Option<f64>,
+    /// The radius the capture sphere stops shrinking at, m. Default 0.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_radius_m: Option<f64>,
 }
 
 impl CapturePlan {
@@ -143,6 +179,15 @@ impl CapturePlan {
             .as_ref()
             .and_then(|sphere| sphere.initial_radius_m)
             .unwrap_or(INITIAL_CAPTURE_SPHERE_RADIUS_M)
+    }
+
+    /// The radius in metres the capture sphere stops shrinking at
+    /// (`capture_sphere.min_radius_m`), 0.1 when absent.
+    pub fn min_capture_radius_m(&self) -> f64 {
+        self.capture_sphere
+            .as_ref()
+            .and_then(|sphere| sphere.min_radius_m)
+            .unwrap_or(MIN_CAPTURE_SPHERE_RADIUS_M)
     }
 }
 
@@ -166,6 +211,46 @@ pub struct Phase {
     /// Marks an end phase (`success` or `abort`); an end phase has no transitions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<PhaseEnd>,
+    /// Push the tail in this phase as well as the root. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_actuation: Option<bool>,
+    /// The phase's speed limit is `max_velocity_mps` at the capture-sphere radius
+    /// the phase was entered at and falls in proportion as the sphere shrinks.
+    /// A no-op in a phase without `shrink_rate_mps` (the radius stays where it
+    /// was entered). Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub velocity_scales_with_sphere: Option<bool>,
+    /// Hold the pushed bodies in the circling plane through the target: a
+    /// proportional force component toward the plane, full at `PLANE_HOLD_BAND_M`
+    /// of height. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold_plane: Option<bool>,
+    /// `circle`: the range and tangent branches, or in a phase with
+    /// `shrink_rate_mps` the circle law (the default); `hold`: brake every pushed
+    /// body to rest relative to the target and hold the plane; `max_velocity_mps`
+    /// is read as 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actuation: Option<Actuation>,
+    /// The chord from the root to the tail the controller holds, in m, the tail
+    /// behind the root in the sense of circling, in a phase that pushes the tail.
+    /// Without it the tail circles on its own sphere with no spacing held (the
+    /// pre-O5 law). Greater than 0 and less than `device.tether_length_m`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_spacing_m: Option<f64>,
+}
+
+/// The force law of a phase (P7.5 design D16).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum Actuation {
+    /// The range and tangent branches, or in a phase with `shrink_rate_mps` the
+    /// circle law: a continuous hold of the body's sphere radius (the default).
+    #[default]
+    Circle,
+    /// Brake every pushed body to rest relative to the target and hold the plane;
+    /// `max_velocity_mps` is read as 0.
+    Hold,
 }
 
 /// How an end phase ends the capture.
@@ -199,6 +284,9 @@ pub struct TransitionConditions {
     /// Magnitude of the LVLH relative velocity in m/s.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relative_speed_mps: Option<ConditionBounds>,
+    /// Seconds since the current phase was entered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_in_phase_s: Option<ConditionBounds>,
 }
 
 /// Bounds on one quantity; at least one, neither negative. Both strict.
@@ -242,6 +330,8 @@ pub struct CompiledCaptureTransition {
     pub distance_greater_than: Option<f64>,
     pub relative_velocity_less_than: Option<f64>,
     pub relative_velocity_greater_than: Option<f64>,
+    pub time_in_phase_less_than: Option<f64>,
+    pub time_in_phase_greater_than: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -249,6 +339,21 @@ pub struct CompiledCaptureStateParameters {
     pub max_velocity: f64,
     pub max_force: f64,
     pub shrink_rate: Option<f64>,
+    /// The phase's `tail_actuation`: the controller pushes the tail as well as the
+    /// root (C7). `false` when the phase leaves it out.
+    pub tail_actuation: bool,
+    /// The phase's `velocity_scales_with_sphere`: the speed limit is `max_velocity`
+    /// at the sphere radius the phase was entered at, scaled by the current radius
+    /// over that one. `false` when the phase leaves it out.
+    pub velocity_scales_with_sphere: bool,
+    /// The phase's `hold_plane`: every pushed body gets a component toward the
+    /// circling plane. `false` when the phase leaves it out.
+    pub hold_plane: bool,
+    /// The phase's `actuation`, [`Actuation::Circle`] when the phase leaves it out.
+    pub actuation: Actuation,
+    /// The phase's `tail_spacing_m`: the chord from the root to the tail the
+    /// tail's lag law holds (design D18). `None` when the phase leaves it out.
+    pub tail_spacing_m: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -265,6 +370,9 @@ pub struct CompiledCapturePlan {
     pub tether: String,
     pub states: Vec<CompiledCaptureState>,
     pub state_indices: HashMap<String, usize>,
+    /// The plan's [`CapturePlan::min_capture_radius_m`]: the capture sphere shrinks
+    /// while its radius is above this.
+    pub min_capture_radius_m: f64,
 }
 
 impl CompiledCapturePlan {
@@ -355,10 +463,23 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             }
         }
     }
-    if let Some(sphere) = &plan.capture_sphere
-        && sphere.initial_radius_m.is_some_and(|r| r <= 0.0)
-    {
-        error("/capture_sphere/initial_radius_m", POSITIVE);
+    if let Some(sphere) = &plan.capture_sphere {
+        if sphere.initial_radius_m.is_some_and(|r| r <= 0.0) {
+            error("/capture_sphere/initial_radius_m", POSITIVE);
+        }
+        if let Some(min_radius) = sphere.min_radius_m {
+            let initial_radius = plan.initial_capture_radius_m();
+            if !min_radius.is_finite() {
+                error("/capture_sphere/min_radius_m", "must be a finite number");
+            } else if min_radius <= 0.0 {
+                error("/capture_sphere/min_radius_m", POSITIVE);
+            } else if min_radius >= initial_radius {
+                error(
+                    "/capture_sphere/min_radius_m",
+                    &format!("must be less than initial_radius_m ({initial_radius} m)"),
+                );
+            }
+        }
     }
     if plan.phases.is_empty() {
         error("/phases", "at least one phase is required");
@@ -393,6 +514,7 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
             let conditions = [
                 ("distance_m", transition.all_of.distance_m),
                 ("relative_speed_mps", transition.all_of.relative_speed_mps),
+                ("time_in_phase_s", transition.all_of.time_in_phase_s),
             ];
             if conditions.iter().all(|(_, bounds)| bounds.is_none()) {
                 error(&at("all_of"), "at least one condition is required");
@@ -417,6 +539,21 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
         }
         if phase.end.is_some() && !transitions.is_empty() {
             error(&at("transitions"), "an end phase has no transitions");
+        }
+        // D18: the chord the lag law holds fits on the tether.
+        if let Some(spacing) = phase.tail_spacing_m {
+            let tether_length = plan
+                .device
+                .as_ref()
+                .map_or(DEFAULT_TETHER_LENGTH_M, CapturePlanDevice::tether_length_m);
+            if !(spacing > 0.0 && spacing < tether_length) {
+                error(
+                    &at("tail_spacing_m"),
+                    &format!(
+                        "must be greater than 0 and less than device.tether_length_m ({tether_length} m)"
+                    ),
+                );
+            }
         }
     }
 
@@ -453,6 +590,7 @@ pub fn build_capture_component(
         current_state: first_phase.id.clone(),
         state_enter_time_s: sim_time_s,
         state_elapsed_time_s: 0.0,
+        sphere_radius_at_entry_m: plan.initial_capture_radius_m(),
     })
 }
 
@@ -468,6 +606,11 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 max_velocity: phase.max_velocity_mps,
                 max_force: phase.max_force_n,
                 shrink_rate: phase.shrink_rate_mps,
+                tail_actuation: phase.tail_actuation.unwrap_or(false),
+                velocity_scales_with_sphere: phase.velocity_scales_with_sphere.unwrap_or(false),
+                hold_plane: phase.hold_plane.unwrap_or(false),
+                actuation: phase.actuation.unwrap_or_default(),
+                tail_spacing_m: phase.tail_spacing_m,
             },
             transitions: phase
                 .transitions
@@ -476,12 +619,15 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 .map(|transition| {
                     let distance = transition.all_of.distance_m.unwrap_or_default();
                     let speed = transition.all_of.relative_speed_mps.unwrap_or_default();
+                    let time = transition.all_of.time_in_phase_s.unwrap_or_default();
                     CompiledCaptureTransition {
                         to: transition.to.clone(),
                         distance_less_than: distance.less_than,
                         distance_greater_than: distance.greater_than,
                         relative_velocity_less_than: speed.less_than,
                         relative_velocity_greater_than: speed.greater_than,
+                        time_in_phase_less_than: time.less_than,
+                        time_in_phase_greater_than: time.greater_than,
                     }
                 })
                 .collect(),
@@ -493,5 +639,6 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
         tether: plan.tether.clone(),
         states,
         state_indices,
+        min_capture_radius_m: plan.min_capture_radius_m(),
     }
 }

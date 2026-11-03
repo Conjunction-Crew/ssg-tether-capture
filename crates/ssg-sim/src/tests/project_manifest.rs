@@ -212,7 +212,7 @@ fn an_orbit_must_have_exactly_one_known_key() {
 #[test]
 fn each_validation_rule_reports_its_message() {
     type Mutation = fn(&mut Value);
-    let rows: [(&str, Mutation, &str); 17] = [
+    let rows: [(&str, Mutation, &str); 19] = [
         (
             "blank name",
             |v| v["name"] = json!("  "),
@@ -289,17 +289,33 @@ fn each_validation_rule_reports_its_message() {
             "[project.json] /target/mass_kg: must be greater than 0",
         ),
         (
-            "chaser mass is not supported yet",
-            |v| v["chaser"]["mass_kg"] = json!(100.0),
-            "[project.json] /chaser/mass_kg: the chaser's mass is not supported yet; it is applied from v0.4.0-rc.4",
+            "chaser mass",
+            |v| v["chaser"]["mass_kg"] = json!(-5.0),
+            "[project.json] /chaser/mass_kg: must be greater than 0",
         ),
         (
-            "inertia is not supported yet",
+            "asymmetric inertia",
             |v| {
                 v["target"]["inertia_kg_m2"] =
-                    json!([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+                    json!([[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
             },
-            "[project.json] /target/inertia_kg_m2: the inertia is not supported yet; it is applied from v0.4.0-rc.4",
+            "[project.json] /target/inertia_kg_m2: must be a finite, symmetric, positive-definite 3×3 tensor",
+        ),
+        (
+            "inertia that is not positive definite",
+            |v| {
+                v["chaser"]["inertia_kg_m2"] =
+                    json!([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]])
+            },
+            "[project.json] /chaser/inertia_kg_m2: must be a finite, symmetric, positive-definite 3×3 tensor",
+        ),
+        (
+            "singular inertia",
+            |v| {
+                v["chaser"]["inertia_kg_m2"] =
+                    json!([[1.0, 1.0, 0.0], [1.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+            },
+            "[project.json] /chaser/inertia_kg_m2: must be a finite, symmetric, positive-definite 3×3 tensor",
         ),
         (
             "a chaser relative to the target is not supported yet",
@@ -307,7 +323,7 @@ fn each_validation_rule_reports_its_message() {
                 v["chaser"]["orbit"] =
                     json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 100.0 } })
             },
-            "[project.json] /chaser/orbit/relative_to_target: an orbit relative to the target is not supported yet; it is applied from v0.4.0-rc.4",
+            "[project.json] /chaser/orbit/relative_to_target: an orbit relative to the target is not supported yet; it is applied from v0.4.0-rc.5",
         ),
         (
             "a target cannot be relative to itself",
@@ -360,7 +376,7 @@ fn sim_inputs_of_an_invalid_manifest_is_the_validators_errors() {
     let errors = manifest.sim_inputs().expect_err("refused");
 
     assert_eq!(errors, manifest.validate());
-    assert!(errors[0].contains("applied from v0.4.0-rc.4"), "{errors:?}");
+    assert!(errors[0].contains("applied from v0.4.0-rc.5"), "{errors:?}");
 }
 
 #[test]
@@ -530,6 +546,7 @@ fn catalog_pick(norad_id: u64, label: &str) -> SelectedOrbitalObject {
         elements: EditableOrbitalElements::from_gp(&gp),
         gp: Some(gp),
         mass_kg: None,
+        inertia_kg_m2: None,
     }
 }
 
@@ -627,14 +644,12 @@ fn read_sim_inputs_distinguishes_no_manifest_a_bad_one_and_a_good_one() {
     );
 
     let mut value = doc();
-    value["chaser"]["mass_kg"] = json!(5.0);
+    value["chaser"]["mass_kg"] = json!(0.0);
     dir.write(MANIFEST_FILE, &value.to_string());
     let errors = read_sim_inputs(dir.path()).unwrap().unwrap_err();
     assert_eq!(
         errors,
-        [
-            "[project.json] /chaser/mass_kg: the chaser's mass is not supported yet; it is applied from v0.4.0-rc.4"
-        ]
+        ["[project.json] /chaser/mass_kg: must be greater than 0"]
     );
 
     dir.write(MANIFEST_FILE, &doc().to_string());
@@ -722,7 +737,7 @@ fn save_and_reload_refuses_a_manifest_that_is_not_valid() {
     let dir = TempDir::new("manifest-reload-invalid");
     let mut manifest = read(&doc()).manifest.unwrap();
     manifest.name = String::new();
-    manifest.chaser.mass_kg = Some(1.0);
+    manifest.chaser.mass_kg = Some(0.0);
 
     let errors = save_and_reload(dir.path(), &manifest).unwrap_err();
 
@@ -936,6 +951,7 @@ fn generated_selections_survive_from_selection_and_sim_inputs() {
             elements: EditableOrbitalElements::from_gp(&gp),
             gp: Some(gp.clone()),
             mass_kg: None,
+            inertia_kg_m2: None,
         };
         let edited = SelectedOrbitalObject {
             source: OrbitalSelectionSource::Custom {
@@ -955,6 +971,7 @@ fn generated_selections_survive_from_selection_and_sim_inputs() {
             },
             gp: None,
             mass_kg: None,
+            inertia_kg_m2: None,
         };
         let selection = OrbitalSelectionState {
             target: Some(picked),
@@ -1019,6 +1036,37 @@ fn the_targets_mass_reaches_the_selection_and_survives_writing_it_back() {
             .mass_kg,
         Some(3200.5)
     );
+}
+
+#[test]
+fn the_chasers_mass_and_both_tensors_reach_the_selection_and_survive_writing_them_back() {
+    // P7.5 S1 (Q10 row 11, Q49 lifted): the chaser's `mass_kg` and both
+    // `inertia_kg_m2` are accepted and travel with the selection.
+    let chaser_tensor = [[500.0, 10.0, -5.0], [10.0, 400.0, 3.0], [-5.0, 3.0, 300.0]];
+    let target_tensor = [[5.5e3, 0.0, 0.0], [0.0, 3.9e4, 0.0], [0.0, 0.0, 3.9e4]];
+    let mut value = doc();
+    value["chaser"]["mass_kg"] = json!(500.0);
+    value["chaser"]["inertia_kg_m2"] = json!(chaser_tensor);
+    value["target"]["inertia_kg_m2"] = json!(target_tensor);
+    let report = read(&value);
+    assert_eq!(report.errors, Vec::<String>::new());
+    let inputs = report.manifest.unwrap().sim_inputs().unwrap();
+    assert_eq!(inputs.chaser.mass_kg, Some(500.0));
+    assert_eq!(inputs.chaser.inertia_kg_m2, Some(chaser_tensor));
+    assert_eq!(inputs.target.inertia_kg_m2, Some(target_tensor));
+
+    let selection = OrbitalSelectionState {
+        target: Some(inputs.target),
+        chaser: Some(inputs.chaser),
+    };
+    let written = ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap();
+    assert_eq!(written.chaser.mass_kg, Some(500.0));
+    assert_eq!(written.chaser.inertia_kg_m2, Some(chaser_tensor));
+    assert_eq!(written.target.inertia_kg_m2, Some(target_tensor));
+    let reread = read_manifest_value(&serde_json::from_str(&manifest_to_json(&written)).unwrap());
+    assert_eq!(reread.errors, Vec::<String>::new());
+    let inputs = reread.manifest.unwrap().sim_inputs().unwrap();
+    assert_eq!(inputs.chaser.inertia_kg_m2, Some(chaser_tensor));
 }
 
 // ---------------------------------------------------------------------------

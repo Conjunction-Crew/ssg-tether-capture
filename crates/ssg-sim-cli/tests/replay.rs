@@ -272,7 +272,8 @@ fn recordings_with_each_spawn_update_step_count_replay_exactly() {
 
 #[test]
 fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
-    // Q13 resets the origin at steps 468 and 979 (macOS/aarch64).
+    // Q13 resets the origin at steps 701 and 1,328 (macOS/aarch64).
+    let last_step: u64 = 1400;
     let dir = temp_dir("resets");
     let (mut app, sink) = harness(&dir.join("recordings"), 16);
     enter_sim(&mut app);
@@ -282,7 +283,7 @@ fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
         target: Some(debris),
         plan_id: q13::PLAN_ID.to_string(),
     });
-    while current_step(&app) < 1100 {
+    while current_step(&app) < last_step {
         if current_step(&app) + 1 == 400 {
             app.world_mut().write_message(RecorderCommand::Start {
                 name: "resets".to_string(),
@@ -298,7 +299,7 @@ fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
         .filter(|f| f.line.origin_shift_m != [0.0; 3])
         .map(|f| f.line.step)
         .collect();
-    assert!(!shifted.is_empty(), "no reset in steps 400–1100");
+    assert!(!shifted.is_empty(), "no reset in steps 400–{last_step}");
     println!("frames carrying an origin shift: {shifted:?}");
     let out = expect_exit(&replay(&folder, &[]), 0);
     assert!(out.contains(&identical(recording.frames.len())), "{out}");
@@ -321,7 +322,7 @@ fn a_recording_across_floating_origin_resets_replays_and_plays_continuously() {
     let (mut largest, mut at) = (0.0_f64, 0);
     let mut largest_bubble = 0.0_f64;
     let mut previous = player.state_at(400.0);
-    for step in 401..=1100 {
+    for step in 401..=last_step {
         let view = player.state_at(step as f64);
         for body in 0..view.bodies.len() {
             let ((p0, v0), (p1, _)) = (eci(&previous, body), eci(&view, body));
@@ -371,7 +372,7 @@ fn a_run_record_recording_replays_and_each_edit_gives_its_exit_code() {
     // Frames at steps 2, 34, 66, 98 and 130 (K = 32).
     println!("ssg-sim run --record r, then replay:");
     let out = expect_exit(&replay(&original, &[]), 0);
-    assert!(out.contains("193 bodies, 5 frames, steps 2–130"), "{out}");
+    assert!(out.contains("78 bodies, 5 frames, steps 2–130"), "{out}");
     assert!(out.contains("built with: this build"), "{out}");
     assert!(
         out.contains(&format!("with k = 1: {}", identical(5))),
@@ -454,7 +455,7 @@ fn a_run_record_recording_replays_and_each_edit_gives_its_exit_code() {
         .unwrap();
     row.values[7] = f64::from_bits(row.values[7].to_bits() ^ 1);
     let mut writer = KeyframeWriter::create(&table).unwrap();
-    for frame in rows.chunks(193) {
+    for frame in rows.chunks(78) {
         let bodies: Vec<_> = frame.iter().map(KeyframeRow::state).collect();
         writer.push_frame(frame[0].step as u64, &bodies).unwrap();
     }

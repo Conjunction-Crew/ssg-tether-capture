@@ -4,11 +4,13 @@
 
 use std::time::Duration;
 
+use avian3d::prelude::DistanceJoint;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 
 use crate::render::camera::CameraTarget;
+use crate::render::gizmos::{replay_tether_chain, running_tether_chains};
 use crate::tests::app_support::{test_app, tick};
 use crate::ui::recording::{
     MAX_STEP_CAP, MIN_STEP_CAP, PanelAction, RecordingPanel, adapt_step_cap, apply_panel_action,
@@ -18,6 +20,7 @@ use crate::ui::recording::{
 use crate::ui::replay::{
     ReplayBody, load_replay_session, replay_shapes, scan_recordings, spawn_replay_bodies,
 };
+use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::selection::OrbitalSelectionState;
 use ssg_sim::project::WorkingDirectory;
 use ssg_sim::project::manifest::{ProjectManifest, read_manifest_file, save_manifest};
@@ -316,7 +319,7 @@ fn a_recording_made_from_the_window_plays_back() {
     assert!(status.recording, "{status:?}");
     assert!(status.near_cap, "110 of 128 steps is past 80 %: {status:?}");
     assert!(status.frames >= 7, "{status:?}");
-    assert_eq!(status.bytes, status.frames * 193 * 116);
+    assert_eq!(status.bytes, status.frames * 78 * 116);
 
     // The 2 s cap stops it.
     for _ in 0..40 {
@@ -351,13 +354,16 @@ fn a_recording_made_from_the_window_plays_back() {
     assert!(entries[0].error.is_some() && entries[0].duration_s == 0.0);
     let entry = &entries[1];
     assert!(entry.error.is_none() && entry.differences.is_empty());
-    assert_eq!(entry.bodies, 193);
+    assert_eq!(
+        entry.bodies, 78,
+        "F-66 (P7.5 S2): the target and 77 tether bodies"
+    );
     assert!(
         (entry.duration_s - 2.0).abs() < 0.01,
         "{}",
         entry.duration_s
     );
-    assert!(entry.size_bytes > 193 * 116 * 8);
+    assert!(entry.size_bytes > 78 * 116 * 8);
     // Another platform shows in the list.
     let mut edited = manifest.clone();
     edited.built_with.target = "elsewhere-os".to_string();
@@ -376,7 +382,7 @@ fn a_recording_made_from_the_window_plays_back() {
     // Open: the player starts at the first frame; the visuals are the spawner's.
     let session = load_replay_session(&recording_dir).expect("the recording loads");
     assert_eq!(session.name, name);
-    assert_eq!(session.roles.len(), 193);
+    assert_eq!(session.roles.len(), 78);
     assert_eq!(session.player.start_step(), manifest.start_step);
     assert_eq!(session.player.end_step(), manifest.end_step.unwrap());
     let live = app.world().resource::<RecordingBodies>().clone();
@@ -390,9 +396,9 @@ fn a_recording_made_from_the_window_plays_back() {
     }
     assert!(app.world().get::<DebrisBody>(live.entities[0]).is_some());
     assert_eq!(
-        replay_shapes(&manifest.plan, &session.roles),
+        replay_shapes(&session.roles),
         session.shapes,
-        "the shapes come from the recording's plan"
+        "the shapes come from the recording's body roles"
     );
 
     // The replay scene: one visual-only body per recorded body, at the first frame.
@@ -410,7 +416,7 @@ fn a_recording_made_from_the_window_plays_back() {
         .iter(scene.world())
         .map(|(body, transform)| (body.index, transform.translation))
         .collect();
-    assert_eq!(spawned.len(), 193);
+    assert_eq!(spawned.len(), 78);
     for (index, translation) in spawned {
         assert_eq!(
             translation,
@@ -425,4 +431,48 @@ fn a_recording_made_from_the_window_plays_back() {
     let followed: Vec<usize> = followed.iter(scene.world()).map(|b| b.index).collect();
     assert_eq!(followed, [1]);
     assert_eq!(live.roles[1], RecordingBodyRole::TetherRoot);
+}
+
+/// P7.5 S2: the segment gizmo joins the running chain (root along the joints)
+/// and the replay's bodies (body-table order) into the same 76 segments.
+#[test]
+fn the_tether_segments_join_the_running_chain_and_the_replay_bodies_alike() {
+    let mut app = test_app();
+    q13::build(&mut app);
+    let chains = app
+        .world_mut()
+        .run_system_once(
+            |cache: Res<OrbitalCache>,
+             joints: Query<&DistanceJoint>,
+             transforms: Query<&Transform>| {
+                running_tether_chains(&cache, &joints, &transforms)
+            },
+        )
+        .expect("running_tether_chains runs");
+    assert_eq!(chains.len(), 1, "one tether");
+    assert_eq!(chains[0].len() - 1, 76, "76 segments between 77 bodies");
+
+    // The replay scene: one body per recorded body at the live position, spawned
+    // in reverse so the chain must come from the body-table index.
+    let live = app.world().resource::<RecordingBodies>().clone();
+    let shapes = replay_shapes(&live.roles);
+    let mut scene = App::new();
+    for (index, (entity, shape)) in live.entities.iter().zip(shapes).enumerate().rev() {
+        let at = app.world().get::<Transform>(*entity).unwrap().translation;
+        let mut body = scene
+            .world_mut()
+            .spawn((ReplayBody { index }, Transform::from_translation(at)));
+        if let Some(shape) = shape {
+            body.insert(shape);
+        }
+    }
+    let replay = scene
+        .world_mut()
+        .run_system_once(
+            |bodies: Query<(&ReplayBody, &Transform), With<TetherShape>>| {
+                replay_tether_chain(&bodies)
+            },
+        )
+        .expect("replay_tether_chain runs");
+    assert_eq!(replay, chains[0], "the same 77 points in the same order");
 }

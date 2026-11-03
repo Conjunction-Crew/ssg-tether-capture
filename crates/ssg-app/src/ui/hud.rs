@@ -371,7 +371,7 @@ fn append_state_parameters(body: &mut String, state: &CompiledCaptureState) {
     writeln!(body, "State parameters").unwrap();
     let p = &state.parameters;
     writeln!(body, "- max_velocity: {:.4}", p.max_velocity).unwrap();
-    writeln!(body, "- max_force: {:.4}", p.max_force).unwrap();
+    writeln!(body, "- max_force_n (bound): {:.4}", p.max_force).unwrap();
     if let Some(sr) = p.shrink_rate {
         writeln!(body, "- shrink_rate: {:.4}", sr).unwrap();
     }

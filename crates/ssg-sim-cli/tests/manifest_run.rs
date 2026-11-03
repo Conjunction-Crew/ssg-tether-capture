@@ -224,7 +224,7 @@ fn an_invalid_manifest_stops_the_run_with_its_errors() {
     let mut manifest: Value =
         serde_json::from_str(&std::fs::read_to_string(project.join("project.json")).unwrap())
             .unwrap();
-    manifest["chaser"]["mass_kg"] = json!(100.0);
+    manifest["chaser"]["mass_kg"] = json!(-1.0);
     std::fs::write(project.join("project.json"), manifest.to_string()).unwrap();
 
     let output = ssg_sim(&project, "out", &["--steps", "64"])
@@ -234,7 +234,7 @@ fn an_invalid_manifest_stops_the_run_with_its_errors() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("ssg-sim: [project.json] /chaser/mass_kg: the chaser's mass is not supported yet; it is applied from v0.4.0-rc.4"),
+        stderr.contains("ssg-sim: [project.json] /chaser/mass_kg: must be greater than 0"),
         "{stderr}"
     );
     let _ = std::fs::remove_dir_all(&project);

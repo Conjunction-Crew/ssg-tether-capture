@@ -174,9 +174,10 @@ fn the_duration_cap_stops_the_recording_and_warns_at_80_percent() {
 
 #[test]
 fn the_size_cap_stops_before_the_frame_that_would_exceed_it() {
-    // 193 bodies × 116 B = 22,388 B per frame: four frames fit in 0.1 MB.
+    // 78 bodies × 116 B = 9,048 B per frame: four frames fit in 0.04 MB (F-66,
+    // P7.5 S2: the rope's 78 bodies; 193 bodies and 0.1 MB with the rod).
     let settings = RecordingSettings {
-        max_size_mb: 0.1,
+        max_size_mb: 0.04,
         ..k32()
     };
     let run = run_q13(
@@ -188,7 +189,7 @@ fn the_size_cap_stops_before_the_frame_that_would_exceed_it() {
     assert_eq!(end(&run, 0), Some((196, EndReason::MaxSize)));
     assert_eq!(
         warnings(&run),
-        vec!["Recording at 80 % of its size cap (89552 bytes)".to_string()]
+        vec!["Recording at 80 % of its size cap (36192 bytes)".to_string()]
     );
 }
 
@@ -216,12 +217,13 @@ fn more_tether_bodies_than_the_cap_are_refused() {
         .cloned()
         .collect();
     println!("dense plan: {bodies} bodies, {tether} tether bodies; {events:?}");
-    // 383 bodies: the target and 382 tether bodies.
-    assert_eq!((bodies, tether), (383, 382));
+    // 382 bodies: the target and 381 tether bodies (F-66, P7.5 S2: the rope's
+    // 380 intervals at 0.05 m; the rod had 382).
+    assert_eq!((bodies, tether), (382, 381));
     assert_eq!(
         events,
         vec![RecorderEvent::Refused(
-            "382 tether bodies; at most 200 may be recorded".to_string()
+            "381 tether bodies; at most 200 may be recorded".to_string()
         )]
     );
     assert!(sink.segments().is_empty());
@@ -235,11 +237,15 @@ fn the_body_table_is_target_root_nodes_tail() {
     let handles = q13::build_with_command(&mut app, q13::PLAN_ID);
     let bodies = app.world().resource::<RecordingBodies>().clone();
     let tether = app.world().resource::<OrbitalCache>().tethers["Tether1"].clone();
-    assert_eq!(bodies.entities.len(), 193);
+    assert_eq!(
+        bodies.entities.len(),
+        78,
+        "F-66 (P7.5 S2): the target and 77 tether bodies"
+    );
     assert_eq!(bodies.entities[0], handles.debris);
     assert_eq!(bodies.entities[1], handles.root);
     // `OrbitalCache.tethers` holds the root and the tail only.
-    assert_eq!(tether, vec![bodies.entities[1], bodies.entities[192]]);
+    assert_eq!(tether, vec![bodies.entities[1], bodies.entities[77]]);
     // Consecutive bodies are joined by the spawn's distance joints, in order.
     let joints: Vec<(Entity, Entity)> = app
         .world_mut()
@@ -256,11 +262,11 @@ fn the_body_table_is_target_root_nodes_tail() {
     assert_eq!(bodies.roles[0], RecordingBodyRole::Target);
     assert_eq!(bodies.roles[1], RecordingBodyRole::TetherRoot);
     assert!(
-        bodies.roles[2..192]
+        bodies.roles[2..77]
             .iter()
             .all(|r| *r == RecordingBodyRole::TetherNode)
     );
-    assert_eq!(bodies.roles[192], RecordingBodyRole::TetherTail);
+    assert_eq!(bodies.roles[77], RecordingBodyRole::TetherTail);
 }
 
 #[test]

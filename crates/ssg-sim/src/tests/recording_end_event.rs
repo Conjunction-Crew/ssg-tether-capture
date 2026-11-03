@@ -98,8 +98,10 @@ fn the_example_plan_compiles_its_end_phase() {
         vec![
             ("rendezvous", None),
             ("approach", None),
+            ("final_approach", None),
             ("terminal", None),
-            ("capture", Some(PhaseEnd::Success)),
+            ("capture", None),
+            ("hold", Some(PhaseEnd::Success)),
         ]
     );
 }

@@ -58,7 +58,7 @@ The app names a recording `<plan-id>-<UTC time>`, for example `example_plan-2026
 
 ## Sizes
 
-A frame takes 116 bytes per body (the Parquet file adds about 0.2 %). The default 20 m tether has 192 bodies, so with the target a frame is 22.4 KB. With a 200-body tether and the target (201 bodies):
+A frame takes 116 bytes per body (the Parquet file adds about 0.2 %). The default 20 m tether has 77 bodies, so with the target (78 bodies) a frame is 9.0 KB: 1.1 MB per simulated minute at the default frame interval, and a 30-minute segment of 32.6 MB. With a 200-body tether and the target (201 bodies):
 
 | Frame interval K | Frames per simulated second | MB per simulated minute | 30-minute segment | Longest segment under 100 MB |
 |---|---|---|---|---|
@@ -95,7 +95,7 @@ ssg-sim replay my-project/recordings/r
 checks the recording's files, re-simulates the run from step 0 with the recorded scenario, plan and inputs (including the spawn-update step count k), and compares every frame of every body bit for bit:
 
 ```text
-recording my-project/recordings/r: 193 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
+recording my-project/recordings/r: 78 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
 built with: this build
 re-simulated steps 0–130 with k = 1: frames: 5, identical: 5
 ```
@@ -111,9 +111,9 @@ On a difference it prints the first one (frame step, body, |Δposition|, |Δvelo
 
 ### What re-simulation promises
 
-Playback is identical on every platform. On the machine that recorded it, a recording made by `ssg-sim run --record` re-simulates bit for bit.
+Playback is identical on every platform. On the machine and the build that recorded it, a recording re-simulates bit for bit, whether `ssg-sim run --record` or the app made it. The simulation owns the debris collider and its mass properties, so the command line and the app simulate the same world, tether–debris contacts included. An app recording of the Hubble capture, made through the wrap and the hold with the warp changed four times, replays with every frame identical.
 
-**An app recording does not re-simulate bit for bit yet.** The app's run already differs from the headless re-simulation before any tether–debris contact, for a reason not yet found (F-65). Expect `ssg-sim replay` to exit 1 for a recording made in the app, even on the machine that made it. Beyond that, the headless debris has no collider and no collider-derived mass or inertia; the app builds both when the glTF scene has loaded, at a wall-clock-dependent step (F-64). So the command line never simulates tether–debris contact, and the app's contact begins at a step that varies from run to run.
+The recording's `built_with` names the target and the crate version, not the commit. Two builds of the same version (for example two branches before a release) both count as "this build", so a recording replayed on a different build of the same version that differs is reported with exit 1.
 
 On another machine, platform or build, re-simulation may differ, and `ssg-sim replay` reports by how much.
 

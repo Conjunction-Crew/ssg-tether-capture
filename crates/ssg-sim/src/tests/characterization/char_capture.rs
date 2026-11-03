@@ -135,20 +135,34 @@ fn capture_example_plan_timeline() {
     assert_eq!(state_of(&app, &rig), "rendezvous");
     assert_eq!(radius(&app), 25.0);
 
+    // P7.5 S9 (design D16): `final_approach` enters `terminal` below 120 m and
+    // below 0.35 m/s; `capture` → `hold` after 90 s in phase is not reached.
     let rows = [
         (3000.0, 1.0),
         (1500.0, 1.0),
-        (40.0, 1.0),
-        (4.0, 1.0),
-        (4.0, 1.0),
+        (200.0, 1.0),
+        (40.0, 0.3),
+        (4.0, 0.3),
+        (4.0, 0.3),
     ];
 
     // Each row satisfies exactly one transition, so the timeline is one transition
     // per row from row 1.
-    let expected: [Expected; 3] = [
+    let expected: [Expected; 4] = [
         (1, "rendezvous", "approach", "distance 1500.0 m < 2000.0 m"),
-        (2, "approach", "terminal", "distance 40.0 m < 50.0 m"),
-        (3, "terminal", "capture", "distance 4.0 m < 5.0 m"),
+        (
+            2,
+            "approach",
+            "final_approach",
+            "distance 200.0 m < 300.0 m",
+        ),
+        (
+            3,
+            "final_approach",
+            "terminal",
+            "distance 40.0 m < 120.0 m, rel vel 0.30 m/s < 0.35 m/s",
+        ),
+        (4, "terminal", "capture", "distance 4.0 m < 5.0 m"),
     ];
 
     let mut events = Vec::new();
@@ -165,23 +179,24 @@ fn capture_example_plan_timeline() {
     assert_eq!(state_of(&app, &rig), "capture");
 
     // One shrink per row, at the rate of the state current after the row's check:
-    // `terminal` from row 2 (the row it is entered), `capture` from row 3.
-    let terminal_step = 0.01 * PHYS_DT;
+    // `terminal` from row 3 (the row it is entered), `capture` from row 4.
+    let terminal_step = 0.05 * PHYS_DT;
     let capture_step = 0.005 * PHYS_DT;
     assert_eq!(radii[0], 25.0);
     assert_eq!(radii[1], 25.0);
-    assert_close(radii[2], 25.0 - terminal_step, 1e-12, "radius after row 2");
-    assert_close(
-        radii[3],
-        25.0 - terminal_step - capture_step,
-        1e-12,
-        "radius after row 3",
-    );
+    assert_eq!(radii[2], 25.0);
+    assert_close(radii[3], 25.0 - terminal_step, 1e-12, "radius after row 3");
     assert_close(
         radii[4],
-        25.0 - terminal_step - 2.0 * capture_step,
+        25.0 - terminal_step - capture_step,
         1e-12,
         "radius after row 4",
+    );
+    assert_close(
+        radii[5],
+        25.0 - terminal_step - 2.0 * capture_step,
+        1e-12,
+        "radius after row 5",
     );
 }
 
@@ -241,8 +256,9 @@ fn transition_no_cascade() {
 
     let mut events = Vec::new();
     let mut radii = Vec::new();
-    for row in 0..3 {
-        rig_set(&mut app, &rig, 4.0, 1.0);
+    // P7.5 S9: 0.3 m/s, below `final_approach`'s 0.35 m/s condition.
+    for row in 0..4 {
+        rig_set(&mut app, &rig, 4.0, 0.3);
         for (from, to, reason) in rig_step(&mut app, &rig) {
             events.push((row, from, to, reason));
         }
@@ -253,21 +269,28 @@ fn transition_no_cascade() {
         &events,
         &[
             (0, "rendezvous", "approach", "distance 4.0 m < 2000.0 m"),
-            (1, "approach", "terminal", "distance 4.0 m < 50.0 m"),
-            (2, "terminal", "capture", "distance 4.0 m < 5.0 m"),
+            (1, "approach", "final_approach", "distance 4.0 m < 300.0 m"),
+            (
+                2,
+                "final_approach",
+                "terminal",
+                "distance 4.0 m < 120.0 m, rel vel 0.30 m/s < 0.35 m/s",
+            ),
+            (3, "terminal", "capture", "distance 4.0 m < 5.0 m"),
         ],
     );
     assert_eq!(state_of(&app, &rig), "capture");
 
-    let terminal_step = 0.01 * PHYS_DT;
+    let terminal_step = 0.05 * PHYS_DT;
     let capture_step = 0.005 * PHYS_DT;
     assert_eq!(radii[0], 25.0);
-    assert_close(radii[1], 25.0 - terminal_step, 1e-12, "radius after row 1");
+    assert_eq!(radii[1], 25.0);
+    assert_close(radii[2], 25.0 - terminal_step, 1e-12, "radius after row 2");
     assert_close(
-        radii[2],
+        radii[3],
         25.0 - terminal_step - capture_step,
         1e-12,
-        "radius after row 2",
+        "radius after row 3",
     );
 }
 
@@ -519,8 +542,12 @@ fn capture_sphere_radius_reset_per_capture() {
         .run_system_once(apply_sim_commands)
         .expect("apply_sim_commands failed to run");
 
-    // F-11: fixed in P4
-    assert_eq!(radius(&app), INITIAL_CAPTURE_SPHERE_RADIUS_M);
+    // F-11: fixed in P4. P7.5 S9: the plan's `initial_radius_m`, 100 m in the
+    // example plan (25 m when a plan leaves it out).
+    let initial = app.world().resource::<CapturePlanLibrary>().plans["example_plan"]
+        .initial_capture_radius_m();
+    assert_eq!(initial, 100.0);
+    assert_eq!(radius(&app), initial);
     assert!(app.world().get::<CaptureComponent>(second).is_some());
     assert!(app.world().get::<CaptureComponent>(rig.capture).is_none());
 }

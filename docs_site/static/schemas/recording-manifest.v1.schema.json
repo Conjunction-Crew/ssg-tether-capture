@@ -1,5 +1,20 @@
 {
   "$defs": {
+    "Actuation": {
+      "description": "The force law of a phase (P7.5 design D16).",
+      "oneOf": [
+        {
+          "const": "circle",
+          "description": "The range and tangent branches, or in a phase with `shrink_rate_mps` the\ncircle law: a continuous hold of the body's sphere radius (the default).",
+          "type": "string"
+        },
+        {
+          "const": "hold",
+          "description": "Brake every pushed body to rest relative to the target and hold the plane;\n`max_velocity_mps` is read as 0.",
+          "type": "string"
+        }
+      ]
+    },
     "BuiltWith": {
       "additionalProperties": false,
       "description": "The build that wrote the manifest (the determinism settings: nothing here is\nconfigurable at run time).",
@@ -100,7 +115,7 @@
       "description": "The capture device. Every field is optional; an absent field takes its default.",
       "properties": {
         "end_mass_kg": {
-          "description": "Mass of the root and of the tail in kg. Default 2.0; greater than 0.",
+          "description": "Mass of the tail, and of the root unless `project.json` gives the chaser a\n`mass_kg`, in kg. Default 2.0; greater than 0.",
           "format": "double",
           "type": [
             "number",
@@ -108,7 +123,7 @@
           ]
         },
         "joint_damping_angular": {
-          "description": "Angular damping of each tether joint. Default 1.0; not negative.",
+          "description": "Angular damping of each tether joint. Default 1.0; not negative. No effect on\nthe rope model (point masses); kept for file compatibility.",
           "format": "double",
           "type": [
             "number",
@@ -124,7 +139,7 @@
           ]
         },
         "segment_mass_kg": {
-          "description": "Mass of each interior tether node in kg. Default 0.1; greater than 0.",
+          "description": "Mass of each interior tether node in kg. Default 0.25; greater than 0.",
           "format": "double",
           "type": [
             "number",
@@ -132,12 +147,23 @@
           ]
         },
         "segment_spacing_m": {
-          "description": "Distance between tether joints in metres. Default 0.1; greater than 0, and the\ntether may have at most 1,000 bodies (a warning above 200).",
+          "description": "Distance between tether joints in metres. Default 0.25; greater than 0, and the\ntether may have at most 1,000 bodies (a warning above 200).",
           "format": "double",
           "type": [
             "number",
             "null"
           ]
+        },
+        "spawn_orientation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpawnOrientation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the tether is laid out at spawn, from both bodies' states at the start\nepoch: `toward_target` (the tail trails along the root-to-target line, away\nfrom the target), `v_bar` (behind the chaser along its velocity axis) or\n`r_bar` (below it, toward the Earth). Default `toward_target`. A spawn\ncondition, not a held attitude."
         },
         "tether_length_m": {
           "description": "Physical length of the tether in metres. Default 20.0; greater than 0.",
@@ -163,6 +189,14 @@
       "properties": {
         "initial_radius_m": {
           "description": "Radius in metres at the start of every capture. Default 25.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min_radius_m": {
+          "description": "The radius the capture sphere stops shrinking at, m. Default 0.1.",
           "format": "double",
           "type": [
             "number",
@@ -243,7 +277,7 @@
       "description": "One body of the scenario.",
       "properties": {
         "inertia_kg_m2": {
-          "description": "Inertia tensor in kg m², row-major. Refused until v0.4.0-rc.4.",
+          "description": "Inertia tensor in kg m², row-major; finite, symmetric and positive definite.\nIt is taken in the sim's ECI-aligned axes at spawn: every body starts with\nthe identity attitude and the sim has no attitude model. Absent: the\ncollider's inertia scaled to the mass.",
           "items": {
             "items": {
               "format": "double",
@@ -265,7 +299,7 @@
           "type": "string"
         },
         "mass_kg": {
-          "description": "Mass in kg; greater than 0. The target's is applied from v0.4.0-rc.1; the\nchaser's is refused until v0.4.0-rc.4.",
+          "description": "Mass in kg; greater than 0. The chaser's is the tether root's (the root is\nthe chaser); without it the root takes the plan's `end_mass_kg`.",
           "format": "double",
           "type": [
             "number",
@@ -375,7 +409,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.4.",
+          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.5.",
           "properties": {
             "relative_to_target": {
               "$ref": "#/$defs/RelativeToTarget"
@@ -430,6 +464,17 @@
       "additionalProperties": false,
       "description": "One phase of the plan: the controller's limits while in it and its transitions.",
       "properties": {
+        "actuation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Actuation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`circle`: the range and tangent branches, or in a phase with\n`shrink_rate_mps` the circle law (the default); `hold`: brake every pushed\nbody to rest relative to the target and hold the plane; `max_velocity_mps`\nis read as 0."
+        },
         "end": {
           "anyOf": [
             {
@@ -440,6 +485,13 @@
             }
           ],
           "description": "Marks an end phase (`success` or `abort`); an end phase has no transitions."
+        },
+        "hold_plane": {
+          "description": "Hold the pushed bodies in the circling plane through the target: a\nproportional force component toward the plane, full at `PLANE_HOLD_BAND_M`\nof height. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "id": {
           "description": "Phase id, unique in the plan and not blank.",
@@ -463,6 +515,21 @@
             "null"
           ]
         },
+        "tail_actuation": {
+          "description": "Push the tail in this phase as well as the root. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tail_spacing_m": {
+          "description": "The chord from the root to the tail the controller holds, in m, the tail\nbehind the root in the sense of circling, in a phase that pushes the tail.\nWithout it the tail circles on its own sphere with no spacing held (the\npre-O5 law). Greater than 0 and less than `device.tether_length_m`.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "transitions": {
           "description": "Checked in order every step; the first whose conditions all hold fires.",
           "items": {
@@ -470,6 +537,13 @@
           },
           "type": [
             "array",
+            "null"
+          ]
+        },
+        "velocity_scales_with_sphere": {
+          "description": "The phase's speed limit is `max_velocity_mps` at the capture-sphere radius\nthe phase was entered at and falls in proportion as the sphere shrinks.\nA no-op in a phase without `shrink_rate_mps` (the radius stays where it\nwas entered). Default false.",
+          "type": [
+            "boolean",
             "null"
           ]
         }
@@ -799,6 +873,26 @@
       ],
       "type": "object"
     },
+    "SpawnOrientation": {
+      "description": "The axis the tether is laid along at spawn (P7.5 design D9).",
+      "oneOf": [
+        {
+          "const": "toward_target",
+          "description": "The tail trails along the root-to-target line, away from the target.",
+          "type": "string"
+        },
+        {
+          "const": "v_bar",
+          "description": "The tail trails along the chaser's −V-bar (its LVLH along-track axis).",
+          "type": "string"
+        },
+        {
+          "const": "r_bar",
+          "description": "The tail hangs along the chaser's −R-bar (its LVLH radial axis).",
+          "type": "string"
+        }
+      ]
+    },
     "Transition": {
       "additionalProperties": false,
       "description": "A transition to another phase.",
@@ -843,6 +937,17 @@
             }
           ],
           "description": "Magnitude of the LVLH relative velocity in m/s."
+        },
+        "time_in_phase_s": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Seconds since the current phase was entered."
         }
       },
       "type": "object"

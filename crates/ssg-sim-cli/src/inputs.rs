@@ -126,6 +126,7 @@ fn pick(
         elements: EditableOrbitalElements::from_gp(&gp),
         gp: Some(gp),
         mass_kg: None,
+        inertia_kg_m2: None,
     })
 }
 

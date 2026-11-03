@@ -18,7 +18,7 @@ use ssg_sim::test_support::q13;
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
 
 /// `ssg-sim run` of the Q13 6,400-step command (macOS/aarch64 reference).
-const Q13_6400_HASH: &str = "990794b3425a84be";
+const Q13_6400_HASH: &str = "719f23004973b0ab";
 
 /// The files of a recording folder.
 const FILES: [&str; 6] = [
@@ -125,7 +125,7 @@ fn summary(project: &Path, out: &str) -> Value {
         .unwrap()
 }
 
-/// The step of the run's first transition (to `approach`): 4,318 on macOS/aarch64,
+/// The step of the run's first transition (to `approach`): 4,769 on macOS/aarch64,
 /// a few steps earlier elsewhere (F-17, F-48), so the tests read it from the run.
 fn first_transition_step(summary: &Value) -> u64 {
     let first = &summary["transitions"][0];
@@ -139,11 +139,11 @@ fn text(path: &Path) -> String {
 
 #[test]
 fn recording_does_not_change_the_run() {
-    // Steps 468 and 979 are floating-origin resets: 1,100 steps cover them with the
+    // Steps 701 and 1,328 are floating-origin resets: 1,400 steps cover them with the
     // recording running.
     let project = flag_project("hash");
-    assert_success(&run(&project, "plain", &q13_flags("1100")));
-    let mut args = q13_flags("1100").to_vec();
+    assert_success(&run(&project, "plain", &q13_flags("1400")));
+    let mut args = q13_flags("1400").to_vec();
     args.extend(["--record", "r"]);
     assert_success(&run(&project, "recorded", &args));
     let (plain, recorded) = (summary(&project, "plain"), summary(&project, "recorded"));
@@ -168,7 +168,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
     }
     let message = stderr(&recorded);
     assert!(
-        message.contains("recorded ") && message.contains("401 frames of 193 bodies"),
+        message.contains("recorded ") && message.contains("401 frames of 78 bodies"),
         "{message}"
     );
 
@@ -201,7 +201,11 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
         recorded_summary["final"]["step"].as_u64()
     );
     assert_eq!(manifest.start_step, 2);
-    assert_eq!(manifest.bodies.len(), 193);
+    assert_eq!(
+        manifest.bodies.len(),
+        78,
+        "F-66 (P7.5 S2): the target and 77 tether bodies"
+    );
     assert_eq!(manifest.keyframe_interval_steps, 16);
     // Its project gives the run's inputs back (the dataset is not needed).
     let inputs = manifest.project.as_ref().unwrap().sim_inputs().unwrap();
@@ -217,7 +221,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
     // Rows and size: 116 bytes per body per frame.
     let loaded = read_recording(&folder).unwrap();
     assert_eq!(loaded.frames.len(), 401);
-    let rows = 193 * loaded.frames.len() as u64;
+    let rows = 78 * loaded.frames.len() as u64;
     let size = std::fs::metadata(folder.join("keyframes.parquet"))
         .unwrap()
         .len();
@@ -243,7 +247,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
         (transition, "approach")
     );
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(transition, 4318);
+        assert_eq!(transition, 6005);
     }
     // The folder passes the checks.
     let check = check_recording(&folder, "recordings/r");
@@ -263,7 +267,8 @@ fn a_phase_and_the_projects_block_set_the_start_the_cadence_and_the_cap() {
     let project = manifest_project("phase", block.clone());
     let args = [
         "--steps",
-        "4400",
+        // The first transition is at 6,005.
+        "6250",
         "--record",
         "p",
         "--record-from-phase",

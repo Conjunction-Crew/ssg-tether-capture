@@ -17,7 +17,7 @@ use brahe::Epoch;
 use crate::SimSet;
 use crate::SimStep;
 use crate::capture::plan::{
-    CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
+    Actuation, CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
     CompiledCaptureTransition, PhaseEnd, build_capture_component,
 };
 use crate::orbit::cache::OrbitalCache;
@@ -35,10 +35,135 @@ pub struct CaptureComponent {
     pub current_state: String,
     pub state_enter_time_s: f64,
     pub state_elapsed_time_s: f64,
+    /// The capture-sphere radius when the current phase was entered, in m: the
+    /// initial radius at the capture start, the current radius at every phase entry
+    /// (before that step's shrink). A phase with `velocity_scales_with_sphere`
+    /// scales its speed limit by the current radius over this one.
+    pub sphere_radius_at_entry_m: f64,
 }
 
 /// The capture-sphere radius at the start of every capture (F-11).
 pub const INITIAL_CAPTURE_SPHERE_RADIUS_M: f64 = 25.0;
+
+/// The radius the capture sphere stops shrinking at when the plan does not set
+/// `capture_sphere.min_radius_m`.
+pub const MIN_CAPTURE_SPHERE_RADIUS_M: f64 = 0.1;
+
+/// Seconds the force bound takes to rise from 0 to the phase's `max_force_n`, at
+/// the capture start and at every phase entry (F-31, Q10 row 8). A direction
+/// reversal does not restart it (C2).
+pub const FORCE_RAMP_S: f64 = 1.0;
+
+/// The relative width of the hysteresis band on the controller's three branch
+/// thresholds (the `0.8 R` inner edge, the `R` outer edge and the velocity kill),
+/// so a body at a threshold does not flip branch every step (F-31). The phase
+/// transitions have no band.
+///
+/// This is the relative width for the two range edges; for the velocity kill the
+/// width is at least one step's Δv of the pushed body at the phase's force
+/// (`2 × max_force_n × PHYS_DT / m`), because at 2 N on the 2 kg root a 2 % band
+/// of a 0.5 m/s limit (0.010 m/s) is narrower than one step (0.0156 m/s) and the
+/// branch toggled on 56–97 % of the terminal-phase steps (design D7).
+pub const BRANCH_DEAD_BAND: f64 = 0.02;
+
+/// The height above or below the circling plane through the target, in m, at
+/// which a phase's `hold_plane` component toward the plane reaches full weight
+/// (one unit beside the branch direction); proportional below it (design D16).
+pub const PLANE_HOLD_BAND_M: f64 = 1.0;
+
+/// The circle law (design D18): the radius error about a body's sphere, in m, at
+/// which its radial term reaches full weight; proportional below it.
+pub const RADIUS_HOLD_BAND_M: f64 = 2.0;
+
+/// The circle law (design D18): the radial speed against the sphere's own shrink,
+/// in m/s, at which its rate term reaches full weight; proportional below it.
+pub const RADIAL_RATE_BAND_MPS: f64 = 0.1;
+
+/// The tail's lag law (design D18): the error in the chord from the root to the
+/// tail, in m, at which the tail's tangent weight saturates.
+pub const SPACING_BAND_M: f64 = 3.0;
+
+/// The tail's lag law (design D18): the difference in the ends' speeds along their
+/// forward tangents, in m/s, at which the rate term saturates the tail's tangent
+/// weight.
+pub const SPACING_RATE_BAND_MPS: f64 = 0.3;
+
+/// The tail's lag law (design D18): the largest half-angle of arc, in rad (75°),
+/// the held chord spans on the tail's sphere, so a chord longer than a small
+/// sphere allows is held at 150° of arc behind the root.
+pub const SPACING_MAX_HALF_ANGLE: f64 = 75.0_f64.to_radians();
+
+/// The debris body's axis the controller circles the root about: the axis the
+/// model's solar arrays span (their booms), so the root circles in the bus's X–Y
+/// plane between the arrays and the rope wraps the bus. The debris keeps the
+/// identity rotation and the sim has no attitude model, so this is the sim's (ECI)
+/// Z at spawn for the whole run: the root circles in a plane parallel to the
+/// equatorial plane, not the orbit plane. The axis and the collider boxes in
+/// `tether.rs` are fitted to one model and apply to every target in P7.5; a
+/// per-target key is P9's (OQ3).
+pub const CAPTURE_CIRCLING_AXIS: DVec3 = DVec3::Z;
+
+/// The capture controller's per-body state and output, on the tether root and the
+/// tail while a capture runs: inserted when the capture starts
+/// ([`apply_sim_commands`]) and removed with the [`CaptureComponent`]. The root is
+/// the chaser (design D8).
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
+pub struct CaptureForce {
+    /// The force the controller handed to avian this step, in N; zero for a body
+    /// the current phase does not push. The gizmo reads it (F-41).
+    pub applied: DVec3,
+    /// The ramped bound in N: 0 at the capture start and at every phase entry,
+    /// rising by `max_force_n × PHYS_DT / FORCE_RAMP_S` per pushed step up to
+    /// `max_force_n`.
+    pub ramp_n: f64,
+    /// The unit direction of the last non-zero applied force. Drives nothing.
+    pub direction: DVec3,
+    /// Inside the inner edge (`0.8 R`), with the dead band. Drives no force in a
+    /// phase with a shrink rate, where the circle law replaces the branches (design
+    /// D18); kept as the branch state.
+    pub inner: bool,
+    /// Outside the outer edge (`R`), with the dead band. Drives no force in a phase
+    /// with a shrink rate (design D18); kept as the branch state.
+    pub outer: bool,
+    /// Above the velocity limit, with the dead band. Drives no force since the
+    /// proportional limiter (design D16); kept as the branch state.
+    pub kill: bool,
+}
+
+impl CaptureForce {
+    /// Updates the three branch states for this step's range `rel_r_len` and speed
+    /// `rel_v_len` with the dead band: the inner edge is entered below
+    /// `0.8 R (1 − band)` and left above `0.8 R (1 + band)`, the outer edge entered
+    /// above `R (1 + band)` and left below `R (1 − band)`, the kill entered above
+    /// `max_velocity` and left below `max_velocity − kill_band` (an absolute
+    /// width, see [`BRANCH_DEAD_BAND`]).
+    fn update_branches(
+        &mut self,
+        rel_r_len: f64,
+        rel_v_len: f64,
+        capture_radius: f64,
+        max_velocity: f64,
+        kill_band: f64,
+    ) {
+        let band = BRANCH_DEAD_BAND;
+        let inner_edge = capture_radius * 0.8;
+        self.inner = if self.inner {
+            rel_r_len <= inner_edge * (1.0 + band)
+        } else {
+            rel_r_len < inner_edge * (1.0 - band)
+        };
+        self.outer = if self.outer {
+            rel_r_len >= capture_radius * (1.0 - band)
+        } else {
+            rel_r_len > capture_radius * (1.0 + band)
+        };
+        self.kill = if self.kill {
+            rel_v_len >= max_velocity - kill_band
+        } else {
+            rel_v_len > max_velocity
+        };
+    }
+}
 
 /// A running capture records an [`EphemerisSample`] at every step since the sim
 /// start that is a multiple of this (64 steps = 1 s), for the app's OEM export.
@@ -102,11 +227,81 @@ fn node_relative_velocity(frame: Option<&LvlhFrame>, rel_r: DVec3, rel_v: DVec3)
     }
 }
 
+/// The unit forward tangent of a body at `rel_r` (from the body to the target)
+/// circling about `up`: `up × rel_r`, or `X × rel_r` on the axis.
+pub(crate) fn forward_tangent(rel_r: DVec3, up: DVec3) -> DVec3 {
+    let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
+        up
+    } else {
+        DVec3::X
+    };
+    tangent_axis.cross(rel_r).normalize_or_zero()
+}
+
+/// The tail's lag law (design D18): the weight of the tail's forward tangent term
+/// that holds the chord from the root to the tail at `spacing` behind the root.
+/// `root` and `tail` are each end's `(rel_r, rel_v)` (from the end to the target;
+/// the LVLH velocity), `tail_radius` the tail's sphere.
+///
+/// With `a`, `b` the root's and the tail's outward radials projected on the
+/// circling plane, `θ = atan2(up · (a × b), a · b)` is the tail's angle behind the
+/// root (positive behind), `c_lag = 2 R_t sin(θ / 2)` its chord, the held chord
+/// `c* = min(spacing, 2 R_t sin(SPACING_MAX_HALF_ANGLE))` and `Δv` the tail's speed
+/// along its forward tangent less the root's along its own:
+/// `w = clamp((c_lag − c*) / SPACING_BAND_M − Δv / SPACING_RATE_BAND_MPS, −1, 1)`.
+/// The weight does not depend on the radius error: the tail swings to its place
+/// while it closes on its sphere.
+pub(crate) fn tail_lag_weight(
+    root: (DVec3, DVec3),
+    tail: (DVec3, DVec3),
+    up: DVec3,
+    tail_radius: f64,
+    spacing: f64,
+) -> f64 {
+    let ((root_r, root_v), (tail_r, tail_v)) = (root, tail);
+    let (out_root, out_tail) = (-root_r, -tail_r);
+    let a = out_root - up * out_root.dot(up);
+    let b = out_tail - up * out_tail.dot(up);
+    let theta = up.dot(a.cross(b)).atan2(a.dot(b));
+    let chord = 2.0 * tail_radius * (theta / 2.0).sin();
+    let held = spacing.min(2.0 * tail_radius * SPACING_MAX_HALF_ANGLE.sin());
+    let dv = tail_v.dot(forward_tangent(tail_r, up)) - root_v.dot(forward_tangent(root_r, up));
+    ((chord - held) / SPACING_BAND_M - dv / SPACING_RATE_BAND_MPS).clamp(-1.0, 1.0)
+}
+
+/// The circle law (design D18): the composed force direction, before the plane term
+/// and the limiter, of a body at `rel_r` (from the body to the target) with LVLH
+/// velocity `rel_v` on a sphere of `radius` shrinking at `shrink_rate` m/s, with the
+/// body's tangent term `tangent_term` (the forward or counter tangent, or the lag
+/// law's weighted one).
+///
+/// `w_r = clamp((|rel_r| − radius) / RADIUS_HOLD_BAND_M, −1, 1)` holds the radius,
+/// `w_v = clamp(v_out / RADIAL_RATE_BAND_MPS, −1, 1)` damps the outward speed
+/// measured against the sphere's own shrink (`v_out = −rel_v · r̂_in + shrink_rate`),
+/// and the tangent term fades in as the radius error vanishes (`1 − |w_r|`), at full
+/// weight under the lag law: `t × w_t + r̂_in × clamp(w_r + w_v, −1, 1)`.
+pub(crate) fn circle_law(
+    rel_r: DVec3,
+    rel_v: DVec3,
+    radius: f64,
+    shrink_rate: f64,
+    tangent_term: DVec3,
+    lag: bool,
+) -> DVec3 {
+    let r_in = rel_r.normalize_or_zero();
+    let w_r = ((rel_r.length() - radius) / RADIUS_HOLD_BAND_M).clamp(-1.0, 1.0);
+    let v_out = -rel_v.dot(r_in) + shrink_rate;
+    let w_v = (v_out / RADIAL_RATE_BAND_MPS).clamp(-1.0, 1.0);
+    let w_t = if lag { 1.0 } else { 1.0 - w_r.abs() };
+    tangent_term * w_t + r_in * (w_r + w_v).clamp(-1.0, 1.0)
+}
+
 pub fn capture_state_machine_update(
     mut commands: Commands,
     capture_entities: Query<(Entity, &mut CaptureComponent)>,
     inputs: CaptureInputs,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
+    mut capture_forces: Query<(Entity, &mut CaptureForce)>,
     mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
     mut data_collection: ResMut<DataCollection>,
     mut messages: CaptureMessages,
@@ -196,7 +391,8 @@ pub fn capture_state_machine_update(
                     });
                 }
 
-                let shared_state_parameters = if let Some((r_len, v_len)) = root_rv {
+                let (shared_state_parameters, entered_phase) = if let Some((r_len, v_len)) = root_rv
+                {
                     resolve_root_state(
                         capture_entity,
                         &mut capture_component,
@@ -207,13 +403,29 @@ pub fn capture_state_machine_update(
                         &mut messages,
                     )
                 } else {
-                    current_state_parameters(plan, &capture_component.current_state)
+                    (
+                        current_state_parameters(plan, &capture_component.current_state),
+                        false,
+                    )
                 };
+                // C2: the ramp restarts at every phase entry (and at the capture
+                // start, where `CaptureForce` is inserted at 0), never on a reversal.
+                if entered_phase {
+                    for &node in nodes {
+                        if let Ok((_, mut state)) = capture_forces.get_mut(node) {
+                            state.ramp_n = 0.0;
+                        }
+                    }
+                }
 
-                let up = (capture_entity_rotation * DVec3::X).normalize_or(DVec3::X);
+                let up = (capture_entity_rotation * CAPTURE_CIRCLING_AXIS)
+                    .normalize_or(CAPTURE_CIRCLING_AXIS);
 
+                // D18: the root's `rel_r` and `rel_v` of this step, for the tail's lag
+                // law (the root is index 0).
+                let mut root_rel: Option<(DVec3, DVec3)> = None;
                 for (idx, &node) in nodes.iter().enumerate() {
-                    let (rel_r, rel_v) = {
+                    let (rel_r, rel_v, mass) = {
                         let rb_query = rb_forces.p0();
                         let Ok(rb) = rb_query.get(node) else {
                             continue;
@@ -229,10 +441,14 @@ pub fn capture_state_machine_update(
                                 -rel_r,
                                 rb.linear_velocity.0 - capture_entity_linvel.0,
                             ),
+                            rb.mass.value(),
                         )
                     };
                     let rel_r_len = rel_r.length();
                     let rel_v_len = rel_v.length();
+                    if idx == 0 {
+                        root_rel = Some((rel_r, rel_v));
+                    }
 
                     // Insert current pos and vel into tracking vectors
                     if idx == 0 {
@@ -254,25 +470,112 @@ pub fn capture_state_machine_update(
                         };
                     }
 
+                    // C7: the root always; the tail only in a phase with `tail_actuation`.
+                    let pushed = idx == 0 || shared_state_parameters.tail_actuation;
+                    let Ok((_, mut state)) = capture_forces.get_mut(node) else {
+                        // Every capture start inserts it on the root and the tail.
+                        if !pushed {
+                            continue;
+                        }
+                        messages.log_events.write(LogEvent {
+                            level: LogLevel::Warn,
+                            source: "capture",
+                            message: format!(
+                                "Failed to apply force to tether node {idx} (no CaptureForce)"
+                            ),
+                        });
+                        continue;
+                    };
+
                     let mut force_vec = DVec3::ZERO;
-                    let max_velocity = shared_state_parameters.max_velocity;
+                    // D16: a `hold` phase reads its speed limit as 0.
+                    let hold = shared_state_parameters.actuation == Actuation::Hold;
+                    let phase_max_velocity = if hold {
+                        0.0
+                    } else {
+                        shared_state_parameters.max_velocity
+                    };
+                    // D14: the limit falls with the sphere in a phase that asks for it.
+                    let max_velocity = if shared_state_parameters.velocity_scales_with_sphere {
+                        phase_max_velocity
+                            * (capture_sphere_radius.radius
+                                / capture_component.sphere_radius_at_entry_m)
+                    } else {
+                        phase_max_velocity
+                    };
                     let max_force = shared_state_parameters.max_force;
+                    // D7 (C4): the kill band is at least one step's Δv of this body at
+                    // the phase's force, from the unscaled limit.
+                    let kill_band = (BRANCH_DEAD_BAND * phase_max_velocity)
+                        .max(2.0 * max_force * PHYS_DT / mass);
+                    // D16: how far `x` is across one kill band, in 0..=1. A band of 0
+                    // (`max_force_n` and `max_velocity_mps` both 0, where the ramp is
+                    // 0 too) is the step the law tends to, not 0 / 0 (F-11).
+                    let across_band = |x: f64| {
+                        if kill_band > 0.0 {
+                            (x / kill_band).clamp(0.0, 1.0)
+                        } else {
+                            f64::from(u8::from(x > 0.0))
+                        }
+                    };
                     let capture_radius = if idx == 0 {
                         root_capture_radius
                     } else {
                         capture_sphere_radius.radius + 1.0
                     };
+                    state.update_branches(
+                        rel_r_len,
+                        rel_v_len,
+                        capture_radius,
+                        max_velocity,
+                        kill_band,
+                    );
 
-                    // If vel is high, kill vel
-                    if rel_v_len > max_velocity {
-                        force_vec += -rel_v.normalize_or_zero() * 2.0;
+                    if !pushed {
+                        state.applied = DVec3::ZERO;
+                        continue;
+                    }
+
+                    // D18: the tail's lag law, in a phase that pushes the tail with
+                    // `tail_spacing_m`, outside `capture` (the counter-tangent wrap)
+                    // and `hold`: the weight of its tangent term.
+                    let counter = idx != 0 && capture_component.current_state == "capture";
+                    let lag_weight = match (shared_state_parameters.tail_spacing_m, root_rel) {
+                        (Some(spacing), Some(root)) if idx != 0 && !counter && !hold => Some(
+                            tail_lag_weight(root, (rel_r, rel_v), up, capture_radius, spacing),
+                        ),
+                        _ => None,
+                    };
+
+                    // D16: the hold law brakes the body to rest, continuously (no
+                    // dead band), in place of the branches.
+                    if hold {
+                        force_vec = -rel_v.normalize_or_zero() * across_band(rel_v_len);
+                    }
+                    // D18: the circle law, in a phase that shrinks the sphere, in
+                    // place of the three branches (whose states are still updated).
+                    else if let Some(shrink_rate) = shared_state_parameters.shrink_rate {
+                        let tangent = forward_tangent(rel_r, up);
+                        let tangent_term = match lag_weight {
+                            Some(w) => tangent * w,
+                            None if counter => -tangent,
+                            None => tangent,
+                        };
+                        force_vec += circle_law(
+                            rel_r,
+                            rel_v,
+                            capture_radius,
+                            shrink_rate,
+                            tangent_term,
+                            lag_weight.is_some(),
+                        );
                     }
                     // If too close, force in opposite dir
-                    if rel_r_len < capture_radius * 0.8 {
+                    else if state.inner {
                         force_vec += -rel_r.normalize_or_zero();
                     }
                     // If we are outside the sphere radius, force in target dir (or slow down)
-                    else if rel_r_len > capture_radius {
+                    else if state.outer {
                         if rel_v.angle_between(rel_r) > PI / 2.0 {
                             force_vec += -rel_v.normalize_or_zero();
                         }
@@ -280,29 +583,72 @@ pub fn capture_state_machine_update(
                         force_vec += rel_r.normalize_or_zero();
                     // Otherwise, force in tangent dir
                     } else {
-                        let tangent_axis = if rel_r.cross(up).length_squared() > 1e-6 {
-                            up
+                        let tangent = forward_tangent(rel_r, up);
+                        if let Some(w) = lag_weight {
+                            force_vec += tangent * w;
+                        } else if counter {
+                            force_vec -= tangent;
                         } else {
-                            DVec3::X
-                        };
-
-                        if idx != 0 && capture_component.current_state == "capture" {
-                            force_vec -= tangent_axis.cross(rel_r).normalize_or_zero();
-                        } else {
-                            force_vec += tangent_axis.cross(rel_r).normalize_or_zero();
+                            force_vec += tangent;
                         }
                     }
 
+                    // D16: in a phase with `hold_plane`, a component toward the
+                    // circling plane through the target, proportional to the height.
+                    if shared_state_parameters.hold_plane {
+                        let h = -rel_r.dot(up);
+                        force_vec += -up * (h / PLANE_HOLD_BAND_M).clamp(-1.0, 1.0);
+                    }
+
+                    // F-31: `max_force_n` is an upper bound reached through the ramp.
+                    state.ramp_n =
+                        (state.ramp_n + max_force * PHYS_DT / FORCE_RAMP_S).min(max_force);
+                    let force = if hold {
+                        force_vec.clamp_length_max(1.0) * state.ramp_n
+                    } else {
+                        // D16 (F-31), the proportional limiter: the push along its own
+                        // direction fades over one kill band as the velocity component
+                        // along it reaches the limit, so a body at the limit is not
+                        // re-pushed and re-braked every step (D7's measured 41,595
+                        // reversals per terminal phase were this), while a velocity
+                        // that drifts off the push direction is still corrected; the
+                        // brake acts on the speed above the limit.
+                        // F-11: a zero vector gives a zero force, not NaN.
+                        //
+                        // D18, the magnitude rule: the push keeps the composed law's
+                        // magnitude, clamped to 1, so a proportional term is a
+                        // proportional force (normalising it turned every small
+                        // correction of the circle and lag laws into a full-force flip:
+                        // 96,994 tail reversals per terminal phase). A vector within
+                        // 1e-9 of unit length or longer counts as 1, so the branch law's
+                        // unit sums give the same force as before, bit for bit.
+                        let push_direction = force_vec.normalize_or_zero();
+                        let magnitude = if force_vec.length_squared() >= 1.0 - 1e-9 {
+                            1.0
+                        } else {
+                            force_vec.length()
+                        };
+                        let along = rel_v.dot(push_direction);
+                        let push = push_direction * magnitude * across_band(max_velocity - along);
+                        let brake =
+                            -rel_v.normalize_or_zero() * across_band(rel_v_len - max_velocity);
+                        (push + brake).clamp_length_max(1.0) * state.ramp_n
+                    };
+                    let direction = force.normalize_or_zero();
+                    debug_assert!(
+                        force.is_finite() && force.length() <= max_force * (1.0 + 1e-12),
+                        "force {force:?} on tether node {idx} is not finite or above {max_force} N"
+                    );
+
                     // Apply force
                     if let Ok(mut node_forces) = rb_forces.p1().get_mut(node) {
-                        // F-11: a zero vector gives a zero force, not NaN.
-                        let force = force_vec.normalize_or_zero() * max_force;
-                        debug_assert!(
-                            force.is_finite(),
-                            "non-finite force {force:?} on tether node {idx}"
-                        );
                         node_forces.apply_force(force);
+                        state.applied = force;
+                        if direction != DVec3::ZERO {
+                            state.direction = direction;
+                        }
                     } else {
+                        state.applied = DVec3::ZERO;
                         messages.log_events.write(LogEvent {
                             level: LogLevel::Warn,
                             source: "capture",
@@ -336,6 +682,9 @@ pub fn capture_state_machine_update(
                 capture_component.plan_id
             );
             commands.entity(capture_entity).remove::<CaptureComponent>();
+            for (entity, _) in &capture_forces {
+                commands.entity(entity).remove::<CaptureForce>();
+            }
             messages.log_events.write(LogEvent {
                 level: LogLevel::Error,
                 source: "capture",
@@ -363,7 +712,8 @@ fn current_state_parameters(
 /// satisfied transition fires and nothing more happens this step (no cascade).
 /// The state current after this check sets this step's parameters and shrinks the
 /// capture sphere once, so when a transition fires, the new state's limits and
-/// shrink rate already apply to this step's forces.
+/// shrink rate already apply to this step's forces. The `bool` is whether a
+/// transition fired (a phase entry, which restarts the force ramp).
 fn resolve_root_state(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
@@ -372,15 +722,21 @@ fn resolve_root_state(
     world_time: &WorldTime,
     capture_sphere_radius: &mut CaptureSphereRadius,
     messages: &mut CaptureMessages,
-) -> CompiledCaptureStateParameters {
+) -> (CompiledCaptureStateParameters, bool) {
     let Some(state) = plan.state(&capture_component.current_state) else {
-        return CompiledCaptureStateParameters::default();
+        return (CompiledCaptureStateParameters::default(), false);
     };
 
     let fired = state.transitions.iter().find_map(|transition| {
-        transition_satisfied(transition, rel_r_length, rel_v_length)
-            .map(|reason| (transition.to.clone(), reason))
+        transition_satisfied(
+            transition,
+            rel_r_length,
+            rel_v_length,
+            capture_component.state_elapsed_time_s,
+        )
+        .map(|reason| (transition.to.clone(), reason))
     });
+    let entered_phase = fired.is_some();
     if let Some((to, reason)) = fired {
         let end = plan.state(&to).and_then(|state| state.end);
         transition_to(
@@ -389,6 +745,7 @@ fn resolve_root_state(
             &to,
             end,
             world_time,
+            capture_sphere_radius.radius,
             reason,
             messages,
         );
@@ -396,21 +753,23 @@ fn resolve_root_state(
 
     let parameters = current_state_parameters(plan, &capture_component.current_state);
     if let Some(shrink_rate) = parameters.shrink_rate
-        && capture_sphere_radius.radius > 0.1
+        && capture_sphere_radius.radius > plan.min_capture_radius_m
     {
         capture_sphere_radius.radius -= shrink_rate * PHYS_DT;
     }
 
-    parameters
+    (parameters, entered_phase)
 }
 
 /// The reason string if every condition of `transition` holds (`None` if one does
 /// not, or if it has no condition), e.g. `distance 1500.0 m < 2000.0 m, rel vel
-/// 1.00 m/s < 5.00 m/s`.
+/// 1.00 m/s < 5.00 m/s`. `state_elapsed_time_s` is the time in the current phase,
+/// already advanced this step.
 fn transition_satisfied(
     transition: &CompiledCaptureTransition,
     rel_r_length: f64,
     rel_v_length: f64,
+    state_elapsed_time_s: f64,
 ) -> Option<String> {
     let checks = [
         transition.distance_less_than.map(|limit| {
@@ -437,6 +796,24 @@ fn transition_satisfied(
                 format!("rel vel {:.2} m/s > {:.2} m/s", rel_v_length, limit),
             )
         }),
+        transition.time_in_phase_less_than.map(|limit| {
+            (
+                state_elapsed_time_s < limit,
+                format!(
+                    "time in phase {:.1} s < {:.1} s",
+                    state_elapsed_time_s, limit
+                ),
+            )
+        }),
+        transition.time_in_phase_greater_than.map(|limit| {
+            (
+                state_elapsed_time_s > limit,
+                format!(
+                    "time in phase {:.1} s > {:.1} s",
+                    state_elapsed_time_s, limit
+                ),
+            )
+        }),
     ];
 
     let mut reasons = Vec::new();
@@ -450,14 +827,16 @@ fn transition_satisfied(
 }
 
 /// Enters `new_state` at the current sim time (`state_enter_time_s` is sim seconds
-/// since the start epoch) and reports it as a log line and a [`CaptureTransition`],
-/// and, when `new_state` is an end phase (`end`), as a [`CaptureEnded`].
+/// since the start epoch) with the sphere at `sphere_radius_m`, and reports it as a
+/// log line and a [`CaptureTransition`], and, when `new_state` is an end phase
+/// (`end`), as a [`CaptureEnded`].
 fn transition_to(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     new_state: &str,
     end: Option<PhaseEnd>,
     world_time: &WorldTime,
+    sphere_radius_m: f64,
     reason: String,
     messages: &mut CaptureMessages,
 ) {
@@ -489,6 +868,7 @@ fn transition_to(
     capture_component.current_state = String::from(new_state);
     capture_component.state_enter_time_s = world_time.epoch - world_time.start_epoch;
     capture_component.state_elapsed_time_s = 0.0;
+    capture_component.sphere_radius_at_entry_m = sphere_radius_m;
 }
 
 /// Writes the [`CaptureEnded`] message and its Info log line.
@@ -560,6 +940,12 @@ pub fn apply_sim_commands(
     // Absent outside the sim screen, where no capture target exists.
     world_time: Option<Res<WorldTime>>,
     capture_entities: Query<Entity, With<CaptureComponent>>,
+    // The tether registry (absent outside the sim screen) and the bodies that
+    // carry the controller's state of the capture being replaced.
+    (orbital_cache, capture_force_bodies): (
+        Option<Res<OrbitalCache>>,
+        Query<Entity, With<CaptureForce>>,
+    ),
     // The radius is absent outside the sim screen, like `WorldTime`.
     (mut data_collection, mut capture_sphere_radius): (
         ResMut<DataCollection>,
@@ -584,6 +970,9 @@ pub fn apply_sim_commands(
                         for marked_entity in capture_entities {
                             commands.entity(marked_entity).remove::<CaptureComponent>();
                         }
+                        for body in &capture_force_bodies {
+                            commands.entity(body).remove::<CaptureForce>();
+                        }
                         // Get plan information
                         if let Some(plan) = capture_plan_lib.plans.get(plan_id) {
                             // Now, mark the entity for capture
@@ -593,6 +982,16 @@ pub fn apply_sim_commands(
                                 world_time.as_ref().map_or(0.0, |t| t.epoch - t.start_epoch),
                             ) {
                                 commands.entity(*capture_entity).insert(capture_component);
+                                // The controller's state on the root and the tail, from
+                                // the first step (the ramp starts at 0 here).
+                                if let Some(nodes) = orbital_cache
+                                    .as_ref()
+                                    .and_then(|cache| cache.tethers.get(&plan.tether))
+                                {
+                                    for &node in nodes {
+                                        commands.entity(node).insert(CaptureForce::default());
+                                    }
+                                }
                                 // F-11: every capture starts with the initial radius, the
                                 // plan's `capture_sphere.initial_radius_m` (25 m by default).
                                 if let Some(radius) = capture_sphere_radius.as_mut() {

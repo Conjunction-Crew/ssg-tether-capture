@@ -3,9 +3,8 @@
 //! The sim spawns bodies with [`TetherShape`] / [`DebrisBody`] markers; these
 //! systems attach the visuals in the same `OnEnter(SimState::Running)` schedule,
 //! after the spawn set. A replay (`SimState::Replay`) attaches the same visuals
-//! to its visual-only bodies. Not in `Update`: avian's
-//! `init_collider_constructor_hierarchies` runs there and strips
-//! `ColliderConstructorHierarchy` from a body that has no `SceneRoot` yet.
+//! to its visual-only bodies. Visuals only: the debris collider is the sim's
+//! primitive (F-64), so the glTF scene adds no collider.
 
 use bevy::{camera::visibility::RenderLayers, platform::collections::HashMap, prelude::*};
 
@@ -74,6 +73,14 @@ pub fn attach_tether_visuals(
     }
 }
 
+/// The debris model rides on a child of the debris body, turned 90° about Y so the
+/// model's telescope tube (the glTF's Z) lies along the collider's long axis, the
+/// body's X (design D11). Visual only: the child carries no sim component and is
+/// despawned with its parent.
+pub fn debris_scene_transform() -> Transform {
+    Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2))
+}
+
 pub fn attach_debris_scene(
     mut commands: Commands,
     debris: Query<(Entity, &DebrisBody), Added<DebrisBody>>,
@@ -82,7 +89,10 @@ pub fn attach_debris_scene(
     for (entity, body) in &debris {
         let scene: Handle<Scene> =
             asset_server.load(GltfAssetLabel::Scene(0).from_asset(body.model_path.clone()));
-        commands.entity(entity).insert(SceneRoot(scene));
+        commands
+            .entity(entity)
+            .insert(Visibility::default())
+            .with_child((SceneRoot(scene), debris_scene_transform()));
     }
 }
 

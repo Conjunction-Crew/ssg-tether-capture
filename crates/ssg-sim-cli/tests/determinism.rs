@@ -130,7 +130,7 @@ fn cli_steps_must_be_multiple_of_warp() {
 }
 
 /// The P0 capture scenario to `capture`: three runs at warp 1 and one at warp 16
-/// end in bit-identical output. `--steps 163840` without `--stop-at-capture`, so
+/// end in bit-identical output. `--steps 196608` without `--stop-at-capture`, so
 /// all four runs cover the same steps whatever the warp. The four processes run
 /// at the same time.
 #[test]
@@ -141,7 +141,10 @@ fn cli_three_runs_to_capture_identical() {
     let children: Vec<_> = runs
         .iter()
         .map(|(out, warp)| {
-            command(&project, out, &["--steps", "163840", "--warp", warp])
+            // The capture entry moved to step 191,186 (the O5 corrections; S9:
+            // 190,101), past S6's 172,032: 196,608 = 3,072 × 64 ends in `capture`,
+            // before the hold entry (196,947).
+            command(&project, out, &["--steps", "196608", "--warp", warp])
                 .spawn()
                 .expect("the binary starts")
         })
@@ -155,9 +158,24 @@ fn cli_three_runs_to_capture_identical() {
         println!("{out}: {summary}");
     }
     let (csv_0, summary_0) = &results[0];
-    assert_eq!(
-        summary_0["final"]["phase"], "capture",
-        "the scenario reaches capture"
+    // P7.5 S9: `hold` follows 90 s after the capture entry, so the run ends in
+    // `capture` or `hold`; it must have entered `capture`.
+    assert!(
+        summary_0["transitions"]
+            .as_array()
+            .expect("transitions")
+            .iter()
+            .any(|t| t["to"] == "capture"),
+        "the scenario reaches capture: {}",
+        summary_0["transitions"]
+    );
+    assert!(
+        matches!(
+            summary_0["final"]["phase"].as_str(),
+            Some("capture" | "hold")
+        ),
+        "the final phase {}",
+        summary_0["final"]["phase"]
     );
     for ((out, _), (csv, summary)) in runs.iter().zip(&results).skip(1) {
         assert!(csv == csv_0, "{out}: trajectory.csv differs from w1-a");

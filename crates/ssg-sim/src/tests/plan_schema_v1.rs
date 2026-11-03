@@ -6,8 +6,9 @@
 use serde_json::{Value, json};
 
 use crate::capture::plan::{
-    CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, MigratedFromV0, Phase,
-    PhaseEnd, Transition, TransitionConditions, UnmappedValue, validate_capture_plan,
+    Actuation, CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, MigratedFromV0,
+    Phase, PhaseEnd, SpawnOrientation, Transition, TransitionConditions, UnmappedValue,
+    validate_capture_plan,
 };
 use crate::project::plan_files::{plan_file_reports, plan_to_json, read_plan_value, save_plan};
 use crate::test_support::{Lcg, TempDir, repo_root};
@@ -165,7 +166,8 @@ fn each_validation_rule_reports_its_message() {
             "body count",
             |d| d["device"] = json!({"tether_length_m": 101.0, "segment_spacing_m": 0.1}),
             vec![
-                "[p] /device/segment_spacing_m: gives 1002 tether bodies; at most 1000 are allowed",
+                // F-66 (P7.5 S2): the rope counts round(100 / 0.1) + 1 bodies (the rod: 1002).
+                "[p] /device/segment_spacing_m: gives 1001 tether bodies; at most 1000 are allowed",
             ],
         ),
         (
@@ -290,8 +292,9 @@ fn a_blank_tether_is_refused_in_v0_and_v1_files() {
 fn an_end_phase_and_a_tether_between_200_and_1000_bodies_load() {
     let mut d = doc();
     d["phases"][1]["end"] = json!("success");
-    // Bodies = floor((length - 2 x 0.5 m end spheres) / spacing) + 2.
-    d["device"] = json!({"tether_length_m": 500.0, "segment_spacing_m": 0.5});
+    // Bodies = max(1, round((length - 2 x 0.5 m end spheres) / spacing)) + 1: the
+    // rope's intervals plus one (F-66, P7.5 S2; the rod's floor(…) + 2 before).
+    d["device"] = json!({"tether_length_m": 500.5, "segment_spacing_m": 0.5});
     let report = read_plan_value(ID, &d);
     assert_eq!(report.errors, Vec::<String>::new());
     assert_eq!(
@@ -303,20 +306,20 @@ fn an_end_phase_and_a_tether_between_200_and_1000_bodies_load() {
     );
     assert_eq!(report.plan.unwrap().phases[1].end, Some(PhaseEnd::Success));
 
-    d["device"] = json!({"tether_length_m": 500.5, "segment_spacing_m": 0.5});
+    d["device"] = json!({"tether_length_m": 501.0, "segment_spacing_m": 0.5});
     assert_eq!(
         read_plan_value(ID, &d).errors,
         ["[p] /device/segment_spacing_m: gives 1001 tether bodies; at most 1000 are allowed"]
     );
-    d["device"] = json!({"tether_length_m": 100.0, "segment_spacing_m": 0.5});
+    d["device"] = json!({"tether_length_m": 100.5, "segment_spacing_m": 0.5});
     assert_eq!(
         read_plan_value(ID, &d).warnings,
         Vec::<String>::new(),
         "200 bodies"
     );
-    d["device"] = json!({"tether_length_m": 100.5, "segment_spacing_m": 0.5});
+    d["device"] = json!({"tether_length_m": 101.0, "segment_spacing_m": 0.5});
     assert_eq!(read_plan_value(ID, &d).warnings.len(), 1, "201 bodies");
-    // The default 20 m tether at 0.1 m spacing (191 bodies) does not warn.
+    // The default 20 m tether at 0.25 m spacing (77 bodies) does not warn.
     d["device"] = json!({});
     assert_eq!(read_plan_value(ID, &d).warnings, Vec::<String>::new());
 }
@@ -326,8 +329,9 @@ fn absent_optional_fields_take_the_documented_defaults() {
     let device = CapturePlanDevice::default();
     assert_eq!(device.device_type(), "tether");
     assert_eq!(device.tether_length_m(), 20.0);
-    assert_eq!(device.segment_spacing_m(), 0.1);
-    assert_eq!(device.segment_mass_kg(), 0.1);
+    // F-66 (P7.5 S2, design D2): the rope's defaults (the rod's were 0.1 and 0.1).
+    assert_eq!(device.segment_spacing_m(), 0.25);
+    assert_eq!(device.segment_mass_kg(), 0.25);
     assert_eq!(device.end_mass_kg(), 2.0);
     assert_eq!(device.joint_damping_linear(), 1.0);
     assert_eq!(device.joint_damping_angular(), 1.0);
@@ -339,6 +343,7 @@ fn absent_optional_fields_take_the_documented_defaults() {
         end_mass_kg: Some(3.0),
         joint_damping_linear: Some(0.0),
         joint_damping_angular: Some(0.5),
+        spawn_orientation: Some(SpawnOrientation::RBar),
     };
     assert_eq!(
         (
@@ -348,10 +353,13 @@ fn absent_optional_fields_take_the_documented_defaults() {
             set.segment_mass_kg(),
             set.end_mass_kg(),
             set.joint_damping_linear(),
-            set.joint_damping_angular()
+            set.joint_damping_angular(),
+            set.spawn_orientation()
         ),
-        ("net", 5.0, 0.5, 0.2, 3.0, 0.0, 0.5)
+        ("net", 5.0, 0.5, 0.2, 3.0, 0.0, 0.5, SpawnOrientation::RBar)
     );
+    // P7.5 S3 (design D9): the tail trails away from the target by default.
+    assert_eq!(device.spawn_orientation(), SpawnOrientation::TowardTarget);
 
     let mut plan: CapturePlan = serde_json::from_value(doc()).unwrap();
     assert_eq!(plan.initial_capture_radius_m(), 25.0);
@@ -359,6 +367,7 @@ fn absent_optional_fields_take_the_documented_defaults() {
     assert_eq!(plan.initial_capture_radius_m(), 25.0);
     plan.capture_sphere = Some(CaptureSphere {
         initial_radius_m: Some(7.5),
+        min_radius_m: None,
     });
     assert_eq!(plan.initial_capture_radius_m(), 7.5);
 }
@@ -468,8 +477,12 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                             let mut all_of = TransitionConditions {
                                 distance_m: bounds(rng, 5_000.0),
                                 relative_speed_mps: bounds(rng, 50.0),
+                                time_in_phase_s: bounds(rng, 600.0),
                             };
-                            if all_of.distance_m.is_none() && all_of.relative_speed_mps.is_none() {
+                            if all_of.distance_m.is_none()
+                                && all_of.relative_speed_mps.is_none()
+                                && all_of.time_in_phase_s.is_none()
+                            {
                                 all_of.distance_m = Some(ConditionBounds {
                                     less_than: Some(short(rng.range(0.0, 5_000.0))),
                                     greater_than: None,
@@ -490,6 +503,14 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                 shrink_rate_mps: maybe(rng, 0.0, 0.1),
                 transitions,
                 end,
+                tail_actuation: rng.chance(0.5).then(|| rng.chance(0.5)),
+                velocity_scales_with_sphere: None,
+                hold_plane: rng.chance(0.5).then(|| rng.chance(0.5)),
+                actuation: rng
+                    .chance(0.5)
+                    .then(|| [Actuation::Circle, Actuation::Hold][rng.below(2)]),
+                // Below the shortest generated tether (1 m), so every plan validates.
+                tail_spacing_m: maybe(rng, 0.1, 0.9),
             }
         })
         .collect();
@@ -501,6 +522,13 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
         end_mass_kg: maybe(rng, 0.5, 5.0),
         joint_damping_linear: maybe(rng, 0.0, 2.0),
         joint_damping_angular: maybe(rng, 0.0, 2.0),
+        spawn_orientation: rng.chance(0.5).then(|| {
+            [
+                SpawnOrientation::TowardTarget,
+                SpawnOrientation::VBar,
+                SpawnOrientation::RBar,
+            ][rng.below(3)]
+        }),
     });
     CapturePlan {
         schema_version: 1,
@@ -510,6 +538,7 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
         device,
         capture_sphere: rng.chance(0.3).then(|| CaptureSphere {
             initial_radius_m: maybe(rng, 1.0, 50.0),
+            min_radius_m: None,
         }),
         phases,
         migrated_from_v0: rng.chance(0.2).then(|| MigratedFromV0 {
@@ -606,4 +635,372 @@ fn the_schema_requires_the_v1_keys_and_refuses_unknown_ones() {
     );
     assert_eq!(schema["properties"]["schema_version"]["minimum"], json!(1));
     assert_eq!(schema["properties"]["schema_version"]["maximum"], json!(1));
+}
+
+#[test]
+fn tail_actuation_is_a_phase_key_that_round_trips_and_not_a_device_key() {
+    // P7.5 S1 (C7): `phases[].tail_actuation` is optional, written only when set,
+    // compiled per phase; the device block has no such key.
+    let mut value = doc();
+    value["phases"][1]["tail_actuation"] = json!(true);
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].tail_actuation, None);
+    assert_eq!(plan.phases[1].tail_actuation, Some(true));
+    let text = plan_to_json(&plan);
+    assert_eq!(text.matches("tail_actuation").count(), 1, "{text}");
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(!compiled.states[0].parameters.tail_actuation);
+    assert!(compiled.states[1].parameters.tail_actuation);
+
+    let mut value = doc();
+    value["device"] = json!({ "tail_actuation": true });
+    let errors = errors_of(&value);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("/device") && errors[0].contains("tail_actuation"),
+        "{errors:?}"
+    );
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    let text = schema.to_string();
+    assert!(
+        schema["$defs"]["Phase"]["properties"]["tail_actuation"].is_object(),
+        "{text}"
+    );
+    assert!(
+        schema["$defs"]["CapturePlanDevice"]["properties"]
+            .get("tail_actuation")
+            .is_none()
+    );
+}
+
+#[test]
+fn velocity_scales_with_sphere_is_a_phase_key_that_round_trips_and_is_absent_by_default() {
+    // P7.5 S6 (design D14): `phases[].velocity_scales_with_sphere` is optional,
+    // written only when set and compiled per phase (false when absent).
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(
+        plan.phases
+            .iter()
+            .all(|p| p.velocity_scales_with_sphere.is_none())
+    );
+    assert!(!plan_to_json(&plan).contains("velocity_scales_with_sphere"));
+
+    let mut value = doc();
+    value["phases"][1]["velocity_scales_with_sphere"] = json!(true);
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].velocity_scales_with_sphere, None);
+    assert_eq!(plan.phases[1].velocity_scales_with_sphere, Some(true));
+    let text = plan_to_json(&plan);
+    assert_eq!(
+        text.matches("velocity_scales_with_sphere").count(),
+        1,
+        "{text}"
+    );
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(!compiled.states[0].parameters.velocity_scales_with_sphere);
+    assert!(compiled.states[1].parameters.velocity_scales_with_sphere);
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    assert!(
+        schema["$defs"]["Phase"]["properties"]["velocity_scales_with_sphere"].is_object(),
+        "{schema}"
+    );
+}
+
+#[test]
+fn hold_plane_actuation_and_time_in_phase_round_trip_and_are_absent_by_default() {
+    // P7.5 S9 (design D16): `phases[].hold_plane`, `phases[].actuation` and
+    // `transitions[].all_of.time_in_phase_s` are optional, written only when set and
+    // compiled (false, `circle` and no bound when absent).
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(
+        plan.phases
+            .iter()
+            .all(|p| p.hold_plane.is_none() && p.actuation.is_none())
+    );
+    let text = plan_to_json(&plan);
+    for key in ["hold_plane", "actuation", "time_in_phase_s"] {
+        assert!(!text.contains(key), "{key}: {text}");
+    }
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    for state in &compiled.states {
+        assert!(!state.parameters.hold_plane);
+        assert_eq!(state.parameters.actuation, Actuation::Circle);
+        for transition in &state.transitions {
+            assert_eq!(transition.time_in_phase_less_than, None);
+            assert_eq!(transition.time_in_phase_greater_than, None);
+        }
+    }
+
+    let mut value = doc();
+    value["phases"][1]["hold_plane"] = json!(true);
+    value["phases"][1]["actuation"] = json!("hold");
+    value["phases"][0]["transitions"][0]["all_of"]["time_in_phase_s"] =
+        json!({"greater_than": 90.0, "less_than": 120.0});
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].hold_plane, None);
+    assert_eq!(plan.phases[1].hold_plane, Some(true));
+    assert_eq!(plan.phases[0].actuation, None);
+    assert_eq!(plan.phases[1].actuation, Some(Actuation::Hold));
+    let text = plan_to_json(&plan);
+    assert!(text.contains(r#""actuation": "hold""#), "{text}");
+    for key in ["hold_plane", "actuation", "time_in_phase_s"] {
+        assert_eq!(text.matches(key).count(), 1, "{key}: {text}");
+    }
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(!compiled.states[0].parameters.hold_plane);
+    assert!(compiled.states[1].parameters.hold_plane);
+    assert_eq!(compiled.states[0].parameters.actuation, Actuation::Circle);
+    assert_eq!(compiled.states[1].parameters.actuation, Actuation::Hold);
+    let transition = &compiled.states[0].transitions[0];
+    assert_eq!(transition.time_in_phase_greater_than, Some(90.0));
+    assert_eq!(transition.time_in_phase_less_than, Some(120.0));
+
+    // `circle` is written as such; an unknown law is refused.
+    let mut value = doc();
+    value["phases"][0]["actuation"] = json!("circle");
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].actuation, Some(Actuation::Circle));
+    assert!(plan_to_json(&plan).contains(r#""actuation": "circle""#));
+    value["phases"][0]["actuation"] = json!("orbit");
+    assert!(read_plan_value(ID, &value).plan.is_none());
+
+    // The time condition alone satisfies "at least one condition", and is
+    // validated like the other two.
+    let mut value = doc();
+    value["phases"][0]["transitions"][0]["all_of"] =
+        json!({"time_in_phase_s": {"greater_than": 90.0}});
+    assert!(errors_of(&value).is_empty(), "{:?}", errors_of(&value));
+    value["phases"][0]["transitions"][0]["all_of"] = json!({"time_in_phase_s": {}});
+    assert_eq!(
+        errors_of(&value),
+        vec![
+            "[p] /phases/0/transitions/0/all_of/time_in_phase_s: at least one of \
+             less_than, greater_than is required"
+                .to_string()
+        ]
+    );
+    value["phases"][0]["transitions"][0]["all_of"] =
+        json!({"time_in_phase_s": {"less_than": -1.0, "greater_than": -2.0}});
+    assert_eq!(
+        errors_of(&value),
+        vec![
+            "[p] /phases/0/transitions/0/all_of/time_in_phase_s/less_than: must not be negative"
+                .to_string(),
+            "[p] /phases/0/transitions/0/all_of/time_in_phase_s/greater_than: must not be negative"
+                .to_string(),
+        ]
+    );
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    let phase = &schema["$defs"]["Phase"]["properties"];
+    assert!(phase["hold_plane"].is_object(), "{schema}");
+    assert!(phase["actuation"].is_object(), "{schema}");
+    assert!(
+        schema["$defs"]["TransitionConditions"]["properties"]["time_in_phase_s"].is_object(),
+        "{schema}"
+    );
+    assert!(
+        schema["$defs"]["CapturePlanDevice"]["properties"]
+            .get("hold_plane")
+            .is_none()
+            && schema["$defs"]["CapturePlanDevice"]["properties"]
+                .get("actuation")
+                .is_none()
+    );
+}
+
+#[test]
+fn tail_spacing_round_trips_is_absent_by_default_and_is_validated() {
+    // P7.5 S10 (design D18): `phases[].tail_spacing_m` is optional, written only
+    // when set, compiled (`None` when absent), and must be above 0 and below the
+    // tether's length.
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(plan.phases.iter().all(|p| p.tail_spacing_m.is_none()));
+    assert!(!plan_to_json(&plan).contains("tail_spacing_m"));
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert!(
+        compiled
+            .states
+            .iter()
+            .all(|s| s.parameters.tail_spacing_m.is_none())
+    );
+
+    let mut value = doc();
+    value["phases"][1]["tail_spacing_m"] = json!(12.0);
+    let plan = read_plan_value(ID, &value).plan.expect("loads");
+    assert_eq!(plan.phases[0].tail_spacing_m, None);
+    assert_eq!(plan.phases[1].tail_spacing_m, Some(12.0));
+    let text = plan_to_json(&plan);
+    assert!(text.contains(r#""tail_spacing_m": 12.0"#), "{text}");
+    assert_eq!(text.matches("tail_spacing_m").count(), 1, "{text}");
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+    let compiled = crate::capture::plan::compile_capture_plan(&plan);
+    assert_eq!(compiled.states[0].parameters.tail_spacing_m, None);
+    assert_eq!(compiled.states[1].parameters.tail_spacing_m, Some(12.0));
+
+    // Above 0 and below the tether's length: the default 20 m, or the device's.
+    let message = |length: &str| {
+        vec![format!(
+            "[p] /phases/1/tail_spacing_m: must be greater than 0 and less than \
+             device.tether_length_m ({length} m)"
+        )]
+    };
+    for bad in [0.0, -1.0, 20.0, 25.0] {
+        let mut value = doc();
+        value["phases"][1]["tail_spacing_m"] = json!(bad);
+        assert_eq!(errors_of(&value), message("20"), "{bad}");
+    }
+    let mut value = doc();
+    value["device"] = json!({"tether_length_m": 10.0});
+    value["phases"][1]["tail_spacing_m"] = json!(12.0);
+    assert_eq!(errors_of(&value), message("10"));
+    value["phases"][1]["tail_spacing_m"] = json!(9.5);
+    assert!(errors_of(&value).is_empty(), "{:?}", errors_of(&value));
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    assert!(
+        schema["$defs"]["Phase"]["properties"]["tail_spacing_m"].is_object(),
+        "{schema}"
+    );
+    assert!(
+        schema["$defs"]["CapturePlanDevice"]["properties"]
+            .get("tail_spacing_m")
+            .is_none()
+    );
+}
+
+#[test]
+fn capture_sphere_min_radius_round_trips_defaults_to_0_1_and_is_validated() {
+    // P7.5 S6 (design D13, D14): `capture_sphere.min_radius_m` is optional (0.1 m
+    // when absent), compiled into the plan, and must be finite, above 0 and below
+    // the initial radius.
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert_eq!(plan.min_capture_radius_m(), 0.1);
+    assert_eq!(
+        crate::capture::plan::compile_capture_plan(&plan).min_capture_radius_m,
+        0.1
+    );
+    let mut sphere_only_initial = plan.clone();
+    sphere_only_initial.capture_sphere = Some(CaptureSphere {
+        initial_radius_m: Some(7.5),
+        min_radius_m: None,
+    });
+    assert_eq!(sphere_only_initial.min_capture_radius_m(), 0.1);
+
+    let mut value = doc();
+    value["capture_sphere"] = json!({ "min_radius_m": 4.5 });
+    let report = read_plan_value(ID, &value);
+    assert_eq!(report.errors, Vec::<String>::new());
+    let plan = report.plan.expect("loads");
+    assert_eq!(plan.min_capture_radius_m(), 4.5);
+    assert_eq!(plan.initial_capture_radius_m(), 25.0);
+    assert_eq!(
+        crate::capture::plan::compile_capture_plan(&plan).min_capture_radius_m,
+        4.5
+    );
+    let text = plan_to_json(&plan);
+    assert_eq!(text.matches("min_radius_m").count(), 1, "{text}");
+    assert!(!text.contains("initial_radius_m"), "{text}");
+    let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+        .plan
+        .expect("reloads");
+    assert_eq!(reread, plan);
+
+    for (sphere, message) in [
+        (json!({ "min_radius_m": 0.0 }), "must be greater than 0"),
+        (json!({ "min_radius_m": -1.0 }), "must be greater than 0"),
+        (
+            json!({ "min_radius_m": 25.0 }),
+            "must be less than initial_radius_m (25 m)",
+        ),
+        (
+            json!({ "initial_radius_m": 7.5, "min_radius_m": 8.0 }),
+            "must be less than initial_radius_m (7.5 m)",
+        ),
+    ] {
+        let mut value = doc();
+        value["capture_sphere"] = sphere.clone();
+        assert_eq!(
+            errors_of(&value),
+            [format!("[{ID}] /capture_sphere/min_radius_m: {message}")],
+            "{sphere}"
+        );
+    }
+    let mut value = doc();
+    value["capture_sphere"] = json!({ "initial_radius_m": 50.0, "min_radius_m": 30.0 });
+    assert_eq!(errors_of(&value), Vec::<String>::new());
+
+    // JSON has no NaN or infinity; a plan built in code can.
+    let mut plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    for bad in [f64::NAN, f64::INFINITY] {
+        plan.capture_sphere = Some(CaptureSphere {
+            initial_radius_m: None,
+            min_radius_m: Some(bad),
+        });
+        assert_eq!(
+            crate::capture::plan::validate_capture_plan(ID, &plan),
+            [format!(
+                "[{ID}] /capture_sphere/min_radius_m: must be a finite number"
+            )]
+        );
+    }
+
+    let schema = serde_json::to_value(schemars::schema_for!(CapturePlan)).unwrap();
+    assert!(
+        schema["$defs"]["CaptureSphere"]["properties"]["min_radius_m"].is_object(),
+        "{schema}"
+    );
+}
+
+#[test]
+fn spawn_orientation_is_a_snake_case_device_key_that_round_trips() {
+    // P7.5 S3 (design D9): `device.spawn_orientation` is optional, written only
+    // when set, one of three snake_case values.
+    for (word, orientation) in [
+        ("toward_target", SpawnOrientation::TowardTarget),
+        ("v_bar", SpawnOrientation::VBar),
+        ("r_bar", SpawnOrientation::RBar),
+    ] {
+        let mut value = doc();
+        value["device"] = json!({ "spawn_orientation": word });
+        let plan = read_plan_value(ID, &value).plan.expect("loads");
+        let device = plan.device.clone().expect("device");
+        assert_eq!(device.spawn_orientation, Some(orientation));
+        let text = plan_to_json(&plan);
+        assert!(
+            text.contains(&format!("\"spawn_orientation\": \"{word}\"")),
+            "{text}"
+        );
+        let reread = read_plan_value(ID, &serde_json::from_str(&text).unwrap())
+            .plan
+            .expect("reloads");
+        assert_eq!(reread, plan);
+    }
+    let mut value = doc();
+    value["device"] = json!({ "spawn_orientation": "sideways" });
+    let errors = errors_of(&value);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("/device") && errors[0].contains("`toward_target`, `v_bar`, `r_bar`"),
+        "{errors:?}"
+    );
+    let plan = read_plan_value(ID, &doc()).plan.expect("loads");
+    assert!(!plan_to_json(&plan).contains("spawn_orientation"));
 }
