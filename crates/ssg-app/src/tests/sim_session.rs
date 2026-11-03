@@ -16,31 +16,28 @@ use ssg_sim::time::WorldTime;
 #[derive(Resource, Default, Debug, Clone, PartialEq)]
 struct Seen(Vec<(&'static str, SimSession, bool, bool, bool)>);
 
-fn probe(
-    label: &'static str,
-) -> impl FnMut(
-    ResMut<Seen>,
-    Res<State<SimSession>>,
-    Option<Res<OrbitalCache>>,
-    Option<Res<WorldTime>>,
-    Option<Res<CaptureSphereRadius>>,
+/// Records what an app screen system sees (`EXIT`: the OnExit probe).
+fn probe<const EXIT: bool>(
+    mut seen: ResMut<Seen>,
+    session: Res<State<SimSession>>,
+    cache: Option<Res<OrbitalCache>>,
+    time: Option<Res<WorldTime>>,
+    radius: Option<Res<CaptureSphereRadius>>,
 ) {
-    move |mut seen, session, cache, time, radius| {
-        seen.0.push((
-            label,
-            session.get().clone(),
-            cache.is_some(),
-            time.is_some(),
-            radius.is_some(),
-        ));
-    }
+    seen.0.push((
+        if EXIT { "exit" } else { "enter" },
+        session.get().clone(),
+        cache.is_some(),
+        time.is_some(),
+        radius.is_some(),
+    ));
 }
 
 fn probed_app() -> App {
     let mut app = test_app();
     app.init_resource::<Seen>()
-        .add_systems(OnEnter(UiScreen::Sim), probe("enter"))
-        .add_systems(OnExit(UiScreen::Sim), probe("exit"));
+        .add_systems(OnEnter(UiScreen::Sim), probe::<false>)
+        .add_systems(OnExit(UiScreen::Sim), probe::<true>);
     app
 }
 
