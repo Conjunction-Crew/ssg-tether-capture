@@ -19,7 +19,7 @@ use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
 use crate::orbit::{Orbit, start_state_eci};
 use crate::physics_bubble::PHYSICS_DISABLE_RADIUS;
 use crate::project::SelectedProject;
-use crate::session::{SimState, UiScreen};
+use crate::session::{SimSession, SimState};
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::SimConfig;
 
@@ -237,7 +237,7 @@ pub fn spawn_debris(
         .map_or_else(|| debris_angular_inertia(mass_kg), angular_inertia);
     let debris = commands
         .spawn((
-            DespawnOnExit(UiScreen::Sim),
+            DespawnOnExit(SimSession::Active),
             DebrisBody {
                 model_path: "models/broken_satellite.glb".to_string(),
             },
@@ -376,7 +376,7 @@ pub fn spawn_tether(
     // chaser's `mass_kg` and `inertia_kg_m2` from `project.json` when given (Q10 row 11).
     let root_mass = selected.mass_kg.map_or(end_mass, |m| m as f32);
     let mut root = commands.spawn((
-        DespawnOnExit(UiScreen::Sim),
+        DespawnOnExit(SimSession::Active),
         SimAnchor,
         TetherRoot,
         sphere_shape,
@@ -414,7 +414,7 @@ pub fn spawn_tether(
 
         let position = (axis * y).as_vec3();
         let mut body = commands.spawn((
-            DespawnOnExit(UiScreen::Sim),
+            DespawnOnExit(SimSession::Active),
             TetherNode { root: tether_root },
             RigidBody::Dynamic,
             tether_layers,
@@ -437,7 +437,7 @@ pub fn spawn_tether(
 
         // Centre to centre, slack below the spawn distance and a hard stop at it.
         commands.spawn((
-            DespawnOnExit(UiScreen::Sim),
+            DespawnOnExit(SimSession::Active),
             DistanceJoint::new(prev_sphere, sphere)
                 .with_limits(0.0, f64::from(position.distance(prev_position))),
             joint_damping,

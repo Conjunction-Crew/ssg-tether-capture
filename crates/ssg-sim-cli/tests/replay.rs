@@ -27,7 +27,7 @@ use ssg_sim::recording::files::{
 use ssg_sim::recording::inputs::{RecordedCommand, RecordedInput};
 use ssg_sim::recording::player::Player;
 use ssg_sim::recording::recorder::{RecorderCommand, RecordingSettings};
-use ssg_sim::session::{PauseState, UiScreen};
+use ssg_sim::session::{PauseState, SimSession};
 use ssg_sim::test_support::{
     current_step, enter_sim, fixed_epoch, load_example_plans, q13, start_running, test_app, tick,
 };
@@ -173,8 +173,8 @@ fn start_capture_and_recording(app: &mut App, name: &str) {
 /// Leaves the sim screen (ending the recording) and returns the recording folder.
 fn finish(mut app: App, sink: &FileSink) -> PathBuf {
     app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Home);
+        .resource_mut::<NextState<SimSession>>()
+        .set(SimSession::Idle);
     app.update();
     let results = sink.results();
     assert_eq!(results.len(), 1, "{results:?}");

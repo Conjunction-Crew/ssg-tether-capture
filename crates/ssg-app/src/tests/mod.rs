@@ -13,4 +13,6 @@ pub mod recording_ui;
 #[cfg(test)]
 pub mod replay_ui;
 #[cfg(test)]
+pub mod sim_session;
+#[cfg(test)]
 pub mod unit_tests_app;

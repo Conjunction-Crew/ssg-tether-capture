@@ -7,7 +7,7 @@ use bevy::{ecs::schedule::ScheduleLabel, math::DVec3, prelude::*};
 use brahe::Epoch;
 
 use crate::SimStep;
-use crate::session::{PauseState, SimState, UiScreen};
+use crate::session::{PauseState, SimSession, SimState};
 use crate::telemetry::{LogEvent, LogLevel};
 
 // FixedUpdate frequency.
@@ -158,7 +158,7 @@ impl Plugin for TimePlugin {
             .add_systems(
                 FixedUpdate,
                 fixed_physics_step
-                    .run_if(in_state(UiScreen::Sim))
+                    .run_if(in_state(SimSession::Active))
                     .run_if(in_state(SimState::Running))
                     .run_if(in_state(PauseState::Running)),
             )
@@ -176,7 +176,7 @@ impl Plugin for TimePlugin {
                 )
                     .chain()
                     .in_set(PhysicsSystems::Last)
-                    .run_if(in_state(UiScreen::Sim)),
+                    .run_if(in_state(SimSession::Active)),
             );
     }
 }

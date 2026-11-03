@@ -23,6 +23,12 @@ GitHub Release description.
 ### Added
 - egui foundation for the UI port (P8 S1): the egui panels and windows take their colours from the app theme (`UiTheme`), a run condition tells the hotkeys when egui has the keyboard, and the app tests gain an `egui_kittest` screen harness with a local snapshot test (`p8_screen_snapshots`, ignored on CI).
 
+### Changed
+- The simulation's session state is its own `SimSession` (`Idle`, `Active`); the app's screens (`UiScreen`: setup, Home, sim) move into the app and start and end the session in the same frame (P8 S2, Q35). The command-line tools set `SimSession` directly.
+
+### Fixed
+- Log lines written outside the sim (on Home or the setup screen, e.g. a plan saved) are kept in the Capture Log instead of being dropped; they show `--:--:--` because no sim clock is running (F-42).
+
 ## [v0.4.0-rc.3] 🔬 - 2026-11-03
 
 ### Added

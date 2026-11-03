@@ -22,9 +22,9 @@ use crate::render::layers::{
     SCENE_LAYER, eci_position_to_map,
 };
 use crate::ui::catalog_state::SpaceCatalogUiState;
+use crate::ui::screen::UiScreen;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::cache::OrbitalCache;
-use ssg_sim::session::UiScreen;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 
 /// The body the camera looks at. A pure viewing marker: the floating origin and

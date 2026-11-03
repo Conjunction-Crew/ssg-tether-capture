@@ -3,10 +3,10 @@ use bevy::prelude::*;
 
 use crate::render::layers::UI_LAYER;
 use crate::ui::events::UiEvent;
+use crate::ui::screen::UiScreen;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::ScreenRoot;
 use ssg_sim::project::WorkingDirectory;
-use ssg_sim::session::UiScreen;
 
 #[derive(Component)]
 pub struct WorkingDirectorySetupScreen;

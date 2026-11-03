@@ -17,13 +17,14 @@ use crate::ui::replay::{
     exit_replay, followed_body, relative_state, replay_shapes, return_to_sim,
     show_replay_in_scene_view, spawn_replay_bodies,
 };
+use crate::ui::screen::UiScreen;
 use avian3d::prelude::{Collider, ColliderConstructorHierarchy};
 use ssg_sim::project::recording::RecordingBodyRole;
 use ssg_sim::project::{format_utc, parse_utc};
 use ssg_sim::recording::BodyFrame;
 use ssg_sim::recording::files::{FrameLine, RecordedFrame};
 use ssg_sim::recording::player::Player;
-use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::session::SimState;
 use ssg_sim::test_support::fixed_epoch;
 use ssg_sim::time::WorldTime;
 

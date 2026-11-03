@@ -25,7 +25,7 @@ use ssg_sim::recording::files::{
 };
 use ssg_sim::recording::inputs::{RecordedCommand, RecordedInput};
 use ssg_sim::recording::{BodyFrame, RecordingBodies};
-use ssg_sim::session::{PauseState, SimState, UiScreen};
+use ssg_sim::session::{PauseState, SimSession, SimState};
 use ssg_sim::time::{FIXED_HZ, MAX_STEPS_PER_UPDATE, PHYS_DT, StepCap, WorldTime};
 
 use crate::args::ReplayArgs;
@@ -271,8 +271,8 @@ fn resimulate<'a>(
     }
 
     app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Sim);
+        .resource_mut::<NextState<SimSession>>()
+        .set(SimSession::Active);
     app.update();
     // The update that spawns the bodies runs k steps before `init_orbitals` builds
     // the propagators on the next update (C1).
