@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.4.0-rc.3] 🔬 - 2026-11-03
+
 ### Added
 - Capture plan keys, all optional: `device.spawn_orientation` lays the tether out at spawn with the tail away from the target along the chaser-to-target line (`toward_target`, the default), behind the chaser along its velocity axis (`v_bar`) or below it toward the Earth (`r_bar`); `capture_sphere.min_radius_m` is the radius the capture sphere stops shrinking at (default 0.1 m); per phase, `tail_actuation` pushes the tail as well as the root (in a phase named `capture` the tail circles the other way, which wraps the rope), `tail_spacing_m` holds the straight-line distance from the root to the tail with the tail behind, `hold_plane` adds a push toward the circling plane through the target (full at 1 m of height), `velocity_scales_with_sphere` lowers the speed limit with the sphere, and `actuation: "hold"` brakes every pushed end to rest; transitions gain the condition `time_in_phase_s`. The plan and recording-manifest JSON Schemas are regenerated.
 - A debris collider owned by the simulation, the same on the command line and in the app: a box on the Hubble bus and one per solar array, fitted to the model the app draws. The debris keeps the target's `mass_kg` (2,500 kg by default) at its origin and the three boxes' inertia, or the target's `inertia_kg_m2`.
