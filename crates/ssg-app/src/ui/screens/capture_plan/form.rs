@@ -63,7 +63,7 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
     for (i, t) in form.approach_transitions.iter().enumerate() {
         if t.to.trim().is_empty() {
             errors.push(format!(
-                "Approach Transition {} 'To State' is required",
+                "Approach Transition {} 'To Phase' is required",
                 i + 1
             ));
         }
@@ -89,7 +89,7 @@ pub fn validate_form(form: &NewCapturePlanForm) -> Vec<String> {
     for (i, t) in form.terminal_transitions.iter().enumerate() {
         if t.to.trim().is_empty() {
             errors.push(format!(
-                "Terminal Transition {} 'To State' is required",
+                "Terminal Transition {} 'To Phase' is required",
                 i + 1
             ));
         }

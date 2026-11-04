@@ -11,6 +11,8 @@ pub mod home_screens;
 #[cfg(test)]
 pub mod integration_app;
 #[cfg(test)]
+pub mod plan_form;
+#[cfg(test)]
 pub mod recording_ui;
 #[cfg(test)]
 pub mod replay_ui;
