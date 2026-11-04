@@ -73,9 +73,12 @@ fn a_newer_or_unknown_schema_version_is_refused() {
     }
 }
 
+/// An edit applied to a valid plan document.
+type Mutation = fn(&mut Value);
+
 #[test]
 fn an_unknown_key_is_refused_with_the_key_and_where_it_is() {
-    let cases: [(&str, fn(&mut Value)); 7] = [
+    let cases: [(&str, Mutation); 7] = [
         ("/", |d| d["units"] = json!("m")),
         ("/device", |d| d["device"] = json!({"tether_length": 20.0})),
         ("/capture_sphere", |d| {
@@ -136,7 +139,7 @@ fn a_wrong_type_is_reported_as_such_with_where_it_is() {
 
 #[test]
 fn each_validation_rule_reports_its_message() {
-    let rows: Vec<(&str, fn(&mut Value), Vec<&str>)> = vec![
+    let rows: Vec<(&str, Mutation, Vec<&str>)> = vec![
         (
             "name blank",
             |d| d["name"] = json!(" "),

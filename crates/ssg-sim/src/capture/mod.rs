@@ -207,6 +207,13 @@ pub struct CaptureMessages<'w> {
     ended: MessageWriter<'w, CaptureEnded>,
 }
 
+/// The resources [`capture_state_machine_update`] writes besides the bodies.
+#[derive(SystemParam)]
+pub struct CaptureOutputs<'w> {
+    capture_sphere_radius: ResMut<'w, CaptureSphereRadius>,
+    data_collection: ResMut<'w, DataCollection>,
+}
+
 /// The read-only data [`capture_state_machine_update`] reads.
 #[derive(SystemParam)]
 pub struct CaptureInputs<'w, 's> {
@@ -302,8 +309,7 @@ pub fn capture_state_machine_update(
     inputs: CaptureInputs,
     mut rb_forces: ParamSet<(Query<RigidBodyQuery>, Query<Forces>)>,
     mut capture_forces: Query<(Entity, &mut CaptureForce)>,
-    mut capture_sphere_radius: ResMut<CaptureSphereRadius>,
-    mut data_collection: ResMut<DataCollection>,
+    outputs: CaptureOutputs,
     mut messages: CaptureMessages,
 ) {
     let CaptureInputs {
@@ -312,6 +318,10 @@ pub fn capture_state_machine_update(
         world_time,
         disabled,
     } = inputs;
+    let CaptureOutputs {
+        mut capture_sphere_radius,
+        mut data_collection,
+    } = outputs;
     for (capture_entity, mut capture_component) in capture_entities {
         capture_component.state_elapsed_time_s += PHYS_DT;
 
@@ -742,11 +752,9 @@ fn resolve_root_state(
         transition_to(
             capture_entity,
             capture_component,
-            &to,
-            end,
+            (&to, end, reason),
             world_time,
             capture_sphere_radius.radius,
-            reason,
             messages,
         );
     }
@@ -826,6 +834,10 @@ fn transition_satisfied(
     (!reasons.is_empty()).then(|| reasons.join(", "))
 }
 
+/// A transition that fired: the phase it enters, that phase's end outcome (if
+/// it is an end phase) and the reason logged.
+type FiredTransition<'a> = (&'a str, Option<PhaseEnd>, String);
+
 /// Enters `new_state` at the current sim time (`state_enter_time_s` is sim seconds
 /// since the start epoch) with the sphere at `sphere_radius_m`, and reports it as a
 /// log line and a [`CaptureTransition`], and, when `new_state` is an end phase
@@ -833,11 +845,9 @@ fn transition_satisfied(
 fn transition_to(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
-    new_state: &str,
-    end: Option<PhaseEnd>,
+    (new_state, end, reason): FiredTransition,
     world_time: &WorldTime,
     sphere_radius_m: f64,
-    reason: String,
     messages: &mut CaptureMessages,
 ) {
     messages.log_events.write(LogEvent {
@@ -897,14 +907,15 @@ fn report_capture_ended(
     });
 }
 
+/// A rigid body that takes part in the physics step.
+#[cfg(debug_assertions)]
+type EnabledRigidBody = (With<RigidBody>, Without<RigidBodyDisabled>);
+
 /// Debug builds only: panics if an enabled rigid body has a non-finite `Position`
 /// or `LinearVelocity`, naming the entity and the step (no NaN reaches avian).
 #[cfg(debug_assertions)]
 pub fn assert_finite_state(
-    bodies: Query<
-        (Entity, &Position, &LinearVelocity),
-        (With<RigidBody>, Without<RigidBodyDisabled>),
-    >,
+    bodies: Query<(Entity, &Position, &LinearVelocity), EnabledRigidBody>,
     world_time: Res<WorldTime>,
 ) {
     for (entity, position, velocity) in &bodies {
@@ -928,6 +939,14 @@ pub enum SimCommand {
     },
 }
 
+/// The plans and the clock [`apply_sim_commands`] reads.
+#[derive(SystemParam)]
+pub struct SimCommandInputs<'w> {
+    capture_plan_lib: Res<'w, CapturePlanLibrary>,
+    // Absent outside the sim screen, where no capture target exists.
+    world_time: Option<Res<'w, WorldTime>>,
+}
+
 /// Applies the queued [`SimCommand`]s in `Last` ([`SimSet::ApplyCommands`]), the
 /// frame the UI sends them, as the UI handler did before P3. The capture start
 /// time is sim seconds since the start epoch (F-38: fixed in P4). Every command
@@ -936,9 +955,7 @@ pub enum SimCommand {
 pub fn apply_sim_commands(
     mut commands: Commands,
     mut sim_commands: MessageReader<SimCommand>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
-    // Absent outside the sim screen, where no capture target exists.
-    world_time: Option<Res<WorldTime>>,
+    inputs: SimCommandInputs,
     capture_entities: Query<Entity, With<CaptureComponent>>,
     // The tether registry (absent outside the sim screen) and the bodies that
     // carry the controller's state of the capture being replaced.
@@ -957,6 +974,10 @@ pub fn apply_sim_commands(
         ResMut<SimInputLog>,
     ),
 ) {
+    let SimCommandInputs {
+        capture_plan_lib,
+        world_time,
+    } = inputs;
     for command in sim_commands.read() {
         match command {
             SimCommand::StartCapture {

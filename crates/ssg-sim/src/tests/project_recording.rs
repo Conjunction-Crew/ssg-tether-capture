@@ -303,9 +303,12 @@ fn the_embedded_plan_is_always_schema_v1() {
 // one test row per rule
 // ---------------------------------------------------------------------------
 
+/// An edit applied to a valid manifest document.
+type Mutation = Box<dyn Fn(&mut Value)>;
+
 #[test]
 fn each_validation_rule_reports_its_message() {
-    let cases: Vec<(&str, Box<dyn Fn(&mut Value)>, &str)> = vec![
+    let cases: Vec<(&str, Mutation, &str)> = vec![
         (
             "blank plan id",
             Box::new(|v| v["plan_id"] = json!("  ")),
