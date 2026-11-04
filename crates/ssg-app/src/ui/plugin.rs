@@ -438,7 +438,7 @@ pub(crate) fn load_plan_into_form(
     }
     form.editing_plan_id = Some(plan_id.to_string());
     // Snapshot the form state so we can detect unchanged edits on Save.
-    form.original_json = Some(build_capture_plan_json(&form));
+    form.original_json = Some(build_capture_plan_json(form));
 }
 
 /// A plan value as the form shows it (as JSON writes it, e.g. `2.0`).
