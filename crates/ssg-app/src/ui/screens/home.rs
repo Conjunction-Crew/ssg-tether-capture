@@ -1,674 +1,312 @@
-use bevy::camera::visibility::RenderLayers;
-use bevy::prelude::*;
+//! The Home screen on egui (P8 S3): the header, the Working Directory panel,
+//! the user and example plan cards and the load-error banner. Everything below
+//! the header scrolls when it does not fit the window (F-37).
 
-use crate::render::layers::UI_LAYER;
+use bevy::prelude::*;
+use bevy_egui::{EguiContexts, EguiTextureHandle, egui};
+
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::ui::log_ui::CapturePlanLoadErrors;
-use crate::ui::screen::UiScreen;
 use crate::ui::theme::UiTheme;
-use crate::ui::widgets::ScreenRoot;
-use ssg_sim::capture::plan::CapturePlanLibrary;
+use bevy::platform::collections::HashMap;
+use ssg_sim::capture::plan::{CapturePlan, CapturePlanLibrary};
 use ssg_sim::project::WorkingDirectory;
 
-#[derive(Component)]
-pub struct HomeScreen;
+const CARD_WIDTH: f32 = 340.0;
+const CARD_MIN_HEIGHT: f32 = 148.0;
+const CARD_PADDING: f32 = 14.0;
 
-#[derive(Component)]
-pub struct HomeProjectButton {
-    pub project_id: String,
+/// One plan card: the file stem (the plan id) and the plan's name.
+pub struct PlanCard {
+    pub id: String,
+    pub name: String,
 }
 
-#[derive(Component)]
-pub struct EditCapturePlanButton {
-    pub plan_id: String,
+/// What the Home screen shows.
+pub struct HomeView {
+    pub working_directory: String,
+    pub user_plans: Vec<PlanCard>,
+    pub example_plans: Vec<PlanCard>,
+    /// Load errors by file stem.
+    pub load_errors: Vec<(String, Vec<String>)>,
+    pub logo: Option<egui::TextureId>,
+    /// The body's maximum width (`UiTheme::content_max_width`).
+    pub content_max_width: f32,
 }
 
-#[derive(Component)]
-pub struct HomeWorkingDirectoryLabel;
+fn plan_count_label(count: usize, what: &str) -> String {
+    format!("{count} {what}{}", if count == 1 { "" } else { "s" })
+}
 
-#[derive(Component)]
-pub struct ChangeDirectoryButton;
+pub fn home_ui(ui: &mut egui::Ui, view: &mut HomeView, out: &mut Vec<UiEvent>) {
+    header(ui, view.logo);
+    egui::ScrollArea::vertical()
+        .auto_shrink(false)
+        .show(ui, |ui| {
+            ui.add_space(20.0);
+            let width = ui.available_width().min(view.content_max_width);
+            let margin = (ui.available_width() - width) / 2.0;
+            ui.horizontal(|ui| {
+                ui.add_space(margin);
+                ui.vertical(|ui| {
+                    ui.set_width(width);
+                    ui.spacing_mut().item_spacing.y = 16.0;
+                    body(ui, view, out);
+                });
+            });
+            ui.add_space(20.0);
+        });
+}
 
-#[derive(Component)]
-pub struct NewPlanButton;
+fn header(ui: &mut egui::Ui, logo: Option<egui::TextureId>) {
+    egui::Frame::new()
+        .fill(ui.visuals().widgets.open.bg_fill)
+        .inner_margin(egui::Margin::symmetric(24, 16))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(84.0 - 32.0);
+            ui.vertical_centered(|ui| {
+                ui.horizontal(|ui| {
+                    // Centre the logo and titles as one row.
+                    let row_width = 50.0 + 14.0 + 260.0;
+                    ui.add_space(((ui.available_width() - row_width) / 2.0).max(0.0));
+                    ui.spacing_mut().item_spacing.x = 14.0;
+                    if let Some(logo) = logo {
+                        ui.add(egui::Image::new((logo, egui::vec2(50.0, 50.0))));
+                    }
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.label(egui::RichText::new("Tether Capture").size(30.0));
+                        ui.weak(egui::RichText::new("Conjunction Crew").size(14.0));
+                    });
+                });
+            });
+        });
+}
 
-pub fn spawn_home_screen(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    theme: Res<UiTheme>,
+fn body(ui: &mut egui::Ui, view: &HomeView, out: &mut Vec<UiEvent>) {
+    egui::Frame::new()
+        .fill(ui.visuals().faint_bg_color)
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.label(egui::RichText::new("Working Directory").size(17.0));
+            ui.weak(
+                egui::RichText::new("Set the location where your projects are stored").size(12.0),
+            );
+            ui.label(egui::RichText::new(&view.working_directory).size(13.0));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add(muted_button(
+                        "Change Directory",
+                        12.0,
+                        ui.visuals().panel_fill,
+                    ))
+                    .clicked()
+                {
+                    out.push(UiEvent::ChangeWorkingDirectory);
+                }
+            });
+        });
+
+    // A warning banner for any capture plan files that failed to load.
+    if !view.load_errors.is_empty() {
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(140, 38, 38, 217))
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 217, 217),
+                    egui::RichText::new("Warning: Some capture plan files could not be loaded")
+                        .size(13.0),
+                );
+                for (file_stem, file_errors) in &view.load_errors {
+                    for error in file_errors {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 191, 191),
+                            egui::RichText::new(format!("  \u{2022} {file_stem}: {error}"))
+                                .size(11.0),
+                        );
+                    }
+                }
+            });
+    }
+
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("My Capture Plans").size(24.0));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("+ New Plan").clicked() {
+                out.push(UiEvent::OpenNewCapturePlanForm);
+            }
+            ui.weak(
+                egui::RichText::new(
+                    plan_count_label(view.user_plans.len(), "plan") + " in working directory",
+                )
+                .size(12.0),
+            );
+        });
+    });
+    plan_cards(ui, &view.user_plans, true, out);
+
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Example Capture Plans").size(24.0));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.weak(
+                egui::RichText::new(plan_count_label(view.example_plans.len(), "example plan"))
+                    .size(12.0),
+            );
+        });
+    });
+    plan_cards(ui, &view.example_plans, false, out);
+}
+
+/// rc.3's secondary buttons: muted text on a panel fill.
+fn muted_button(text: &str, size: f32, fill: egui::Color32) -> egui::Button<'_> {
+    egui::Button::new(egui::RichText::new(text).size(size).weak()).fill(fill)
+}
+
+fn plan_cards(ui: &mut egui::Ui, cards: &[PlanCard], editable: bool, out: &mut Vec<UiEvent>) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
+        for card in cards {
+            plan_card(ui, card, editable, out);
+        }
+    });
+}
+
+/// A clickable card (opens the plan) with the name, an **edit** button for
+/// user plans, and the file stem at the bottom.
+fn plan_card(ui: &mut egui::Ui, card: &PlanCard, editable: bool, out: &mut Vec<UiEvent>) {
+    // A fixed size, so the wrapping layout moves a card that does not fit to
+    // the next row instead of squeezing it.
+    let size = egui::vec2(CARD_WIDTH.min(ui.max_rect().width()), CARD_MIN_HEIGHT);
+    let width = size.x - 2.0 * CARD_PADDING;
+    let response = ui
+        .allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt(&card.id)
+                    .sense(egui::Sense::click()),
+                |ui| {
+                    let fill = if ui.response().hovered() {
+                        ui.visuals().faint_bg_color
+                    } else {
+                        ui.visuals().panel_fill
+                    };
+                    egui::Frame::new()
+                        .fill(fill)
+                        .inner_margin(CARD_PADDING)
+                        .show(ui, |ui| {
+                            ui.style_mut().interaction.selectable_labels = false;
+                            ui.set_width(width);
+                            ui.set_min_height(CARD_MIN_HEIGHT - 2.0 * CARD_PADDING);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(&card.name).size(18.0));
+                                if editable {
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .add(muted_button(
+                                                    "edit",
+                                                    11.0,
+                                                    ui.visuals().faint_bg_color,
+                                                ))
+                                                .clicked()
+                                            {
+                                                out.push(UiEvent::EditCapturePlan(card.id.clone()));
+                                            }
+                                        },
+                                    );
+                                }
+                            });
+                            // The stem sits at the bottom of the card.
+                            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                                ui.weak(egui::RichText::new(&card.id).size(12.0));
+                            });
+                        });
+                },
+            )
+            .response
+        })
+        .inner;
+    if response.clicked() {
+        out.push(UiEvent::OpenProject(card.id.clone()));
+    }
+}
+
+/// Loads the example and user plans when Home opens.
+pub fn load_home_plans(
     mut capture_plan_lib: ResMut<CapturePlanLibrary>,
     mut capture_plan_load_errors: ResMut<CapturePlanLoadErrors>,
     working_directory: Res<WorkingDirectory>,
-    sync_state: Res<SimPlanSyncState>,
 ) {
     capture_plan_load_errors.errors = capture_plan_lib.load_all(
         &crate::resolve_assets_dir().join("example_capture_plans"),
         std::path::Path::new(&working_directory.path),
     );
-
-    // When restarting the sim we pass through Home only to trigger cleanup
-    // and reload. Skip spawning the UI so the home screen never flashes.
-    if sync_state.restart_requested {
-        return;
-    }
-
-    spawn_home_screen_inner(
-        &mut commands,
-        &asset_server,
-        &theme,
-        &capture_plan_lib,
-        &working_directory.path,
-        &capture_plan_load_errors,
-    );
 }
 
-pub fn spawn_home_screen_inner(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    theme: &UiTheme,
-    capture_plan_lib: &CapturePlanLibrary,
-    working_directory_path: &str,
-    capture_plan_load_errors: &CapturePlanLoadErrors,
-) {
-    let font: Handle<Font> = asset_server.load("fonts/FiraMono-Medium.ttf");
-    let user_plan_count_label = format!(
-        "{} plan{} in working directory",
-        capture_plan_lib.user_plans.len(),
-        if capture_plan_lib.user_plans.len() == 1 {
-            ""
-        } else {
-            "s"
-        }
-    );
-    let example_plan_count_label = format!(
-        "{} example plan{}",
-        capture_plan_lib.example_plans.len(),
-        if capture_plan_lib.example_plans.len() == 1 {
-            ""
-        } else {
-            "s"
-        }
-    );
-    let _capture_plan_count_label = format!(
-        "{} capture plan{} in workspace",
-        capture_plan_lib.plans.len(),
-        if capture_plan_lib.plans.len() == 1 {
-            ""
-        } else {
-            "s"
-        }
-    );
-    let working_directory = working_directory_path.to_string();
-
-    commands
-        .spawn((
-            HomeScreen,
-            ScreenRoot,
-            RenderLayers::layer(UI_LAYER),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(theme.background),
-        ))
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        width: percent(100),
-                        min_height: px(84.0),
-                        padding: UiRect::axes(px(24.0), px(16.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BackgroundColor(theme.header_background),
-                ))
-                .with_children(|header| {
-                    header
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Row,
-                            align_items: AlignItems::Center,
-                            column_gap: px(14.0),
-                            ..default()
-                        })
-                        .with_children(|row| {
-                            row.spawn((
-                                ImageNode::new(
-                                    asset_server
-                                        .load("logo/tether-capture.iconset/icon_128x128.png"),
-                                ),
-                                Node {
-                                    height: px(50.0),
-                                    width: Val::Auto,
-                                    ..default()
-                                },
-                            ));
-
-                            row.spawn(Node {
-                                flex_direction: FlexDirection::Column,
-                                row_gap: px(2.0),
-                                ..default()
-                            })
-                            .with_children(|text_col| {
-                                text_col.spawn((
-                                    Text::new("Tether Capture"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 30.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                text_col.spawn((
-                                    Text::new("Conjunction Crew"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 14.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_muted),
-                                ));
-                            });
-                        });
-                });
-
-            parent
-                .spawn(Node {
-                    width: percent(100),
-                    height: percent(100),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Start,
-                    padding: UiRect::axes(px(24.0), px(20.0)),
-                    ..default()
-                })
-                .with_children(|body| {
-                    body.spawn(Node {
-                        width: theme.content_max_width,
-                        max_width: percent(100),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(16.0),
-                        ..default()
-                    })
-                    .with_children(|content| {
-                        content
-                            .spawn((
-                                Node {
-                                    width: percent(100),
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: px(8.0),
-                                    padding: UiRect::all(px(16.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(theme.panel_background_soft),
-                            ))
-                            .with_children(|workspace| {
-                                workspace.spawn((
-                                    Text::new("Working Directory"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 17.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                workspace.spawn((
-                                    Text::new("Set the location where your projects are stored"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 12.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_muted),
-                                ));
-
-                                workspace.spawn((
-                                    HomeWorkingDirectoryLabel,
-                                    Text::new(working_directory),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 13.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                workspace
-                                    .spawn(Node {
-                                        width: percent(100),
-                                        justify_content: JustifyContent::End,
-                                        margin: UiRect::top(px(4.0)),
-                                        ..default()
-                                    })
-                                    .with_children(|row| {
-                                        row.spawn((
-                                            Button,
-                                            ChangeDirectoryButton,
-                                            Node {
-                                                padding: UiRect::axes(px(14.0), px(7.0)),
-                                                ..default()
-                                            },
-                                            BackgroundColor(theme.panel_background),
-                                        ))
-                                        .with_children(
-                                            |btn| {
-                                                btn.spawn((
-                                                    Text::new("Change Directory"),
-                                                    TextFont {
-                                                        font: font.clone(),
-                                                        font_size: 12.0,
-                                                        ..default()
-                                                    },
-                                                    TextColor(theme.text_muted),
-                                                ));
-                                            },
-                                        );
-                                    });
-                            });
-
-                        // Show a warning banner for any capture plan files that failed to load.
-                        if !capture_plan_load_errors.errors.is_empty() {
-                            content
-                                .spawn((
-                                    Node {
-                                        width: percent(100),
-                                        flex_direction: FlexDirection::Column,
-                                        row_gap: px(4.0),
-                                        padding: UiRect::all(px(12.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(Color::srgba(0.55, 0.15, 0.15, 0.85)),
-                                ))
-                                .with_children(|banner| {
-                                    banner.spawn((
-                                        Text::new(
-                                            "Warning: Some capture plan files could not be loaded",
-                                        ),
-                                        TextFont {
-                                            font: font.clone(),
-                                            font_size: 13.0,
-                                            ..default()
-                                        },
-                                        TextColor(Color::srgb(1.0, 0.85, 0.85)),
-                                    ));
-                                    for (file_stem, file_errors) in &capture_plan_load_errors.errors
-                                    {
-                                        for error in file_errors {
-                                            banner.spawn((
-                                                Text::new(format!(
-                                                    "  \u{2022} {file_stem}: {error}"
-                                                )),
-                                                TextFont {
-                                                    font: font.clone(),
-                                                    font_size: 11.0,
-                                                    ..default()
-                                                },
-                                                TextColor(Color::srgb(1.0, 0.75, 0.75)),
-                                            ));
-                                        }
-                                    }
-                                });
-                        }
-
-                        content
-                            .spawn(Node {
-                                width: percent(100),
-                                justify_content: JustifyContent::SpaceBetween,
-                                align_items: AlignItems::Center,
-                                margin: UiRect::top(px(10.0)),
-                                ..default()
-                            })
-                            .with_children(|header| {
-                                header.spawn((
-                                    Text::new("My Capture Plans"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 24.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                header
-                                    .spawn(Node {
-                                        align_items: AlignItems::Center,
-                                        column_gap: px(10.0),
-                                        ..default()
-                                    })
-                                    .with_children(|right| {
-                                        right.spawn((
-                                            Text::new(user_plan_count_label),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 12.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_muted),
-                                        ));
-
-                                        right
-                                            .spawn((
-                                                Button,
-                                                NewPlanButton,
-                                                Node {
-                                                    padding: UiRect::axes(px(12.0), px(6.0)),
-                                                    ..default()
-                                                },
-                                                BackgroundColor(theme.button_background),
-                                            ))
-                                            .with_children(|btn| {
-                                                btn.spawn((
-                                                    Text::new("+ New Plan"),
-                                                    TextFont {
-                                                        font: font.clone(),
-                                                        font_size: 13.0,
-                                                        ..default()
-                                                    },
-                                                    TextColor(theme.button_text),
-                                                ));
-                                            });
-                                    });
-                            });
-
-                        content
-                            .spawn(Node {
-                                width: percent(100),
-                                flex_direction: FlexDirection::Row,
-                                flex_wrap: FlexWrap::Wrap,
-                                column_gap: px(12.0),
-                                row_gap: px(12.0),
-                                ..default()
-                            })
-                            .with_children(|list| {
-                                for (plan_id, plan) in &capture_plan_lib.user_plans {
-                                    list.spawn((
-                                        Button,
-                                        HomeProjectButton {
-                                            project_id: plan_id.clone(),
-                                        },
-                                        Node {
-                                            width: px(340.0),
-                                            max_width: percent(100),
-                                            min_height: px(148.0),
-                                            flex_direction: FlexDirection::Column,
-                                            justify_content: JustifyContent::SpaceBetween,
-                                            padding: UiRect::all(px(14.0)),
-                                            row_gap: px(8.0),
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background),
-                                    ))
-                                    .with_children(|button| {
-                                        // Top row: plan name + edit icon button
-                                        button
-                                            .spawn(Node {
-                                                width: percent(100),
-                                                flex_direction: FlexDirection::Row,
-                                                justify_content: JustifyContent::SpaceBetween,
-                                                align_items: AlignItems::Center,
-                                                ..default()
-                                            })
-                                            .with_children(|row| {
-                                                row.spawn((
-                                                    Text::new(plan.name.clone()),
-                                                    TextFont {
-                                                        font: font.clone(),
-                                                        font_size: 18.0,
-                                                        ..default()
-                                                    },
-                                                    TextColor(theme.text_primary),
-                                                ));
-
-                                                row.spawn((
-                                                    Button,
-                                                    EditCapturePlanButton {
-                                                        plan_id: plan_id.clone(),
-                                                    },
-                                                    Node {
-                                                        min_width: px(36.0),
-                                                        min_height: px(28.0),
-                                                        align_items: AlignItems::Center,
-                                                        justify_content: JustifyContent::Center,
-                                                        padding: UiRect::axes(px(6.0), px(0.0)),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(theme.panel_background_soft),
-                                                ))
-                                                .with_children(|btn| {
-                                                    btn.spawn((
-                                                        Text::new("edit"),
-                                                        TextFont {
-                                                            font: font.clone(),
-                                                            font_size: 11.0,
-                                                            ..default()
-                                                        },
-                                                        TextColor(theme.text_muted),
-                                                    ));
-                                                });
-                                            });
-
-                                        button.spawn((
-                                            Text::new(plan_id.clone()),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 12.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_muted),
-                                        ));
-                                    });
-                                }
-                            });
-
-                        content
-                            .spawn(Node {
-                                width: percent(100),
-                                justify_content: JustifyContent::SpaceBetween,
-                                align_items: AlignItems::Center,
-                                margin: UiRect::top(px(10.0)),
-                                ..default()
-                            })
-                            .with_children(|header| {
-                                header.spawn((
-                                    Text::new("Example Capture Plans"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 24.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_primary),
-                                ));
-
-                                header.spawn((
-                                    Text::new(example_plan_count_label),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 12.0,
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_muted),
-                                ));
-                            });
-
-                        content
-                            .spawn(Node {
-                                width: percent(100),
-                                flex_direction: FlexDirection::Row,
-                                flex_wrap: FlexWrap::Wrap,
-                                column_gap: px(12.0),
-                                row_gap: px(12.0),
-                                ..default()
-                            })
-                            .with_children(|list| {
-                                for (plan_id, plan) in &capture_plan_lib.example_plans {
-                                    list.spawn((
-                                        Button,
-                                        HomeProjectButton {
-                                            project_id: plan_id.clone(),
-                                        },
-                                        Node {
-                                            width: px(340.0),
-                                            max_width: percent(100),
-                                            min_height: px(148.0),
-                                            flex_direction: FlexDirection::Column,
-                                            justify_content: JustifyContent::SpaceBetween,
-                                            padding: UiRect::all(px(14.0)),
-                                            row_gap: px(8.0),
-                                            ..default()
-                                        },
-                                        BackgroundColor(theme.panel_background),
-                                    ))
-                                    .with_children(|button| {
-                                        button.spawn((
-                                            Text::new(plan.name.clone()),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 18.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_primary),
-                                        ));
-
-                                        button.spawn((
-                                            Text::new(plan_id.clone()),
-                                            TextFont {
-                                                font: font.clone(),
-                                                font_size: 12.0,
-                                                ..default()
-                                            },
-                                            TextColor(theme.text_muted),
-                                        ));
-                                    });
-                                }
-                            });
-                    });
-                });
-        });
+fn cards(plans: &HashMap<String, CapturePlan>) -> Vec<PlanCard> {
+    plans
+        .iter()
+        .map(|(id, plan)| PlanCard {
+            id: id.clone(),
+            name: plan.name.clone(),
+        })
+        .collect()
 }
 
-pub fn cleanup_home_screen(mut commands: Commands, roots: Query<Entity, With<HomeScreen>>) {
-    for entity in &roots {
-        commands.entity(entity).despawn();
-    }
-}
-
-pub fn home_interactions(
-    mut project_interactions: Query<
-        (&Interaction, &HomeProjectButton, &mut BackgroundColor),
-        (
-            Changed<Interaction>,
-            With<Button>,
-            Without<ChangeDirectoryButton>,
-            Without<NewPlanButton>,
-            Without<EditCapturePlanButton>,
-        ),
-    >,
-    mut change_dir_interactions: Query<
-        (&Interaction, &mut BackgroundColor),
-        (
-            Changed<Interaction>,
-            With<Button>,
-            With<ChangeDirectoryButton>,
-            Without<NewPlanButton>,
-            Without<EditCapturePlanButton>,
-        ),
-    >,
-    mut new_plan_interactions: Query<
-        (&Interaction, &mut BackgroundColor),
-        (
-            Changed<Interaction>,
-            With<Button>,
-            With<NewPlanButton>,
-            Without<EditCapturePlanButton>,
-        ),
-    >,
-    mut edit_interactions: Query<
-        (&Interaction, &EditCapturePlanButton, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut events: MessageWriter<UiEvent>,
-    screen: Res<State<UiScreen>>,
+pub fn home_screen(
+    mut contexts: EguiContexts,
+    asset_server: Res<AssetServer>,
     theme: Res<UiTheme>,
-    form: Res<NewCapturePlanForm>,
-) {
-    if *screen.get() != UiScreen::Home {
-        return;
-    }
-    if form.open {
-        return;
-    }
-
-    for (interaction, project_button, mut background_color) in &mut project_interactions {
-        match *interaction {
-            Interaction::Pressed => {
-                *background_color = BackgroundColor(theme.button_background_hover);
-                events.write(UiEvent::OpenProject(project_button.project_id.clone()));
-            }
-            Interaction::Hovered => {
-                *background_color = BackgroundColor(theme.panel_background_soft);
-            }
-            Interaction::None => {
-                *background_color = BackgroundColor(theme.panel_background);
-            }
-        }
-    }
-
-    for (interaction, mut background_color) in &mut change_dir_interactions {
-        match *interaction {
-            Interaction::Pressed => {
-                events.write(UiEvent::ChangeWorkingDirectory);
-            }
-            Interaction::Hovered => {
-                *background_color = BackgroundColor(theme.panel_background_soft);
-            }
-            Interaction::None => {
-                *background_color = BackgroundColor(theme.panel_background);
-            }
-        }
-    }
-
-    for (interaction, mut background_color) in &mut new_plan_interactions {
-        match *interaction {
-            Interaction::Pressed => {
-                events.write(UiEvent::OpenNewCapturePlanForm);
-            }
-            Interaction::Hovered => {
-                *background_color = BackgroundColor(theme.button_background_hover);
-            }
-            Interaction::None => {
-                *background_color = BackgroundColor(theme.button_background);
-            }
-        }
-    }
-
-    for (interaction, edit_button, mut background_color) in &mut edit_interactions {
-        match *interaction {
-            Interaction::Pressed => {
-                events.write(UiEvent::EditCapturePlan(edit_button.plan_id.clone()));
-            }
-            Interaction::Hovered => {
-                *background_color = BackgroundColor(theme.panel_background);
-            }
-            Interaction::None => {
-                *background_color = BackgroundColor(theme.panel_background_soft);
-            }
-        }
-    }
-}
-
-pub fn update_home_working_directory_label(
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    capture_plan_load_errors: Res<CapturePlanLoadErrors>,
     working_directory: Res<WorkingDirectory>,
-    mut label_query: Query<&mut Text, With<HomeWorkingDirectoryLabel>>,
+    sync_state: Res<SimPlanSyncState>,
+    form: Res<NewCapturePlanForm>,
+    mut logo: Local<Option<egui::TextureId>>,
+    mut events: MessageWriter<UiEvent>,
 ) {
-    if !working_directory.is_changed() {
+    // When restarting the sim we pass through Home only to trigger cleanup
+    // and reload; nothing is drawn so the home screen never flashes. While the
+    // bevy_ui plan form is open it covers Home, so Home is not drawn over it.
+    if sync_state.restart_requested || form.open {
         return;
     }
-    for mut text in &mut label_query {
-        text.0 = working_directory.path.clone();
-    }
+    let logo = *logo.get_or_insert_with(|| {
+        contexts.add_image(EguiTextureHandle::Strong(
+            asset_server.load("logo/tether-capture.iconset/icon_128x128.png"),
+        ))
+    });
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+    let mut view = HomeView {
+        working_directory: working_directory.path.clone(),
+        user_plans: cards(&capture_plan_lib.user_plans),
+        example_plans: cards(&capture_plan_lib.example_plans),
+        load_errors: capture_plan_load_errors
+            .errors
+            .iter()
+            .map(|(stem, errors)| (stem.clone(), errors.clone()))
+            .collect(),
+        logo: Some(logo),
+        content_max_width: match theme.content_max_width {
+            Val::Px(width) => width,
+            _ => f32::INFINITY,
+        },
+    };
+    let mut out = Vec::new();
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new().fill(ctx.style().visuals.extreme_bg_color))
+        .show(ctx, |ui| home_ui(ui, &mut view, &mut out));
+    events.write_batch(out);
 }

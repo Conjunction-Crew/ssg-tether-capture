@@ -8,9 +8,12 @@ use bevy_egui::input::EguiWantsInput;
 use egui_kittest::kittest::Queryable;
 
 use crate::tests::egui_support::{harness_for, snapshot};
+use crate::tests::home_screens::{home_view, many_plans, setup_view};
 use crate::ui::egui_theme::{color32_from, visuals_from_theme};
 use crate::ui::events::UiEvent;
 use crate::ui::input::egui_wants_keyboard;
+use crate::ui::screens::home::home_ui;
+use crate::ui::screens::working_directory_setup::working_directory_setup_ui;
 use crate::ui::theme::UiTheme;
 
 /// Every colour the mapping can carry, for the coverage check.
@@ -87,7 +90,7 @@ fn egui_wants_keyboard_false_without_egui_or_focus() {
 }
 
 /// A stand-in screen for the harness checks until S3 ports the first one.
-fn theme_sample_ui(ui: &mut egui::Ui, title: &&str, out: &mut Vec<UiEvent>) {
+fn theme_sample_ui(ui: &mut egui::Ui, title: &mut &str, out: &mut Vec<UiEvent>) {
     ui.heading(*title);
     ui.label("Primary text");
     ui.weak("Muted text");
@@ -128,4 +131,38 @@ fn p8_screen_snapshots() {
         theme_sample_ui,
     );
     assert!(path.is_file());
+
+    // S3: the setup screen and Home.
+    let mut paths = vec![
+        snapshot(
+            "s3_setup_empty",
+            setup_view("", None),
+            [1280.0, 800.0],
+            working_directory_setup_ui,
+        ),
+        snapshot(
+            "s3_setup_error",
+            setup_view(
+                "/Users/walk/not_a_folder/wd",
+                Some("Failed to create working directory: Not a directory (os error 20)"),
+            ),
+            [1280.0, 800.0],
+            working_directory_setup_ui,
+        ),
+        snapshot(
+            "s3_home_3_plans",
+            home_view(&["F15 Roundtrip", "Q10 RelVel", "P0 Created"]),
+            [1280.0, 800.0],
+            home_ui,
+        ),
+    ];
+    let names = many_plans(40);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    paths.push(snapshot(
+        "s3_home_40_plans",
+        home_view(&names),
+        [800.0, 600.0],
+        home_ui,
+    ));
+    assert!(paths.iter().all(|path| path.is_file()));
 }
