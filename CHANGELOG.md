@@ -29,6 +29,7 @@ GitHub Release description.
 ### Fixed
 - Log lines written outside the sim (on Home or the setup screen, e.g. a plan saved) are kept in the Capture Log instead of being dropped; they show `--:--:--` because no sim clock is running (F-42).
 - The working-directory setup screen and Home are egui screens (P8 S3): the path can be typed as well as picked with Browse, and a folder that cannot be created keeps you on the setup screen with the error under the path instead of opening Home (F-33); Home scrolls when its plans do not fit the window (F-37).
+- The capture-plan form is an egui window (P8 S4): sections and messages say "Phase" instead of "State"; the numeric fields accept any text and Save lists what is wrong (e.g. "Approach Max Velocity must be a number", P0-001); the overwrite prompt's buttons are **Overwrite** and **Cancel** (P0-002). The file the form writes is unchanged.
 
 ## [v0.4.0-rc.3] 🔬 - 2026-11-03
 

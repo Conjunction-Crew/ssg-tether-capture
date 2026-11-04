@@ -18,7 +18,7 @@ use crate::ui::egui::{CsvExportState, egui_plots};
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::egui_theme::apply_egui_theme;
 use crate::ui::events::UiEvent;
-use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
+use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm};
 use crate::ui::hud::{
     map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
 };
@@ -37,9 +37,7 @@ use crate::ui::replay::{
 };
 use crate::ui::screen::{ScreenPlugin, UiScreen};
 use crate::ui::screens::capture_plan::{
-    CapturePlanModal, CapturePlanScrollBody, build_capture_plan_json, capture_plan_interactions,
-    dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
-    sync_form_fields, tether_type_radio_interactions, validate_form,
+    build_capture_plan_json, capture_plan_form_window, generate_filename, validate_form,
 };
 use crate::ui::screens::home::{home_screen, load_home_plans};
 use crate::ui::screens::project_detail::{
@@ -56,12 +54,9 @@ use crate::ui::screens::working_directory_setup::{
 };
 use crate::ui::settings::Settings;
 use crate::ui::theme::UiTheme;
-use crate::ui::widgets::{
-    ClipboardRes, input_field_display, input_field_interaction, input_field_keyboard,
-};
 use ssg_sim::SimSet;
 use ssg_sim::capture::SimCommand;
-use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::capture::plan::{CapturePlan, CapturePlanLibrary};
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
 use ssg_sim::project::manifest::{
@@ -117,7 +112,6 @@ impl Plugin for UiPlugin {
             .init_resource::<SpaceCatalogUiState>()
             .init_resource::<FilteredSpaceCatalogResults>()
             .init_resource::<Settings>()
-            .init_non_send_resource::<ClipboardRes>()
             .add_message::<UiEvent>()
             .add_systems(Startup, setup_ui_camera)
             .add_systems(
@@ -207,16 +201,6 @@ impl Plugin for UiPlugin {
                     view_edit_plan_interactions,
                     restart_prompt_interactions,
                     update_sync_indicator,
-                    input_field_interaction,
-                    input_field_keyboard,
-                    input_field_display,
-                    (
-                        sync_form_fields,
-                        capture_plan_interactions,
-                        tether_type_radio_interactions,
-                        (dropdown_interactions, sync_dropdown_labels).chain(),
-                    ),
-                    poll_new_plan_modal,
                     poll_home_plan_refresh,
                     poll_exit_confirm_modal,
                     poll_restart_prompt_modal,
@@ -246,7 +230,9 @@ impl Plugin for UiPlugin {
                     working_directory_setup_screen
                         .run_if(in_state(UiScreen::WorkingDirectorySetup)),
                     home_screen.run_if(in_state(UiScreen::Home)),
+                    capture_plan_form_window,
                 )
+                    .chain()
                     .after(apply_egui_theme),
             )
             .add_systems(
@@ -299,65 +285,6 @@ fn poll_file_dialog_task(
             working_directory.pending_path = path.to_string_lossy().to_string();
         }
         file_dialog_task.0 = None;
-    }
-}
-
-fn poll_new_plan_modal(
-    mut commands: Commands,
-    form: Res<NewCapturePlanForm>,
-    asset_server: Res<AssetServer>,
-    theme: Res<UiTheme>,
-    modals: Query<Entity, With<CapturePlanModal>>,
-    scroll_body: Query<&ScrollPosition, With<CapturePlanScrollBody>>,
-    // (approach_count, terminal_count, has_overwrite, error_count, scroll_y, unit_system)
-    mut last: Local<(usize, usize, bool, usize, f32, UnitSystem)>,
-) {
-    if !form.is_changed() {
-        return;
-    }
-    let modal_exists = !modals.is_empty();
-    if form.open && !modal_exists {
-        spawn_capture_plan_modal(&mut commands, &asset_server, &theme, &form, UI_LAYER, 0.0);
-        *last = (
-            form.approach_transitions.len(),
-            form.terminal_transitions.len(),
-            form.overwrite_conflict_path.is_some(),
-            form.validation_errors.len(),
-            0.0,
-            form.unit_system,
-        );
-    } else if !form.open && modal_exists {
-        for e in &modals {
-            commands.entity(e).despawn();
-        }
-    } else if form.open && modal_exists {
-        let needs_rerender = form.approach_transitions.len() != last.0
-            || form.terminal_transitions.len() != last.1
-            || form.overwrite_conflict_path.is_some() != last.2
-            || form.validation_errors.len() != last.3
-            || form.unit_system != last.5;
-        if needs_rerender {
-            let scroll_y = scroll_body.single().map(|sp| sp.0.y).unwrap_or(last.4);
-            for e in &modals {
-                commands.entity(e).despawn();
-            }
-            spawn_capture_plan_modal(
-                &mut commands,
-                &asset_server,
-                &theme,
-                &form,
-                UI_LAYER,
-                scroll_y,
-            );
-            *last = (
-                form.approach_transitions.len(),
-                form.terminal_transitions.len(),
-                form.overwrite_conflict_path.is_some(),
-                form.validation_errors.len(),
-                scroll_y,
-                form.unit_system,
-            );
-        }
     }
 }
 
@@ -437,7 +364,7 @@ fn update_sim_screen_bottom_padding(
 
 /// Saves the plan form's JSON (v0-shaped) as a v1 plan file: migrated in memory,
 /// validated, then written by the v1 writer. The error lists why it was not saved.
-fn save_form_plan(
+pub(crate) fn save_form_plan(
     dir: &std::path::Path,
     filename: &str,
     json: &serde_json::Value,
@@ -446,6 +373,72 @@ fn save_form_plan(
     let report = read_plan_value(plan_id, json);
     let plan = report.plan.ok_or_else(|| report.errors.join("; "))?;
     save_plan(dir, filename, &plan).map_err(|e| e.to_string())
+}
+
+/// `UiEvent::EditCapturePlan`: fills the form from `plan` (read-only for an
+/// example plan) and snapshots it, so an unchanged Save writes nothing.
+pub(crate) fn load_plan_into_form(
+    form: &mut NewCapturePlanForm,
+    plan_id: &str,
+    plan: &CapturePlan,
+    is_example: bool,
+) {
+    form.reset();
+    form.read_only = is_example;
+    form.plan_name = plan.name.clone();
+    form.tether_name = plan.tether.clone();
+    if let Some(device) = &plan.device {
+        form.tether_type = device.device_type.clone().unwrap_or_default();
+        if let Some(length) = device.tether_length_m.filter(|l| *l > 0.0) {
+            form.tether_length = number_text(length);
+        }
+    }
+    for phase in &plan.phases {
+        let transitions: Vec<TransitionForm> = phase
+            .transitions
+            .iter()
+            .flatten()
+            .filter_map(|t| {
+                let dist = t.all_of.distance_m?;
+                let (kind, val) = if let Some(v) = dist.less_than {
+                    ("less_than".to_string(), number_text(v))
+                } else {
+                    ("greater_than".to_string(), number_text(dist.greater_than?))
+                };
+                Some(TransitionForm {
+                    to: t.to.clone(),
+                    distance_kind: kind,
+                    distance_value: val,
+                })
+            })
+            .collect();
+        let max_velocity = number_text(phase.max_velocity_mps);
+        let max_force = number_text(phase.max_force_n);
+        let shrink_rate = phase.shrink_rate_mps.map(number_text).unwrap_or_default();
+
+        match phase.id.as_str() {
+            "approach" => {
+                form.approach_max_velocity = max_velocity;
+                form.approach_max_force = max_force;
+                form.approach_transitions = transitions;
+            }
+            "terminal" => {
+                form.terminal_max_velocity = max_velocity;
+                form.terminal_max_force = max_force;
+                form.terminal_shrink_rate = shrink_rate;
+                form.terminal_transitions = transitions;
+            }
+            "capture" => {
+                form.capture_max_velocity = max_velocity;
+                form.capture_max_force = max_force;
+                form.capture_shrink_rate = shrink_rate;
+            }
+            _ => {}
+        }
+    }
+    form.editing_plan_id = Some(plan_id.to_string());
+    // Snapshot the form state so we can detect unchanged edits on Save.
+    form.original_json = Some(build_capture_plan_json(&form));
 }
 
 /// A plan value as the form shows it (as JSON writes it, e.g. `2.0`).
@@ -830,63 +823,7 @@ fn handle_ui_events(
             UiEvent::EditCapturePlan(plan_id) => {
                 if let Some(plan) = capture_plan_lib.plans.get(plan_id.as_str()).cloned() {
                     let is_example = !capture_plan_lib.user_plans.contains_key(plan_id.as_str());
-                    form.reset();
-                    form.read_only = is_example;
-                    form.plan_name = plan.name.clone();
-                    form.tether_name = plan.tether.clone();
-                    if let Some(device) = &plan.device {
-                        form.tether_type = device.device_type.clone().unwrap_or_default();
-                        if let Some(length) = device.tether_length_m.filter(|l| *l > 0.0) {
-                            form.tether_length = number_text(length);
-                        }
-                    }
-                    for phase in &plan.phases {
-                        let transitions: Vec<TransitionForm> = phase
-                            .transitions
-                            .iter()
-                            .flatten()
-                            .filter_map(|t| {
-                                let dist = t.all_of.distance_m?;
-                                let (kind, val) = if let Some(v) = dist.less_than {
-                                    ("less_than".to_string(), number_text(v))
-                                } else {
-                                    ("greater_than".to_string(), number_text(dist.greater_than?))
-                                };
-                                Some(TransitionForm {
-                                    to: t.to.clone(),
-                                    distance_kind: kind,
-                                    distance_value: val,
-                                })
-                            })
-                            .collect();
-                        let max_velocity = number_text(phase.max_velocity_mps);
-                        let max_force = number_text(phase.max_force_n);
-                        let shrink_rate =
-                            phase.shrink_rate_mps.map(number_text).unwrap_or_default();
-
-                        match phase.id.as_str() {
-                            "approach" => {
-                                form.approach_max_velocity = max_velocity;
-                                form.approach_max_force = max_force;
-                                form.approach_transitions = transitions;
-                            }
-                            "terminal" => {
-                                form.terminal_max_velocity = max_velocity;
-                                form.terminal_max_force = max_force;
-                                form.terminal_shrink_rate = shrink_rate;
-                                form.terminal_transitions = transitions;
-                            }
-                            "capture" => {
-                                form.capture_max_velocity = max_velocity;
-                                form.capture_max_force = max_force;
-                                form.capture_shrink_rate = shrink_rate;
-                            }
-                            _ => {}
-                        }
-                    }
-                    form.editing_plan_id = Some(plan_id.clone());
-                    // Snapshot the form state so we can detect unchanged edits on Save.
-                    form.original_json = Some(build_capture_plan_json(&form));
+                    load_plan_into_form(&mut form, plan_id, &plan, is_example);
                     log.write(LogEvent {
                         level: LogLevel::Info,
                         source: "ui",

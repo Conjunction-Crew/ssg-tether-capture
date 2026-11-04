@@ -9,9 +9,12 @@ use egui_kittest::kittest::Queryable;
 
 use crate::tests::egui_support::{harness_for, snapshot};
 use crate::tests::home_screens::{home_view, many_plans, setup_view};
+use crate::tests::plan_form::{filled_form, new_form};
 use crate::ui::egui_theme::{color32_from, visuals_from_theme};
 use crate::ui::events::UiEvent;
 use crate::ui::input::egui_wants_keyboard;
+use crate::ui::screens::capture_plan::validate_form;
+use crate::ui::screens::capture_plan::window::capture_plan_form_ui;
 use crate::ui::screens::home::home_ui;
 use crate::ui::screens::working_directory_setup::working_directory_setup_ui;
 use crate::ui::theme::UiTheme;
@@ -164,5 +167,23 @@ fn p8_screen_snapshots() {
         [800.0, 600.0],
         home_ui,
     ));
+
+    // S4: the plan form.
+    let mut blank = new_form();
+    blank.approach_max_velocity = "abc".to_string();
+    blank.validation_errors = validate_form(&blank);
+    let mut conflict = filled_form();
+    conflict.overwrite_conflict_path = Some("/Users/walk/wd/p0_created.json".to_string());
+    let mut view = filled_form();
+    view.read_only = true;
+    view.editing_plan_id = Some("example_plan".to_string());
+    for (name, form) in [
+        ("s4_form_filled", filled_form()),
+        ("s4_form_errors", blank),
+        ("s4_form_overwrite_prompt", conflict),
+        ("s4_form_view_example", view),
+    ] {
+        paths.push(snapshot(name, form, [720.0, 1100.0], capture_plan_form_ui));
+    }
     assert!(paths.iter().all(|path| path.is_file()));
 }

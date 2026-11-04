@@ -118,7 +118,7 @@ mod tests {
         assert!(
             errors
                 .iter()
-                .any(|e| e.contains("Approach Transition 1") && e.contains("To State"))
+                .any(|e| e.contains("Approach Transition 1") && e.contains("To Phase"))
         );
     }
 
