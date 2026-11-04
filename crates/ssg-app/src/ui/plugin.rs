@@ -41,10 +41,7 @@ use crate::ui::screens::capture_plan::{
     dropdown_interactions, generate_filename, spawn_capture_plan_modal, sync_dropdown_labels,
     sync_form_fields, tether_type_radio_interactions, validate_form,
 };
-use crate::ui::screens::home::{
-    HomeScreen, cleanup_home_screen, home_interactions, spawn_home_screen, spawn_home_screen_inner,
-    update_home_working_directory_label,
-};
+use crate::ui::screens::home::{home_screen, load_home_plans};
 use crate::ui::screens::project_detail::{
     RestartPromptModal, SimScreen, catalog_interactions, catalog_keyboard_input,
     cleanup_project_detail_screen, collapsible_toggle_interaction, orbital_selection_interactions,
@@ -55,8 +52,7 @@ use crate::ui::screens::project_detail::{
     view_edit_plan_interactions,
 };
 use crate::ui::screens::working_directory_setup::{
-    DirectoryPathText, cleanup_working_directory_setup_screen,
-    spawn_working_directory_setup_screen, working_directory_setup_interactions,
+    WorkingDirectorySetupError, clear_working_directory_setup_error, working_directory_setup_screen,
 };
 use crate::ui::settings::Settings;
 use crate::ui::theme::UiTheme;
@@ -93,6 +89,7 @@ struct ExitConfirmPending(bool);
 struct UiFlowState<'w> {
     plans_dirty: ResMut<'w, UserPlansDirty>,
     exit_confirm: ResMut<'w, ExitConfirmPending>,
+    setup_error: ResMut<'w, WorkingDirectorySetupError>,
 }
 
 pub struct UiPlugin;
@@ -109,6 +106,7 @@ impl Plugin for UiPlugin {
             .init_resource::<FileDialogTask>()
             .init_resource::<UserPlansDirty>()
             .init_resource::<ExitConfirmPending>()
+            .init_resource::<WorkingDirectorySetupError>()
             .init_resource::<SimPlanSyncState>()
             .init_resource::<CapturePlanLoadErrors>()
             .init_resource::<CaptureLogUiState>()
@@ -177,14 +175,9 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 OnEnter(UiScreen::WorkingDirectorySetup),
-                spawn_working_directory_setup_screen,
+                clear_working_directory_setup_error,
             )
-            .add_systems(
-                OnExit(UiScreen::WorkingDirectorySetup),
-                cleanup_working_directory_setup_screen,
-            )
-            .add_systems(OnEnter(UiScreen::Home), spawn_home_screen)
-            .add_systems(OnExit(UiScreen::Home), cleanup_home_screen)
+            .add_systems(OnEnter(UiScreen::Home), load_home_plans)
             .add_systems(
                 OnEnter(UiScreen::Sim),
                 (
@@ -210,10 +203,7 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Last,
                 (
-                    working_directory_setup_interactions,
                     poll_file_dialog_task,
-                    home_interactions,
-                    update_home_working_directory_label,
                     view_edit_plan_interactions,
                     restart_prompt_interactions,
                     update_sync_indicator,
@@ -250,6 +240,15 @@ impl Plugin for UiPlugin {
                 ),
             )
             .add_systems(EguiPrimaryContextPass, apply_egui_theme)
+            .add_systems(
+                EguiPrimaryContextPass,
+                (
+                    working_directory_setup_screen
+                        .run_if(in_state(UiScreen::WorkingDirectorySetup)),
+                    home_screen.run_if(in_state(UiScreen::Home)),
+                )
+                    .after(apply_egui_theme),
+            )
             .add_systems(
                 EguiPrimaryContextPass,
                 (egui_terminal_panel, egui_plots)
@@ -292,17 +291,12 @@ fn setup_ui_camera(mut commands: Commands, camera_query: Query<Entity, With<UiCa
 fn poll_file_dialog_task(
     mut file_dialog_task: ResMut<FileDialogTask>,
     mut working_directory: ResMut<WorkingDirectory>,
-    mut path_text: Query<&mut Text, With<DirectoryPathText>>,
 ) {
     if let Some(ref mut task) = file_dialog_task.0
         && let Some(result) = block_on(future::poll_once(task))
     {
         if let Some(path) = result {
-            let path_str = path.to_string_lossy().to_string();
-            working_directory.pending_path = path_str.clone();
-            for mut text in &mut path_text {
-                text.0 = path_str.clone();
-            }
+            working_directory.pending_path = path.to_string_lossy().to_string();
         }
         file_dialog_task.0 = None;
     }
@@ -629,15 +623,21 @@ fn handle_ui_events(
                 flow.exit_confirm.0 = false;
             }
             UiEvent::WorkingDirectorySelected(path) => {
-                if let Err(e) = set_working_directory(&mut working_directory, path) {
-                    warn!("Failed to create working directory: {e}");
-                    log.write(LogEvent {
-                        level: LogLevel::Error,
-                        source: "ui",
-                        message: format!("Failed to create working directory: {e}"),
-                    });
+                match select_working_directory(&mut working_directory, path) {
+                    Ok(()) => {
+                        flow.setup_error.0 = None;
+                        next_screen.set(UiScreen::Home);
+                    }
+                    Err(message) => {
+                        warn!("{message}");
+                        log.write(LogEvent {
+                            level: LogLevel::Error,
+                            source: "ui",
+                            message: message.clone(),
+                        });
+                        flow.setup_error.0 = Some(message);
+                    }
                 }
-                next_screen.set(UiScreen::Home);
             }
             UiEvent::BrowseForWorkingDirectory => {
                 let pool = AsyncComputeTaskPool::get();
@@ -905,34 +905,32 @@ fn handle_ui_events(
     }
 }
 
+/// Creates `path` and makes it the working directory (path and config). The
+/// folder is created first, so on a failure the working directory and the
+/// config are unchanged and the error is returned for the setup screen (F-33).
+pub(crate) fn select_working_directory(
+    working_directory: &mut WorkingDirectory,
+    path: &str,
+) -> Result<(), String> {
+    std::fs::create_dir_all(path)
+        .and_then(|()| set_working_directory(working_directory, path))
+        .map_err(|e| format!("Failed to create working directory: {e}"))
+}
+
 fn poll_home_plan_refresh(
-    mut commands: Commands,
     mut user_plans_dirty: ResMut<UserPlansDirty>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
     mut capture_plan_load_errors: ResMut<CapturePlanLoadErrors>,
-    home_screens: Query<Entity, With<HomeScreen>>,
-    asset_server: Res<AssetServer>,
-    theme: Res<UiTheme>,
+    screen: Res<State<UiScreen>>,
+    sync_state: Res<SimPlanSyncState>,
     working_directory: Res<WorkingDirectory>,
 ) {
-    if !user_plans_dirty.0 || home_screens.is_empty() {
+    if !user_plans_dirty.0 || *screen.get() != UiScreen::Home || sync_state.restart_requested {
         return;
     }
     // Re-scan the user plans directory for any newly broken or fixed files.
     let (_, user_load_errors) =
         load_plans_from_dir_with_errors(std::path::Path::new(&working_directory.path));
     capture_plan_load_errors.errors = user_load_errors;
-    for entity in &home_screens {
-        commands.entity(entity).despawn();
-    }
-    spawn_home_screen_inner(
-        &mut commands,
-        &asset_server,
-        &theme,
-        &capture_plan_lib,
-        &working_directory.path,
-        &capture_plan_load_errors,
-    );
     user_plans_dirty.0 = false;
 }
 

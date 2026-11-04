@@ -7,6 +7,8 @@ pub mod egui_screens;
 #[cfg(test)]
 pub mod egui_support;
 #[cfg(test)]
+pub mod home_screens;
+#[cfg(test)]
 pub mod integration_app;
 #[cfg(test)]
 pub mod recording_ui;

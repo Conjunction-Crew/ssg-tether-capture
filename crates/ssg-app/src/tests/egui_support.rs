@@ -1,5 +1,5 @@
 //! egui screen test harness (P8 S1, OQ1 (a)): drives a pure screen function
-//! `fn(&mut egui::Ui, &View, &mut Vec<UiEvent>)` under `egui_kittest` with the
+//! `fn(&mut egui::Ui, &mut View, &mut Vec<UiEvent>)` under `egui_kittest` with the
 //! app's theme. `harness_for` is headless (CI); `snapshot` renders on the GPU
 //! for the ignored `p8_screen_snapshots` test only.
 
@@ -21,7 +21,7 @@ pub(crate) struct ScreenState<V> {
 fn build<'a, V: 'a>(
     view: V,
     size: impl Into<egui::Vec2>,
-    screen: impl Fn(&mut egui::Ui, &V, &mut Vec<UiEvent>) + 'a,
+    screen: impl Fn(&mut egui::Ui, &mut V, &mut Vec<UiEvent>) + 'a,
     gpu: bool,
 ) -> Harness<'a, ScreenState<V>> {
     let mut builder = Harness::builder().with_size(size);
@@ -33,7 +33,7 @@ fn build<'a, V: 'a>(
     let mut harness = builder.build_state(
         move |ctx, state: &mut ScreenState<V>| {
             egui::CentralPanel::default()
-                .show(ctx, |ui| screen(ui, &state.view, &mut state.events));
+                .show(ctx, |ui| screen(ui, &mut state.view, &mut state.events));
         },
         ScreenState {
             view,
@@ -51,7 +51,7 @@ fn build<'a, V: 'a>(
 pub(crate) fn harness_for<'a, V: 'a>(
     view: V,
     size: impl Into<egui::Vec2>,
-    screen: impl Fn(&mut egui::Ui, &V, &mut Vec<UiEvent>) + 'a,
+    screen: impl Fn(&mut egui::Ui, &mut V, &mut Vec<UiEvent>) + 'a,
 ) -> Harness<'a, ScreenState<V>> {
     build(view, size, screen, false)
 }
@@ -72,7 +72,7 @@ pub(crate) fn snapshot<V>(
     name: &str,
     view: V,
     size: impl Into<egui::Vec2>,
-    screen: impl Fn(&mut egui::Ui, &V, &mut Vec<UiEvent>),
+    screen: impl Fn(&mut egui::Ui, &mut V, &mut Vec<UiEvent>),
 ) -> PathBuf {
     let mut harness = build(view, size, screen, true);
     let image = harness
