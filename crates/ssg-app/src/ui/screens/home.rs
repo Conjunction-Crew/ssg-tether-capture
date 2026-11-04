@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiTextureHandle, egui};
 
 use crate::ui::events::UiEvent;
-use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
+use crate::ui::form::SimPlanSyncState;
 use crate::ui::log_ui::CapturePlanLoadErrors;
 use crate::ui::theme::UiTheme;
 use bevy::platform::collections::HashMap;
@@ -271,14 +271,12 @@ pub fn home_screen(
     capture_plan_load_errors: Res<CapturePlanLoadErrors>,
     working_directory: Res<WorkingDirectory>,
     sync_state: Res<SimPlanSyncState>,
-    form: Res<NewCapturePlanForm>,
     mut logo: Local<Option<egui::TextureId>>,
     mut events: MessageWriter<UiEvent>,
 ) {
     // When restarting the sim we pass through Home only to trigger cleanup
-    // and reload; nothing is drawn so the home screen never flashes. While the
-    // bevy_ui plan form is open it covers Home, so Home is not drawn over it.
-    if sync_state.restart_requested || form.open {
+    // and reload; nothing is drawn so the home screen never flashes.
+    if sync_state.restart_requested {
         return;
     }
     let logo = *logo.get_or_insert_with(|| {
