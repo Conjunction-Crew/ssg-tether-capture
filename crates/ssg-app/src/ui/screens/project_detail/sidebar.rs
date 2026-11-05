@@ -9,8 +9,11 @@ use bevy_egui::{EguiContexts, egui};
 use super::modals::{exit_confirm_ui, restart_prompt_ui};
 use super::orbital_selection::{OrbitalView, orbital_selection_section};
 use super::*;
-use crate::ui::hud::HudReadouts;
-use crate::ui::screens::capture_plan::window::form_fill;
+use crate::ui::form::UnitSystem;
+use crate::ui::hud::{HudReadouts, utc_seconds};
+use crate::ui::screens::capture_plan::window::{form_fill, units_toggle};
+use crate::ui::settings::Settings;
+use ssg_sim::time::SimConfig;
 
 /// The sidebar's width and its cap as a share of the window (rc.3).
 const SIDEBAR_WIDTH: f32 = 420.0;
@@ -24,6 +27,7 @@ pub struct SimScreenView {
     pub title: String,
     pub working_directory: String,
     pub main_file: String,
+    pub start_epoch: String,
     pub plan_id: Option<String>,
     pub is_example_plan: bool,
     pub in_sync: bool,
@@ -33,7 +37,9 @@ pub struct SimScreenView {
     pub capture_active: bool,
     pub capture_entity: Option<Entity>,
     pub show_satellite_indicator: bool,
+    pub unit_system: UnitSystem,
     pub time_warp: String,
+    pub sim_time: String,
     pub telemetry: String,
     pub guidance: String,
     pub orbital: OrbitalView,
@@ -105,6 +111,7 @@ fn project_information(ui: &mut egui::Ui, view: &SimScreenView, out: &mut Vec<Ui
         egui::RichText::new(format!("Working Directory: {}", view.working_directory)).size(11.0),
     );
     ui.label(egui::RichText::new(format!("Main File: {}", view.main_file)).size(11.0));
+    ui.label(egui::RichText::new(format!("Sim start epoch: {}", view.start_epoch)).size(11.0));
     let label = if view.is_example_plan {
         "View Plan"
     } else {
@@ -203,7 +210,9 @@ fn time_warp(ui: &mut egui::Ui, view: &SimScreenView, out: &mut Vec<UiEvent>) {
         });
 }
 
-fn simulation_hud(ui: &mut egui::Ui, view: &SimScreenView) {
+fn simulation_hud(ui: &mut egui::Ui, view: &SimScreenView, out: &mut Vec<UiEvent>) {
+    units_toggle(ui, view.unit_system, out);
+    ui.label(egui::RichText::new(&view.sim_time).size(12.0));
     ui.label(egui::RichText::new(&view.telemetry).size(12.0));
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
@@ -241,11 +250,11 @@ pub fn sim_sidebar_ui(ui: &mut egui::Ui, view: &mut SimScreenView, out: &mut Vec
                         orbital_selection_section(ui, &view.orbital, out);
                     });
                 }
-                section(ui, "Simulation HUD", |ui| simulation_hud(ui, view));
+                section(ui, "Simulation HUD", |ui| simulation_hud(ui, view, out));
                 section(ui, "Reference", |ui| {
                     ui.weak(
                         egui::RichText::new(
-                            "Target telemetry is measured against the tether root. Guidance shows the currently active state and the transitions available from it.",
+                            "Target telemetry is measured against the tether root. Guidance shows the currently active phase and the transitions available from it.",
                         )
                         .size(12.0),
                     );
@@ -265,6 +274,8 @@ pub struct SimScreenParams<'w, 's> {
     selection: Res<'w, OrbitalSelectionState>,
     catalog_ui: Res<'w, SpaceCatalogUiState>,
     readouts: Res<'w, HudReadouts>,
+    sim_config: Res<'w, SimConfig>,
+    settings: Res<'w, Settings>,
     catalog: Option<Res<'w, SpaceObjectCatalog>>,
     capture_entities: Query<'w, 's, Entity, With<CaptureComponent>>,
     events: MessageWriter<'w, UiEvent>,
@@ -283,6 +294,7 @@ pub fn sim_screen_panels(mut p: SimScreenParams) {
             None | Some("") => "Unknown file".to_string(),
             Some(id) => format!("{id}.json"),
         },
+        start_epoch: utc_seconds(p.sim_config.start_epoch),
         plan_id: plan_id.map(str::to_string),
         is_example_plan: plan_id.is_some_and(|id| !p.capture_plan_lib.user_plans.contains_key(id)),
         in_sync: p.sync_state.in_sync,
@@ -291,7 +303,9 @@ pub fn sim_screen_panels(mut p: SimScreenParams) {
         capture_active: !p.capture_entities.is_empty(),
         capture_entity: p.readouts.target_entity,
         show_satellite_indicator: p.catalog_ui.show_satellite_indicator,
+        unit_system: p.settings.unit_system,
         time_warp: p.readouts.time_warp.clone(),
+        sim_time: p.readouts.sim_time.clone(),
         telemetry: p.readouts.telemetry.clone(),
         guidance: p.readouts.guidance.clone(),
         orbital: OrbitalView {
@@ -302,6 +316,7 @@ pub fn sim_screen_panels(mut p: SimScreenParams) {
                 .map(|entry| entry.display_label()),
             target: p.selection.target.clone(),
             chaser: p.selection.chaser.clone(),
+            unit_system: p.settings.unit_system,
         },
     };
     let Ok(ctx) = p.contexts.ctx_mut() else {

@@ -23,6 +23,7 @@ use crate::ui::screens::project_detail::sidebar::{SimScreenView, sim_header_ui, 
 use crate::ui::screens::project_detail::{
     ExitConfirmOpen, sim_screen_events, sim_screen_modals, sim_screen_panels,
 };
+use crate::ui::settings::Settings;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::selection::OrbitalSelectionState;
@@ -257,14 +258,14 @@ fn readouts_show_as_sidebar_labels() {
     let view = SimScreenView {
         time_warp: "64x".to_string(),
         telemetry: "Capture status: Idle".to_string(),
-        guidance: "Initial state: approach".to_string(),
+        guidance: "Initial phase: approach".to_string(),
         ..running_view()
     };
     let harness = harness_for(view, SIZE, sim_sidebar_ui);
     harness.get_by_label("64x");
     harness.get_by_label("Capture status: Idle");
     harness.get_by_label("Capture Guidance");
-    harness.get_by_label("Initial state: approach");
+    harness.get_by_label("Initial phase: approach");
 }
 
 #[test]
@@ -312,6 +313,7 @@ pub(crate) fn sim_screen_app() -> App {
         .add_message::<UiEvent>()
         .add_message::<LogEvent>()
         .init_resource::<NewCapturePlanForm>()
+        .init_resource::<Settings>()
         .init_resource::<SimPlanSyncState>()
         .init_resource::<CapturePlanLibrary>()
         .init_resource::<SpaceCatalogUiState>()

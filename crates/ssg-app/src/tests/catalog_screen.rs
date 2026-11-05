@@ -199,6 +199,7 @@ fn orbital_view(target: Option<SelectedOrbitalObject>) -> SimScreenView {
             catalog_selection: Some("HST · NORAD 20580 · 1990-037B".to_string()),
             target,
             chaser: None,
+            ..Default::default()
         },
         ..setup_view()
     }

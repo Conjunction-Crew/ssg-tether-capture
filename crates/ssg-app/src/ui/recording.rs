@@ -493,12 +493,14 @@ pub(crate) fn next_step_cap(cap: u32, requested: u32, effective: u32, frame_s: f
 }
 
 /// Adapts [`StepCap`] to the machine between updates (`FixedUpdate` reads it once
-/// at its top, so a change never lands inside a run of steps).
+/// at its top, so a change never lands inside a run of steps). When the cap falls
+/// below the requested warp the request follows it down (F-46, OQ2).
 pub fn adapt_step_cap(
     time: Res<Time<Real>>,
-    world_time: Res<WorldTime>,
+    mut world_time: ResMut<WorldTime>,
     pause: Res<State<PauseState>>,
     mut cap: ResMut<StepCap>,
+    mut log: MessageWriter<LogEvent>,
     mut since_change_s: Local<f32>,
 ) {
     *since_change_s += time.delta_secs();
@@ -512,6 +514,14 @@ pub fn adapt_step_cap(
         time.delta_secs(),
     );
     if next != cap.0 {
+        if next < cap.0 && world_time.multiplier > next {
+            world_time.multiplier = next;
+            log.write(LogEvent {
+                level: LogLevel::Info,
+                source: "ui",
+                message: format!("Time warp → {next}x (machine limit)"),
+            });
+        }
         cap.0 = next;
         *since_change_s = 0.0;
     }

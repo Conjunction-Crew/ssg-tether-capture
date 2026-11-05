@@ -133,21 +133,11 @@ pub fn generate_filename(plan_name: &str) -> String {
 }
 
 fn unit_conv_linear(s: &str, unit: UnitSystem) -> f64 {
-    let v = s.parse::<f64>().unwrap_or(0.0);
-    if unit == UnitSystem::Imperial {
-        v * 0.3048
-    } else {
-        v
-    }
+    unit.linear_to_metric(s.parse::<f64>().unwrap_or(0.0))
 }
 
 fn unit_conv_force(s: &str, unit: UnitSystem) -> f64 {
-    let v = s.parse::<f64>().unwrap_or(0.0);
-    if unit == UnitSystem::Imperial {
-        v * 4.44822
-    } else {
-        v
-    }
+    unit.force_to_metric(s.parse::<f64>().unwrap_or(0.0))
 }
 
 pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
@@ -174,7 +164,10 @@ pub fn build_capture_plan_json(form: &NewCapturePlanForm) -> serde_json::Value {
         "tether": form.tether_name.trim(),
         "device": {
             "type": form.tether_type.trim(),
-            "tether_length": form.tether_length.parse::<f64>().unwrap_or(20.0)
+            "tether_length": form
+                .tether_length
+                .parse::<f64>()
+                .map_or(20.0, |shown| unit.linear_to_metric(shown))
         },
         "states": [
             {
