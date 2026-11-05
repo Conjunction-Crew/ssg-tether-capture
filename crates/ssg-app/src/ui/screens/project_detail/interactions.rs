@@ -1,6 +1,8 @@
 use bevy::ecs::system::SystemParam;
 
+use super::orbital_selection::{catalog_pick, custom_orbit, set_orbit, set_orbital_element};
 use super::*;
+use ssg_sim::time::SimConfig;
 
 #[derive(SystemParam)]
 pub struct SimScreenEventParams<'w> {
@@ -11,6 +13,9 @@ pub struct SimScreenEventParams<'w> {
     capture_plan_lib: ResMut<'w, CapturePlanLibrary>,
     catalog_ui: ResMut<'w, SpaceCatalogUiState>,
     log: MessageWriter<'w, LogEvent>,
+    selection: ResMut<'w, OrbitalSelectionState>,
+    catalog: Option<Res<'w, SpaceObjectCatalog>>,
+    sim_config: Res<'w, SimConfig>,
 }
 
 /// The sidebar's and the restart prompt's events that `handle_ui_events` does
@@ -56,6 +61,22 @@ pub fn sim_screen_events(mut events: MessageReader<UiEvent>, mut p: SimScreenEve
             }
             UiEvent::ToggleSatelliteIndicator => {
                 p.catalog_ui.show_satellite_indicator = !p.catalog_ui.show_satellite_indicator;
+            }
+            UiEvent::UseCatalogSelection(role) => {
+                let entry = p.catalog_ui.selected_index.and_then(|index| {
+                    let entry = p.catalog.as_ref()?.entries.get(index)?;
+                    Some(catalog_pick(index, entry))
+                });
+                if let Some(selected) = entry {
+                    set_orbit(&mut p.selection, *role, selected);
+                }
+            }
+            UiEvent::CreateCustomOrbit(role) => {
+                let selected = custom_orbit(*role, p.sim_config.start_epoch);
+                set_orbit(&mut p.selection, *role, selected);
+            }
+            UiEvent::SetOrbitalElement { role, field, value } => {
+                set_orbital_element(&mut p.selection, *role, *field, *value);
             }
             _ => {}
         }

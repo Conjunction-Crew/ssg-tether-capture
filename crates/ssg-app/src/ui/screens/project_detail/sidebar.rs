@@ -7,7 +7,7 @@ use bevy::ecs::system::SystemParam;
 use bevy_egui::{EguiContexts, egui};
 
 use super::modals::{exit_confirm_ui, restart_prompt_ui};
-use super::orbital_selection::orbital_selection_section;
+use super::orbital_selection::{OrbitalView, orbital_selection_section};
 use super::*;
 use crate::ui::hud::HudReadouts;
 use crate::ui::screens::capture_plan::window::form_fill;
@@ -36,6 +36,7 @@ pub struct SimScreenView {
     pub time_warp: String,
     pub telemetry: String,
     pub guidance: String,
+    pub orbital: OrbitalView,
 }
 
 fn full_width_button(ui: &mut egui::Ui, enabled: bool, button: egui::Button) -> egui::Response {
@@ -236,7 +237,9 @@ pub fn sim_sidebar_ui(ui: &mut egui::Ui, view: &mut SimScreenView, out: &mut Vec
                 if view.running {
                     section(ui, "Time Warp", |ui| time_warp(ui, view, out));
                 } else {
-                    section(ui, "Orbital Selection", orbital_selection_section);
+                    section(ui, "Orbital Selection", |ui| {
+                        orbital_selection_section(ui, &view.orbital, out);
+                    });
                 }
                 section(ui, "Simulation HUD", |ui| simulation_hud(ui, view));
                 section(ui, "Reference", |ui| {
@@ -262,6 +265,7 @@ pub struct SimScreenParams<'w, 's> {
     selection: Res<'w, OrbitalSelectionState>,
     catalog_ui: Res<'w, SpaceCatalogUiState>,
     readouts: Res<'w, HudReadouts>,
+    catalog: Option<Res<'w, SpaceObjectCatalog>>,
     capture_entities: Query<'w, 's, Entity, With<CaptureComponent>>,
     events: MessageWriter<'w, UiEvent>,
 }
@@ -290,6 +294,15 @@ pub fn sim_screen_panels(mut p: SimScreenParams) {
         time_warp: p.readouts.time_warp.clone(),
         telemetry: p.readouts.telemetry.clone(),
         guidance: p.readouts.guidance.clone(),
+        orbital: OrbitalView {
+            catalog_selection: p
+                .catalog_ui
+                .selected_index
+                .and_then(|index| p.catalog.as_ref()?.entries.get(index))
+                .map(|entry| entry.display_label()),
+            target: p.selection.target.clone(),
+            chaser: p.selection.chaser.clone(),
+        },
     };
     let Ok(ctx) = p.contexts.ctx_mut() else {
         return;

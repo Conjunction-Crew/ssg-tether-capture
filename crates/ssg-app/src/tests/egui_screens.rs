@@ -138,6 +138,11 @@ fn p8_screen_snapshots() {
     );
     assert!(path.is_file());
 
+    // S6: the catalog panel and the orbital cards.
+    for path in crate::tests::catalog_screen::s6_snapshots() {
+        assert!(path.is_file());
+    }
+
     // S5: the sim header, the sidebar and the modals.
     for path in [
         snapshot("s5_header", sim_setup_view(), [1280.0, 72.0], sim_header_ui),

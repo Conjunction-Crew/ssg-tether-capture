@@ -46,10 +46,9 @@ use crate::ui::screens::capture_plan::{
 };
 use crate::ui::screens::home::{home_screen, load_home_plans};
 use crate::ui::screens::project_detail::{
-    ExitConfirmOpen, SimScreen, catalog_interactions, catalog_keyboard_input,
-    cleanup_project_detail_screen, refresh_space_catalog_results, reset_space_catalog_ui_state,
-    sim_screen_events, sim_screen_modals, sim_screen_panels, spawn_project_detail_screen,
-    sync_space_catalog_ui,
+    ExitConfirmOpen, cleanup_project_detail_screen, refresh_space_catalog_results,
+    reset_space_catalog_ui_state, restore_catalog_sources, sim_screen_events, sim_screen_modals,
+    sim_screen_panels, space_catalog_panel, spawn_project_detail_screen,
 };
 use crate::ui::screens::working_directory_setup::{
     WorkingDirectorySetupError, clear_working_directory_setup_error, working_directory_setup_screen,
@@ -189,6 +188,7 @@ impl Plugin for UiPlugin {
                     (init_hud_readouts, spawn_project_detail_screen)
                         .chain()
                         .after(setup_camera),
+                    restore_catalog_sources,
                     reset_sync_state,
                     reset_terminal_log_ui_state,
                 ),
@@ -216,11 +216,7 @@ impl Plugin for UiPlugin {
                     poll_home_plan_refresh,
                     poll_sim_restart,
                     (
-                        update_sim_screen_bottom_padding,
-                        catalog_interactions,
-                        catalog_keyboard_input,
                         refresh_space_catalog_results,
-                        sync_space_catalog_ui,
                         update_selected_catalog_overlay,
                         update_satellite_indicator_overlay,
                     )
@@ -246,7 +242,9 @@ impl Plugin for UiPlugin {
                 EguiPrimaryContextPass,
                 (
                     egui_terminal_panel,
-                    sim_screen_panels.run_if(not(in_state(SimState::Replay))),
+                    (sim_screen_panels, space_catalog_panel)
+                        .chain()
+                        .run_if(not(in_state(SimState::Replay))),
                     egui_plots,
                 )
                     .chain()
@@ -259,7 +257,7 @@ impl Plugin for UiPlugin {
                     recordings_window.run_if(in_state(SimState::Setup)),
                     transport_window.run_if(in_state(SimState::Replay)),
                 )
-                    .after(sim_screen_panels)
+                    .after(space_catalog_panel)
                     .run_if(in_state(UiScreen::Sim)),
             );
     }
@@ -335,16 +333,6 @@ fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
     log_ui.selection_anchor = None;
     // Force a display rebuild so newly-spawned rows reflect the current log.
     log_ui.last_rendered_count = usize::MAX;
-}
-
-/// Pads the sim screen root so Bevy UI content stops above the egui terminal panel.
-fn update_sim_screen_bottom_padding(
-    log_ui: Res<CaptureLogUiState>,
-    mut screen: Query<&mut Node, With<SimScreen>>,
-) {
-    for mut node in &mut screen {
-        node.padding.bottom = Val::Px(log_ui.panel_height);
-    }
 }
 
 /// Saves the plan form's JSON (v0-shaped) as a v1 plan file: migrated in memory,
@@ -828,7 +816,10 @@ fn handle_ui_events(
             UiEvent::RestartSim
             | UiEvent::ApplyPlanLive
             | UiEvent::DismissRestartPrompt
-            | UiEvent::ToggleSatelliteIndicator => {}
+            | UiEvent::ToggleSatelliteIndicator
+            | UiEvent::UseCatalogSelection(_)
+            | UiEvent::CreateCustomOrbit(_)
+            | UiEvent::SetOrbitalElement { .. } => {}
         }
     }
 }
