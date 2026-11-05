@@ -17,7 +17,7 @@ use bevy_egui::{EguiContexts, egui};
 use crate::render::camera::{CameraTarget, set_map_view};
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER};
 use crate::ui::events::UiEvent;
-use crate::ui::recording::{WINDOW_POS, megabytes};
+use crate::ui::recording::{megabytes, window_pos};
 use crate::ui::screen::UiScreen;
 use ssg_sim::project::manifest::BuiltWith;
 use ssg_sim::project::recording::{
@@ -434,7 +434,7 @@ pub fn recordings_window(mut contexts: EguiContexts, mut list: ResMut<Recordings
     let mut refresh = false;
     let available_rect = ctx.available_rect();
     egui::Window::new("Recordings")
-        .default_pos(WINDOW_POS)
+        .default_pos(window_pos(available_rect))
         .constrain_to(available_rect)
         .show(ctx, |ui| {
             if ui.button("Refresh").clicked() {
@@ -555,7 +555,7 @@ pub fn transport_window(
     );
     let available_rect = ctx.available_rect();
     egui::Window::new("Transport")
-        .default_pos(WINDOW_POS)
+        .default_pos(window_pos(available_rect))
         .constrain_to(available_rect)
         .show(ctx, |ui| {
             ui.label(format!("Recording {}", session.name));
