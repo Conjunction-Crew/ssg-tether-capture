@@ -138,6 +138,11 @@ fn p8_screen_snapshots() {
     );
     assert!(path.is_file());
 
+    // S7: the display items.
+    for path in crate::tests::display::s7_snapshots() {
+        assert!(path.is_file());
+    }
+
     // S6: the catalog panel and the orbital cards.
     for path in crate::tests::catalog_screen::s6_snapshots() {
         assert!(path.is_file());

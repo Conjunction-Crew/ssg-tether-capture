@@ -6,6 +6,7 @@ use bevy_egui::egui;
 
 use crate::ui::catalog_state::{OrbitalElementField, OrbitalSelectionRole};
 use crate::ui::events::UiEvent;
+use crate::ui::form::{UnitSystem, show};
 use brahe::Epoch;
 use ssg_sim::orbit::ISS_ORBIT;
 use ssg_sim::orbit::catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
@@ -29,6 +30,7 @@ pub struct OrbitalView {
     pub catalog_selection: Option<String>,
     pub target: Option<SelectedOrbitalObject>,
     pub chaser: Option<SelectedOrbitalObject>,
+    pub unit_system: UnitSystem,
 }
 
 struct OrbitalElementSliderSpec {
@@ -95,14 +97,18 @@ pub(crate) fn write_slider_value_to_elements(
     }
 }
 
+/// The value beside a slider, in `units` (the slider itself stays in km).
 fn format_orbital_element_value(
     elements: &EditableOrbitalElements,
     field: OrbitalElementField,
+    units: UnitSystem,
 ) -> String {
     let spec = orbital_element_slider_spec(field);
     let value = slider_value_from_elements(elements, field);
     let precision = spec.precision;
-    if spec.suffix.is_empty() {
+    if matches!(field, OrbitalElementField::SemiMajorAxis) {
+        show(units.long_length(value as f64), precision)
+    } else if spec.suffix.is_empty() {
         format!("{value:.precision$}")
     } else {
         format!("{value:.precision$} {}", spec.suffix)
@@ -238,6 +244,7 @@ fn element_slider(
     role: OrbitalSelectionRole,
     field: OrbitalElementField,
     elements: &EditableOrbitalElements,
+    units: UnitSystem,
     out: &mut Vec<UiEvent>,
 ) {
     let spec = orbital_element_slider_spec(field);
@@ -246,7 +253,8 @@ fn element_slider(
             let label = ui.weak(egui::RichText::new(spec.label).size(10.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
-                    egui::RichText::new(format_orbital_element_value(elements, field)).size(10.0),
+                    egui::RichText::new(format_orbital_element_value(elements, field, units))
+                        .size(10.0),
                 );
             });
             label
@@ -267,6 +275,7 @@ fn role_card(
     ui: &mut egui::Ui,
     role: OrbitalSelectionRole,
     selected: Option<&SelectedOrbitalObject>,
+    units: UnitSystem,
     out: &mut Vec<UiEvent>,
 ) {
     egui::Frame::new()
@@ -296,7 +305,7 @@ fn role_card(
             });
             if let Some(selected) = selected {
                 for field in ORBITAL_ELEMENT_FIELDS {
-                    element_slider(ui, role, field, &selected.elements, out);
+                    element_slider(ui, role, field, &selected.elements, units, out);
                 }
             }
         });
@@ -315,6 +324,10 @@ pub(super) fn orbital_selection_section(
     );
     let selected = view.catalog_selection.as_deref().unwrap_or("none");
     ui.label(egui::RichText::new(format!("Selected catalog object: {selected}")).size(11.0));
-    role_card(ui, OrbitalSelectionRole::Target, view.target.as_ref(), out);
-    role_card(ui, OrbitalSelectionRole::Chaser, view.chaser.as_ref(), out);
+    for (role, selected) in [
+        (OrbitalSelectionRole::Target, view.target.as_ref()),
+        (OrbitalSelectionRole::Chaser, view.chaser.as_ref()),
+    ] {
+        role_card(ui, role, selected, view.unit_system, out);
+    }
 }

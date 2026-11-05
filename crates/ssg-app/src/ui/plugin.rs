@@ -14,11 +14,11 @@ use bevy_egui::{EguiPreUpdateSet, EguiPrimaryContextPass};
 use crate::render::camera::{CameraTarget, cycle_camera_target, set_map_view, setup_camera};
 use crate::render::layers::UI_LAYER;
 use crate::ui::catalog_state::{FilteredSpaceCatalogResults, SpaceCatalogUiState};
-use crate::ui::egui::{CsvExportState, egui_plots};
+use crate::ui::egui::{CsvExportState, begin_plot_session, egui_plots};
 use crate::ui::egui_terminal::egui_terminal_panel;
 use crate::ui::egui_theme::apply_egui_theme;
 use crate::ui::events::UiEvent;
-use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm};
+use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
 use crate::ui::hud::{
     HudReadouts, init_hud_readouts, update_capture_guidance, update_capture_telemetry,
     update_time_warp_readout,
@@ -53,7 +53,7 @@ use crate::ui::screens::project_detail::{
 use crate::ui::screens::working_directory_setup::{
     WorkingDirectorySetupError, clear_working_directory_setup_error, working_directory_setup_screen,
 };
-use crate::ui::settings::Settings;
+use crate::ui::settings::{Settings, set_unit_system};
 use crate::ui::theme::UiTheme;
 use ssg_sim::SimSet;
 use ssg_sim::capture::SimCommand;
@@ -70,7 +70,7 @@ use ssg_sim::project::{
 };
 use ssg_sim::session::{PauseState, SimState};
 use ssg_sim::telemetry::{LogEvent, LogLevel};
-use ssg_sim::time::{SimConfig, WorldTime};
+use ssg_sim::time::{SimConfig, StepCap, WorldTime};
 
 #[derive(Resource, Default)]
 struct FileDialogTask(Option<Task<Option<PathBuf>>>);
@@ -145,7 +145,12 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 OnEnter(UiScreen::Sim),
-                (reset_recording_panel, reset_recordings_list, reset_step_cap),
+                (
+                    reset_recording_panel,
+                    reset_recordings_list,
+                    reset_step_cap,
+                    begin_plot_session,
+                ),
             )
             .add_systems(OnEnter(SimState::Running), install_recording_sink)
             .add_systems(
@@ -349,13 +354,17 @@ pub(crate) fn save_form_plan(
 }
 
 /// `UiEvent::EditCapturePlan`: fills the form from `plan` (read-only for an
-/// example plan) and snapshots it, so an unchanged Save writes nothing.
+/// example plan), shown in the toggle's units, and snapshots it, so an unchanged
+/// Save writes nothing.
 pub(crate) fn load_plan_into_form(
     form: &mut NewCapturePlanForm,
     plan_id: &str,
     plan: &CapturePlan,
     is_example: bool,
 ) {
+    // The plan's numbers are metric; they are converted once they are all in.
+    let unit = form.unit_system;
+    form.unit_system = UnitSystem::Metric;
     form.reset();
     form.read_only = is_example;
     form.plan_name = plan.name.clone();
@@ -409,6 +418,7 @@ pub(crate) fn load_plan_into_form(
             _ => {}
         }
     }
+    form.set_unit_system(unit);
     form.editing_plan_id = Some(plan_id.to_string());
     // Snapshot the form state so we can detect unchanged edits on Save.
     form.original_json = Some(build_capture_plan_json(form));
@@ -548,7 +558,11 @@ fn handle_ui_events(
     ),
     mut flow: UiFlowState,
     mut log: MessageWriter<LogEvent>,
-    (pause, mut next_pause): (Res<State<PauseState>>, ResMut<NextState<PauseState>>),
+    (pause, mut next_pause, step_cap): (
+        Res<State<PauseState>>,
+        ResMut<NextState<PauseState>>,
+        Res<StepCap>,
+    ),
 ) {
     let (mut settings, mut next_sim_state, mut sim_commands, mut form, mut sim_config) = ui_runtime;
 
@@ -641,7 +655,14 @@ fn handle_ui_events(
             }
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
-                    step_time_warp(*increase, world_time, &pause, &mut next_pause, &mut log);
+                    step_time_warp(
+                        *increase,
+                        world_time,
+                        *step_cap,
+                        &pause,
+                        &mut next_pause,
+                        &mut log,
+                    );
                 }
             }
             UiEvent::CycleCameraTarget => {
@@ -807,7 +828,7 @@ fn handle_ui_events(
                 }
             }
             UiEvent::SetUnitSystem(unit) => {
-                form.unit_system = *unit;
+                set_unit_system(&mut settings, &mut form, *unit);
             }
             UiEvent::ToggleCaptureGizmos => {
                 settings.toggle_capture_gizmos();

@@ -10,7 +10,7 @@ use crate::render::camera::set_map_view;
 use crate::ui::settings::Settings;
 use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
-use ssg_sim::time::{WarpChange, WorldTime};
+use ssg_sim::time::{StepCap, WarpChange, WorldTime};
 
 /// Run condition: egui is taking keyboard input (a focused text field or an
 /// open popup), so the sim hotkeys must not act.
@@ -57,15 +57,22 @@ pub fn toggle_map_view(
 }
 
 /// One step on the time-warp ladder ([`WorldTime::change_warp`]): applies the
-/// pause state and logs the change. Shared by the keyboard and the UI button.
+/// pause state and logs the change. Shared by the keyboard and the UI button. A
+/// step up asks for at most 2 × the cap: enough for the cap to grow on a fast
+/// machine, and `,` shows a change within two presses (F-46, OQ2).
 pub(crate) fn step_time_warp(
     increase: bool,
     world_time: &mut WorldTime,
+    cap: StepCap,
     pause: &State<PauseState>,
     next_pause: &mut NextState<PauseState>,
     log: &mut MessageWriter<LogEvent>,
 ) {
-    let message = match world_time.change_warp(increase, *pause.get() == PauseState::Paused) {
+    let paused = *pause.get() == PauseState::Paused;
+    if increase && !paused && world_time.multiplier >= cap.0.saturating_mul(2) {
+        return;
+    }
+    let message = match world_time.change_warp(increase, paused) {
         WarpChange::Unchanged => return,
         WarpChange::Multiplier(multiplier) => format!("Time warp → {multiplier}x"),
         WarpChange::Paused => {
@@ -87,6 +94,7 @@ pub(crate) fn step_time_warp(
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut world_time: ResMut<WorldTime>,
+    cap: Res<StepCap>,
     pause: Res<State<PauseState>>,
     mut next_pause: ResMut<NextState<PauseState>>,
     mut log: MessageWriter<LogEvent>,
@@ -99,7 +107,14 @@ pub fn change_time_warp(
     } else {
         return;
     };
-    step_time_warp(increase, &mut world_time, &pause, &mut next_pause, &mut log);
+    step_time_warp(
+        increase,
+        &mut world_time,
+        *cap,
+        &pause,
+        &mut next_pause,
+        &mut log,
+    );
 }
 
 pub fn toggle_origin(keyboard_input: Res<ButtonInput<KeyCode>>, mut settings: ResMut<Settings>) {

@@ -5,6 +5,8 @@ pub mod catalog_screen;
 #[cfg(test)]
 pub mod characterization_app;
 #[cfg(test)]
+pub mod display;
+#[cfg(test)]
 pub mod egui_screens;
 #[cfg(test)]
 pub mod egui_support;

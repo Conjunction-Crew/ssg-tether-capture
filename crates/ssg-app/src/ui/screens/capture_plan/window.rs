@@ -83,19 +83,7 @@ fn body(ui: &mut egui::Ui, form: &mut NewCapturePlanForm, out: &mut Vec<UiEvent>
             });
     }
 
-    section(ui, None, |ui| {
-        ui.label(egui::RichText::new("Units").size(11.0).weak());
-        ui.horizontal(|ui| {
-            for (unit, text) in [
-                (UnitSystem::Metric, "m (metric)"),
-                (UnitSystem::Imperial, "ft (imperial)"),
-            ] {
-                if ui.add(choice(text, form.unit_system == unit)).clicked() {
-                    out.push(UiEvent::SetUnitSystem(unit));
-                }
-            }
-        });
-    });
+    section(ui, None, |ui| units_toggle(ui, form.unit_system, out));
 
     section(ui, Some("General"), |ui| {
         field(
@@ -131,7 +119,7 @@ fn body(ui: &mut egui::Ui, form: &mut NewCapturePlanForm, out: &mut Vec<UiEvent>
         });
         field(
             ui,
-            "Tether Length * (m)",
+            &format!("Tether Length * ({dist_unit})"),
             "20.0",
             &mut form.tether_length,
             editable,
@@ -217,6 +205,21 @@ fn body(ui: &mut egui::Ui, form: &mut NewCapturePlanForm, out: &mut Vec<UiEvent>
             &mut form.capture_shrink_rate,
             editable,
         );
+    });
+}
+
+/// The one Metric/Imperial toggle, here and in the Simulation HUD (OQ3).
+pub(crate) fn units_toggle(ui: &mut egui::Ui, current: UnitSystem, out: &mut Vec<UiEvent>) {
+    ui.label(egui::RichText::new("Units").size(11.0).weak());
+    ui.horizontal(|ui| {
+        for (unit, text) in [
+            (UnitSystem::Metric, "m (metric)"),
+            (UnitSystem::Imperial, "ft (imperial)"),
+        ] {
+            if ui.add(choice(text, current == unit)).clicked() {
+                out.push(UiEvent::SetUnitSystem(unit));
+            }
+        }
     });
 }
 
