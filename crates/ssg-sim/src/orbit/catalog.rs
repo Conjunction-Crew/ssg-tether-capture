@@ -1,5 +1,6 @@
 //! The space-object catalog: dataset records, their element buffer and the loader.
 
+use std::collections::HashSet;
 use std::f64::consts::PI;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -368,6 +369,8 @@ pub fn load_dataset_entities(
         Ok(iter) => dataset_files.extend(iter.flatten().map(|entry| entry.path())),
         Err(e) => warn!("Could not read dataset directory {plans_dir:?}: {e}"),
     }
+    // One entry per NORAD id: the first record, so the project's copy wins (F-57).
+    let mut seen_ids = HashSet::new();
     for path in dataset_files {
         if path
             .extension()
@@ -384,6 +387,9 @@ pub fn load_dataset_entities(
                         }
                         continue;
                     };
+                    if !seen_ids.insert(id) {
+                        continue;
+                    }
                     let object_name = object
                         .object_name
                         .clone()

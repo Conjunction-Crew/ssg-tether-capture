@@ -7,15 +7,13 @@ use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiInput, egui};
 
 use crate::render::camera::set_map_view;
-use crate::ui::catalog_state::SpaceCatalogUiState;
 use crate::ui::settings::Settings;
 use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::{WarpChange, WorldTime};
 
 /// Run condition: egui is taking keyboard input (a focused text field or an
-/// open popup), so the sim hotkeys must not act. Replaces
-/// `SpaceCatalogUiState::search_focused` as each screen moves to egui (P8).
+/// open popup), so the sim hotkeys must not act.
 pub fn egui_wants_keyboard(egui_wants_input: Option<Res<EguiWantsInput>>) -> bool {
     egui_wants_input.is_some_and(|wants| wants.wants_any_keyboard_input())
 }
@@ -42,14 +40,9 @@ pub fn keep_tab_from_egui(mut inputs: Query<&mut EguiInput>) {
 
 pub fn toggle_map_view(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    catalog_ui: Res<SpaceCatalogUiState>,
     scene_camera: Single<(&mut RenderLayers, &mut Atmosphere, &mut AtmosphereSettings)>,
     mut log: MessageWriter<LogEvent>,
 ) {
-    if catalog_ui.search_focused {
-        return;
-    }
-
     if keyboard_input.just_pressed(KeyCode::KeyM) {
         let (render_layers, atmosphere, atmosphere_settings) = scene_camera.into_inner();
 
@@ -93,16 +86,11 @@ pub(crate) fn step_time_warp(
 
 pub fn change_time_warp(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    catalog_ui: Res<SpaceCatalogUiState>,
     mut world_time: ResMut<WorldTime>,
     pause: Res<State<PauseState>>,
     mut next_pause: ResMut<NextState<PauseState>>,
     mut log: MessageWriter<LogEvent>,
 ) {
-    if catalog_ui.search_focused {
-        return;
-    }
-
     // Period steps up, else Comma steps down.
     let increase = if keyboard_input.just_pressed(KeyCode::Period) {
         true
@@ -114,15 +102,7 @@ pub fn change_time_warp(
     step_time_warp(increase, &mut world_time, &pause, &mut next_pause, &mut log);
 }
 
-pub fn toggle_origin(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    catalog_ui: Res<SpaceCatalogUiState>,
-    mut settings: ResMut<Settings>,
-) {
-    if catalog_ui.search_focused {
-        return;
-    }
-
+pub fn toggle_origin(keyboard_input: Res<ButtonInput<KeyCode>>, mut settings: ResMut<Settings>) {
     if keyboard_input.just_pressed(KeyCode::KeyO) {
         settings.dev_gizmos = !settings.dev_gizmos;
     }
@@ -130,13 +110,8 @@ pub fn toggle_origin(
 
 pub fn toggle_capture_gizmos(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    catalog_ui: Res<SpaceCatalogUiState>,
     mut settings: ResMut<Settings>,
 ) {
-    if catalog_ui.search_focused {
-        return;
-    }
-
     if keyboard_input.just_pressed(KeyCode::KeyC) {
         settings.toggle_capture_gizmos();
     }

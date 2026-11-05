@@ -29,7 +29,7 @@ use ssg_sim::orbit::selection::OrbitalSelectionState;
 use ssg_sim::project::{SelectedProject, WorkingDirectory};
 use ssg_sim::session::{PauseState, SimState};
 use ssg_sim::telemetry::LogEvent;
-use ssg_sim::time::WorldTime;
+use ssg_sim::time::{SimConfig, WorldTime};
 
 const SIZE: [f32; 2] = [420.0, 900.0];
 
@@ -303,7 +303,7 @@ fn restart_prompt_buttons_emit_their_events() {
 }
 
 /// An app with what `sim_screen_events` and the egui systems read.
-fn sim_screen_app() -> App {
+pub(crate) fn sim_screen_app() -> App {
     let mut app = App::new();
     app.add_plugins(StatesPlugin)
         .init_state::<UiScreen>()
@@ -321,11 +321,14 @@ fn sim_screen_app() -> App {
         .init_resource::<WorkingDirectory>()
         .init_resource::<OrbitalSelectionState>()
         .init_resource::<OrbitalCache>()
-        .init_resource::<bevy_egui::EguiUserTextures>();
+        .init_resource::<bevy_egui::EguiUserTextures>()
+        .insert_resource(SimConfig {
+            start_epoch: ssg_sim::test_support::fixed_epoch(),
+        });
     app
 }
 
-fn send(app: &mut App, event: UiEvent) {
+pub(crate) fn send(app: &mut App, event: UiEvent) {
     app.world_mut().write_message(event);
     app.world_mut().run_system_once(sim_screen_events).unwrap();
 }
@@ -509,9 +512,11 @@ fn clicking_a_button_keeps_the_hotkeys() {
 }
 
 #[test]
-fn p7_windows_open_below_the_header_and_right_of_the_catalog() {
-    let available = egui::Rect::from_min_max(egui::pos2(0.0, 72.0), egui::pos2(860.0, 600.0));
-    let pos = window_pos(available);
-    assert!(available.contains(pos));
-    assert_eq!(pos, egui::pos2(368.0, 128.0));
+fn p7_windows_open_beside_the_panels() {
+    // Catalog closed: below the header, right of the toggle (12 + 156 px).
+    let closed = egui::Rect::from_min_max(egui::pos2(0.0, 72.0), egui::pos2(860.0, 600.0));
+    assert_eq!(window_pos(closed), egui::pos2(180.0, 84.0));
+    // Catalog open: the panel's 364 px are not in the free space.
+    let open = egui::Rect::from_min_max(egui::pos2(364.0, 72.0), egui::pos2(860.0, 600.0));
+    assert!(open.contains(window_pos(open)));
 }

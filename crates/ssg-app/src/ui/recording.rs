@@ -298,10 +298,10 @@ pub(crate) fn apply_panel_action(
 }
 
 /// Where the Recording, Recordings and Transport windows open inside the space
-/// the egui panels leave (`Context::available_rect`): right of the Space Catalog
-/// panel (12 px in, 340 px wide).
+/// the egui panels leave (`Context::available_rect`): right of the catalog toggle
+/// when the Space Catalog panel is closed, right of the panel when it is open.
 pub(crate) fn window_pos(available: egui::Rect) -> egui::Pos2 {
-    available.left_top() + egui::vec2(368.0, 56.0)
+    available.left_top() + egui::vec2(180.0, 12.0)
 }
 
 pub(crate) fn megabytes(bytes: u64) -> String {
