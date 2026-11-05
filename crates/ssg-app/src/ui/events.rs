@@ -33,4 +33,11 @@ pub enum UiEvent {
     },
     CycleCameraTarget,
     SetUnitSystem(UnitSystem),
+    /// Reset Sim / Restart Sim: restarts through Home with the current plan.
+    RestartSim,
+    /// Apply Live: the changed plan takes effect without a restart.
+    ApplyPlanLive,
+    /// Continue on the restart prompt: the sim stays out of sync.
+    DismissRestartPrompt,
+    ToggleSatelliteIndicator,
 }

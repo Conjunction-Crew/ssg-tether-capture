@@ -290,11 +290,14 @@ pub fn orbit_camera_track(
 pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     catalog_ui: Res<SpaceCatalogUiState>,
+    egui_wants_input: Option<Res<EguiWantsInput>>,
     mut commands: Commands,
     bodies: CameraBodies,
     mut log: MessageWriter<LogEvent>,
 ) {
-    if catalog_ui.search_focused {
+    if catalog_ui.search_focused
+        || egui_wants_input.is_some_and(|egui| egui.wants_any_keyboard_input())
+    {
         return;
     }
 

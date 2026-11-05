@@ -1,40 +1,70 @@
 use std::fmt::Write;
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
-use bevy::{camera::visibility::RenderLayers, math::DVec3, prelude::*};
+use bevy::{math::DVec3, prelude::*};
 
-use crate::render::layers::eci_position_to_map;
 use ssg_sim::capture::plan::{CapturePlanLibrary, CompiledCaptureState};
 use ssg_sim::capture::{CaptureComponent, CaptureSphereRadius};
 use ssg_sim::orbit::EARTH_EQUATORIAL_RADIUS_M;
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::lvlh::LvlhFrame;
 use ssg_sim::physics_bubble::body_eci_state;
+use ssg_sim::project::SelectedProject;
 use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 use ssg_sim::time::WorldTime;
 
-#[derive(Component, Debug, Clone)]
-pub struct TimeWarpReadout;
-
-#[derive(Component, Debug, Clone, Default)]
-pub struct CaptureTelemetryReadout {
-    pub target_entity: Option<Entity>,
-    pub reference_entity: Option<Entity>,
-    pub target_label: String,
-}
-
-#[derive(Component, Debug, Clone, Default)]
-pub struct CaptureGuidanceReadout {
+/// What the sim sidebar shows as labels (E1): the `update_*` systems write the
+/// strings every frame and keep their log side effects.
+#[derive(Resource, Debug, Clone)]
+pub struct HudReadouts {
     pub target_entity: Option<Entity>,
     pub reference_entity: Option<Entity>,
     pub target_label: String,
     pub plan_id: String,
+    pub time_warp: String,
+    pub telemetry: String,
+    pub guidance: String,
 }
 
-#[derive(Component, Debug, Clone, Default)]
-pub struct OrbitLabel {
-    pub entity: Option<Entity>,
+impl Default for HudReadouts {
+    fn default() -> Self {
+        Self {
+            target_entity: None,
+            reference_entity: None,
+            target_label: String::new(),
+            plan_id: String::new(),
+            time_warp: "1x".to_string(),
+            telemetry: "Waiting for live capture telemetry...".to_string(),
+            guidance: "Waiting for capture plan telemetry...".to_string(),
+        }
+    }
+}
+
+/// Points the readouts at this session's bodies and plan and resets their text
+/// (on entering the sim screen and again when the bodies exist, on Start).
+pub fn init_hud_readouts(
+    mut readouts: ResMut<HudReadouts>,
+    selected_project: Res<SelectedProject>,
+    capture_plan_lib: Res<CapturePlanLibrary>,
+    orbital_cache: Res<OrbitalCache>,
+) {
+    let plan_id = selected_project.project_id.as_deref().unwrap_or("");
+    let tether_name = capture_plan_lib
+        .plans
+        .get(plan_id)
+        .map(|p| p.tether.as_str())
+        .unwrap_or("");
+    *readouts = HudReadouts {
+        target_entity: orbital_cache.debris.get("Satellite1").copied(),
+        reference_entity: orbital_cache
+            .tethers
+            .get(tether_name)
+            .and_then(|v| v.first().copied()),
+        target_label: String::from("Satellite1"),
+        plan_id: plan_id.to_string(),
+        ..default()
+    };
 }
 
 pub(crate) struct CaptureMetrics {
@@ -64,7 +94,7 @@ fn position_label_at_viewport_center(node: &mut Node, center: Vec2, size_px: f32
 /// ([`ssg_sim::time::MAX_STEPS_PER_UPDATE`]) holds the warp below the request.
 /// Before the first fixed step (effective 0) it shows the request.
 pub fn update_time_warp_readout(
-    mut readouts: Query<&mut Text, With<TimeWarpReadout>>,
+    mut readouts: ResMut<HudReadouts>,
     world_time: Res<WorldTime>,
     pause: Res<State<PauseState>>,
 ) {
@@ -77,80 +107,71 @@ pub fn update_time_warp_readout(
     } else {
         format!("{requested}x (effective {effective}x)")
     };
-    for mut text in &mut readouts {
-        text.0.clone_from(&readout);
-    }
+    readouts.time_warp = readout;
 }
 
 pub fn update_capture_telemetry(
     bodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>)>,
     capture_targets: Query<&CaptureComponent>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
-    mut readouts: Query<(&mut Text, &CaptureTelemetryReadout)>,
+    mut readouts: ResMut<HudReadouts>,
     orbitals: Res<OrbitalCache>,
     mut log: MessageWriter<LogEvent>,
     mut prev_status: Local<String>,
 ) {
-    for (mut text, readout) in &mut readouts {
-        let Some(metrics) = capture_metrics(
-            &bodies,
-            readout.target_entity,
-            readout.reference_entity,
-            &orbitals,
-        ) else {
-            text.0 = format!(
-                "{}\nWaiting for live capture telemetry...",
-                readout.target_label
-            );
-            continue;
-        };
-
-        let capture_status = match readout
-            .target_entity
-            .and_then(|entity| capture_targets.get(entity).ok())
-        {
-            Some(capture) => format!("Engaged ({})", capture.current_state),
-            None => "Idle".to_string(),
-        };
-
-        if capture_status != *prev_status {
-            log.write(LogEvent {
-                level: LogLevel::Info,
-                source: "capture",
-                message: format!("Capture status → {capture_status}"),
-            });
-            *prev_status = capture_status.clone();
-        }
-
-        let inside_capture_sphere = if metrics.range_m <= capture_sphere_radius.radius {
-            "Yes"
-        } else {
-            "No"
-        };
-
-        text.0 = format!(
-            concat!(
-                "Target: {}\n",
-                "Capture status: {}\n",
-                "Range to tether root: {:.2} m\n",
-                "Relative speed: {:.2} m/s\n",
-                "Closing rate: {:.2} m/s\n",
-                "Inside capture sphere: {}\n",
-                "Capture sphere radius: {:.2} m\n",
-                "Target altitude: {:.1} m\n",
-                "Target speed: {:.2} m/s"
-            ),
-            readout.target_label,
-            capture_status,
-            metrics.range_m,
-            metrics.relative_speed_m_s,
-            metrics.closing_speed_m_s,
-            inside_capture_sphere,
-            capture_sphere_radius.radius,
-            metrics.target_altitude_m,
-            metrics.target_speed_m_s,
+    let target_entity = readouts.target_entity;
+    let Some(metrics) =
+        capture_metrics(&bodies, target_entity, readouts.reference_entity, &orbitals)
+    else {
+        readouts.telemetry = format!(
+            "{}\nWaiting for live capture telemetry...",
+            readouts.target_label
         );
+        return;
+    };
+
+    let capture_status = match target_entity.and_then(|entity| capture_targets.get(entity).ok()) {
+        Some(capture) => format!("Engaged ({})", capture.current_state),
+        None => "Idle".to_string(),
+    };
+
+    if capture_status != *prev_status {
+        log.write(LogEvent {
+            level: LogLevel::Info,
+            source: "capture",
+            message: format!("Capture status → {capture_status}"),
+        });
+        *prev_status = capture_status.clone();
     }
+
+    let inside_capture_sphere = if metrics.range_m <= capture_sphere_radius.radius {
+        "Yes"
+    } else {
+        "No"
+    };
+
+    readouts.telemetry = format!(
+        concat!(
+            "Target: {}\n",
+            "Capture status: {}\n",
+            "Range to tether root: {:.2} m\n",
+            "Relative speed: {:.2} m/s\n",
+            "Closing rate: {:.2} m/s\n",
+            "Inside capture sphere: {}\n",
+            "Capture sphere radius: {:.2} m\n",
+            "Target altitude: {:.1} m\n",
+            "Target speed: {:.2} m/s"
+        ),
+        readouts.target_label,
+        capture_status,
+        metrics.range_m,
+        metrics.relative_speed_m_s,
+        metrics.closing_speed_m_s,
+        inside_capture_sphere,
+        capture_sphere_radius.radius,
+        metrics.target_altitude_m,
+        metrics.target_speed_m_s,
+    );
 }
 
 pub fn update_capture_guidance(
@@ -158,90 +179,44 @@ pub fn update_capture_guidance(
     capture_targets: Query<&CaptureComponent>,
     capture_plans: Res<CapturePlanLibrary>,
     capture_sphere_radius: Res<CaptureSphereRadius>,
-    mut readouts: Query<(&mut Text, &CaptureGuidanceReadout)>,
+    mut readouts: ResMut<HudReadouts>,
     orbitals: Res<OrbitalCache>,
 ) {
-    for (mut text, readout) in &mut readouts {
-        let current_metrics = capture_metrics(
-            &bodies,
-            readout.target_entity,
-            readout.reference_entity,
-            &orbitals,
-        );
-        let current_range = current_metrics.as_ref().map(|metrics| metrics.range_m);
-        let current_rel_speed = current_metrics
-            .as_ref()
-            .map(|metrics| metrics.relative_speed_m_s);
+    let target_entity = readouts.target_entity;
+    let plan_id = readouts.plan_id.clone();
+    let current_metrics =
+        capture_metrics(&bodies, target_entity, readouts.reference_entity, &orbitals);
+    let current_range = current_metrics.as_ref().map(|metrics| metrics.range_m);
+    let current_rel_speed = current_metrics
+        .as_ref()
+        .map(|metrics| metrics.relative_speed_m_s);
 
-        if let Some(capture) = readout
-            .target_entity
-            .and_then(|entity| capture_targets.get(entity).ok())
-        {
-            let Some(plan) = capture_plans.compiled_plans.get(&capture.plan_id) else {
-                text.0 = format!("Active capture plan `{}` is not loaded.", capture.plan_id);
-                continue;
-            };
-
-            let Some(state) = plan.state(&capture.current_state) else {
-                text.0 = format!(
-                    "Current state `{}` was not found in plan `{}`.",
-                    capture.current_state, capture.plan_id
-                );
-                continue;
-            };
-
-            let mut body = String::new();
-            let time_in_state = capture.state_elapsed_time_s.max(0.0);
-            let plan_display_name = capture_plans
-                .plans
-                .get(&capture.plan_id)
-                .map(|p| p.name.as_str())
-                .unwrap_or(capture.plan_id.as_str());
-
-            writeln!(body, "Target: {}", readout.target_label).unwrap();
-            writeln!(body, "Plan: {}", plan_display_name).unwrap();
-            writeln!(body, "Current state: {}", capture.current_state).unwrap();
-            writeln!(body, "Time in state: {:.1} s", time_in_state).unwrap();
-            writeln!(
-                body,
-                "Capture sphere radius: {:.2} m",
-                capture_sphere_radius.radius
-            )
-            .unwrap();
-            writeln!(body).unwrap();
-
-            append_state_parameters(&mut body, state);
-            writeln!(body).unwrap();
-
-            append_transitions(&mut body, state, current_range, current_rel_speed, true);
-
-            text.0 = body.trim_end().to_string();
-            continue;
-        }
-
-        let Some(plan) = capture_plans.compiled_plans.get(&readout.plan_id) else {
-            text.0 = format!("Capture plan `{}` is not loaded.", readout.plan_id);
-            continue;
+    if let Some(capture) = target_entity.and_then(|entity| capture_targets.get(entity).ok()) {
+        let Some(plan) = capture_plans.compiled_plans.get(&capture.plan_id) else {
+            readouts.guidance = format!("Active capture plan `{}` is not loaded.", capture.plan_id);
+            return;
         };
 
-        let Some(initial_state) = plan.states.first() else {
-            text.0 = format!(
-                "Capture plan `{}` does not define any states.",
-                readout.plan_id
+        let Some(state) = plan.state(&capture.current_state) else {
+            readouts.guidance = format!(
+                "Current state `{}` was not found in plan `{}`.",
+                capture.current_state, capture.plan_id
             );
-            continue;
+            return;
         };
 
         let mut body = String::new();
+        let time_in_state = capture.state_elapsed_time_s.max(0.0);
         let plan_display_name = capture_plans
             .plans
-            .get(&readout.plan_id)
+            .get(&capture.plan_id)
             .map(|p| p.name.as_str())
-            .unwrap_or(readout.plan_id.as_str());
-        writeln!(body, "Target: {}", readout.target_label).unwrap();
-        writeln!(body, "Status: Idle").unwrap();
+            .unwrap_or(capture.plan_id.as_str());
+
+        writeln!(body, "Target: {}", readouts.target_label).unwrap();
         writeln!(body, "Plan: {}", plan_display_name).unwrap();
-        writeln!(body, "Initial state: {}", initial_state.id).unwrap();
+        writeln!(body, "Current state: {}", capture.current_state).unwrap();
+        writeln!(body, "Time in state: {:.1} s", time_in_state).unwrap();
         writeln!(
             body,
             "Capture sphere radius: {:.2} m",
@@ -249,59 +224,55 @@ pub fn update_capture_guidance(
         )
         .unwrap();
         writeln!(body).unwrap();
-        writeln!(body, "Press Capture to start this plan.").unwrap();
+
+        append_state_parameters(&mut body, state);
         writeln!(body).unwrap();
 
-        append_transitions(
-            &mut body,
-            initial_state,
-            current_range,
-            current_rel_speed,
-            false,
-        );
+        append_transitions(&mut body, state, current_range, current_rel_speed, true);
 
-        text.0 = body.trim_end().to_string();
+        readouts.guidance = body.trim_end().to_string();
+        return;
     }
-}
 
-pub fn map_orbitals(
-    camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
-    mut labels: Query<(&mut Node, &OrbitLabel)>,
-    rigidbodies: Query<(RigidBodyQueryReadOnly, Has<RigidBodyDisabled>, Entity)>,
-    orbital_cache: Res<OrbitalCache>,
-) {
-    let (cam, cam_transform, render_layers) = camera.into_inner();
+    let Some(plan) = capture_plans.compiled_plans.get(&plan_id) else {
+        readouts.guidance = format!("Capture plan `{}` is not loaded.", plan_id);
+        return;
+    };
 
-    for (mut node, label) in &mut labels {
-        if !render_layers.intersects(&RenderLayers::layer(crate::render::layers::MAP_LAYER)) {
-            node.display = Display::None;
-            continue;
-        }
+    let Some(initial_state) = plan.states.first() else {
+        readouts.guidance = format!("Capture plan `{}` does not define any states.", plan_id);
+        return;
+    };
 
-        node.display = Display::Block;
+    let mut body = String::new();
+    let plan_display_name = capture_plans
+        .plans
+        .get(&plan_id)
+        .map(|p| p.name.as_str())
+        .unwrap_or(plan_id.as_str());
+    writeln!(body, "Target: {}", readouts.target_label).unwrap();
+    writeln!(body, "Status: Idle").unwrap();
+    writeln!(body, "Plan: {}", plan_display_name).unwrap();
+    writeln!(body, "Initial state: {}", initial_state.id).unwrap();
+    writeln!(
+        body,
+        "Capture sphere radius: {:.2} m",
+        capture_sphere_radius.radius
+    )
+    .unwrap();
+    writeln!(body).unwrap();
+    writeln!(body, "Press Capture to start this plan.").unwrap();
+    writeln!(body).unwrap();
 
-        let Some(entity) = label.entity else {
-            continue;
-        };
-        let Ok((rb, _disabled, entity)) = rigidbodies.get(entity) else {
-            continue;
-        };
+    append_transitions(
+        &mut body,
+        initial_state,
+        current_range,
+        current_rel_speed,
+        false,
+    );
 
-        let Some(params) = orbital_cache.eci_states.get(&entity) else {
-            continue;
-        };
-
-        let world_position = eci_position_to_map(Vec3::new(
-            (params[0] + rb.position.0.x) as f32,
-            (params[1] + rb.position.0.y) as f32,
-            (params[2] + rb.position.0.z) as f32,
-        ));
-
-        if let Ok(viewport_position) = cam.world_to_viewport(cam_transform, world_position) {
-            node.top = Val::Px(viewport_position.y);
-            node.left = Val::Px(viewport_position.x);
-        }
-    }
+    readouts.guidance = body.trim_end().to_string();
 }
 
 /// Range, speeds and altitude of the capture target relative to the reference

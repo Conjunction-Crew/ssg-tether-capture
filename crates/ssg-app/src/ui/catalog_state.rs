@@ -29,9 +29,3 @@ impl Default for SpaceCatalogUiState {
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct FilteredSpaceCatalogResults(pub Vec<usize>);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrbitalSelectionRole {
-    Target,
-    Chaser,
-}

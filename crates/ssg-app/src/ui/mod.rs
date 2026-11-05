@@ -7,6 +7,7 @@ pub mod form;
 pub mod hud;
 pub mod input;
 pub mod log_ui;
+pub mod overlays;
 pub mod plugin;
 pub mod recording;
 pub mod replay;

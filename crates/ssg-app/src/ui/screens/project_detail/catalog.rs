@@ -104,7 +104,6 @@ pub fn catalog_interactions(
             Option<&CatalogToggleButton>,
             Option<&CatalogSearchField>,
             Option<&CatalogPointsToggleButton>,
-            Option<&SatelliteIndicatorToggleButton>,
             Option<&CatalogPrevPageButton>,
             Option<&CatalogNextPageButton>,
             Option<&CatalogResultButton>,
@@ -117,7 +116,6 @@ pub fn catalog_interactions(
                 With<CatalogToggleButton>,
                 With<CatalogSearchField>,
                 With<CatalogPointsToggleButton>,
-                With<SatelliteIndicatorToggleButton>,
                 With<CatalogPrevPageButton>,
                 With<CatalogNextPageButton>,
                 With<CatalogResultButton>,
@@ -135,7 +133,6 @@ pub fn catalog_interactions(
         toggle_button,
         search_field,
         points_toggle,
-        satellite_indicator_toggle,
         prev_page,
         next_page,
         result_button,
@@ -157,8 +154,6 @@ pub fn catalog_interactions(
                     catalog_ui.show_catalog = !catalog_ui.show_catalog;
                 } else if points_toggle.is_some() {
                     catalog_ui.show_points = !catalog_ui.show_points;
-                } else if satellite_indicator_toggle.is_some() {
-                    catalog_ui.show_satellite_indicator = !catalog_ui.show_satellite_indicator;
                 } else if prev_page.is_some() {
                     catalog_ui.page = catalog_ui.page.saturating_sub(1);
                 } else if next_page.is_some() {
@@ -231,7 +226,6 @@ pub fn sync_space_catalog_ui(
     )>,
     search_texts: Query<Entity, With<CatalogSearchText>>,
     point_toggle_buttons: Query<&Children, With<CatalogPointsToggleButton>>,
-    satellite_indicator_toggle_buttons: Query<&Children, With<SatelliteIndicatorToggleButton>>,
 ) {
     let map_visible = camera.intersects(&RenderLayers::layer(MAP_LAYER));
 
@@ -333,19 +327,6 @@ pub fn sync_space_catalog_ui(
                         "Show Data Points".to_string()
                     };
                 }
-            }
-        }
-    }
-
-    for children in &satellite_indicator_toggle_buttons {
-        let mut texts = text_queries.p0();
-        for child in children.iter() {
-            if let Ok(mut text) = texts.get_mut(child) {
-                text.0 = if catalog_ui.show_satellite_indicator {
-                    "Hide Satellite Indicator".to_string()
-                } else {
-                    "Show Satellite Indicator".to_string()
-                };
             }
         }
     }

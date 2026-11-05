@@ -10,12 +10,15 @@ use egui_kittest::kittest::Queryable;
 use crate::tests::egui_support::{harness_for, snapshot};
 use crate::tests::home_screens::{home_view, many_plans, setup_view};
 use crate::tests::plan_form::{filled_form, new_form};
+use crate::tests::sim_screen::{running_view, setup_view as sim_setup_view};
 use crate::ui::egui_theme::{color32_from, visuals_from_theme};
 use crate::ui::events::UiEvent;
 use crate::ui::input::egui_wants_keyboard;
 use crate::ui::screens::capture_plan::validate_form;
 use crate::ui::screens::capture_plan::window::capture_plan_form_ui;
 use crate::ui::screens::home::home_ui;
+use crate::ui::screens::project_detail::modals::{exit_confirm_ui, restart_prompt_ui};
+use crate::ui::screens::project_detail::sidebar::{sim_header_ui, sim_sidebar_ui};
 use crate::ui::screens::working_directory_setup::working_directory_setup_ui;
 use crate::ui::theme::UiTheme;
 
@@ -134,6 +137,27 @@ fn p8_screen_snapshots() {
         theme_sample_ui,
     );
     assert!(path.is_file());
+
+    // S5: the sim header, the sidebar and the modals.
+    for path in [
+        snapshot("s5_header", sim_setup_view(), [1280.0, 72.0], sim_header_ui),
+        snapshot(
+            "s5_sidebar_setup",
+            sim_setup_view(),
+            [420.0, 800.0],
+            sim_sidebar_ui,
+        ),
+        snapshot(
+            "s5_sidebar_running",
+            running_view(),
+            [420.0, 1100.0],
+            sim_sidebar_ui,
+        ),
+        snapshot("s5_exit_confirm", (), [500.0, 240.0], exit_confirm_ui),
+        snapshot("s5_restart_prompt", (), [500.0, 240.0], restart_prompt_ui),
+    ] {
+        assert!(path.is_file());
+    }
 
     // S3: the setup screen and Home.
     let mut paths = vec![

@@ -4,6 +4,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_egui::input::EguiWantsInput;
+use bevy_egui::{EguiInput, egui};
 
 use crate::render::camera::set_map_view;
 use crate::ui::catalog_state::SpaceCatalogUiState;
@@ -15,12 +16,28 @@ use ssg_sim::time::{WarpChange, WorldTime};
 /// Run condition: egui is taking keyboard input (a focused text field or an
 /// open popup), so the sim hotkeys must not act. Replaces
 /// `SpaceCatalogUiState::search_focused` as each screen moves to egui (P8).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "wired to the hotkeys as the P8 port slices land")
-)]
 pub fn egui_wants_keyboard(egui_wants_input: Option<Res<EguiWantsInput>>) -> bool {
     egui_wants_input.is_some_and(|wants| wants.wants_any_keyboard_input())
+}
+
+/// Removes Tab from `raw`, so egui never moves its focus with it (P0-006).
+pub(crate) fn strip_tab(raw: &mut egui::RawInput) {
+    raw.events.retain(|event| {
+        !matches!(
+            event,
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                ..
+            }
+        )
+    });
+}
+
+/// On the sim screen Tab cycles the camera target and nothing else (P0-006).
+pub fn keep_tab_from_egui(mut inputs: Query<&mut EguiInput>) {
+    for mut input in &mut inputs {
+        strip_tab(&mut input.0);
+    }
 }
 
 pub fn toggle_map_view(

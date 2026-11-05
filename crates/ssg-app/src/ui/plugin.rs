@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy::transform::TransformSystems;
-use bevy_egui::EguiPrimaryContextPass;
+use bevy_egui::{EguiPreUpdateSet, EguiPrimaryContextPass};
 
 use crate::render::camera::{CameraTarget, cycle_camera_target, set_map_view, setup_camera};
 use crate::render::layers::UI_LAYER;
@@ -20,12 +20,17 @@ use crate::ui::egui_theme::apply_egui_theme;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm};
 use crate::ui::hud::{
-    map_orbitals, update_capture_guidance, update_capture_telemetry, update_time_warp_readout,
+    HudReadouts, init_hud_readouts, update_capture_guidance, update_capture_telemetry,
+    update_time_warp_readout,
 };
 use crate::ui::input::{
-    change_time_warp, step_time_warp, toggle_capture_gizmos, toggle_map_view, toggle_origin,
+    change_time_warp, egui_wants_keyboard, keep_tab_from_egui, step_time_warp,
+    toggle_capture_gizmos, toggle_map_view, toggle_origin,
 };
 use crate::ui::log_ui::{CaptureLogUiState, CapturePlanLoadErrors};
+use crate::ui::overlays::{
+    map_orbitals, update_satellite_indicator_overlay, update_selected_catalog_overlay,
+};
 use crate::ui::recording::{
     RecordingPanel, adapt_step_cap, collect_recorder_events, install_recording_sink,
     recording_window, reset_recording_panel, reset_step_cap,
@@ -41,13 +46,10 @@ use crate::ui::screens::capture_plan::{
 };
 use crate::ui::screens::home::{home_screen, load_home_plans};
 use crate::ui::screens::project_detail::{
-    RestartPromptModal, SimScreen, catalog_interactions, catalog_keyboard_input,
-    cleanup_project_detail_screen, collapsible_toggle_interaction, orbital_selection_interactions,
-    project_detail_interactions, refresh_space_catalog_results, reset_space_catalog_ui_state,
-    restart_prompt_interactions, spawn_exit_confirm_modal, spawn_project_detail_screen,
-    spawn_restart_prompt_modal, sync_orbital_selection_ui, sync_space_catalog_ui,
-    update_satellite_indicator_overlay, update_selected_catalog_overlay, update_sync_indicator,
-    view_edit_plan_interactions,
+    ExitConfirmOpen, SimScreen, catalog_interactions, catalog_keyboard_input,
+    cleanup_project_detail_screen, refresh_space_catalog_results, reset_space_catalog_ui_state,
+    sim_screen_events, sim_screen_modals, sim_screen_panels, spawn_project_detail_screen,
+    sync_space_catalog_ui,
 };
 use crate::ui::screens::working_directory_setup::{
     WorkingDirectorySetupError, clear_working_directory_setup_error, working_directory_setup_screen,
@@ -77,13 +79,10 @@ struct FileDialogTask(Option<Task<Option<PathBuf>>>);
 #[derive(Resource, Default)]
 struct UserPlansDirty(bool);
 
-#[derive(Resource, Default)]
-struct ExitConfirmPending(bool);
-
 #[derive(SystemParam)]
 struct UiFlowState<'w> {
     plans_dirty: ResMut<'w, UserPlansDirty>,
-    exit_confirm: ResMut<'w, ExitConfirmPending>,
+    exit_confirm: ResMut<'w, ExitConfirmOpen>,
     setup_error: ResMut<'w, WorkingDirectorySetupError>,
 }
 
@@ -100,7 +99,8 @@ impl Plugin for UiPlugin {
             .init_resource::<NewCapturePlanForm>()
             .init_resource::<FileDialogTask>()
             .init_resource::<UserPlansDirty>()
-            .init_resource::<ExitConfirmPending>()
+            .init_resource::<ExitConfirmOpen>()
+            .init_resource::<HudReadouts>()
             .init_resource::<WorkingDirectorySetupError>()
             .init_resource::<SimPlanSyncState>()
             .init_resource::<CapturePlanLoadErrors>()
@@ -117,19 +117,30 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    toggle_map_view,
-                    toggle_origin,
-                    toggle_capture_gizmos,
-                    update_time_warp_readout,
-                    update_capture_telemetry,
-                    update_capture_guidance,
+                    (toggle_map_view, toggle_origin, toggle_capture_gizmos)
+                        .run_if(not(egui_wants_keyboard)),
+                    // A replay shows no sidebar: the readouts rest (rc.3).
+                    (
+                        update_time_warp_readout,
+                        update_capture_telemetry,
+                        update_capture_guidance,
+                    )
+                        .run_if(not(in_state(SimState::Replay))),
                 )
+                    .run_if(in_state(UiScreen::Sim)),
+            )
+            .add_systems(
+                PreUpdate,
+                keep_tab_from_egui
+                    .after(EguiPreUpdateSet::ProcessInput)
+                    .before(EguiPreUpdateSet::BeginPass)
                     .run_if(in_state(UiScreen::Sim)),
             )
             // The warp keys do nothing in a replay (the player has its own speeds).
             .add_systems(
                 Update,
                 change_time_warp
+                    .run_if(not(egui_wants_keyboard))
                     .run_if(in_state(UiScreen::Sim))
                     .run_if(not(in_state(SimState::Replay))),
             )
@@ -175,7 +186,9 @@ impl Plugin for UiPlugin {
             .add_systems(
                 OnEnter(UiScreen::Sim),
                 (
-                    spawn_project_detail_screen.after(setup_camera),
+                    (init_hud_readouts, spawn_project_detail_screen)
+                        .chain()
+                        .after(setup_camera),
                     reset_sync_state,
                     reset_terminal_log_ui_state,
                 ),
@@ -184,6 +197,7 @@ impl Plugin for UiPlugin {
                 OnEnter(SimState::Running),
                 (
                     cleanup_project_detail_screen,
+                    init_hud_readouts,
                     spawn_project_detail_screen,
                     reset_sync_state,
                 )
@@ -198,19 +212,11 @@ impl Plugin for UiPlugin {
                 Last,
                 (
                     poll_file_dialog_task,
-                    view_edit_plan_interactions,
-                    restart_prompt_interactions,
-                    update_sync_indicator,
+                    sim_screen_events,
                     poll_home_plan_refresh,
-                    poll_exit_confirm_modal,
-                    poll_restart_prompt_modal,
                     poll_sim_restart,
                     (
                         update_sim_screen_bottom_padding,
-                        project_detail_interactions,
-                        orbital_selection_interactions,
-                        sync_orbital_selection_ui,
-                        collapsible_toggle_interaction,
                         catalog_interactions,
                         catalog_keyboard_input,
                         refresh_space_catalog_results,
@@ -231,13 +237,18 @@ impl Plugin for UiPlugin {
                         .run_if(in_state(UiScreen::WorkingDirectorySetup)),
                     home_screen.run_if(in_state(UiScreen::Home)),
                     capture_plan_form_window,
+                    sim_screen_modals,
                 )
                     .chain()
                     .after(apply_egui_theme),
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                (egui_terminal_panel, egui_plots)
+                (
+                    egui_terminal_panel,
+                    sim_screen_panels.run_if(not(in_state(SimState::Replay))),
+                    egui_plots,
+                )
                     .chain()
                     .run_if(in_state(UiScreen::Sim)),
             )
@@ -248,6 +259,7 @@ impl Plugin for UiPlugin {
                     recordings_window.run_if(in_state(SimState::Setup)),
                     transport_window.run_if(in_state(SimState::Replay)),
                 )
+                    .after(sim_screen_panels)
                     .run_if(in_state(UiScreen::Sim)),
             );
     }
@@ -285,33 +297,6 @@ fn poll_file_dialog_task(
             working_directory.pending_path = path.to_string_lossy().to_string();
         }
         file_dialog_task.0 = None;
-    }
-}
-
-fn poll_exit_confirm_modal(
-    mut commands: Commands,
-    mut pending: ResMut<ExitConfirmPending>,
-    asset_server: Res<AssetServer>,
-    theme: Res<UiTheme>,
-) {
-    if pending.0 {
-        let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-        spawn_exit_confirm_modal(&mut commands, &font, &theme);
-        pending.0 = false;
-    }
-}
-
-fn poll_restart_prompt_modal(
-    mut commands: Commands,
-    mut form: ResMut<NewCapturePlanForm>,
-    existing: Query<Entity, With<RestartPromptModal>>,
-    asset_server: Res<AssetServer>,
-    theme: Res<UiTheme>,
-) {
-    if form.show_restart_prompt && existing.is_empty() {
-        let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-        spawn_restart_prompt_modal(&mut commands, &font, &theme);
-        form.show_restart_prompt = false;
     }
 }
 
@@ -606,6 +591,7 @@ fn handle_ui_events(
                 next_sim_state.set(SimState::Running);
             }
             UiEvent::BackToHome => {
+                flow.exit_confirm.0 = false;
                 next_sim_state.set(SimState::Setup);
                 next_screen.set(UiScreen::Home);
             }
@@ -838,6 +824,11 @@ fn handle_ui_events(
             UiEvent::ToggleCaptureGizmos => {
                 settings.toggle_capture_gizmos();
             }
+            // `sim_screen_events` owns these.
+            UiEvent::RestartSim
+            | UiEvent::ApplyPlanLive
+            | UiEvent::DismissRestartPrompt
+            | UiEvent::ToggleSatelliteIndicator => {}
         }
     }
 }
