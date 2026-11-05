@@ -372,6 +372,11 @@ fn overwrite_prompt(ctx: &egui::Context, path: &str, out: &mut Vec<UiEvent>) {
     });
 }
 
+/// The panel colour without its alpha: nothing shows through the form (O3 S2.03).
+pub(crate) fn form_fill(visuals: &egui::Visuals) -> egui::Color32 {
+    visuals.panel_fill.to_opaque()
+}
+
 /// Shows the form as a modal over Home or the sim while it is open.
 pub fn capture_plan_form_window(
     mut contexts: EguiContexts,
@@ -388,7 +393,7 @@ pub fn capture_plan_form_window(
     let width = FORM_WIDTH.min(ctx.content_rect().width() * 0.94);
     let mut out = Vec::new();
     egui::Modal::new(egui::Id::new("capture_plan_form"))
-        .frame(egui::Frame::new().fill(ctx.style().visuals.panel_fill))
+        .frame(egui::Frame::new().fill(form_fill(&ctx.style().visuals)))
         .show(ctx, |ui| {
             ui.set_width(width);
             ui.set_max_height(max_height);

@@ -9,11 +9,13 @@ use bevy_egui::egui::accesskit::Role;
 use egui_kittest::kittest::{By, Queryable};
 
 use crate::tests::egui_support::harness_for;
+use crate::ui::egui_theme::visuals_from_theme;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, UnitSystem};
 use crate::ui::plugin::{load_plan_into_form, save_form_plan};
-use crate::ui::screens::capture_plan::window::capture_plan_form_ui;
+use crate::ui::screens::capture_plan::window::{capture_plan_form_ui, form_fill};
 use crate::ui::screens::capture_plan::{build_capture_plan_json, generate_filename, validate_form};
+use crate::ui::theme::UiTheme;
 use ssg_sim::project::load_plans_from_dir_with_errors;
 use ssg_sim::test_support::TempDir;
 
@@ -46,6 +48,18 @@ pub(crate) fn filled_form() -> NewCapturePlanForm {
 }
 
 const SIZE: [f32; 2] = [720.0, 2000.0];
+
+#[test]
+fn form_fill_is_the_panel_colour_without_its_alpha() {
+    let visuals = visuals_from_theme(&UiTheme::default());
+    assert!(
+        visuals.panel_fill.a() < 255,
+        "the theme's panel is see-through"
+    );
+    let fill = form_fill(&visuals);
+    assert_eq!(fill.a(), 255);
+    assert_eq!(fill, visuals.panel_fill.to_opaque());
+}
 
 #[test]
 fn form_sections_say_phase() {

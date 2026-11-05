@@ -101,6 +101,29 @@ fn typed_path_selects_directory() {
 }
 
 #[test]
+fn enter_in_the_path_field_selects_directory() {
+    let mut harness = harness_for(
+        setup_view("", None),
+        [800.0, 600.0],
+        working_directory_setup_ui,
+    );
+    harness.get_by_role(Role::TextInput).focus();
+    harness.run();
+    harness
+        .get_by_role(Role::TextInput)
+        .type_text("/Users/walk/typed");
+    harness.run();
+    assert!(harness.state().events.is_empty());
+
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    match harness.state().events.as_slice() {
+        [UiEvent::WorkingDirectorySelected(path)] => assert_eq!(path, "/Users/walk/typed"),
+        events => panic!("unexpected events {events:?}"),
+    }
+}
+
+#[test]
 fn bad_path_shows_error() {
     // A folder cannot be created under a regular file.
     let dir = TempDir::new("p8_bad_working_directory");
