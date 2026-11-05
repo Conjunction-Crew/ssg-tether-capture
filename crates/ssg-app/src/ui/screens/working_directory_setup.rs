@@ -37,12 +37,16 @@ pub fn working_directory_setup_ui(
                         egui::RichText::new("Choose where your projects will be stored.")
                             .size(13.0),
                     );
-                    ui.add(
+                    let path = ui.add(
                         egui::TextEdit::singleline(&mut view.path)
                             .desired_width(f32::INFINITY)
                             .text_color(ui.visuals().hyperlink_color)
                             .margin(10.0),
                     );
+                    // Enter in the field acts as Select (operator's O3 note).
+                    if path.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        out.push(UiEvent::WorkingDirectorySelected(view.path.clone()));
+                    }
                     if let Some(error) = &view.error {
                         ui.colored_label(ui.visuals().error_fg_color, error);
                     }
