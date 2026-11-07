@@ -1,18 +1,26 @@
-//! The capture-plan form as an egui modal (P8 S4): the same sections, fields
-//! and buttons as the rc.3 bevy_ui modal, with "Phase" for "State" (A-3).
-//! Fields accept any text; Save validates (P0-001). The overwrite prompt offers
-//! **Overwrite** and **Cancel** (P0-002). The modal closes only through
-//! Cancel or Save.
+//! The capture-plan form as an egui modal (P8 S4; P9 S1 on the v1 plan): the
+//! General and Tether sections, then one section per phase of the plan
+//! (`phases.rs`). Fields accept any text; Save validates (P0-001) and each
+//! message is shown under the field it names. The overwrite prompt offers
+//! **Overwrite** and **Cancel** (P0-002). The modal closes only through Cancel
+//! or Save.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
+use super::{field_pointers, phases, pointer};
 use crate::ui::events::UiEvent;
-use crate::ui::form::{NewCapturePlanForm, TransitionForm, UnitSystem};
+use crate::ui::form::{FormError, NewCapturePlanForm, NumberField, Quantity, UnitSystem};
 
-const PHASES: [&str; 3] = ["approach", "terminal", "capture"];
-const CONDITIONS: [&str; 2] = ["less_than", "greater_than"];
 const FORM_WIDTH: f32 = 680.0;
+
+/// What every field of the form needs: whether it is editable, the units shown
+/// and Save's messages.
+pub(super) struct FieldCtx<'a> {
+    pub editable: bool,
+    pub unit: UnitSystem,
+    pub errors: &'a [FormError],
+}
 
 pub fn capture_plan_form_ui(
     ui: &mut egui::Ui,
@@ -63,22 +71,32 @@ fn title_bar(ui: &mut egui::Ui, form: &NewCapturePlanForm, out: &mut Vec<UiEvent
 }
 
 fn body(ui: &mut egui::Ui, form: &mut NewCapturePlanForm, out: &mut Vec<UiEvent>) {
-    let (vel_unit, force_unit, dist_unit) = match form.unit_system {
-        UnitSystem::Metric => ("m/s", "N", "m"),
-        UnitSystem::Imperial => ("ft/s", "lbf", "ft"),
+    let errors = form.validation_errors.clone();
+    let ctx = FieldCtx {
+        editable: !form.read_only,
+        unit: form.unit_system,
+        errors: &errors,
     };
-    let editable = !form.read_only;
 
-    if !form.validation_errors.is_empty() {
+    if !errors.is_empty() {
+        let on_screen = field_pointers(form);
+        let listed: Vec<&FormError> = errors
+            .iter()
+            .filter(|error| !on_screen.contains(&error.pointer))
+            .collect();
         egui::Frame::new()
             .fill(egui::Color32::from_rgba_unmultiplied(153, 26, 26, 128))
             .inner_margin(12.0)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = 4.0;
-                ui.label("Please fix the following errors:");
-                for error in &form.validation_errors {
-                    ui.label(format!("• {error}"));
+                if listed.is_empty() {
+                    ui.label("Please fix the fields marked below.");
+                } else {
+                    ui.label("Please fix the following errors:");
+                    for error in listed {
+                        ui.label(format!("• {}: {}", error.pointer, error.message));
+                    }
                 }
             });
     }
@@ -88,124 +106,48 @@ fn body(ui: &mut egui::Ui, form: &mut NewCapturePlanForm, out: &mut Vec<UiEvent>
     section(ui, Some("General"), |ui| {
         field(
             ui,
+            &ctx,
             "Plan Name *",
             "My Capture Plan",
             &mut form.plan_name,
-            editable,
+            pointer::NAME,
         );
     });
 
     section(ui, Some("Tether"), |ui| {
         field(
             ui,
+            &ctx,
             "Tether Name *",
             "Tether1",
             &mut form.tether_name,
-            editable,
+            pointer::TETHER,
         );
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            ui.label(egui::RichText::new("Tether Type *").size(11.0).weak());
+            ui.label(egui::RichText::new("Tether Type").size(11.0).weak());
             ui.horizontal(|ui| {
-                if ui
-                    .add(choice("Tether", form.tether_type == "tether"))
-                    .clicked()
-                {
+                // Absent is the default, `tether`.
+                let is_tether = matches!(form.tether_type.as_str(), "" | "tether");
+                let button = ui.add_enabled(ctx.editable, choice("Tether", is_tether));
+                if button.clicked() && !is_tether {
                     form.tether_type = "tether".to_string();
                 }
                 // The net is not available yet.
                 ui.add_enabled(false, egui::Button::new("Net (coming soon)"));
             });
         });
-        field(
+        number_field(
             ui,
-            &format!("Tether Length * ({dist_unit})"),
+            &ctx,
+            &format!("Tether Length ({})", Quantity::Length.unit_label(ctx.unit)),
             "20.0",
             &mut form.tether_length,
-            editable,
+            pointer::TETHER_LENGTH,
         );
     });
 
-    section(ui, Some("Approach Phase"), |ui| {
-        field(
-            ui,
-            &format!("Max Velocity * ({vel_unit})"),
-            "1.0",
-            &mut form.approach_max_velocity,
-            editable,
-        );
-        field(
-            ui,
-            &format!("Max Force * ({force_unit})"),
-            "2.0",
-            &mut form.approach_max_force,
-            editable,
-        );
-        transitions(
-            ui,
-            &mut form.approach_transitions,
-            true,
-            dist_unit,
-            editable,
-            out,
-        );
-    });
-
-    section(ui, Some("Terminal Phase"), |ui| {
-        field(
-            ui,
-            &format!("Max Velocity * ({vel_unit})"),
-            "0.2",
-            &mut form.terminal_max_velocity,
-            editable,
-        );
-        field(
-            ui,
-            &format!("Max Force * ({force_unit})"),
-            "2.0",
-            &mut form.terminal_max_force,
-            editable,
-        );
-        field(
-            ui,
-            &format!("Shrink Rate * ({vel_unit})"),
-            "0.125",
-            &mut form.terminal_shrink_rate,
-            editable,
-        );
-        transitions(
-            ui,
-            &mut form.terminal_transitions,
-            false,
-            dist_unit,
-            editable,
-            out,
-        );
-    });
-
-    section(ui, Some("Capture Phase"), |ui| {
-        field(
-            ui,
-            &format!("Max Velocity * ({vel_unit})"),
-            "0.1",
-            &mut form.capture_max_velocity,
-            editable,
-        );
-        field(
-            ui,
-            &format!("Max Force * ({force_unit})"),
-            "2.0",
-            &mut form.capture_max_force,
-            editable,
-        );
-        field(
-            ui,
-            &format!("Shrink Rate * ({vel_unit})"),
-            "0.025",
-            &mut form.capture_shrink_rate,
-            editable,
-        );
-    });
+    phases::phase_sections(ui, &ctx, &mut form.phases, out);
 }
 
 /// The one Metric/Imperial toggle, here and in the Simulation HUD (OQ3).
@@ -224,7 +166,11 @@ pub(crate) fn units_toggle(ui: &mut egui::Ui, current: UnitSystem, out: &mut Vec
 }
 
 /// A form section: an accent title over a rule, then its rows.
-fn section(ui: &mut egui::Ui, title: Option<&str>, add_rows: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn section(
+    ui: &mut egui::Ui,
+    title: Option<&str>,
+    add_rows: impl FnOnce(&mut egui::Ui),
+) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 10.0;
         if let Some(title) = title {
@@ -240,7 +186,7 @@ fn section(ui: &mut egui::Ui, title: Option<&str>, add_rows: impl FnOnce(&mut eg
 }
 
 /// A selectable button: the button fill when chosen, the soft fill otherwise.
-fn choice(text: &str, selected: bool) -> egui::Button<'_> {
+pub(super) fn choice(text: &str, selected: bool) -> egui::Button<'_> {
     if selected {
         egui::Button::new(text)
     } else {
@@ -248,88 +194,62 @@ fn choice(text: &str, selected: bool) -> egui::Button<'_> {
     }
 }
 
-/// A labelled single-line text field. Any text is accepted; Save validates.
-fn field(ui: &mut egui::Ui, label: &str, hint: &str, value: &mut String, editable: bool) {
+/// A labelled single-line text field and Save's messages about `pointer`.
+/// Any text is accepted; Save validates.
+pub(super) fn field(
+    ui: &mut egui::Ui,
+    ctx: &FieldCtx,
+    label: &str,
+    hint: &str,
+    value: &mut String,
+    pointer: &str,
+) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 4.0;
         let label = ui.label(egui::RichText::new(label).size(11.0).weak());
         ui.add(
             egui::TextEdit::singleline(value)
                 .hint_text(egui::RichText::new(hint).color(ui.visuals().weak_text_color()))
-                .interactive(editable)
+                .interactive(ctx.editable)
                 .desired_width(f32::INFINITY)
                 .margin(egui::vec2(10.0, 8.0)),
         )
         .labelled_by(label.id);
+        errors_at(ui, ctx, pointer);
     });
 }
 
-fn transitions(
+/// A number field: [`field`] on its text.
+pub(super) fn number_field(
     ui: &mut egui::Ui,
-    transitions: &mut [TransitionForm],
-    is_approach: bool,
-    dist_unit: &str,
-    editable: bool,
-    out: &mut Vec<UiEvent>,
+    ctx: &FieldCtx,
+    label: &str,
+    hint: &str,
+    value: &mut NumberField,
+    pointer: &str,
 ) {
-    ui.label(egui::RichText::new("Transitions").size(11.0).weak());
-    let id = if is_approach { "approach" } else { "terminal" };
-    for (i, transition) in transitions.iter_mut().enumerate() {
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(18, 26, 44, 102))
-            .inner_margin(10.0)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = 8.0;
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("Transition {}", i + 1)).size(12.0));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let remove = egui::Button::new("×")
-                            .fill(egui::Color32::from_rgba_unmultiplied(153, 38, 38, 128));
-                        if ui.add(remove).clicked() {
-                            out.push(if is_approach {
-                                UiEvent::RemoveApproachTransition(i)
-                            } else {
-                                UiEvent::RemoveTerminalTransition(i)
-                            });
-                        }
-                    });
-                });
-                dropdown(ui, (id, i, "to"), "To Phase", &mut transition.to, &PHASES);
-                dropdown(
-                    ui,
-                    (id, i, "condition"),
-                    "Condition",
-                    &mut transition.distance_kind,
-                    &CONDITIONS,
-                );
-                field(
-                    ui,
-                    &format!("Distance ({dist_unit})"),
-                    "50.0",
-                    &mut transition.distance_value,
-                    editable,
-                );
-            });
-    }
-    let add = egui::Button::new(egui::RichText::new("+ Add Transition").weak())
-        .fill(ui.visuals().faint_bg_color);
-    if ui.add(add).clicked() {
-        out.push(if is_approach {
-            UiEvent::AddApproachTransition
-        } else {
-            UiEvent::AddTerminalTransition
-        });
+    field(ui, ctx, label, hint, &mut value.text, pointer);
+}
+
+/// Save's messages about `pointer`, in the error colour.
+pub(super) fn errors_at(ui: &mut egui::Ui, ctx: &FieldCtx, pointer: &str) {
+    for error in ctx.errors.iter().filter(|error| error.pointer == pointer) {
+        ui.label(
+            egui::RichText::new(&error.message)
+                .size(11.0)
+                .color(ui.visuals().error_fg_color),
+        );
     }
 }
 
 /// A labelled combo box; "—" until a value is chosen.
-fn dropdown(
+pub(super) fn dropdown(
     ui: &mut egui::Ui,
     id: impl std::hash::Hash,
     label: &str,
     value: &mut String,
-    options: &[&str],
+    options: &[String],
+    enabled: bool,
 ) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
@@ -338,18 +258,20 @@ fn dropdown(
         let soft = ui.visuals().faint_bg_color;
         ui.visuals_mut().widgets.inactive.weak_bg_fill = soft;
         let shown = if value.is_empty() {
-            "—"
+            "—".to_string()
         } else {
-            value.as_str()
+            value.clone()
         };
-        egui::ComboBox::from_id_salt(id)
-            .selected_text(shown.to_string())
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                for option in options {
-                    ui.selectable_value(value, option.to_string(), *option);
-                }
-            });
+        ui.add_enabled_ui(enabled, |ui| {
+            egui::ComboBox::from_id_salt(id)
+                .selected_text(shown)
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    for option in options {
+                        ui.selectable_value(value, option.clone(), option);
+                    }
+                });
+        });
     });
 }
 

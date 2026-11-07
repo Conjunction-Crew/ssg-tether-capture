@@ -12,23 +12,24 @@ use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 
 use crate::render::camera::{CameraTarget, cycle_camera_target, set_map_view};
 use crate::ui::events::UiEvent;
-use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState, TransitionForm, UnitSystem};
+use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::ui::input::step_time_warp;
 use crate::ui::log_ui::CapturePlanLoadErrors;
 use crate::ui::plugin::UiCamera;
 use crate::ui::screen::UiScreen;
-use crate::ui::screens::capture_plan::{build_capture_plan_json, generate_filename, validate_form};
+use crate::ui::screens::capture_plan::{
+    NEW_PLAN_TEMPLATE, load_plan_into_form, new_plan_into_form, save_plan_from_form,
+};
 use crate::ui::screens::project_detail::ExitConfirmOpen;
 use crate::ui::screens::working_directory_setup::WorkingDirectorySetupError;
 use crate::ui::settings::{Settings, set_unit_system};
 use ssg_sim::capture::SimCommand;
-use ssg_sim::capture::plan::{CapturePlan, CapturePlanLibrary};
+use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
 use ssg_sim::project::manifest::{
     MANIFEST_FILE, ProjectManifest, read_manifest_file, read_sim_inputs, save_and_reload,
 };
-use ssg_sim::project::plan_files::{read_plan_value, save_plan};
 use ssg_sim::project::{
     SelectedProject, WorkingDirectory, load_plans_from_dir_with_errors, now_utc,
     set_working_directory,
@@ -97,95 +98,6 @@ pub(crate) fn poll_file_dialog_task(
         }
         file_dialog_task.0 = None;
     }
-}
-
-/// Saves the plan form's JSON (v0-shaped) as a v1 plan file: migrated in memory,
-/// validated, then written by the v1 writer. The error lists why it was not saved.
-pub(crate) fn save_form_plan(
-    dir: &std::path::Path,
-    filename: &str,
-    json: &serde_json::Value,
-) -> Result<(), String> {
-    let plan_id = filename.strip_suffix(".json").unwrap_or(filename);
-    let report = read_plan_value(plan_id, json);
-    let plan = report.plan.ok_or_else(|| report.errors.join("; "))?;
-    save_plan(dir, filename, &plan).map_err(|e| e.to_string())
-}
-
-/// `UiEvent::EditCapturePlan`: fills the form from `plan` (read-only for an
-/// example plan), shown in the toggle's units, and snapshots it, so an unchanged
-/// Save writes nothing.
-pub(crate) fn load_plan_into_form(
-    form: &mut NewCapturePlanForm,
-    plan_id: &str,
-    plan: &CapturePlan,
-    is_example: bool,
-) {
-    // The plan's numbers are metric; they are converted once they are all in.
-    let unit = form.unit_system;
-    form.unit_system = UnitSystem::Metric;
-    form.reset();
-    form.read_only = is_example;
-    form.plan_name = plan.name.clone();
-    form.tether_name = plan.tether.clone();
-    if let Some(device) = &plan.device {
-        form.tether_type = device.device_type.clone().unwrap_or_default();
-        if let Some(length) = device.tether_length_m.filter(|l| *l > 0.0) {
-            form.tether_length = number_text(length);
-        }
-    }
-    for phase in &plan.phases {
-        let transitions: Vec<TransitionForm> = phase
-            .transitions
-            .iter()
-            .flatten()
-            .filter_map(|t| {
-                let dist = t.all_of.distance_m?;
-                let (kind, val) = if let Some(v) = dist.less_than {
-                    ("less_than".to_string(), number_text(v))
-                } else {
-                    ("greater_than".to_string(), number_text(dist.greater_than?))
-                };
-                Some(TransitionForm {
-                    to: t.to.clone(),
-                    distance_kind: kind,
-                    distance_value: val,
-                })
-            })
-            .collect();
-        let max_velocity = number_text(phase.max_velocity_mps);
-        let max_force = number_text(phase.max_force_n);
-        let shrink_rate = phase.shrink_rate_mps.map(number_text).unwrap_or_default();
-
-        match phase.id.as_str() {
-            "approach" => {
-                form.approach_max_velocity = max_velocity;
-                form.approach_max_force = max_force;
-                form.approach_transitions = transitions;
-            }
-            "terminal" => {
-                form.terminal_max_velocity = max_velocity;
-                form.terminal_max_force = max_force;
-                form.terminal_shrink_rate = shrink_rate;
-                form.terminal_transitions = transitions;
-            }
-            "capture" => {
-                form.capture_max_velocity = max_velocity;
-                form.capture_max_force = max_force;
-                form.capture_shrink_rate = shrink_rate;
-            }
-            _ => {}
-        }
-    }
-    form.set_unit_system(unit);
-    form.editing_plan_id = Some(plan_id.to_string());
-    // Snapshot the form state so we can detect unchanged edits on Save.
-    form.original_json = Some(build_capture_plan_json(form));
-}
-
-/// A plan value as the form shows it (as JSON writes it, e.g. `2.0`).
-fn number_text(value: f64) -> String {
-    serde_json::Value::from(value).to_string()
 }
 
 /// `UiEvent::OpenProject`: the project's own scenario, when it has a `project.json`
@@ -431,141 +343,44 @@ pub(crate) fn handle_ui_events(
                 }
             }
             UiEvent::OpenNewCapturePlanForm => {
-                form.reset();
+                let template = capture_plan_lib.example_plans.get(NEW_PLAN_TEMPLATE);
+                new_plan_into_form(&mut form, template);
                 form.open = true;
             }
             UiEvent::CloseNewCapturePlanForm => {
                 form.open = false;
                 form.reset();
             }
-            UiEvent::AddApproachTransition => {
-                form.approach_transitions.push(Default::default());
-            }
-            UiEvent::RemoveApproachTransition(i) => {
-                if *i < form.approach_transitions.len() {
-                    form.approach_transitions.remove(*i);
+            UiEvent::AddTransition(phase) => {
+                if let Some(phase) = form.phases.get_mut(*phase) {
+                    phase.transitions.push(Default::default());
                 }
             }
-            UiEvent::AddTerminalTransition => {
-                form.terminal_transitions.push(Default::default());
-            }
-            UiEvent::RemoveTerminalTransition(i) => {
-                if *i < form.terminal_transitions.len() {
-                    form.terminal_transitions.remove(*i);
-                }
-            }
-            UiEvent::SaveCapturePlan => {
-                // If editing and nothing has changed, close the form without
-                // writing to disk or prompting for a sim restart.
-                if form.editing_plan_id.is_some()
-                    && form.original_json.as_ref() == Some(&build_capture_plan_json(&form))
+            UiEvent::RemoveTransition { phase, index } => {
+                if let Some(phase) = form.phases.get_mut(*phase)
+                    && *index < phase.transitions.len()
                 {
-                    form.open = false;
-                    form.reset();
-                } else {
-                    let errors = validate_form(&form);
-                    if !errors.is_empty() {
-                        form.validation_errors = errors;
-                    } else {
-                        form.validation_errors.clear();
-                        // When editing, always write to the original file (keyed by
-                        // editing_plan_id) so renaming a plan only updates the `name`
-                        // field inside the JSON without creating a new file on disk.
-                        let filename = if let Some(ref edit_id) = form.editing_plan_id {
-                            generate_filename(edit_id)
-                        } else {
-                            generate_filename(&form.plan_name)
-                        };
-                        let dest = std::path::Path::new(&working_directory.path).join(&filename);
-                        // In edit mode, skip overwrite dialog and always overwrite
-                        let skip_overwrite_check = form.editing_plan_id.is_some();
-                        let was_editing = form.editing_plan_id.is_some();
-                        if dest.exists()
-                            && form.overwrite_conflict_path.is_none()
-                            && !skip_overwrite_check
-                        {
-                            form.overwrite_conflict_path = Some(dest.to_string_lossy().to_string());
-                        } else {
-                            let json = build_capture_plan_json(&form);
-                            if let Err(e) = save_form_plan(
-                                std::path::Path::new(&working_directory.path),
-                                &filename,
-                                &json,
-                            ) {
-                                log.write(LogEvent {
-                                    level: LogLevel::Error,
-                                    source: "ui",
-                                    message: format!(
-                                        "Failed to write capture plan '{}': {e}",
-                                        form.plan_name
-                                    ),
-                                });
-                            } else {
-                                // Reload user plans and recompile every plan so
-                                // compiled_plans stays in sync. When editing from the sim
-                                // with sim-affecting changes, we still prompt the user to
-                                // restart, but capture will not fail with stale data.
-                                capture_plan_lib.reload_user_plans(std::path::Path::new(
-                                    &working_directory.path,
-                                ));
-                                let editing_from_sim =
-                                    was_editing && selected_project.project_id.is_some();
-                                // `name` is not a sim parameter. If only the name
-                                // changed, apply immediately without a restart prompt.
-                                let only_name_changed = editing_from_sim
-                                    && form.original_json.as_ref().is_some_and(|orig| {
-                                        let mut a = orig.clone();
-                                        let mut b = json.clone();
-                                        if let (Some(ao), Some(bo)) =
-                                            (a.as_object_mut(), b.as_object_mut())
-                                        {
-                                            ao.remove("name");
-                                            bo.remove("name");
-                                        }
-                                        a == b
-                                    });
-                                flow.plans_dirty.0 = true;
-                                log.write(LogEvent {
-                                    level: LogLevel::Info,
-                                    source: "ui",
-                                    message: format!("Capture plan '{}' saved", form.plan_name),
-                                });
-                                // Prompt for restart only when sim-affecting params changed
-                                let should_prompt = editing_from_sim && !only_name_changed;
-                                form.open = false;
-                                form.reset();
-                                if should_prompt {
-                                    form.show_restart_prompt = true;
-                                }
-                            }
-                        }
-                    }
-                } // end else (form was changed)
+                    phase.transitions.remove(*index);
+                }
             }
-            UiEvent::ConfirmOverwriteCapturePlan => {
-                let filename = generate_filename(&form.plan_name);
-                let json = build_capture_plan_json(&form);
-                if let Err(e) = save_form_plan(
-                    std::path::Path::new(&working_directory.path),
-                    &filename,
-                    &json,
-                ) {
-                    log.write(LogEvent {
-                        level: LogLevel::Error,
-                        source: "ui",
-                        message: format!("Failed to write capture plan '{}': {e}", form.plan_name),
-                    });
-                } else {
-                    capture_plan_lib
-                        .reload_user_plans(std::path::Path::new(&working_directory.path));
+            UiEvent::SaveCapturePlan | UiEvent::ConfirmOverwriteCapturePlan => {
+                let overwrite = matches!(event, UiEvent::ConfirmOverwriteCapturePlan);
+                let saved = save_plan_from_form(
+                    &mut form,
+                    Path::new(&working_directory.path),
+                    overwrite,
+                    selected_project.project_id.is_some(),
+                    &mut capture_plan_lib,
+                    &mut |level, message| {
+                        log.write(LogEvent {
+                            level,
+                            source: "ui",
+                            message,
+                        });
+                    },
+                );
+                if saved {
                     flow.plans_dirty.0 = true;
-                    log.write(LogEvent {
-                        level: LogLevel::Info,
-                        source: "ui",
-                        message: format!("Capture plan '{}' saved", form.plan_name),
-                    });
-                    form.open = false;
-                    form.reset();
                 }
             }
             UiEvent::CancelOverwriteCapturePlan => {
