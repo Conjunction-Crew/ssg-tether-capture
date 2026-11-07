@@ -20,25 +20,29 @@ GitHub Release description.
 
 ## [Unreleased]
 
-### Added
-- egui foundation for the UI port (P8 S1): the egui panels and windows take their colours from the app theme (`UiTheme`), a run condition tells the hotkeys when egui has the keyboard, and the app tests gain an `egui_kittest` screen harness with a local snapshot test (`p8_screen_snapshots`, ignored on CI).
-
 ### Changed
-- Internal (P8 S8): the bevy_ui widgets and the `experimental_bevy_ui_widgets` feature are gone, with `InputDispatchPlugin`, `TabNavigationPlugin` and `UiWidgetsPlugins`; `ui/plugin.rs` is split (`ui/events_handler.rs`, tests in `src/tests/`); the last 6 tracked clippy warnings are fixed, so the CI gate is `-D warnings` with no `-A` flags and the tracked-warnings report step is removed.
-- Display items on the sim screen (P8 S7): one Metric/Imperial toggle in Simulation HUD, shared with the plan form and kept for the session, converts displayed lengths, speeds and forces (m→ft, km→mi, m/s→ft/s, N→lbf) in the HUD, the guidance, the slider labels, the plots and the form, while files, exports, logs and recordings stay metric; Project Information shows the sim start epoch and the HUD the sim time (`T+h:mm:ss`); the HUD, guidance and Reference say "phase".
+- The app's screens are egui: the working-directory setup screen, Home, the capture-plan form, the sim header and sidebar, the exit and restart prompts, the Space Catalog panel and the orbital selection cards. Their texts and controls are kept. Only the overlays that float in the 3D view stay bevy_ui, and every egui panel and window takes its colours from the app theme (`UiTheme`).
+- Sim screen layout: Simulation Controls sits above Orbital Selection; the time-warp, telemetry and guidance readouts are sidebar labels; the Recording, Recordings and Transport windows open inside the space the panels leave.
+- Units: one Metric/Imperial toggle in Simulation HUD, shared with the plan form and kept for the session, converts displayed lengths, speeds and forces (m→ft, km→mi, m/s→ft/s, N→lbf) in the HUD, the guidance, the slider labels, the plots and the form. Files, exports, logs and recordings stay metric.
+- Project Information shows the sim start epoch and the HUD the sim time (UTC and `T+h:mm:ss`). The HUD, guidance, Reference text and plan form say "phase" instead of "state".
 - The time-warp readout is one line: the warp actually running, or `Paused` (F-46). When the machine's step cap falls below the requested warp, the request drops to the cap and the log says `Time warp → Nx (machine limit)`; `.` asks for at most 2 × the cap.
-- The simulation's session state is its own `SimSession` (`Idle`, `Active`); the app's screens (`UiScreen`: setup, Home, sim) move into the app and start and end the session in the same frame (P8 S2, Q35). The command-line tools set `SimSession` directly.
+- Internal: the simulation's session state is its own `SimSession` (`Idle`, `Active`) and the app's screens (`UiScreen`) move into the app (Q35); the command-line tools set `SimSession` directly. `capture/`, `recording/files/`, `project/manifest/` and `ui/plugin.rs` are split so no non-test file is over 800 lines, with public paths, behaviour and recorded results unchanged (Q34). The tracked clippy warnings (43 at rc.3) are fixed, so the CI gate is `-D warnings` with no `-A` flags and the tracked-warnings report step is gone (Q24). The app tests gain an `egui_kittest` screen harness with a local snapshot test (`p8_screen_snapshots`, ignored on CI).
 
 ### Fixed
-- Log lines written outside the sim (on Home or the setup screen, e.g. a plan saved) are kept in the Capture Log instead of being dropped; they show `--:--:--` because no sim clock is running (F-42).
-- The working-directory setup screen and Home are egui screens (P8 S3): the path can be typed as well as picked with Browse, and a folder that cannot be created keeps you on the setup screen with the error under the path instead of opening Home (F-33); Home scrolls when its plans do not fit the window (F-37).
-- The capture-plan form is an egui window (P8 S4): sections and messages say "Phase" instead of "State"; the numeric fields accept any text and Save lists what is wrong (e.g. "Approach Max Velocity must be a number", P0-001); the overwrite prompt's buttons are **Overwrite** and **Cancel** (P0-002). The file the form writes is unchanged.
+- Working directory: the path can be typed as well as picked with Browse, and Enter accepts it. A folder that cannot be created keeps you on the setup screen with the error under the path instead of opening Home (F-33).
+- Home scrolls when its plans do not fit the window (F-37).
+- Plan form: the numeric fields accept any text and Save lists what is wrong (e.g. "Approach Max Velocity must be a number", P0-001); the overwrite prompt's buttons are **Overwrite** and **Cancel** (P0-002). The file the form writes is unchanged.
+- Start Simulation is dimmed until both orbits are chosen, with no hover needed (F-36, P0-004). Tab cycles the camera and never moves focus (P0-006). The hotkeys are ignored while egui has the keyboard.
+- The catalog search box shows focus, supports selecting and deleting text, and Esc unfocuses it (F-36). The six element sliders keep their values and ranges and also take the arrow keys.
+- An object in both a project's `datasets/` folder and the bundled dataset is listed once, with the project's copy (F-57, #124). A body restored from `project.json` that came from the catalog is highlighted on the map again (F-59, #125).
+- Log lines written outside the sim (on Home or the setup screen) are kept in the Capture Log instead of being dropped; they show `--:--:--` because no sim clock is running (F-42).
 - A failed CSV or OEM export shows its error in the Data Collection window and in the Capture Log (F-33), and the plots start from a fresh view when a project is re-opened (N8).
-- Pressing Enter in the working-directory path field accepts the typed path, as **Select** does, and the capture-plan form is opaque again, so nothing behind it shows through (P8 O3 walk).
-- The sim screen's header, sidebar and exit and restart prompts are egui (P8 S5): Simulation Controls sits above Orbital Selection; Start Simulation is dimmed until both orbits are chosen, without needing a hover (F-36, P0-004); the time-warp, telemetry and guidance readouts are sidebar labels; Tab cycles the camera and never moves focus (P0-006); the hotkeys are ignored while egui has the keyboard. The Recording, Recordings and Transport windows open inside the space the panels leave.
-- The Space Catalog panel and the orbital selection cards are egui (P8 S6): the search box shows focus, supports selecting and deleting text, Esc unfocuses it, and the hotkeys are ignored while it has focus (F-36); the six element sliders keep their values and ranges and also take the arrow keys.
-- An object in both a project's `datasets/` folder and the bundled dataset is listed once, with the project's copy (F-57, #124), and a body restored from `project.json` that came from the catalog is highlighted on the map again (F-59, #125).
-- Internal: the simulation's last 9 tracked clippy warnings are fixed (system-parameter bundles and type aliases), and its three files over 800 lines are split into folders with the functions moved unchanged: `capture/` (`state_machine.rs`, `commands.rs`), `recording/files/` (`sink.rs`, `read.rs`), `project/manifest/` (`validate.rs`). Public paths, behaviour and recorded results are unchanged (P8 S9, Q24, Q34).
+
+### Removed
+- The bevy_ui widgets and the `experimental_bevy_ui_widgets` feature (F-05), with `InputDispatchPlugin`, `TabNavigationPlugin` and `UiWidgetsPlugins`.
+
+### Docs
+- The app pages describe the egui UI: first launch, the sim screen's sections, the units toggle, the time-warp readout and `UiPlugin`.
 
 ## [v0.4.0-rc.3] 🔬 - 2026-11-03
 

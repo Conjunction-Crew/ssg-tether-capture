@@ -14,7 +14,7 @@ The headless simulation, as a plugin group. Add it after `StatesPlugin`, because
 
 | Plugin | Source | Registers |
 |---|---|---|
-| `SessionPlugin` | `session.rs` | `UiScreen` and `SimState`; session resources on `OnEnter(UiScreen::Sim)` (set `SimSet::SessionInit`) and their removal on `OnExit` |
+| `SessionPlugin` | `session.rs` | `SimSession` and `SimState`; session resources on `OnEnter(SimSession::Active)` (set `SimSet::SessionInit`) and their removal on `OnExit` |
 | `TimePlugin` | `time.rs` | Avian3D `PhysicsPlugins` on `ManualPhysics`, gravity, substeps, the `FixedUpdate` rate, `fixed_physics_step`, and the `SimStep` chain |
 | `ProjectPlugin` | `project.rs` | `SelectedProject`, `CapturePlanLibrary`, `SpaceObjectCatalog`, `OrbitalSelectionState` |
 | `TelemetryPlugin` | `telemetry.rs` | `LogEvent`, `CaptureLog`, `DataCollection`, `collect_log_events` in `Last` |
@@ -89,18 +89,16 @@ The compute pipeline takes the initial ECI state buffer and a time offset unifor
 
 ## UiPlugin
 
-**Source:** `crates/ssg-app/src/ui/plugin.rs`
+**Source:** `crates/ssg-app/src/ui/plugin.rs`, with `handle_ui_events` in `ui/events_handler.rs`
 
-Responsible for the entire Bevy-native UI layer. Registers:
+Registers the app's UI. The screens and windows are egui, drawn in `EguiPrimaryContextPass`; bevy_ui remains only for the overlays that float in the 3D view (`ui/overlays.rs`). Registers:
 
-- A dedicated `UiCamera` entity on its own render layer (`UI_LAYER = 2`)
-- `UiScreen` state (`WorkingDirectorySetup` → `Home` → `Sim` state machine)
-- `SelectedProject`, `UiTheme`, `WorkingDirectory`, `NewCapturePlanForm` resources
+- A dedicated `UiCamera` entity on its own render layer (`UI_LAYER = 2`), which draws those overlays
+- `UiScreen` state (`WorkingDirectorySetup` → `Home` → `Sim`), owned by the app; `ScreenPlugin` (`ui/screen.rs`) mirrors it into the simulation's `SimSession`
+- `UiTheme`, `WorkingDirectory`, `NewCapturePlanForm`, `Settings`, `HudReadouts` resources
 - `UiEvent` message type
-- Screen lifecycle systems: spawn/cleanup/interaction handlers for `WorkingDirectorySetupScreen`, `HomeScreen`, `SimScreen`, and `NewCapturePlanModal`
-- Input field systems: `input_field_interaction`, `input_field_keyboard`, `input_field_display`
-- Form sync system: `sync_form_fields`
-- Polling systems: `poll_file_dialog_task`, `poll_new_plan_modal`, `poll_home_plan_refresh`
+- The egui systems: `working_directory_setup_screen`, `home_screen`, `capture_plan_form_window`, `sim_screen_panels`, `sim_screen_modals`, `space_catalog_panel`, and the terminal, plot, Recording, Recordings and Transport windows
+- Polling systems: `poll_file_dialog_task`, `poll_home_plan_refresh`, `poll_sim_restart`
 
 State transitions are driven by `UiEvent` messages processed by `handle_ui_events`:
 
@@ -111,4 +109,4 @@ State transitions are driven by `UiEvent` messages processed by `handle_ui_event
 | `OpenProject(id)` | `Home` → `Sim` (only if `id` exists in `CapturePlanLibrary`) |
 | `BackToHome` | `Sim` → `Home` |
 
-The `poll_home_plan_refresh` system watches the `UserPlansDirty` flag. When set, it rebuilds the home screen plan list in-place without triggering a full screen transition.
+The `poll_home_plan_refresh` system watches the `UserPlansDirty` flag. When it is set on the home screen, the system re-scans the working directory for plan load errors.
