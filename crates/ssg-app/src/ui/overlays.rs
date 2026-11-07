@@ -5,6 +5,7 @@
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER, eci_position_to_map};
@@ -201,16 +202,27 @@ pub fn map_orbitals(
     }
 }
 
+/// The catalog's orbital elements and the clock they are propagated to.
+#[derive(SystemParam)]
+pub struct CatalogOrbitClock<'w> {
+    gpu_elements: Res<'w, GpuElements>,
+    epoch_origin: Res<'w, GpuComputeEpochOrigin>,
+    world_time: Res<'w, ssg_sim::time::WorldTime>,
+}
+
 pub fn update_selected_catalog_overlay(
     camera: Single<(&Camera, &GlobalTransform, &RenderLayers), With<Camera3d>>,
     catalog: Res<SpaceObjectCatalog>,
     catalog_ui: Res<SpaceCatalogUiState>,
-    gpu_elements: Res<GpuElements>,
-    epoch_origin: Res<GpuComputeEpochOrigin>,
-    world_time: Res<ssg_sim::time::WorldTime>,
+    orbit_clock: CatalogOrbitClock,
     overlay: Single<(&mut Node, &Children), With<SelectedCatalogOverlay>>,
     mut label_texts: Query<&mut Text, With<SelectedCatalogOverlayLabel>>,
 ) {
+    let CatalogOrbitClock {
+        gpu_elements,
+        epoch_origin,
+        world_time,
+    } = orbit_clock;
     let (camera, camera_transform, render_layers) = camera.into_inner();
     let (mut overlay_node, overlay_children) = overlay.into_inner();
 

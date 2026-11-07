@@ -25,4 +25,6 @@ pub mod sim_screen;
 #[cfg(test)]
 pub mod sim_session;
 #[cfg(test)]
+pub mod start_from_project_file;
+#[cfg(test)]
 pub mod unit_tests_app;

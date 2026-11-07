@@ -14,7 +14,6 @@ pub fn spawn_project_detail_screen(
     commands
         .spawn((
             SimScreen,
-            ScreenRoot,
             RenderLayers::layer(UI_LAYER),
             Node {
                 width: percent(100),

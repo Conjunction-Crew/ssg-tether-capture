@@ -14,7 +14,6 @@ use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::ui::screen::UiScreen;
 use crate::ui::theme::UiTheme;
-use crate::ui::widgets::ScreenRoot;
 use ssg_sim::capture::CaptureComponent;
 use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::catalog::SpaceObjectCatalog;

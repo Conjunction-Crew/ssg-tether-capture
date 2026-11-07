@@ -2,10 +2,8 @@ mod render;
 mod tests;
 mod ui;
 
-use bevy::input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin};
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
-use bevy::ui_widgets::UiWidgetsPlugins;
 use bevy_egui::EguiPlugin;
 
 use crate::render::RenderPlugins;
@@ -43,9 +41,6 @@ pub fn run() {
         file_path: resolve_asset_path(),
         ..default()
     }))
-    .add_plugins(InputDispatchPlugin)
-    .add_plugins(TabNavigationPlugin)
-    .add_plugins(UiWidgetsPlugins)
     .add_plugins(EguiPlugin::default())
     .add_plugins(AutoExposurePlugin)
     .insert_resource(AssetsDir(resolve_assets_dir()))

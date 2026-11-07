@@ -2,6 +2,7 @@
 //! the user and example plan cards and the load-error banner. Everything below
 //! the header scrolls when it does not fit the window (F-37).
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiTextureHandle, egui};
 
@@ -263,17 +264,29 @@ fn cards(plans: &HashMap<String, CapturePlan>) -> Vec<PlanCard> {
         .collect()
 }
 
+/// What the Home screen shows, as the app holds it.
+#[derive(SystemParam)]
+pub struct HomeScreenData<'w> {
+    theme: Res<'w, UiTheme>,
+    capture_plan_lib: Res<'w, CapturePlanLibrary>,
+    capture_plan_load_errors: Res<'w, CapturePlanLoadErrors>,
+    working_directory: Res<'w, WorkingDirectory>,
+}
+
 pub fn home_screen(
     mut contexts: EguiContexts,
     asset_server: Res<AssetServer>,
-    theme: Res<UiTheme>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
-    capture_plan_load_errors: Res<CapturePlanLoadErrors>,
-    working_directory: Res<WorkingDirectory>,
+    data: HomeScreenData,
     sync_state: Res<SimPlanSyncState>,
     mut logo: Local<Option<egui::TextureId>>,
     mut events: MessageWriter<UiEvent>,
 ) {
+    let HomeScreenData {
+        theme,
+        capture_plan_lib,
+        capture_plan_load_errors,
+        working_directory,
+    } = data;
     // When restarting the sim we pass through Home only to trigger cleanup
     // and reload; nothing is drawn so the home screen never flashes.
     if sync_state.restart_requested {
