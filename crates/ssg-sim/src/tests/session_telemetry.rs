@@ -5,15 +5,15 @@ use bevy::prelude::*;
 
 use crate::capture::{CaptureSphereRadius, INITIAL_CAPTURE_SPHERE_RADIUS_M};
 use crate::orbit::cache::OrbitalCache;
-use crate::session::{PauseState, UiScreen};
-use crate::telemetry::{CaptureLog, DataCollection, LogEvent, LogLevel};
+use crate::session::{PauseState, SimSession};
+use crate::telemetry::{CaptureLog, DataCollection, LogEvent, LogLevel, NO_SIM_TIME};
 use crate::test_support::{LogTap, assert_close, enter_sim, fixed_epoch, test_app};
 use crate::time::WorldTime;
 
 fn leave_sim(app: &mut App) {
     app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Home);
+        .resource_mut::<NextState<SimSession>>()
+        .set(SimSession::Idle);
     app.update();
 }
 
@@ -212,23 +212,37 @@ fn events_are_logged_in_order_and_each_only_once() {
 }
 
 #[test]
-fn events_sent_outside_the_sim_screen_are_not_logged() {
+fn log_event_on_home_is_kept() {
+    // F-42: an event written with no sim session (Home, the setup screen) is
+    // logged once, with no sim time, and is still there after the sim starts.
     let mut app = test_app();
     send(&mut app, LogLevel::Info, "menu", "from the home screen");
     app.update();
     app.update();
     app.update();
 
+    let log = app.world().resource::<CaptureLog>();
+    let entries: Vec<_> = log
+        .entries
+        .iter()
+        .filter(|e| e.message == "from the home screen")
+        .collect();
+    assert_eq!(entries.len(), 1, "{:?}", log_messages(&app));
+    assert_eq!(entries[0].level, LogLevel::Info);
+    assert_eq!(entries[0].source, "menu");
+    assert_eq!(entries[0].timestamp, NO_SIM_TIME);
+    assert_eq!(entries[0].epoch_utc, "");
+
     enter_sim(&mut app);
 
     let messages = log_messages(&app);
+    let home = messages.iter().position(|m| m == "from the home screen");
+    let start = messages
+        .iter()
+        .position(|m| *m == format!("Sim start epoch: {}", fixed_epoch()));
     assert!(
-        messages.contains(&format!("Sim start epoch: {}", fixed_epoch())),
-        "precondition: the sim's own lines are logged: {messages:?}"
-    );
-    assert!(
-        !messages.iter().any(|m| m == "from the home screen"),
-        "the menu event never reaches the log, not even after the sim starts: {messages:?}"
+        home.is_some() && start.is_some() && home < start,
+        "the menu line stays, before the sim's own lines: {messages:?}"
     );
 }
 

@@ -8,7 +8,7 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use ssg_sim::session::PauseState;
 use ssg_sim::telemetry::LogLevel;
-use ssg_sim::time::WorldTime;
+use ssg_sim::time::{MAX_TIME_WARP, StepCap, WorldTime};
 
 /// A harness app in `SimState::Running`.
 fn running_app() -> App {
@@ -44,6 +44,8 @@ fn press(app: &mut App, key: KeyCode) -> (u32, Vec<String>) {
 fn char_warp_keyboard_ladder() {
     let mut app = running_app();
     assert_eq!(app.world().resource::<WorldTime>().multiplier, 1);
+    // F-46: Period asks for at most 2 × the cap; this cap leaves the whole ladder.
+    app.insert_resource(StepCap(MAX_TIME_WARP / 2));
 
     // Period doubles from 1 up to 8192 (`MAX_TIME_WARP`), and then stays.
     let mut up = Vec::new();

@@ -12,7 +12,7 @@ publish.workspace = true
 name = "ssg_app"
 
 [dependencies]
-bevy = { workspace = true, features = ["default", "debug", "jpeg", "basis-universal", "ktx2", "zstd_rust", "experimental_bevy_ui_widgets"] }
+bevy = { workspace = true, features = ["default", "debug", "jpeg", "basis-universal", "ktx2", "zstd_rust"] }
 bevy_egui = { workspace = true }
 egui_plot = { workspace = true }
 avian3d = { workspace = true }
@@ -28,6 +28,7 @@ dirs = { workspace = true }
 
 [dev-dependencies]
 ssg-sim = { workspace = true, features = ["test-support"] }
+egui_kittest = { version = "=0.33.3", features = ["wgpu", "snapshot"] }
 
 [[bin]]
 name = "ssg_tether_capture"

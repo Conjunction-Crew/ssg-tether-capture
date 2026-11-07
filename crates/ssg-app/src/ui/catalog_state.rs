@@ -2,13 +2,12 @@
 
 use bevy::prelude::*;
 
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct SpaceCatalogUiState {
     pub show_catalog: bool,
     pub show_points: bool,
     pub show_satellite_indicator: bool,
     pub search_text: String,
-    pub search_focused: bool,
     pub selected_index: Option<usize>,
     pub page: usize,
 }
@@ -20,7 +19,6 @@ impl Default for SpaceCatalogUiState {
             show_points: false,
             show_satellite_indicator: true,
             search_text: String::new(),
-            search_focused: false,
             selected_index: None,
             page: 0,
         }
@@ -34,4 +32,14 @@ pub struct FilteredSpaceCatalogResults(pub Vec<usize>);
 pub enum OrbitalSelectionRole {
     Target,
     Chaser,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrbitalElementField {
+    SemiMajorAxis,
+    Eccentricity,
+    Inclination,
+    Raan,
+    ArgPerigee,
+    MeanAnomaly,
 }

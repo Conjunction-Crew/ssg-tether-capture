@@ -35,7 +35,7 @@ use ssg_sim::project::{AssetsDir, SelectedProject, format_utc, parse_utc};
 use ssg_sim::recording::RecordingSink;
 use ssg_sim::recording::files::{FileSink, RecordingContext, WrittenRecording};
 use ssg_sim::recording::recorder::{RecorderCommand, RecordingSettings};
-use ssg_sim::session::{SimState, UiScreen};
+use ssg_sim::session::{SimSession, SimState};
 use ssg_sim::telemetry::{EphemerisSample, LogEvent, LogLevel};
 use ssg_sim::time::{PHYS_DT, SimConfig, WorldTime};
 
@@ -145,8 +145,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
     };
 
     app.world_mut()
-        .resource_mut::<NextState<UiScreen>>()
-        .set(UiScreen::Sim);
+        .resource_mut::<NextState<SimSession>>()
+        .set(SimSession::Active);
     app.update();
     app.world_mut()
         .resource_mut::<NextState<SimState>>()
@@ -243,8 +243,8 @@ pub fn run(args: &Args) -> Result<Run, String> {
     let recordings = match recording {
         Some(sink) => {
             app.world_mut()
-                .resource_mut::<NextState<UiScreen>>()
-                .set(UiScreen::Home);
+                .resource_mut::<NextState<SimSession>>()
+                .set(SimSession::Idle);
             app.update();
             let results = sink.results();
             if results.is_empty() {

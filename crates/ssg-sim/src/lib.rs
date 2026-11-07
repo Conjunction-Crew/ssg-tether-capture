@@ -49,7 +49,7 @@ pub enum SimStep {
 /// Sets in other schedules that the app orders its systems against.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SimSet {
-    /// `OnEnter(UiScreen::Sim)`: session resources, dataset load, sim clock (F-40).
+    /// `OnEnter(SimSession::Active)`: session resources, dataset load, sim clock (F-40).
     SessionInit,
     /// `OnEnter(SimState::Running)`: the tether and the debris are spawned (F-34).
     SpawnBodies,

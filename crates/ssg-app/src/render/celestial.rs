@@ -13,8 +13,8 @@ use bevy::pbr::Atmosphere;
 use crate::render::camera::setup_camera;
 use crate::render::layers::*;
 use crate::ui::replay::{ReplaySession, show_replay_frame};
-use ssg_sim::SimSet;
-use ssg_sim::session::{SimState, UiScreen};
+use crate::ui::screen::UiScreen;
+use ssg_sim::session::SimState;
 
 // Component to query Earth.
 #[derive(Component)]
@@ -176,8 +176,9 @@ impl Plugin for CelestialPlugin {
                 setup_celestial,
                 setup_camera,
             )
-                .chain()
-                .after(SimSet::SessionInit),
+                // After `SimSet::SessionInit`: `OnEnter(SimSession::Active)`
+                // runs first (`ScreenPlugin`).
+                .chain(),
         )
         .add_systems(OnExit(UiScreen::Sim), remove_celestials)
         .add_systems(

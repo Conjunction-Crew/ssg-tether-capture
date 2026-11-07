@@ -706,6 +706,36 @@ fn loader_ignores_a_project_without_a_datasets_folder() {
 }
 
 #[test]
+fn loader_keeps_the_first_record_of_a_norad_id_so_the_projects_copy_wins() {
+    let dir = TempDir::new("loader-duplicates");
+    dir.write(
+        "assets/datasets/bundled.json",
+        &format!("[{}]", full_record(100, "")),
+    );
+    dir.write(
+        "project/datasets/own.json",
+        &format!(
+            "[{}, {}]",
+            full_record(100, "").replace("OBJ 100", "Project copy"),
+            full_record(200, "")
+        ),
+    );
+
+    let loaded = load_in_project(
+        &dir.path().join("assets"),
+        Some(&dir.path().join("project")),
+        Vec::new(),
+        true,
+        None,
+    );
+
+    assert_eq!(loaded.catalog.len(), 2, "F-57: each id once");
+    assert_eq!(loaded.gpu.map(|g| g.len()), Some(2), "the buffer matches");
+    let first = loaded.catalog.iter().find(|e| e.norad_id == 100).unwrap();
+    assert_eq!(first.object_name, "Project copy");
+}
+
+#[test]
 fn loader_fills_the_catalog_entry_names_and_search_blob() {
     let dir = TempDir::new("loader-names");
     let records = [

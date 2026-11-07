@@ -20,14 +20,18 @@ On entering the simulation, `setup_time` starts the clock at `SimConfig.start_ep
 
 | Key | Effect |
 |---|---|
-| `.` (period) | Double the warp, up to 8192× (`MAX_TIME_WARP`); resume if paused |
+| `.` (period) | Double the warp, up to 8192× (`MAX_TIME_WARP`); in the app, up to 2 × the step cap (below); resume if paused |
 | `,` (comma) | Halve the warp; at 1× it pauses the simulation |
 
 Pause is a state (`PauseState::Paused`), not a 0× warp: the multiplier keeps its value and the simulation resumes at it.
 
 ## Requested and effective warp
 
-The multiplier is the **requested** warp: the number of fixed steps (`1/64` s each) to run per `FixedUpdate` run. One run executes at most `StepCap` steps (default `MAX_STEPS_PER_UPDATE`, 64), so the app stays responsive; the number actually run is the **effective** warp. The app adapts the cap to the machine: it halves it (down to 8) after frames longer than 50 ms that ran at the cap, and doubles it (up to 512) after frames shorter than 25 ms while the requested warp is higher, at most once every half second of wall time. The command line keeps 64 (its `--warp` is at most 64). The cap changes how many steps run per update, never which steps, so it does not change the result. The HUD shows `8192x (effective 64x)` when the cap holds the warp back, and `Paused` when paused. No step debt is carried over, so lowering the warp takes effect at once. Bevy's catch-up window is lowered to three fixed steps, so one slow frame cannot multiply the work.
+The multiplier is the **requested** warp: the number of fixed steps (`1/64` s each) to run per `FixedUpdate` run. One run executes at most `StepCap` steps (default `MAX_STEPS_PER_UPDATE`, 64), so the app stays responsive; the number actually run is the **effective** warp. The app adapts the cap to the machine: it halves it (down to 8) after frames longer than 50 ms that ran at the cap, and doubles it (up to 512) after frames shorter than 25 ms while the requested warp is higher, at most once every half second of wall time. The command line keeps 64 (its `--warp` is at most 64). The cap changes how many steps run per update, never which steps, so it does not change the result.
+
+The sidebar's readout is one line: the warp actually running, such as `64x`, or `Paused` when paused. When the cap falls below the requested warp, the request drops to the cap and the log says `Time warp → 32x (machine limit)`, so `,` takes effect on the first press. `.` can still ask for 2 × the cap, which is what lets the cap grow on a machine with time to spare; with the cap's limit of 512 the app's request tops out at 1024×.
+
+No step debt is carried over, so lowering the warp takes effect at once. Bevy's catch-up window is lowered to three fixed steps, so one slow frame cannot multiply the work.
 
 ## Invariant
 

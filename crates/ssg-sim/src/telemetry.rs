@@ -8,7 +8,6 @@ use nalgebra::Vector6;
 use serde::Serialize;
 
 use crate::project::format_utc;
-use crate::session::UiScreen;
 use crate::time::WorldTime;
 
 // ─── Log Level ────────────────────────────────────────────────────────────────
@@ -89,22 +88,34 @@ pub struct LogEvent {
     pub message: String,
 }
 
-/// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`].
+/// The [`LogEntry::timestamp`] of an entry written with no sim session (F-42):
+/// there is no sim clock to read.
+pub const NO_SIM_TIME: &str = "--:--:--";
+
+/// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`],
+/// on every screen (F-42). Outside a sim session the entry has no sim time:
+/// [`NO_SIM_TIME`] and an empty `epoch_utc`.
 pub fn collect_log_events(
     mut events: MessageReader<LogEvent>,
     mut capture_log: ResMut<CaptureLog>,
-    world_time: Res<WorldTime>,
+    world_time: Option<Res<WorldTime>>,
 ) {
     for event in events.read() {
-        let full_ts = format!("{}", world_time.epoch);
-        // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
-        let timestamp = full_ts
-            .get(11..19)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| full_ts.clone());
+        let (timestamp, epoch_utc) = match &world_time {
+            Some(world_time) => {
+                let full_ts = format!("{}", world_time.epoch);
+                // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
+                let timestamp = full_ts
+                    .get(11..19)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| full_ts.clone());
+                (timestamp, format_utc(world_time.epoch))
+            }
+            None => (NO_SIM_TIME.to_string(), String::new()),
+        };
         capture_log.push(LogEntry {
             timestamp,
-            epoch_utc: format_utc(world_time.epoch),
+            epoch_utc,
             level: event.level,
             source: event.source,
             message: event.message.clone(),
@@ -143,6 +154,6 @@ impl Plugin for TelemetryPlugin {
         app.add_message::<LogEvent>()
             .init_resource::<CaptureLog>()
             .init_resource::<DataCollection>()
-            .add_systems(Last, collect_log_events.run_if(in_state(UiScreen::Sim)));
+            .add_systems(Last, collect_log_events);
     }
 }

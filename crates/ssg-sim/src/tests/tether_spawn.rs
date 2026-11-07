@@ -592,10 +592,13 @@ fn plan_v1(device: serde_json::Value) -> String {
     .to_string()
 }
 
+/// `(y, mass)` of the tether bodies, or `(linear, angular)` of the joints.
+type Pairs = Vec<(f64, f64)>;
+
 /// Every tether body as `(y, mass)` sorted by y, and every joint's `(linear, angular)` damping.
-fn tether_bodies(app: &mut App) -> (Vec<(f64, f64)>, Vec<(f64, f64)>) {
+fn tether_bodies(app: &mut App) -> (Pairs, Pairs) {
     let world = app.world_mut();
-    let mut bodies: Vec<(f64, f64)> = world
+    let mut bodies: Pairs = world
         .query_filtered::<(&Transform, &Mass), Or<(With<TetherRoot>, With<TetherNode>)>>()
         .iter(world)
         .map(|(t, m)| (t.translation.y as f64, m.0 as f64))
@@ -969,18 +972,16 @@ fn spawn_debris_takes_the_targets_inertia_from_the_selection() {
 // P7.5 S3: the spawn orientation (design D9)
 // ---------------------------------------------------------------------------
 
+/// Log lines as `(level, source, message)`.
+type LogLines = Vec<(LogLevel, &'static str, String)>;
+
 /// The Q13 pair spawned at the fixed epoch with `example_plan`'s device set to
 /// `orientation` (`None`: no key), the propagators built after one tick. Returns
 /// the app, the chain root first, and the debris; also the log lines of the spawn.
 fn q13_spawned(
     orientation: Option<SpawnOrientation>,
     chaser: SelectedOrbitalObject,
-) -> (
-    App,
-    Vec<Entity>,
-    Entity,
-    Vec<(LogLevel, &'static str, String)>,
-) {
+) -> (App, Vec<Entity>, Entity, LogLines) {
     let mut app = test_app();
     load_example_plans(&mut app);
     if let Some(orientation) = orientation {

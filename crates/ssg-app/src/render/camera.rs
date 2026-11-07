@@ -21,10 +21,9 @@ use crate::render::layers::{
     EARTH_ATMOSPHERE_RADIUS, EARTH_RADIUS, EARTH_TEXTURE_NORTH_AXIS, MAP_LAYER, MAP_UNITS_TO_M,
     SCENE_LAYER, eci_position_to_map,
 };
-use crate::ui::catalog_state::SpaceCatalogUiState;
+use crate::ui::screen::UiScreen;
 use ssg_sim::orbit::Orbital;
 use ssg_sim::orbit::cache::OrbitalCache;
-use ssg_sim::session::UiScreen;
 use ssg_sim::telemetry::{LogEvent, LogLevel};
 
 /// The body the camera looks at. A pure viewing marker: the floating origin and
@@ -289,12 +288,12 @@ pub fn orbit_camera_track(
 
 pub fn orbit_camera_switch_target(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    catalog_ui: Res<SpaceCatalogUiState>,
+    egui_wants_input: Option<Res<EguiWantsInput>>,
     mut commands: Commands,
     bodies: CameraBodies,
     mut log: MessageWriter<LogEvent>,
 ) {
-    if catalog_ui.search_focused {
+    if egui_wants_input.is_some_and(|egui| egui.wants_any_keyboard_input()) {
         return;
     }
 

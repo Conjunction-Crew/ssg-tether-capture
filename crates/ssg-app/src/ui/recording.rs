@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
@@ -297,26 +298,43 @@ pub(crate) fn apply_panel_action(
     }
 }
 
-/// Where the Recording, Recordings and Transport windows open: right of the
-/// Space Catalog panel (12 px in, 340 px wide, from about 116 px down).
-pub(crate) const WINDOW_POS: egui::Pos2 = egui::Pos2::new(368.0, 128.0);
+/// Where the Recording, Recordings and Transport windows open inside the space
+/// the egui panels leave (`Context::available_rect`): right of the catalog toggle
+/// when the Space Catalog panel is closed, right of the panel when it is open.
+pub(crate) fn window_pos(available: egui::Rect) -> egui::Pos2 {
+    available.left_top() + egui::vec2(180.0, 12.0)
+}
 
 pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1e6)
 }
 
+/// What the Recording window only reads.
+#[derive(SystemParam)]
+pub struct RecordingWindowData<'w> {
+    recorder: Res<'w, Recorder>,
+    sink: Res<'w, RecordingSink>,
+    bodies: Option<Res<'w, RecordingBodies>>,
+    selected_project: Res<'w, SelectedProject>,
+    capture_plan_lib: Res<'w, CapturePlanLibrary>,
+    working_directory: Res<'w, WorkingDirectory>,
+}
+
 pub fn recording_window(
     mut contexts: EguiContexts,
-    recorder: Res<Recorder>,
-    sink: Res<RecordingSink>,
-    bodies: Option<Res<RecordingBodies>>,
+    data: RecordingWindowData,
     mut settings: ResMut<RecordingSettings>,
     mut panel: ResMut<RecordingPanel>,
-    selected_project: Res<SelectedProject>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
-    working_directory: Res<WorkingDirectory>,
     mut commands: MessageWriter<RecorderCommand>,
 ) {
+    let RecordingWindowData {
+        recorder,
+        sink,
+        bodies,
+        selected_project,
+        capture_plan_lib,
+        working_directory,
+    } = data;
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
@@ -340,7 +358,7 @@ pub fn recording_window(
     let mut action = None;
     let available_rect = ctx.available_rect();
     egui::Window::new("Recording")
-        .default_pos(WINDOW_POS)
+        .default_pos(window_pos(available_rect))
         .constrain_to(available_rect)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -490,12 +508,14 @@ pub(crate) fn next_step_cap(cap: u32, requested: u32, effective: u32, frame_s: f
 }
 
 /// Adapts [`StepCap`] to the machine between updates (`FixedUpdate` reads it once
-/// at its top, so a change never lands inside a run of steps).
+/// at its top, so a change never lands inside a run of steps). When the cap falls
+/// below the requested warp the request follows it down (F-46, OQ2).
 pub fn adapt_step_cap(
     time: Res<Time<Real>>,
-    world_time: Res<WorldTime>,
+    mut world_time: ResMut<WorldTime>,
     pause: Res<State<PauseState>>,
     mut cap: ResMut<StepCap>,
+    mut log: MessageWriter<LogEvent>,
     mut since_change_s: Local<f32>,
 ) {
     *since_change_s += time.delta_secs();
@@ -509,6 +529,14 @@ pub fn adapt_step_cap(
         time.delta_secs(),
     );
     if next != cap.0 {
+        if next < cap.0 && world_time.multiplier > next {
+            world_time.multiplier = next;
+            log.write(LogEvent {
+                level: LogLevel::Info,
+                source: "ui",
+                message: format!("Time warp → {next}x (machine limit)"),
+            });
+        }
         cap.0 = next;
         *since_change_s = 0.0;
     }
