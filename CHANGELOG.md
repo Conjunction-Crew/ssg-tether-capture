@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.4.0-rc.4] 🔬 - 2026-11-07
+
 ### Changed
 - The app's screens are egui: the working-directory setup screen, Home, the capture-plan form, the sim header and sidebar, the exit and restart prompts, the Space Catalog panel and the orbital selection cards. Their texts and controls are kept. Only the overlays that float in the 3D view stay bevy_ui, and every egui panel and window takes its colours from the app theme (`UiTheme`).
 - Sim screen layout: Simulation Controls sits above Orbital Selection; the time-warp, telemetry and guidance readouts are sidebar labels; the Recording, Recordings and Transport windows open inside the space the panels leave.
