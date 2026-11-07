@@ -33,6 +33,7 @@ use crate::ui::egui::{
     export_oem, plot_id, plot_line_names, plots_ui, record_export,
 };
 use crate::ui::events::UiEvent;
+use crate::ui::events_handler::load_plan_into_form;
 use crate::ui::form::{NewCapturePlanForm, UnitSystem, show};
 use crate::ui::hud::{
     CaptureMetrics, HudReadouts, append_state_parameters, append_transitions, sim_time_text,
@@ -40,7 +41,6 @@ use crate::ui::hud::{
     utc_seconds,
 };
 use crate::ui::input::change_time_warp;
-use crate::ui::plugin::load_plan_into_form;
 use crate::ui::recording::adapt_step_cap;
 use crate::ui::screens::capture_plan::build_capture_plan_json;
 use crate::ui::screens::project_detail::sidebar::{SimScreenView, sim_sidebar_ui};

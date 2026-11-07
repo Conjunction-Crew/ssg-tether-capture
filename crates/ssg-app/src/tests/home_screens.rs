@@ -8,7 +8,7 @@ use egui_kittest::kittest::Queryable;
 
 use crate::tests::egui_support::harness_for;
 use crate::ui::events::UiEvent;
-use crate::ui::plugin::select_working_directory;
+use crate::ui::events_handler::select_working_directory;
 use crate::ui::screens::home::{HomeView, PlanCard, home_ui};
 use crate::ui::screens::working_directory_setup::{
     WorkingDirectorySetupView, working_directory_setup_ui,
