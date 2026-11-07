@@ -113,6 +113,8 @@ fn transition(transition: &TransitionSpec) -> Transition {
                 transition.relative_velocity_greater_than,
             ),
             time_in_phase_s: None,
+            closing_rate_mps: None,
+            tether_straightness: None,
         },
     }
 }

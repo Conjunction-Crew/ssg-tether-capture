@@ -55,6 +55,8 @@ mod tests {
                 }),
                 relative_speed_mps: None,
                 time_in_phase_s: None,
+                closing_rate_mps: None,
+                tether_straightness: None,
             },
         }
     }

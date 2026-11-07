@@ -297,6 +297,17 @@
       "additionalProperties": false,
       "description": "The conditions of a transition.",
       "properties": {
+        "closing_rate_mps": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Rate at which the range between the tether root and the target is\nshrinking, m/s; positive while closing. The same root and target as\n`distance_m`; does not hold while the range is 0."
+        },
         "distance_m": {
           "anyOf": [
             {
@@ -318,6 +329,17 @@
             }
           ],
           "description": "Magnitude of the LVLH relative velocity in m/s."
+        },
+        "tether_straightness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How far the tether bows away from the straight line between its root and\nits tail: the largest distance of any tether body from that line divided by\nthe root-to-tail distance; 0 = straight, dimensionless. `less_than: 0.15`\nholds while no body is farther than 15 % of the root-to-tail distance from\nthat line. Does not hold while the root and the tail are within 1e-6 m."
         },
         "time_in_phase_s": {
           "anyOf": [

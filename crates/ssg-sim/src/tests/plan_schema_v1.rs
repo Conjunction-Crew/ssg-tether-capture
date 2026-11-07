@@ -481,10 +481,14 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                                 distance_m: bounds(rng, 5_000.0),
                                 relative_speed_mps: bounds(rng, 50.0),
                                 time_in_phase_s: bounds(rng, 600.0),
+                                closing_rate_mps: bounds(rng, 5.0),
+                                tether_straightness: bounds(rng, 1.0),
                             };
                             if all_of.distance_m.is_none()
                                 && all_of.relative_speed_mps.is_none()
                                 && all_of.time_in_phase_s.is_none()
+                                && all_of.closing_rate_mps.is_none()
+                                && all_of.tether_straightness.is_none()
                             {
                                 all_of.distance_m = Some(ConditionBounds {
                                     less_than: Some(short(rng.range(0.0, 5_000.0))),

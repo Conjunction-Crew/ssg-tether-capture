@@ -214,6 +214,8 @@ impl Migrator<'_> {
                     distance_m: distance,
                     relative_speed_mps: speed,
                     time_in_phase_s: None,
+                    closing_rate_mps: None,
+                    tether_straightness: None,
                 },
             });
         }
