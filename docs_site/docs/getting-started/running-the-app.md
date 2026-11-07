@@ -28,17 +28,32 @@ The app resolves asset paths relative to the working directory. Always run from 
 
 ## First launch
 
-On first launch the app shows the **Select Working Directory** screen. Enter a folder path or click **Browse** to choose a directory where your capture plan JSON files will be stored. Click **Select** to proceed to the home screen. You can change this directory at any time via the **Change Directory** button on the home screen.
+On launch the app shows the **Select Working Directory** screen. Type a folder path or click **Browse** to choose the directory where your capture plan JSON files will be stored, then click **Select** or press Enter to go to the home screen. A folder that cannot be created keeps you on this screen, with the error under the path. The next launch opens here with the same folder filled in. You can change the directory at any time with the **Change Directory** button on the home screen.
 
 ## Capture plans
 
 From the home screen:
 
-- Click **+ New Plan** to open the new capture plan modal and create a plan
+- Click **+ New Plan** to open the capture plan form and create a plan
 - Click any plan card to load it and open the simulation view (Project Detail screen)
 - Click the **edit** button on a user plan card to re-open the form pre-filled for editing
 
 Plans are stored as JSON files in your working directory. Example plans (loaded from `assets/capture_plans/`) are read-only and cannot be edited.
+
+## The simulation screen
+
+The sidebar on the right holds these sections, top to bottom:
+
+| Section | What it holds |
+|---|---|
+| Project Information | Working directory, main file, the sim start epoch (UTC), **View / Edit Plan** |
+| Simulation Controls | **Start Simulation**, dimmed until both a Target and a Chaser orbit are chosen. Once running: Map View, Satellite Indicator, Capture Gizmos, Cycle Target, **Capture**, **Reset Sim** |
+| Orbital Selection | Before the start: the Target and Chaser cards with their six element sliders |
+| Time Warp | Once running: the warp actually running, or `Paused` (see [Time Warp](../concepts/time-warp)) |
+| Simulation HUD | The units toggle, the sim time as UTC and `T+h:mm:ss`, telemetry and capture guidance |
+| Reference | What the telemetry is measured against and what the guidance shows |
+
+**Units.** The **Metric / Imperial** toggle in Simulation HUD is shared with the capture plan form. It converts what is displayed (m→ft, km→mi, m/s→ft/s, N→lbf) in the HUD, the guidance, the slider labels, the plots and the form. Files, exports, logs and recordings stay metric, and the Transport window's values stay metric too. The app starts in Metric on every launch.
 
 ## Controls
 
