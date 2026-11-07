@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Fixed
+- The capture-plan form shows every phase of a plan (in file order, ids read-only) and each transition's full list of conditions, and saving keeps everything the form does not show: opening, editing and saving any valid plan, in either unit system, loses nothing (F-15). An edited copy of the example plan saves; a migrated v0 plan keeps its `rendezvous` phase and its `migrated_from_v0` notes. Save's messages appear under the field they name. **+ New Plan** starts from the example plan's phases.
 
 ## [v0.4.0-rc.4] 🔬 - 2026-11-07
 
