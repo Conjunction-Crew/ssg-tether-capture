@@ -245,9 +245,11 @@ pub fn capture_state_machine_update(
                         phase_max_velocity
                     };
                     let max_force = shared_state_parameters.max_force;
+                    // P9 S4: the phase's gains (the constants by default).
+                    let gains = &shared_state_parameters.controller;
                     // D7 (C4): the kill band is at least one step's Δv of this body at
                     // the phase's force, from the unscaled limit.
-                    let kill_band = (BRANCH_DEAD_BAND * phase_max_velocity)
+                    let kill_band = (gains.dead_band_fraction * phase_max_velocity)
                         .max(2.0 * max_force * PHYS_DT / mass);
                     // D16: how far `x` is across one kill band, in 0..=1. A band of 0
                     // (`max_force_n` and `max_velocity_mps` both 0, where the ramp is
@@ -270,6 +272,7 @@ pub fn capture_state_machine_update(
                         capture_radius,
                         max_velocity,
                         kill_band,
+                        gains,
                     );
 
                     if !pushed {
@@ -282,9 +285,16 @@ pub fn capture_state_machine_update(
                     // and `hold`: the weight of its tangent term.
                     let counter = idx != 0 && capture_component.current_state == "capture";
                     let lag_weight = match (shared_state_parameters.tail_spacing_m, root_rel) {
-                        (Some(spacing), Some(root)) if idx != 0 && !counter && !hold => Some(
-                            tail_lag_weight(root, (rel_r, rel_v), up, capture_radius, spacing),
-                        ),
+                        (Some(spacing), Some(root)) if idx != 0 && !counter && !hold => {
+                            Some(tail_lag_weight(
+                                root,
+                                (rel_r, rel_v),
+                                up,
+                                capture_radius,
+                                spacing,
+                                gains,
+                            ))
+                        }
                         _ => None,
                     };
 
@@ -309,6 +319,7 @@ pub fn capture_state_machine_update(
                             shrink_rate,
                             tangent_term,
                             lag_weight.is_some(),
+                            gains,
                         );
                     }
                     // If too close, force in opposite dir
@@ -338,12 +349,12 @@ pub fn capture_state_machine_update(
                     // circling plane through the target, proportional to the height.
                     if shared_state_parameters.hold_plane {
                         let h = -rel_r.dot(up);
-                        force_vec += -up * (h / PLANE_HOLD_BAND_M).clamp(-1.0, 1.0);
+                        force_vec += -up * (h / gains.plane_hold_band_m).clamp(-1.0, 1.0);
                     }
 
                     // F-31: `max_force_n` is an upper bound reached through the ramp.
                     state.ramp_n =
-                        (state.ramp_n + max_force * PHYS_DT / FORCE_RAMP_S).min(max_force);
+                        (state.ramp_n + max_force * PHYS_DT / gains.force_ramp_s).min(max_force);
                     let force = if hold {
                         force_vec.clamp_length_max(1.0) * state.ramp_n
                     } else {

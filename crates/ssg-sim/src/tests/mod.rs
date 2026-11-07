@@ -3,6 +3,7 @@ pub mod capture_commands;
 pub mod capture_controller;
 pub mod capture_plan_props;
 pub mod characterization;
+pub mod controller_gains;
 pub mod core_systems;
 pub mod integration_tests;
 pub mod orbit_catalog;

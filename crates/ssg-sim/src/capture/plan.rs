@@ -4,6 +4,7 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::capture::gains::{ControllerGains, PhaseController, controller_errors};
 use crate::capture::{
     CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M, MIN_CAPTURE_SPHERE_RADIUS_M,
 };
@@ -237,6 +238,10 @@ pub struct Phase {
     /// pre-O5 law). Greater than 0 and less than `device.tether_length_m`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_spacing_m: Option<f64>,
+    /// The controller's gains in this phase (P9 S4); every key optional, each
+    /// defaulting to the value the controller had before. Absent: all defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<PhaseController>,
 }
 
 /// The force law of a phase (P7.5 design D16).
@@ -359,7 +364,7 @@ impl CompiledCaptureTransition {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct CompiledCaptureStateParameters {
     pub max_velocity: f64,
     pub max_force: f64,
@@ -379,6 +384,9 @@ pub struct CompiledCaptureStateParameters {
     /// The phase's `tail_spacing_m`: the chord from the root to the tail the
     /// tail's lag law holds (design D18). `None` when the phase leaves it out.
     pub tail_spacing_m: Option<f64>,
+    /// The phase's `controller` gains, resolved (the constants for every key the
+    /// phase leaves out).
+    pub controller: ControllerGains,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -564,6 +572,11 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
                 }
             }
         }
+        if let Some(controller) = &phase.controller {
+            for (key, message) in controller_errors(controller) {
+                error(&at(&format!("controller/{key}")), message);
+            }
+        }
         if phase.end.is_some() && !transitions.is_empty() {
             error(&at("transitions"), "an end phase has no transitions");
         }
@@ -638,6 +651,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 hold_plane: phase.hold_plane.unwrap_or(false),
                 actuation: phase.actuation.unwrap_or_default(),
                 tail_spacing_m: phase.tail_spacing_m,
+                controller: phase.controller.unwrap_or_default().gains(),
             },
             transitions: phase
                 .transitions

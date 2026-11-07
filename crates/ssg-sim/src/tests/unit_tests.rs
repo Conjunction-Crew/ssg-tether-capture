@@ -29,6 +29,7 @@ mod tests {
             hold_plane: None,
             actuation: None,
             tail_spacing_m: None,
+            controller: None,
         }
     }
 
