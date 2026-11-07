@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
@@ -308,18 +309,32 @@ pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1e6)
 }
 
+/// What the Recording window only reads.
+#[derive(SystemParam)]
+pub struct RecordingWindowData<'w> {
+    recorder: Res<'w, Recorder>,
+    sink: Res<'w, RecordingSink>,
+    bodies: Option<Res<'w, RecordingBodies>>,
+    selected_project: Res<'w, SelectedProject>,
+    capture_plan_lib: Res<'w, CapturePlanLibrary>,
+    working_directory: Res<'w, WorkingDirectory>,
+}
+
 pub fn recording_window(
     mut contexts: EguiContexts,
-    recorder: Res<Recorder>,
-    sink: Res<RecordingSink>,
-    bodies: Option<Res<RecordingBodies>>,
+    data: RecordingWindowData,
     mut settings: ResMut<RecordingSettings>,
     mut panel: ResMut<RecordingPanel>,
-    selected_project: Res<SelectedProject>,
-    capture_plan_lib: Res<CapturePlanLibrary>,
-    working_directory: Res<WorkingDirectory>,
     mut commands: MessageWriter<RecorderCommand>,
 ) {
+    let RecordingWindowData {
+        recorder,
+        sink,
+        bodies,
+        selected_project,
+        capture_plan_lib,
+        working_directory,
+    } = data;
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
