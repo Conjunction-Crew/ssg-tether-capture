@@ -409,7 +409,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.5.",
+          "description": "Chaser only: an offset from the target along V-bar or R-bar, at rest in the\ntarget's LVLH frame at the start epoch. The chaser gets the osculating elements\nof that state.",
           "properties": {
             "relative_to_target": {
               "$ref": "#/$defs/RelativeToTarget"
@@ -474,6 +474,17 @@
             }
           ],
           "description": "`circle`: the range and tangent branches, or in a phase with\n`shrink_rate_mps` the circle law (the default); `hold`: brake every pushed\nbody to rest relative to the target and hold the plane; `max_velocity_mps`\nis read as 0."
+        },
+        "controller": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseController"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The controller's gains in this phase (P9 S4); every key optional, each\ndefaulting to the value the controller had before. Absent: all defaults."
         },
         "end": {
           "anyOf": [
@@ -553,6 +564,77 @@
         "max_velocity_mps",
         "max_force_n"
       ],
+      "type": "object"
+    },
+    "PhaseController": {
+      "additionalProperties": false,
+      "description": "A phase's controller gains. Every field is optional; an absent field takes\nthe default the controller had before P9.",
+      "properties": {
+        "dead_band_fraction": {
+          "description": "The relative width of the hysteresis band on the branch law's inner and\nouter edges, and of the velocity kill band (at least one step's Δv); 0\nremoves the hysteresis. Default 0.02; at least 0 and less than 0.5.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "force_ramp_s": {
+          "description": "Seconds the force bound takes to rise from 0 to `max_force_n` at the\ncapture start and at every phase entry. Default 1.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "inner_edge_fraction": {
+          "description": "The branch law's inner edge as a fraction of the sphere radius: inside it\nthe body is pushed away from the target. Default 0.8; greater than 0 and\nless than 1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "plane_hold_band_m": {
+          "description": "`hold_plane`: the height above or below the circling plane, in m, at which\nthe component toward the plane reaches full weight. Default 1.0; greater\nthan 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "radial_rate_band_mps": {
+          "description": "The circle law: the outward speed against the sphere's own shrink, in m/s,\nat which the rate term reaches full weight. Default 0.1; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "radius_hold_band_m": {
+          "description": "The circle law: the radius error, in m, at which the radial term that holds\na body on its sphere reaches full weight; proportional below it. Default\n2.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "spacing_band_m": {
+          "description": "The tail's lag law: the error in the root-to-tail chord, in m, at which the\ntail's tangent weight saturates. Default 3.0; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "spacing_rate_band_mps": {
+          "description": "The tail's lag law: the difference in the ends' speeds along their forward\ntangents, in m/s, at which the rate term saturates the tail's tangent\nweight. Default 0.3; greater than 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "PhaseEnd": {
@@ -858,7 +940,7 @@
       "description": "A chaser placed relative to the target.",
       "properties": {
         "offset_m": {
-          "description": "Distance from the target in metres.",
+          "description": "Signed distance from the target in metres, not 0: positive ahead of the target\n(V-bar) or above it, away from the Earth (R-bar); negative behind or below.",
           "format": "double",
           "type": "number"
         },
@@ -916,6 +998,17 @@
       "additionalProperties": false,
       "description": "The conditions of a transition.",
       "properties": {
+        "closing_rate_mps": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Rate at which the range between the tether root and the target is\nshrinking, m/s; positive while closing. The same root and target as\n`distance_m`; does not hold while the range is 0."
+        },
         "distance_m": {
           "anyOf": [
             {
@@ -937,6 +1030,17 @@
             }
           ],
           "description": "Magnitude of the LVLH relative velocity in m/s."
+        },
+        "tether_straightness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How far the tether bows away from the straight line between its root and\nits tail: the largest distance of any tether body from that line divided by\nthe root-to-tail distance; 0 = straight, dimensionless. `less_than: 0.15`\nholds while no body is farther than 15 % of the root-to-tail distance from\nthat line. Does not hold while the root and the tail are within 1e-6 m."
         },
         "time_in_phase_s": {
           "anyOf": [

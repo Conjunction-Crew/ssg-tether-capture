@@ -132,6 +132,7 @@ impl Migrator<'_> {
             hold_plane: None,
             actuation: None,
             tail_spacing_m: None,
+            controller: None,
         };
         let parameters = state.get("parameters").and_then(Value::as_object);
         for (key, slot) in [
@@ -214,6 +215,8 @@ impl Migrator<'_> {
                     distance_m: distance,
                     relative_speed_mps: speed,
                     time_in_phase_s: None,
+                    closing_rate_mps: None,
+                    tether_straightness: None,
                 },
             });
         }

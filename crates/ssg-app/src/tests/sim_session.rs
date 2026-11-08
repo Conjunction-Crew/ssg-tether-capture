@@ -1,13 +1,15 @@
 //! The app's screen drives the sim session (Q35, P8 S2): `UiScreen::Sim` ⇔
 //! `SimSession::Active`, changed in the same update, with the session resources
-//! present for the app's own `OnEnter`/`OnExit(UiScreen::Sim)` systems (F-40 class).
+//! present for the app's own `OnEnter`/`OnExit(UiScreen::Sim)` systems (F-40 class),
+//! and the capture sphere starts at the active plan's radius (F-60, P9 S6).
 
 use bevy::prelude::*;
 
 use crate::tests::app_support::{enter_sim, test_app};
 use crate::ui::screen::UiScreen;
-use ssg_sim::capture::CaptureSphereRadius;
+use ssg_sim::capture::{CaptureSphereRadius, INITIAL_CAPTURE_SPHERE_RADIUS_M};
 use ssg_sim::orbit::cache::OrbitalCache;
+use ssg_sim::project::SelectedProject;
 use ssg_sim::session::SimSession;
 use ssg_sim::time::WorldTime;
 
@@ -128,4 +130,31 @@ fn reentering_the_sim_through_home_restarts_the_session() {
     );
     let time = app.world().resource::<WorldTime>();
     assert_eq!(time.epoch, start, "a fresh clock");
+}
+
+#[test]
+fn the_sim_screen_opens_with_the_active_plans_capture_sphere() {
+    // F-60 (P9 S6, A-8): the example plan's `capture_sphere.initial_radius_m`
+    // is 100 m; before S6 the sphere showed the session's 25 m until a capture
+    // started.
+    let mut app = test_app();
+    ssg_sim::test_support::load_example_plans(&mut app);
+    app.world_mut().resource_mut::<SelectedProject>().project_id = Some("example_plan".to_string());
+
+    enter_sim(&mut app);
+
+    assert_eq!(app.world().resource::<CaptureSphereRadius>().radius, 100.0);
+}
+
+#[test]
+fn the_sim_screen_without_an_active_plan_keeps_the_default_sphere() {
+    let mut app = test_app();
+    ssg_sim::test_support::load_example_plans(&mut app);
+
+    enter_sim(&mut app);
+
+    assert_eq!(
+        app.world().resource::<CaptureSphereRadius>().radius,
+        INITIAL_CAPTURE_SPHERE_RADIUS_M
+    );
 }

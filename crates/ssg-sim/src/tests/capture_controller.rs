@@ -22,6 +22,7 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 
+use crate::capture::gains::ControllerGains;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::capture::{
     BRANCH_DEAD_BAND, CAPTURE_CIRCLING_AXIS, CaptureComponent, CaptureForce, CaptureSphereRadius,
@@ -41,6 +42,17 @@ const MAX_FORCE: f64 = 10.0;
 /// ramp (F-31).
 const FIRST_STEP_FORCE: f64 = MAX_FORCE * PHYS_DT / FORCE_RAMP_S;
 const PLAN_ID: &str = "branches";
+/// The gains of a phase without `controller` (P9 S4): the constants.
+const DEFAULT_GAINS: ControllerGains = ControllerGains {
+    radius_hold_band_m: RADIUS_HOLD_BAND_M,
+    radial_rate_band_mps: RADIAL_RATE_BAND_MPS,
+    spacing_band_m: SPACING_BAND_M,
+    spacing_rate_band_mps: SPACING_RATE_BAND_MPS,
+    plane_hold_band_m: PLANE_HOLD_BAND_M,
+    inner_edge_fraction: crate::capture::INNER_EDGE_FRACTION,
+    dead_band_fraction: BRANCH_DEAD_BAND,
+    force_ramp_s: FORCE_RAMP_S,
+};
 /// The tangent push for the geometry above: `CAPTURE_CIRCLING_AXIS × +Y` = −X.
 const TANGENT: DVec3 = DVec3::NEG_X;
 
@@ -926,7 +938,7 @@ fn tail_lag_weight_holds_the_chord_behind_the_root() {
     let up = CAPTURE_CIRCLING_AXIS;
     let w = |chord: f64, root_speed: f64, tail_speed: f64, spacing: f64| {
         let (root, tail) = lag_ends(50.0, arc_of(chord, 50.0), root_speed, tail_speed);
-        tail_lag_weight(root, tail, up, 50.0, spacing)
+        tail_lag_weight(root, tail, up, 50.0, spacing, &DEFAULT_GAINS)
     };
     assert_close(
         w(12.0, 0.0, 0.0, 12.0),
@@ -951,7 +963,7 @@ fn tail_lag_weight_holds_the_chord_behind_the_root() {
     assert_close(SPACING_MAX_HALF_ANGLE, 75.0_f64.to_radians(), 0.0, "75°");
     let on_5m = |theta_deg: f64, spacing: f64| {
         let (root, tail) = lag_ends(5.0, theta_deg.to_radians(), 0.0, 0.0);
-        tail_lag_weight(root, tail, up, 5.0, spacing)
+        tail_lag_weight(root, tail, up, 5.0, spacing, &DEFAULT_GAINS)
     };
     assert_close(on_5m(150.0, 12.0), 0.0, 1e-12, "150° with 12 m");
     assert_close(on_5m(150.0, 19.0), 0.0, 1e-12, "150° with 19 m");
@@ -1018,7 +1030,15 @@ fn circle_law_holds_the_radius_against_the_shrink() {
     assert_eq!((RADIUS_HOLD_BAND_M, RADIAL_RATE_BAND_MPS), (2.0, 0.1));
     let r_in = DVec3::Y;
     let law = |range: f64, rel_v: DVec3, tangent: DVec3, lag: bool| {
-        circle_law(r_in * range, rel_v, 25.0, 0.05, tangent, lag)
+        circle_law(
+            r_in * range,
+            rel_v,
+            25.0,
+            0.05,
+            tangent,
+            lag,
+            &DEFAULT_GAINS,
+        )
     };
     // 2 m outside at rest (w_r 1, w_v 0.5): inward at full weight, no tangent.
     assert_close_dvec3(

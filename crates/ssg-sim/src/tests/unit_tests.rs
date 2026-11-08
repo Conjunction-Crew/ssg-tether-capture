@@ -29,6 +29,7 @@ mod tests {
             hold_plane: None,
             actuation: None,
             tail_spacing_m: None,
+            controller: None,
         }
     }
 
@@ -55,6 +56,8 @@ mod tests {
                 }),
                 relative_speed_mps: None,
                 time_in_phase_s: None,
+                closing_rate_mps: None,
+                tether_straightness: None,
             },
         }
     }

@@ -74,7 +74,20 @@ pub(crate) fn snapshot<V>(
     size: impl Into<egui::Vec2>,
     screen: impl Fn(&mut egui::Ui, &mut V, &mut Vec<UiEvent>),
 ) -> PathBuf {
+    snapshot_after(name, view, size, screen, |_| {})
+}
+
+/// [`snapshot`] after `interact` drove the harness (a click that opens a group
+/// or a menu, P9 S2).
+pub(crate) fn snapshot_after<'a, V: 'a>(
+    name: &str,
+    view: V,
+    size: impl Into<egui::Vec2>,
+    screen: impl Fn(&mut egui::Ui, &mut V, &mut Vec<UiEvent>) + 'a,
+    interact: impl FnOnce(&mut Harness<'a, ScreenState<V>>),
+) -> PathBuf {
     let mut harness = build(view, size, screen, true);
+    interact(&mut harness);
     let image = harness
         .render()
         .unwrap_or_else(|error| panic!("rendering snapshot {name}: {error}"));

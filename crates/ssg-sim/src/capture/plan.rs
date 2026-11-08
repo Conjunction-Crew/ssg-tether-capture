@@ -4,6 +4,7 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::capture::gains::{ControllerGains, PhaseController, controller_errors};
 use crate::capture::{
     CaptureComponent, INITIAL_CAPTURE_SPHERE_RADIUS_M, MIN_CAPTURE_SPHERE_RADIUS_M,
 };
@@ -237,6 +238,10 @@ pub struct Phase {
     /// pre-O5 law). Greater than 0 and less than `device.tether_length_m`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_spacing_m: Option<f64>,
+    /// The controller's gains in this phase (P9 S4); every key optional, each
+    /// defaulting to the value the controller had before. Absent: all defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<PhaseController>,
 }
 
 /// The force law of a phase (P7.5 design D16).
@@ -287,6 +292,18 @@ pub struct TransitionConditions {
     /// Seconds since the current phase was entered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_in_phase_s: Option<ConditionBounds>,
+    /// Rate at which the range between the tether root and the target is
+    /// shrinking, m/s; positive while closing. The same root and target as
+    /// `distance_m`; does not hold while the range is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closing_rate_mps: Option<ConditionBounds>,
+    /// How far the tether bows away from the straight line between its root and
+    /// its tail: the largest distance of any tether body from that line divided by
+    /// the root-to-tail distance; 0 = straight, dimensionless. `less_than: 0.15`
+    /// holds while no body is farther than 15 % of the root-to-tail distance from
+    /// that line. Does not hold while the root and the tail are within 1e-6 m.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tether_straightness: Option<ConditionBounds>,
 }
 
 /// Bounds on one quantity; at least one, neither negative. Both strict.
@@ -332,9 +349,22 @@ pub struct CompiledCaptureTransition {
     pub relative_velocity_greater_than: Option<f64>,
     pub time_in_phase_less_than: Option<f64>,
     pub time_in_phase_greater_than: Option<f64>,
+    pub closing_rate_less_than: Option<f64>,
+    pub closing_rate_greater_than: Option<f64>,
+    pub tether_straightness_less_than: Option<f64>,
+    pub tether_straightness_greater_than: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+impl CompiledCaptureTransition {
+    /// Whether the transition has a `tether_straightness` condition (the
+    /// controller measures the tether's shape only then).
+    pub(crate) fn uses_tether_straightness(&self) -> bool {
+        self.tether_straightness_less_than.is_some()
+            || self.tether_straightness_greater_than.is_some()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct CompiledCaptureStateParameters {
     pub max_velocity: f64,
     pub max_force: f64,
@@ -354,6 +384,9 @@ pub struct CompiledCaptureStateParameters {
     /// The phase's `tail_spacing_m`: the chord from the root to the tail the
     /// tail's lag law holds (design D18). `None` when the phase leaves it out.
     pub tail_spacing_m: Option<f64>,
+    /// The phase's `controller` gains, resolved (the constants for every key the
+    /// phase leaves out).
+    pub controller: ControllerGains,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -515,6 +548,8 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
                 ("distance_m", transition.all_of.distance_m),
                 ("relative_speed_mps", transition.all_of.relative_speed_mps),
                 ("time_in_phase_s", transition.all_of.time_in_phase_s),
+                ("closing_rate_mps", transition.all_of.closing_rate_mps),
+                ("tether_straightness", transition.all_of.tether_straightness),
             ];
             if conditions.iter().all(|(_, bounds)| bounds.is_none()) {
                 error(&at("all_of"), "at least one condition is required");
@@ -535,6 +570,11 @@ pub fn validate_capture_plan(plan_id: &str, plan: &CapturePlan) -> Vec<String> {
                         error(&at(&format!("all_of/{name}/{bound}")), NOT_NEGATIVE);
                     }
                 }
+            }
+        }
+        if let Some(controller) = &phase.controller {
+            for (key, message) in controller_errors(controller) {
+                error(&at(&format!("controller/{key}")), message);
             }
         }
         if phase.end.is_some() && !transitions.is_empty() {
@@ -611,6 +651,7 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                 hold_plane: phase.hold_plane.unwrap_or(false),
                 actuation: phase.actuation.unwrap_or_default(),
                 tail_spacing_m: phase.tail_spacing_m,
+                controller: phase.controller.unwrap_or_default().gains(),
             },
             transitions: phase
                 .transitions
@@ -620,6 +661,8 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                     let distance = transition.all_of.distance_m.unwrap_or_default();
                     let speed = transition.all_of.relative_speed_mps.unwrap_or_default();
                     let time = transition.all_of.time_in_phase_s.unwrap_or_default();
+                    let closing = transition.all_of.closing_rate_mps.unwrap_or_default();
+                    let straightness = transition.all_of.tether_straightness.unwrap_or_default();
                     CompiledCaptureTransition {
                         to: transition.to.clone(),
                         distance_less_than: distance.less_than,
@@ -628,6 +671,10 @@ pub(crate) fn compile_capture_plan(plan: &CapturePlan) -> CompiledCapturePlan {
                         relative_velocity_greater_than: speed.greater_than,
                         time_in_phase_less_than: time.less_than,
                         time_in_phase_greater_than: time.greater_than,
+                        closing_rate_less_than: closing.less_than,
+                        closing_rate_greater_than: closing.greater_than,
+                        tether_straightness_less_than: straightness.less_than,
+                        tether_straightness_greater_than: straightness.greater_than,
                     }
                 })
                 .collect(),

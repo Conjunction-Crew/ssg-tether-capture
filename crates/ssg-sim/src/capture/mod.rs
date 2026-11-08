@@ -1,5 +1,6 @@
 //! Capture: the per-step capture controller and its state machine.
 
+pub mod gains;
 pub mod plan;
 
 mod commands;
@@ -10,8 +11,8 @@ use avian3d::prelude::RigidBody;
 use avian3d::{
     math::PI,
     prelude::{
-        Forces, LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery, Rotation,
-        WriteRigidBodyForces,
+        DistanceJoint, Forces, LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery,
+        Rotation, WriteRigidBodyForces,
     },
 };
 use bevy::{ecs::system::SystemParam, log::debug_once, math::DVec3, prelude::*};
@@ -19,6 +20,7 @@ use brahe::Epoch;
 
 use crate::SimSet;
 use crate::SimStep;
+use crate::capture::gains::ControllerGains;
 use crate::capture::plan::{
     Actuation, CapturePlanLibrary, CompiledCapturePlan, CompiledCaptureStateParameters,
     CompiledCaptureTransition, PhaseEnd, build_capture_component,
@@ -28,6 +30,7 @@ use crate::orbit::lvlh::LvlhFrame;
 use crate::physics_bubble::body_eci_state;
 use crate::recording::inputs::SimInputLog;
 use crate::telemetry::{DataCollection, EphemerisSample, LogEvent, LogLevel};
+use crate::tether::chain_from_joints;
 use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 // Component to add to an entity to attempt a capture.
@@ -68,6 +71,11 @@ pub const FORCE_RAMP_S: f64 = 1.0;
 /// of a 0.5 m/s limit (0.010 m/s) is narrower than one step (0.0156 m/s) and the
 /// branch toggled on 56–97 % of the terminal-phase steps (design D7).
 pub const BRANCH_DEAD_BAND: f64 = 0.02;
+
+/// The branch law's inner edge as a fraction of the capture-sphere radius: inside
+/// `0.8 R` a body is pushed away from the target (a phase's
+/// `controller.inner_edge_fraction`, P9 S4).
+pub const INNER_EDGE_FRACTION: f64 = 0.8;
 
 /// The height above or below the circling plane through the target, in m, at
 /// which a phase's `hold_plane` component toward the plane reaches full weight
@@ -139,17 +147,19 @@ impl CaptureForce {
     /// `0.8 R (1 − band)` and left above `0.8 R (1 + band)`, the outer edge entered
     /// above `R (1 + band)` and left below `R (1 − band)`, the kill entered above
     /// `max_velocity` and left below `max_velocity − kill_band` (an absolute
-    /// width, see [`BRANCH_DEAD_BAND`]).
-    fn update_branches(
+    /// width, see [`BRANCH_DEAD_BAND`]). The `0.8` and the band are the phase's
+    /// `gains` (P9 S4; the constants by default).
+    pub(crate) fn update_branches(
         &mut self,
         rel_r_len: f64,
         rel_v_len: f64,
         capture_radius: f64,
         max_velocity: f64,
         kill_band: f64,
+        gains: &ControllerGains,
     ) {
-        let band = BRANCH_DEAD_BAND;
-        let inner_edge = capture_radius * 0.8;
+        let band = gains.dead_band_fraction;
+        let inner_edge = capture_radius * gains.inner_edge_fraction;
         self.inner = if self.inner {
             rel_r_len <= inner_edge * (1.0 + band)
         } else {
@@ -224,6 +234,40 @@ pub struct CaptureInputs<'w, 's> {
     orbital_cache: Res<'w, OrbitalCache>,
     world_time: Res<'w, WorldTime>,
     disabled: Query<'w, 's, (), With<RigidBodyDisabled>>,
+    /// The tether's joints, walked for `tether_straightness` only.
+    joints: Query<'w, 's, &'static DistanceJoint>,
+}
+
+/// The `closing_rate_mps` condition's quantity (P9 S3, A-4): the rate at which the
+/// range `|rel_r|` shrinks, `rel_r · rel_v / |rel_r|`, with `rel_r` from the body to
+/// the target and `rel_v` the body's velocity relative to it; positive while
+/// closing. It does not depend on the frame of `rel_v` (`rel_r · (ω × rel_r) = 0`).
+/// `None` at a range of 0.
+pub(crate) fn closing_rate(rel_r: DVec3, rel_v: DVec3) -> Option<f64> {
+    let range = rel_r.length();
+    (range > 0.0).then(|| rel_r.dot(rel_v) / range)
+}
+
+/// The `tether_straightness` condition's quantity (P9 S3, E4 (b)): the largest
+/// distance of a body of `chain` (positions in chain order, root first, tail last)
+/// from the root→tail line, divided by the root-to-tail distance; 0 = straight.
+/// `None` when the root and the tail are within 1e-6 m.
+pub(crate) fn tether_straightness(chain: &[DVec3]) -> Option<f64> {
+    let (&root, &tail) = (chain.first()?, chain.last()?);
+    let chord = tail - root;
+    let length = chord.length();
+    if length < 1e-6 {
+        return None;
+    }
+    let axis = chord / length;
+    let farthest = chain
+        .iter()
+        .map(|&body| {
+            let offset = body - root;
+            (offset - axis * offset.dot(axis)).length()
+        })
+        .fold(0.0, f64::max);
+    Some(farthest / length)
 }
 
 /// The velocity of a tether node relative to the capture target, measured in the
@@ -260,13 +304,14 @@ pub(crate) fn forward_tangent(rel_r: DVec3, up: DVec3) -> DVec3 {
 /// along its forward tangent less the root's along its own:
 /// `w = clamp((c_lag − c*) / SPACING_BAND_M − Δv / SPACING_RATE_BAND_MPS, −1, 1)`.
 /// The weight does not depend on the radius error: the tail swings to its place
-/// while it closes on its sphere.
+/// while it closes on its sphere. The two bands are the phase's `gains` (P9 S4).
 pub(crate) fn tail_lag_weight(
     root: (DVec3, DVec3),
     tail: (DVec3, DVec3),
     up: DVec3,
     tail_radius: f64,
     spacing: f64,
+    gains: &ControllerGains,
 ) -> f64 {
     let ((root_r, root_v), (tail_r, tail_v)) = (root, tail);
     let (out_root, out_tail) = (-root_r, -tail_r);
@@ -276,7 +321,7 @@ pub(crate) fn tail_lag_weight(
     let chord = 2.0 * tail_radius * (theta / 2.0).sin();
     let held = spacing.min(2.0 * tail_radius * SPACING_MAX_HALF_ANGLE.sin());
     let dv = tail_v.dot(forward_tangent(tail_r, up)) - root_v.dot(forward_tangent(root_r, up));
-    ((chord - held) / SPACING_BAND_M - dv / SPACING_RATE_BAND_MPS).clamp(-1.0, 1.0)
+    ((chord - held) / gains.spacing_band_m - dv / gains.spacing_rate_band_mps).clamp(-1.0, 1.0)
 }
 
 /// The circle law (design D18): the composed force direction, before the plane term
@@ -289,7 +334,8 @@ pub(crate) fn tail_lag_weight(
 /// `w_v = clamp(v_out / RADIAL_RATE_BAND_MPS, −1, 1)` damps the outward speed
 /// measured against the sphere's own shrink (`v_out = −rel_v · r̂_in + shrink_rate`),
 /// and the tangent term fades in as the radius error vanishes (`1 − |w_r|`), at full
-/// weight under the lag law: `t × w_t + r̂_in × clamp(w_r + w_v, −1, 1)`.
+/// weight under the lag law: `t × w_t + r̂_in × clamp(w_r + w_v, −1, 1)`. The two
+/// bands are the phase's `gains` (P9 S4).
 pub(crate) fn circle_law(
     rel_r: DVec3,
     rel_v: DVec3,
@@ -297,11 +343,12 @@ pub(crate) fn circle_law(
     shrink_rate: f64,
     tangent_term: DVec3,
     lag: bool,
+    gains: &ControllerGains,
 ) -> DVec3 {
     let r_in = rel_r.normalize_or_zero();
-    let w_r = ((rel_r.length() - radius) / RADIUS_HOLD_BAND_M).clamp(-1.0, 1.0);
+    let w_r = ((rel_r.length() - radius) / gains.radius_hold_band_m).clamp(-1.0, 1.0);
     let v_out = -rel_v.dot(r_in) + shrink_rate;
-    let w_v = (v_out / RADIAL_RATE_BAND_MPS).clamp(-1.0, 1.0);
+    let w_v = (v_out / gains.radial_rate_band_mps).clamp(-1.0, 1.0);
     let w_t = if lag { 1.0 } else { 1.0 - w_r.abs() };
     tangent_term * w_t + r_in * (w_r + w_v).clamp(-1.0, 1.0)
 }
@@ -310,6 +357,8 @@ pub use commands::{SimCommand, SimCommandInputs, apply_sim_commands};
 #[cfg(debug_assertions)]
 pub use state_machine::assert_finite_state;
 pub use state_machine::capture_state_machine_update;
+#[cfg(test)]
+pub(crate) use state_machine::{TransitionInputs, transition_satisfied};
 
 pub struct CapturePlugin;
 

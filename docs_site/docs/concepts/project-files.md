@@ -5,7 +5,7 @@ sidebar_position: 9
 # Project files
 
 :::note Draft
-This page describes the file formats of v0.4.0-rc.2. It is a draft; the full documentation pass comes later.
+This page describes the file formats of v0.4.0-rc.5. It is a draft; the full documentation pass comes later.
 :::
 
 A project is a folder. Sharing a project means zipping the folder; opening one means pointing the application (or `ssg-sim`) at it. Every file the project holds is plain JSON, text or CSV (except a recording's keyframe table, which is Parquet), and every JSON file has a published [JSON Schema](#json-schemas) and an integer `schema_version`.
@@ -62,14 +62,27 @@ The manifest records what a run needs besides the plan: the start epoch, the act
 | `target`, `chaser` | A `label`, an `orbit` and optionally `source`, `mass_kg` and `inertia_kg_m2`. |
 | `orbit.gp` | The Space-Track GP (OMM JSON) record copied verbatim. The body starts from SGP4, as a catalog pick does. The copy is the source of truth: a different dataset file never changes the run. |
 | `orbit.elements` | Osculating Keplerian elements in **metres and radians** at `epoch_utc`. |
-| `orbit.relative_to_target` | Chaser only: `preset` (`v_bar` or `r_bar`) and `offset_m`. Not applied yet (see below). |
+| `orbit.relative_to_target` | Chaser only: `preset` (`v_bar` or `r_bar`) and `offset_m`, a signed distance in metres, not 0 ([below](#a-chaser-relative-to-the-target)). |
 | `source` | Where the orbit came from (dataset path and NORAD id). Provenance only; a missing dataset file is a warning. |
 | `mass_kg` | Mass in kg, greater than 0. The target's is the debris's (2,500 kg without it); the chaser's is the tether root's (the root is the chaser; without it the root takes the plan's `end_mass_kg`). |
 | `inertia_kg_m2` | Inertia tensor in kg m², row-major: finite, symmetric and positive definite. It is taken in the simulation's ECI-aligned axes at spawn, because every body starts with the identity attitude and there is no attitude model. The target's is the debris's (without it, that of its collider boxes at its mass). The chaser's is loaded onto the root and has no effect while the root's rotation is locked ([Tether System](./tether-system#the-rope)). |
 | `built_with` | The build that wrote the file. Only `ssg-sim validate` reads it, to say when the build or platform differs: results are bit-identical only on the same build and platform ([Determinism](./determinism)). |
 | `recording` | Optional: the project's recording settings ([below](#the-recording-block)). Absent: recordings start and stop only by hand. |
 
-`orbit.relative_to_target` is part of the schema but refused with "applied from v0.4.0-rc.5" until the release that implements it. A file never silently simulates differently from what it says.
+### A chaser relative to the target
+
+`"orbit": { "relative_to_target": { "preset": "v_bar", "offset_m": 30.0 } }` places the chaser on a line through the target at the start epoch, **at rest relative to the target** in the target's LVLH frame:
+
+| `preset` | Positive `offset_m` | Negative `offset_m` |
+|---|---|---|
+| `v_bar` | ahead of the target, along its velocity | behind it |
+| `r_bar` | above the target, away from the Earth | below it |
+
+The target's start state is taken as the simulation propagates it (SGP4 for a `gp` orbit), and the chaser's osculating elements at the start epoch are computed from it. The target must have a `gp` or `elements` orbit. A start that the orbit propagator would move by more than 1 mm is refused with the reason. This happens with a small R-bar offset from a near-circular target, because the propagator treats an orbit with an eccentricity below about 1e-4 as circular. `ssg-sim validate` applies the same check.
+
+In the application, the chaser card's third row sets it up: **V-bar** or **R-bar**, the offset (in the toggle's length unit) and **Relative to Target**, enabled once the target has an orbit. Start writes the key, and opening the project restores it.
+
+A start this close skips the plan's distance gates. The example plan's `rendezvous`, `approach` and `final_approach` transitions all hold at rest 30 m from the target, so the capture is in `terminal` within three steps. There the root moves out to the capture sphere (100 m in that plan) before it circles in.
 
 The application writes `project.json` when you start a simulation (keeping its `recording` block) and starts from what it wrote; opening the project restores the start epoch and the two bodies. `ssg-sim run <project>` reads the same file, so the same files give the same inputs in both ([Running without a window](../getting-started/headless-cli#running-from-projectjson)).
 
@@ -114,7 +127,8 @@ A capture plan describes the **phases** of a capture (the application used to ca
 | `phases[].velocity_scales_with_sphere` | no | false | The speed limit falls in proportion to the sphere's radius from the radius the phase was entered at. No effect without `shrink_rate_mps`. |
 | `phases[].actuation` | no | `"circle"` | `circle`: the branch law, or the circle law in a phase with `shrink_rate_mps`. `hold`: brake every pushed end to rest relative to the target; `max_velocity_mps` is read as 0. |
 | `phases[].transitions[]` | no | none | `to` names a phase; `all_of` holds at least one condition. |
-| `…all_of.distance_m`, `…all_of.relative_speed_mps`, `…all_of.time_in_phase_s` | no | none | `{ "less_than": …, "greater_than": … }` with at least one bound, each at least 0. `relative_speed_mps` is the magnitude of the relative velocity in the target's LVLH frame; `time_in_phase_s` the seconds since the phase was entered. |
+| `…all_of.distance_m`, `…all_of.relative_speed_mps`, `…all_of.time_in_phase_s`, `…all_of.closing_rate_mps`, `…all_of.tether_straightness` | no | none | `{ "less_than": …, "greater_than": … }` with at least one bound, each at least 0. `relative_speed_mps` is the magnitude of the relative velocity in the target's LVLH frame; `time_in_phase_s` the seconds since the phase was entered. `closing_rate_mps` is the rate at which the root's range to the target shrinks, positive while closing; it does not hold while the range is 0. `tether_straightness` is how far the rope bows from the straight root-to-tail line: the largest distance of any tether body from that line divided by the root-to-tail distance (0 = straight; `less_than: 0.15` holds while no body is farther than 15 % of that distance from the line); it does not hold while the root and the tail are within 1e-6 m. |
+| `phases[].controller` | no | none | The phase's controller gains: up to eight optional keys, each defaulting to the value the controller has always used, so a plan without them runs exactly as before ([Tether System](./tether-system#controller-gains)). |
 | `phases[].end` | no | none | `"success"` or `"abort"`. An end phase has no transitions. |
 
 A key that is left out takes its default. In v0.4.0-rc.3 the controller changed for every plan, keys or not (the speed limit, the circle law in a shrinking phase; [Tether System](./tether-system#the-capture-controller)), and the rope's defaults changed with the rope model, from 0.1 m and 0.1 kg to 0.25 m and 0.25 kg (the same 1 kg per metre).
@@ -122,6 +136,10 @@ A key that is left out takes its default. In v0.4.0-rc.3 the controller changed 
 **All conditions of a transition must hold** (logical AND). In each step at most one transition fires: the first one, in file order, whose conditions hold.
 
 The `end` key marks a phase as the conclusion of the capture. When the capture enters an end phase, the simulation writes the log line `Capture ended: success (phase <id>)` (or `abort`) and an end event that a running recording uses to stop after its delay ([Recordings](./recordings#starting-and-stopping)). Nothing else changes: the controller keeps running in the end phase.
+
+## The plan form
+
+The application's plan form (**+ New Plan**, **View**, **Edit**) shows every phase of a plan, in file order, and each transition with all of its conditions. Every key above can be edited. A phase's controller gains are in a collapsed **Controller** group, and **+ Condition** adds a condition to a transition. Phase ids are read-only, and phases are not added, removed, reordered or renamed in the form; edit the file for that. An empty field leaves its key out of the file, so the default applies, and the default is shown as the field's hint. Lengths, speeds and forces follow the Metric/Imperial toggle, and masses show in kg or lb; the file stays metric. Saving keeps everything the form does not show, so opening and saving a valid plan changes nothing. **+ New Plan** starts from the example plan's phases. Each section (General, Tether, Capture Sphere, each phase) collapses by clicking its title.
 
 ## Opening a v0 plan
 

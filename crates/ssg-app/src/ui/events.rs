@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::ui::catalog_state::{OrbitalElementField, OrbitalSelectionRole};
 use crate::ui::form::UnitSystem;
+use ssg_sim::project::manifest::RelativePreset;
 
 #[derive(Message, Debug, Clone)]
 pub enum UiEvent {
@@ -15,10 +16,13 @@ pub enum UiEvent {
     ChangeWorkingDirectory,
     OpenNewCapturePlanForm,
     CloseNewCapturePlanForm,
-    AddApproachTransition,
-    RemoveApproachTransition(usize),
-    AddTerminalTransition,
-    RemoveTerminalTransition(usize),
+    /// + Add Transition in the form's phase at this index.
+    AddTransition(usize),
+    /// × on a transition of the form's phase.
+    RemoveTransition {
+        phase: usize,
+        index: usize,
+    },
     SaveCapturePlan,
     ConfirmOverwriteCapturePlan,
     CancelOverwriteCapturePlan,
@@ -41,10 +45,22 @@ pub enum UiEvent {
     /// Continue on the restart prompt: the sim stays out of sync.
     DismissRestartPrompt,
     ToggleSatelliteIndicator,
-    /// Use Selected: the selected catalog object becomes this role's orbit.
+    /// Select (F-45): opens the catalog in the map view (one catalog for both
+    /// roles; Use Selected names the role).
+    SelectFromCatalog,
+    /// Use Selected: the selected catalog object becomes this role's orbit and
+    /// the catalog row selection is cleared (F-45).
     UseCatalogSelection(OrbitalSelectionRole),
+    /// Clear (F-45): this role has no orbit again.
+    ClearOrbitalSelection(OrbitalSelectionRole),
     /// Create Custom: this role's orbit becomes the ISS defaults.
     CreateCustomOrbit(OrbitalSelectionRole),
+    /// Relative to Target (P9 S5): the chaser `offset_m` metres from the target on
+    /// `preset`'s line, written to `project.json` as `relative_to_target`.
+    PlaceChaserRelative {
+        preset: RelativePreset,
+        offset_m: f64,
+    },
     /// A slider moved: writes the element (in the slider's units) to the role's orbit.
     SetOrbitalElement {
         role: OrbitalSelectionRole,

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "name": "P9 Every Key",
+  "tether": "Tether9",
+  "device": {
+    "type": "tether",
+    "tether_length_m": 30.123456789012,
+    "segment_spacing_m": 0.5,
+    "segment_mass_kg": 0.375,
+    "end_mass_kg": 3.25,
+    "joint_damping_linear": 0.75,
+    "joint_damping_angular": 0.5,
+    "spawn_orientation": "v_bar"
+  },
+  "capture_sphere": {
+    "initial_radius_m": 80.5,
+    "min_radius_m": 2.25
+  },
+  "phases": [
+    {
+      "id": "close",
+      "max_velocity_mps": 0.123456789012345,
+      "max_force_n": 7.777777777777,
+      "transitions": [
+        {
+          "to": "circle",
+          "all_of": {
+            "distance_m": {
+              "less_than": 150.0,
+              "greater_than": 0.001
+            },
+            "relative_speed_mps": {
+              "less_than": 0.3333333333333333
+            },
+            "time_in_phase_s": {
+              "greater_than": 12.5
+            },
+            "closing_rate_mps": {
+              "less_than": 0.75,
+              "greater_than": 0.05
+            },
+            "tether_straightness": {
+              "less_than": 0.15
+            }
+          }
+        },
+        {
+          "to": "abort",
+          "all_of": {
+            "time_in_phase_s": {
+              "greater_than": 3600.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "circle",
+      "max_velocity_mps": 0.4,
+      "max_force_n": 2.5,
+      "shrink_rate_mps": 0.0125,
+      "transitions": [
+        {
+          "to": "done",
+          "all_of": {
+            "distance_m": {
+              "less_than": 3.0
+            }
+          }
+        }
+      ],
+      "tail_actuation": true,
+      "velocity_scales_with_sphere": true,
+      "hold_plane": true,
+      "actuation": "circle",
+      "tail_spacing_m": 10.5,
+      "controller": {
+        "radius_hold_band_m": 1.5,
+        "radial_rate_band_mps": 0.15,
+        "spacing_band_m": 2.5,
+        "spacing_rate_band_mps": 0.25,
+        "plane_hold_band_m": 0.75,
+        "inner_edge_fraction": 0.7,
+        "dead_band_fraction": 0.03,
+        "force_ramp_s": 2.0
+      }
+    },
+    {
+      "id": "done",
+      "max_velocity_mps": 0.0,
+      "max_force_n": 1.0,
+      "end": "success",
+      "tail_actuation": false,
+      "hold_plane": true,
+      "actuation": "hold",
+      "controller": {}
+    },
+    {
+      "id": "abort",
+      "max_velocity_mps": 0.0,
+      "max_force_n": 0.0,
+      "transitions": [],
+      "end": "abort"
+    }
+  ],
+  "migrated_from_v0": {
+    "unmapped": [
+      {
+        "pointer": "/states/0/parameters/note",
+        "value": "kept"
+      }
+    ]
+  }
+}

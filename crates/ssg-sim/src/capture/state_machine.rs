@@ -16,6 +16,7 @@ pub fn capture_state_machine_update(
         orbital_cache,
         world_time,
         disabled,
+        joints,
     } = inputs;
     let CaptureOutputs {
         mut capture_sphere_radius,
@@ -63,17 +64,41 @@ pub fn capture_state_machine_update(
                 // Compute root-relative position/velocity first so that the
                 // rb_forces.p0() borrow is fully released before calling
                 // resolve_root_state (which needs &mut messages).
-                let root_rv: Option<(f64, f64)> = nodes.first().and_then(|&root_node| {
-                    rb_forces.p0().get(root_node).ok().map(|root_rb| {
-                        let r = capture_entity_position.0 - root_rb.position.0;
-                        let v = node_relative_velocity(
-                            frame.as_ref(),
-                            -r,
-                            root_rb.linear_velocity.0 - capture_entity_linvel.0,
-                        );
-                        (r.length(), v.length())
-                    })
-                });
+                let root_rv: Option<(f64, f64, Option<f64>)> =
+                    nodes.first().and_then(|&root_node| {
+                        rb_forces.p0().get(root_node).ok().map(|root_rb| {
+                            let r = capture_entity_position.0 - root_rb.position.0;
+                            let v = node_relative_velocity(
+                                frame.as_ref(),
+                                -r,
+                                root_rb.linear_velocity.0 - capture_entity_linvel.0,
+                            );
+                            (r.length(), v.length(), closing_rate(r, v))
+                        })
+                    });
+                // P9 S3: the tether's shape, only for a phase that has a transition
+                // on it (no cost, and nothing read, otherwise).
+                let straightness =
+                    if plan
+                        .state(&capture_component.current_state)
+                        .is_some_and(|state| {
+                            state
+                                .transitions
+                                .iter()
+                                .any(|transition| transition.uses_tether_straightness())
+                        })
+                    {
+                        nodes.first().and_then(|&root_node| {
+                            let rb_query = rb_forces.p0();
+                            let chain: Vec<DVec3> = chain_from_joints(root_node, joints.iter())
+                                .into_iter()
+                                .filter_map(|body| rb_query.get(body).ok().map(|rb| rb.position.0))
+                                .collect();
+                            tether_straightness(&chain)
+                        })
+                    } else {
+                        None
+                    };
 
                 // The ephemeris sample (read-only: no force or transition depends on
                 // it). The cache and the positions describe this step's end state.
@@ -100,23 +125,30 @@ pub fn capture_state_machine_update(
                     });
                 }
 
-                let (shared_state_parameters, entered_phase) = if let Some((r_len, v_len)) = root_rv
-                {
-                    resolve_root_state(
-                        capture_entity,
-                        &mut capture_component,
-                        plan,
-                        (r_len, v_len),
-                        &world_time,
-                        &mut capture_sphere_radius,
-                        &mut messages,
-                    )
-                } else {
-                    (
-                        current_state_parameters(plan, &capture_component.current_state),
-                        false,
-                    )
-                };
+                let (shared_state_parameters, entered_phase) =
+                    if let Some((r_len, v_len, closing)) = root_rv {
+                        let measured = TransitionInputs {
+                            distance_m: r_len,
+                            relative_speed_mps: v_len,
+                            closing_rate_mps: closing,
+                            tether_straightness: straightness,
+                            time_in_phase_s: capture_component.state_elapsed_time_s,
+                        };
+                        resolve_root_state(
+                            capture_entity,
+                            &mut capture_component,
+                            plan,
+                            &measured,
+                            &world_time,
+                            &mut capture_sphere_radius,
+                            &mut messages,
+                        )
+                    } else {
+                        (
+                            current_state_parameters(plan, &capture_component.current_state),
+                            false,
+                        )
+                    };
                 // C2: the ramp restarts at every phase entry (and at the capture
                 // start, where `CaptureForce` is inserted at 0), never on a reversal.
                 if entered_phase {
@@ -213,9 +245,11 @@ pub fn capture_state_machine_update(
                         phase_max_velocity
                     };
                     let max_force = shared_state_parameters.max_force;
+                    // P9 S4: the phase's gains (the constants by default).
+                    let gains = &shared_state_parameters.controller;
                     // D7 (C4): the kill band is at least one step's Δv of this body at
                     // the phase's force, from the unscaled limit.
-                    let kill_band = (BRANCH_DEAD_BAND * phase_max_velocity)
+                    let kill_band = (gains.dead_band_fraction * phase_max_velocity)
                         .max(2.0 * max_force * PHYS_DT / mass);
                     // D16: how far `x` is across one kill band, in 0..=1. A band of 0
                     // (`max_force_n` and `max_velocity_mps` both 0, where the ramp is
@@ -238,6 +272,7 @@ pub fn capture_state_machine_update(
                         capture_radius,
                         max_velocity,
                         kill_band,
+                        gains,
                     );
 
                     if !pushed {
@@ -250,9 +285,16 @@ pub fn capture_state_machine_update(
                     // and `hold`: the weight of its tangent term.
                     let counter = idx != 0 && capture_component.current_state == "capture";
                     let lag_weight = match (shared_state_parameters.tail_spacing_m, root_rel) {
-                        (Some(spacing), Some(root)) if idx != 0 && !counter && !hold => Some(
-                            tail_lag_weight(root, (rel_r, rel_v), up, capture_radius, spacing),
-                        ),
+                        (Some(spacing), Some(root)) if idx != 0 && !counter && !hold => {
+                            Some(tail_lag_weight(
+                                root,
+                                (rel_r, rel_v),
+                                up,
+                                capture_radius,
+                                spacing,
+                                gains,
+                            ))
+                        }
                         _ => None,
                     };
 
@@ -277,6 +319,7 @@ pub fn capture_state_machine_update(
                             shrink_rate,
                             tangent_term,
                             lag_weight.is_some(),
+                            gains,
                         );
                     }
                     // If too close, force in opposite dir
@@ -306,12 +349,12 @@ pub fn capture_state_machine_update(
                     // circling plane through the target, proportional to the height.
                     if shared_state_parameters.hold_plane {
                         let h = -rel_r.dot(up);
-                        force_vec += -up * (h / PLANE_HOLD_BAND_M).clamp(-1.0, 1.0);
+                        force_vec += -up * (h / gains.plane_hold_band_m).clamp(-1.0, 1.0);
                     }
 
                     // F-31: `max_force_n` is an upper bound reached through the ramp.
                     state.ramp_n =
-                        (state.ramp_n + max_force * PHYS_DT / FORCE_RAMP_S).min(max_force);
+                        (state.ramp_n + max_force * PHYS_DT / gains.force_ramp_s).min(max_force);
                     let force = if hold {
                         force_vec.clamp_length_max(1.0) * state.ramp_n
                     } else {
@@ -427,7 +470,7 @@ fn resolve_root_state(
     capture_entity: Entity,
     capture_component: &mut CaptureComponent,
     plan: &CompiledCapturePlan,
-    (rel_r_length, rel_v_length): (f64, f64),
+    measured: &TransitionInputs,
     world_time: &WorldTime,
     capture_sphere_radius: &mut CaptureSphereRadius,
     messages: &mut CaptureMessages,
@@ -437,13 +480,7 @@ fn resolve_root_state(
     };
 
     let fired = state.transitions.iter().find_map(|transition| {
-        transition_satisfied(
-            transition,
-            rel_r_length,
-            rel_v_length,
-            capture_component.state_elapsed_time_s,
-        )
-        .map(|reason| (transition.to.clone(), reason))
+        transition_satisfied(transition, measured).map(|reason| (transition.to.clone(), reason))
     });
     let entered_phase = fired.is_some();
     if let Some((to, reason)) = fired {
@@ -468,16 +505,29 @@ fn resolve_root_state(
     (parameters, entered_phase)
 }
 
+/// What a transition's conditions are checked against in one step: the root's
+/// range to the target and LVLH relative speed, the closing rate (`None` at a range
+/// of 0), the tether's straightness (`None` when not measured or undefined) and the
+/// time in the current phase, already advanced this step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TransitionInputs {
+    pub distance_m: f64,
+    pub relative_speed_mps: f64,
+    pub closing_rate_mps: Option<f64>,
+    pub tether_straightness: Option<f64>,
+    pub time_in_phase_s: f64,
+}
+
 /// The reason string if every condition of `transition` holds (`None` if one does
 /// not, or if it has no condition), e.g. `distance 1500.0 m < 2000.0 m, rel vel
-/// 1.00 m/s < 5.00 m/s`. `state_elapsed_time_s` is the time in the current phase,
-/// already advanced this step.
-fn transition_satisfied(
+/// 1.00 m/s < 5.00 m/s`. A condition on a quantity that is `None` does not hold.
+pub(crate) fn transition_satisfied(
     transition: &CompiledCaptureTransition,
-    rel_r_length: f64,
-    rel_v_length: f64,
-    state_elapsed_time_s: f64,
+    measured: &TransitionInputs,
 ) -> Option<String> {
+    let rel_r_length = measured.distance_m;
+    let rel_v_length = measured.relative_speed_mps;
+    let state_elapsed_time_s = measured.time_in_phase_s;
     let checks = [
         transition.distance_less_than.map(|limit| {
             (
@@ -521,6 +571,38 @@ fn transition_satisfied(
                 ),
             )
         }),
+        transition.closing_rate_less_than.map(|limit| {
+            optional_check(measured.closing_rate_mps, |rate| {
+                (
+                    rate < limit,
+                    format!("closing rate {rate:.2} m/s < {limit:.2} m/s"),
+                )
+            })
+        }),
+        transition.closing_rate_greater_than.map(|limit| {
+            optional_check(measured.closing_rate_mps, |rate| {
+                (
+                    rate > limit,
+                    format!("closing rate {rate:.2} m/s > {limit:.2} m/s"),
+                )
+            })
+        }),
+        transition.tether_straightness_less_than.map(|limit| {
+            optional_check(measured.tether_straightness, |bow| {
+                (
+                    bow < limit,
+                    format!("tether straightness {bow:.3} < {limit:.3}"),
+                )
+            })
+        }),
+        transition.tether_straightness_greater_than.map(|limit| {
+            optional_check(measured.tether_straightness, |bow| {
+                (
+                    bow > limit,
+                    format!("tether straightness {bow:.3} > {limit:.3}"),
+                )
+            })
+        }),
     ];
 
     let mut reasons = Vec::new();
@@ -531,6 +613,14 @@ fn transition_satisfied(
         reasons.push(reason);
     }
     (!reasons.is_empty()).then(|| reasons.join(", "))
+}
+
+/// A check on a quantity that may be undefined: one that is `None` does not hold.
+fn optional_check(value: Option<f64>, check: impl FnOnce(f64) -> (bool, String)) -> (bool, String) {
+    match value {
+        Some(value) => check(value),
+        None => (false, String::new()),
+    }
 }
 
 /// A transition that fired: the phase it enters, that phase's end outcome (if

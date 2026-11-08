@@ -1,6 +1,8 @@
 #[cfg(test)]
 pub mod app_support;
 #[cfg(test)]
+pub mod capture_log_bar;
+#[cfg(test)]
 pub mod catalog_screen;
 #[cfg(test)]
 pub mod characterization_app;
@@ -17,7 +19,13 @@ pub mod integration_app;
 #[cfg(test)]
 pub mod plan_form;
 #[cfg(test)]
+pub mod plan_form_fields;
+#[cfg(test)]
+pub mod plan_form_window;
+#[cfg(test)]
 pub mod recording_ui;
+#[cfg(test)]
+pub mod relative_to_target;
 #[cfg(test)]
 pub mod replay_ui;
 #[cfg(test)]
