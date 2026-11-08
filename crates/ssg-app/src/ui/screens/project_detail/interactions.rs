@@ -75,7 +75,7 @@ pub fn sim_screen_events(mut events: MessageReader<UiEvent>, mut p: SimScreenEve
                     p.catalog_ui.selected_index = None;
                 }
             }
-            UiEvent::SelectFromCatalog(_) => {
+            UiEvent::SelectFromCatalog => {
                 // F-45: `handle_ui_events` switches the camera to the map view.
                 p.catalog_ui.show_catalog = true;
             }

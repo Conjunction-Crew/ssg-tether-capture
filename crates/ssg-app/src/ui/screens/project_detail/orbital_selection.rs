@@ -328,7 +328,7 @@ fn role_card(
                     RoleAction::Select => (
                         "Select",
                         "Opens the catalog on the map: click an object, then Use Selected",
-                        UiEvent::SelectFromCatalog(role),
+                        UiEvent::SelectFromCatalog,
                     ),
                     RoleAction::UseSelected => (
                         "Use Selected",

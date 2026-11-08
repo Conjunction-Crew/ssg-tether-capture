@@ -324,7 +324,7 @@ pub(crate) fn handle_ui_events(
             }
             // F-45: Select opens the catalog, which only the map view shows;
             // `sim_screen_events` shows the catalog panel.
-            UiEvent::SelectFromCatalog(_) => {
+            UiEvent::SelectFromCatalog => {
                 if let Ok((render_layers, atmosphere, atmosphere_settings)) =
                     scene_camera.single_mut()
                     && !render_layers.intersects(&RenderLayers::layer(MAP_LAYER))

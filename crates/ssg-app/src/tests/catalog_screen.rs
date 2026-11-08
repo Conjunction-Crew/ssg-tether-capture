@@ -258,7 +258,7 @@ fn the_role_button_reads_select_then_use_selected_then_clear() {
     harness.run();
     assert!(matches!(
         harness.state().events.as_slice(),
-        [UiEvent::SelectFromCatalog(OrbitalSelectionRole::Chaser)]
+        [UiEvent::SelectFromCatalog]
     ));
 
     // A row selected: both unassigned cards offer it.
@@ -323,10 +323,7 @@ fn orbital_events_update_the_selection() {
     });
     // F-45 (P9 S7; pinned before as "Use Selected does nothing (rc.3)"): with
     // nothing selected the card offers Select, which opens the catalog.
-    send(
-        &mut app,
-        UiEvent::SelectFromCatalog(OrbitalSelectionRole::Target),
-    );
+    send(&mut app, UiEvent::SelectFromCatalog);
     assert!(app.world().resource::<SpaceCatalogUiState>().show_catalog);
     assert!(
         app.world()

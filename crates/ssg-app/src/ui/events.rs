@@ -44,8 +44,9 @@ pub enum UiEvent {
     /// Continue on the restart prompt: the sim stays out of sync.
     DismissRestartPrompt,
     ToggleSatelliteIndicator,
-    /// Select (F-45): opens the catalog in the map view to pick this role's orbit.
-    SelectFromCatalog(OrbitalSelectionRole),
+    /// Select (F-45): opens the catalog in the map view (one catalog for both
+    /// roles; Use Selected names the role).
+    SelectFromCatalog,
     /// Use Selected: the selected catalog object becomes this role's orbit and
     /// the catalog row selection is cleared (F-45).
     UseCatalogSelection(OrbitalSelectionRole),
