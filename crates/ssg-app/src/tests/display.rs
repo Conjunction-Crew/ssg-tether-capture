@@ -2,7 +2,7 @@
 //! running warp and the lowered request (F-46, OQ2), the plots' fresh view (N8)
 //! and the export failures (F-33).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bevy::ecs::system::RunSystemOnce;
@@ -26,14 +26,13 @@ use ssg_sim::time::{StepCap, WorldTime};
 
 use crate::tests::app_support::{LogTap, enter_sim, start_running, test_app};
 use crate::tests::egui_support::{harness_for, snapshot};
-use crate::tests::plan_form::{filled_form, new_form};
+use crate::tests::plan_form::{example_dir, filled_form, new_form};
 use crate::tests::sim_screen::{running_view, setup_view, sim_screen_app};
 use crate::ui::egui::{
     CsvExportState, PlotsView, begin_plot_session, egui_plots, export_csv, export_error_ui,
     export_oem, plot_id, plot_line_names, plots_ui, record_export,
 };
 use crate::ui::events::UiEvent;
-use crate::ui::events_handler::load_plan_into_form;
 use crate::ui::form::{NewCapturePlanForm, UnitSystem, show};
 use crate::ui::hud::{
     CaptureMetrics, HudReadouts, append_state_parameters, append_transitions, sim_time_text,
@@ -42,7 +41,7 @@ use crate::ui::hud::{
 };
 use crate::ui::input::change_time_warp;
 use crate::ui::recording::adapt_step_cap;
-use crate::ui::screens::capture_plan::build_capture_plan_json;
+use crate::ui::screens::capture_plan::form::{load_plan_into_form, plan_from_form};
 use crate::ui::screens::project_detail::sidebar::{SimScreenView, sim_sidebar_ui};
 use crate::ui::settings::{Settings, set_unit_system};
 
@@ -233,63 +232,64 @@ fn the_toggle_is_shared_with_the_form() {
     );
 }
 
-/// A new plan's default tether is 20 m in either system.
+/// A new plan's tether (the example plan's 20 m) shows in feet in imperial and
+/// is written as 20 m.
 #[test]
 fn the_default_tether_is_twenty_metres_in_imperial() {
     let mut form = NewCapturePlanForm {
         unit_system: UnitSystem::Imperial,
         ..Default::default()
     };
-    form.reset();
-    assert_eq!(form.tether_length, "65.6167979003");
-    let json = build_capture_plan_json(&form);
-    assert_eq!(json["device"]["tether_length"].as_f64(), Some(20.0));
+    crate::ui::screens::capture_plan::new_plan_into_form(
+        &mut form,
+        Some(&crate::tests::plan_form::example_plan()),
+    );
+    form.plan_name = "Imperial".to_string();
+    assert_eq!(form.tether_length.text, "65.6167979003");
+    let plan = plan_from_form(&form).unwrap();
+    assert_eq!(plan.device.unwrap().tether_length_m, Some(20.0));
 }
 
-/// Toggling keeps every number's physical value: the same JSON comes out, and a
+/// Toggling keeps every number's physical value: the same plan comes out, and a
 /// field that is not a number stays as typed for Save to report.
 #[test]
 fn files_stay_metric_whatever_the_toggle() {
     let mut form = filled_form();
-    form.terminal_transitions = vec![crate::ui::form::TransitionForm {
-        to: "capture".to_string(),
-        distance_kind: "less_than".to_string(),
-        distance_value: "12.5".to_string(),
-    }];
-    let metric = build_capture_plan_json(&form);
+    let metric = plan_from_form(&form).unwrap();
 
     form.set_unit_system(UnitSystem::Imperial);
-    assert_eq!(form.approach_max_velocity, "6.56167979");
-    assert_eq!(form.approach_max_force, "0.6744270742");
+    let approach = &form.phases[1];
+    assert_eq!(approach.id, "approach");
+    assert_eq!(approach.max_velocity.text, "6.56167979");
+    assert_eq!(approach.max_force.text, "0.6744270742");
     assert_eq!(
-        form.approach_transitions[0].distance_value,
-        "164.0419947507"
+        approach.transitions[0].conditions[0].less_than.text,
+        "984.2519685039"
     );
-    assert_eq!(build_capture_plan_json(&form), metric);
+    assert_eq!(plan_from_form(&form).unwrap(), metric);
 
     form.set_unit_system(UnitSystem::Metric);
-    assert_eq!(form.approach_max_velocity, "2.0");
-    assert_eq!(build_capture_plan_json(&form), metric);
+    assert_eq!(form.phases[1].max_velocity.text, "2.0");
+    assert_eq!(plan_from_form(&form).unwrap(), metric);
 
-    form.approach_max_velocity = "abc".to_string();
-    form.terminal_max_force = String::new();
+    form.phases[1].max_velocity.text = "abc".to_string();
+    form.phases[3].max_force.text = String::new();
     form.set_unit_system(UnitSystem::Imperial);
-    assert_eq!(form.approach_max_velocity, "abc");
-    assert_eq!(form.terminal_max_force, "");
+    assert_eq!(form.phases[1].max_velocity.text, "abc");
+    assert_eq!(form.phases[3].max_force.text, "");
 }
 
-/// A plan opened in imperial shows converted numbers and writes the same file
-/// as in metric, and an unchanged Save still writes nothing (no double conversion).
+/// A plan opened in imperial shows converted numbers and gives the same plan as
+/// in metric, so an unchanged Save still writes nothing (no double conversion).
 #[test]
 fn a_plan_opened_in_imperial_saves_the_same_numbers() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/example_capture_plans");
-    let (plans, errors) = load_plans_from_dir_with_errors(&dir);
+    let (plans, errors) = load_plans_from_dir_with_errors(&example_dir());
     assert!(errors.is_empty(), "{errors:?}");
     assert!(!plans.is_empty());
     for (plan_id, plan) in &plans {
         let mut metric = NewCapturePlanForm::default();
         load_plan_into_form(&mut metric, plan_id, plan, false);
-        let expected = build_capture_plan_json(&metric);
+        assert_eq!(plan_from_form(&metric).as_ref(), Ok(plan), "{plan_id}");
 
         let mut imperial = NewCapturePlanForm {
             unit_system: UnitSystem::Imperial,
@@ -298,19 +298,14 @@ fn a_plan_opened_in_imperial_saves_the_same_numbers() {
         load_plan_into_form(&mut imperial, plan_id, plan, false);
         assert_eq!(imperial.unit_system, UnitSystem::Imperial, "{plan_id}");
         assert_ne!(
-            imperial.approach_max_velocity, metric.approach_max_velocity,
+            imperial.phases[0].max_velocity.text, metric.phases[0].max_velocity.text,
             "{plan_id}: the form shows converted numbers"
         );
-        assert_eq!(build_capture_plan_json(&imperial), expected, "{plan_id}");
-        assert_eq!(
-            imperial.original_json.as_ref(),
-            Some(&expected),
-            "{plan_id}: an unchanged Save writes nothing"
-        );
+        assert_eq!(plan_from_form(&imperial).as_ref(), Ok(plan), "{plan_id}");
 
         // Toggled after opening: still unchanged.
         imperial.set_unit_system(UnitSystem::Metric);
-        assert_eq!(build_capture_plan_json(&imperial), expected, "{plan_id}");
+        assert_eq!(plan_from_form(&imperial).as_ref(), Ok(plan), "{plan_id}");
     }
 }
 

@@ -24,6 +24,9 @@ GitHub Release description.
 - Two transition conditions for capture plans: `all_of.closing_rate_mps` (the rate the tether root's range to the target shrinks, m/s, positive while closing) and `all_of.tether_straightness` (how far the tether bows from the straight root-to-tail line, as a fraction of the root-to-tail distance; 0 = straight). Both are optional and combine with the other conditions (all must hold). Plans without them behave as before.
 - Per-phase controller gains: a phase's optional `controller` sets the eight constants of the capture force law (`radius_hold_band_m`, `radial_rate_band_mps`, `spacing_band_m`, `spacing_rate_band_mps`, `plane_hold_band_m`, `inner_edge_fraction`, `dead_band_fraction`, `force_ramp_s`). Each key defaults to the value the controller has always used, so plans without it run exactly as before.
 
+### Fixed
+- The capture-plan form shows every phase of a plan (in file order, ids read-only) and each transition's full list of conditions, and saving keeps everything the form does not show: opening, editing and saving any valid plan, in either unit system, loses nothing (F-15). An edited copy of the example plan saves; a migrated v0 plan keeps its `rendezvous` phase and its `migrated_from_v0` notes. Save's messages appear under the field they name. **+ New Plan** starts from the example plan's phases.
+
 ## [v0.4.0-rc.4] 🔬 - 2026-11-07
 
 ### Changed
