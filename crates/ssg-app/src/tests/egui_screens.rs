@@ -9,12 +9,13 @@ use egui_kittest::kittest::Queryable;
 
 use crate::tests::egui_support::{harness_for, snapshot};
 use crate::tests::home_screens::{home_view, many_plans, setup_view};
-use crate::tests::plan_form::{filled_form, new_form};
+use crate::tests::plan_form::{example_plan, filled_form, new_form};
 use crate::tests::sim_screen::{running_view, setup_view as sim_setup_view};
 use crate::ui::egui_theme::{color32_from, visuals_from_theme};
 use crate::ui::events::UiEvent;
+use crate::ui::form::NewCapturePlanForm;
 use crate::ui::input::egui_wants_keyboard;
-use crate::ui::screens::capture_plan::validate_form;
+use crate::ui::screens::capture_plan::form::{load_plan_into_form, plan_from_form};
 use crate::ui::screens::capture_plan::window::capture_plan_form_ui;
 use crate::ui::screens::home::home_ui;
 use crate::ui::screens::project_detail::modals::{exit_confirm_ui, restart_prompt_ui};
@@ -202,22 +203,26 @@ fn p8_screen_snapshots() {
         home_ui,
     ));
 
-    // S4: the plan form.
+    // S4: the plan form (P9 S1: on the v1 plan, every phase shown).
     let mut blank = new_form();
-    blank.approach_max_velocity = "abc".to_string();
-    blank.validation_errors = validate_form(&blank);
+    blank.phases[1].max_velocity.text = "abc".to_string();
+    blank.validation_errors = plan_from_form(&blank).unwrap_err();
     let mut conflict = filled_form();
     conflict.overwrite_conflict_path = Some("/Users/walk/wd/p0_created.json".to_string());
-    let mut view = filled_form();
-    view.read_only = true;
-    view.editing_plan_id = Some("example_plan".to_string());
+    let mut view = NewCapturePlanForm::default();
+    load_plan_into_form(&mut view, "example_plan", &example_plan(), true);
+    let mut edit = NewCapturePlanForm::default();
+    let mut user_plan = example_plan();
+    user_plan.name = "My Copy".to_string();
+    load_plan_into_form(&mut edit, "my_copy", &user_plan, false);
     for (name, form) in [
         ("s4_form_filled", filled_form()),
         ("s4_form_errors", blank),
         ("s4_form_overwrite_prompt", conflict),
-        ("s4_form_view_example", view),
+        ("p9_form_view_example", view),
+        ("p9_form_edit_user_plan", edit),
     ] {
-        paths.push(snapshot(name, form, [720.0, 1100.0], capture_plan_form_ui));
+        paths.push(snapshot(name, form, [720.0, 3400.0], capture_plan_form_ui));
     }
     assert!(paths.iter().all(|path| path.is_file()));
 }

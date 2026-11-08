@@ -15,10 +15,13 @@ pub enum UiEvent {
     ChangeWorkingDirectory,
     OpenNewCapturePlanForm,
     CloseNewCapturePlanForm,
-    AddApproachTransition,
-    RemoveApproachTransition(usize),
-    AddTerminalTransition,
-    RemoveTerminalTransition(usize),
+    /// + Add Transition in the form's phase at this index.
+    AddTransition(usize),
+    /// × on a transition of the form's phase.
+    RemoveTransition {
+        phase: usize,
+        index: usize,
+    },
     SaveCapturePlan,
     ConfirmOverwriteCapturePlan,
     CancelOverwriteCapturePlan,
