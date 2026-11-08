@@ -66,6 +66,7 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                 hold_plane: false,
                 actuation: Actuation::Circle,
                 tail_spacing_m: None,
+                controller: crate::capture::gains::ControllerGains::default(),
             },
             transitions: state
                 .transitions

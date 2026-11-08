@@ -5,6 +5,7 @@
 
 use serde_json::{Value, json};
 
+use crate::capture::gains::PhaseController;
 use crate::capture::plan::{
     Actuation, CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, MigratedFromV0,
     Phase, PhaseEnd, SpawnOrientation, Transition, TransitionConditions, UnmappedValue,
@@ -518,6 +519,17 @@ fn generate_v1(rng: &mut Lcg, case: usize) -> CapturePlan {
                     .then(|| [Actuation::Circle, Actuation::Hold][rng.below(2)]),
                 // Below the shortest generated tether (1 m), so every plan validates.
                 tail_spacing_m: maybe(rng, 0.1, 0.9),
+                // P9 S4: valid gains (bands above 0, the fractions in range).
+                controller: rng.chance(0.3).then(|| PhaseController {
+                    radius_hold_band_m: maybe(rng, 0.1, 5.0),
+                    radial_rate_band_mps: maybe(rng, 0.01, 1.0),
+                    spacing_band_m: maybe(rng, 0.1, 5.0),
+                    spacing_rate_band_mps: maybe(rng, 0.01, 1.0),
+                    plane_hold_band_m: maybe(rng, 0.1, 5.0),
+                    inner_edge_fraction: maybe(rng, 0.05, 0.95),
+                    dead_band_fraction: maybe(rng, 0.0, 0.45),
+                    force_ramp_s: maybe(rng, 0.1, 5.0),
+                }),
             }
         })
         .collect();
