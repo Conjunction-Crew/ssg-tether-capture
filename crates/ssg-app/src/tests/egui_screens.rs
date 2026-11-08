@@ -153,6 +153,7 @@ fn p8_screen_snapshots() {
     for path in crate::tests::catalog_screen::p9_s7_orbital_snapshots()
         .into_iter()
         .chain(crate::tests::capture_log_bar::p9_s7_log_bar_snapshots())
+        .chain(crate::tests::relative_to_target::p9_s5_snapshots())
     {
         assert!(path.is_file());
     }

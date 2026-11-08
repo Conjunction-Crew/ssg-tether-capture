@@ -23,6 +23,8 @@ pub mod plan_form_fields;
 #[cfg(test)]
 pub mod recording_ui;
 #[cfg(test)]
+pub mod relative_to_target;
+#[cfg(test)]
 pub mod replay_ui;
 #[cfg(test)]
 pub mod sim_screen;

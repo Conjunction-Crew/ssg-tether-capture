@@ -22,6 +22,7 @@ use crate::ui::screens::capture_plan::{
     NEW_PLAN_TEMPLATE, load_plan_into_form, new_plan_into_form, save_plan_from_form,
 };
 use crate::ui::screens::project_detail::ExitConfirmOpen;
+use crate::ui::screens::project_detail::orbital_selection::place_chaser_relative;
 use crate::ui::screens::working_directory_setup::WorkingDirectorySetupError;
 use crate::ui::settings::{Settings, set_unit_system};
 use ssg_sim::capture::SimCommand;
@@ -117,6 +118,7 @@ pub(crate) fn restore_project_scenario(
             sim_config.start_epoch = inputs.start_epoch;
             selection.target = Some(inputs.target);
             selection.chaser = Some(inputs.chaser);
+            selection.chaser_relative = inputs.chaser_relative;
             return;
         }
         Some(Err(errors)) => {
@@ -185,6 +187,7 @@ pub(crate) fn start_from_project_file(
                 error(message);
             }
             sim_config.start_epoch = inputs.start_epoch;
+            selection.chaser_relative = inputs.chaser_relative;
             for (slot, read) in [
                 (&mut selection.target, inputs.target),
                 (&mut selection.chaser, inputs.chaser),
@@ -420,6 +423,20 @@ pub(crate) fn handle_ui_events(
             }
             UiEvent::ToggleCaptureGizmos => {
                 settings.toggle_capture_gizmos();
+            }
+            UiEvent::PlaceChaserRelative { preset, offset_m } => {
+                if let Err(message) = place_chaser_relative(
+                    &mut orbital_selection,
+                    sim_config.start_epoch,
+                    *preset,
+                    *offset_m,
+                ) {
+                    log.write(LogEvent {
+                        level: LogLevel::Error,
+                        source: "project",
+                        message,
+                    });
+                }
             }
             // `sim_screen_events` owns these.
             UiEvent::RestartSim

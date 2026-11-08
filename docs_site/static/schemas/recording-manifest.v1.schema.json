@@ -409,7 +409,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Chaser only: an offset from the target along V-bar or R-bar. Refused until\nv0.4.0-rc.5.",
+          "description": "Chaser only: an offset from the target along V-bar or R-bar, at rest in the\ntarget's LVLH frame at the start epoch. The chaser gets the osculating elements\nof that state.",
           "properties": {
             "relative_to_target": {
               "$ref": "#/$defs/RelativeToTarget"
@@ -940,7 +940,7 @@
       "description": "A chaser placed relative to the target.",
       "properties": {
         "offset_m": {
-          "description": "Distance from the target in metres.",
+          "description": "Signed distance from the target in metres, not 0: positive ahead of the target\n(V-bar) or above it, away from the Earth (R-bar); negative behind or below.",
           "format": "double",
           "type": "number"
         },

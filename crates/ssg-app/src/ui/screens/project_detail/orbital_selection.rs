@@ -12,7 +12,9 @@ use ssg_sim::orbit::ISS_ORBIT;
 use ssg_sim::orbit::catalog::{SpaceCatalogEntry, SpaceObjectCatalog};
 use ssg_sim::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
+    relative_chaser_elements,
 };
+use ssg_sim::project::manifest::{RelativePreset, RelativeToTarget};
 
 const ORBITAL_ELEMENT_FIELDS: [OrbitalElementField; 6] = [
     OrbitalElementField::SemiMajorAxis,
@@ -178,8 +180,33 @@ fn slot(
     }
 }
 
+/// A change to `role`'s orbit: a chaser is no longer placed relative to the
+/// target; a target change places a relative chaser again from the new target
+/// (P9 S5). A placement the new target refuses keeps the old elements; Start
+/// reports the refusal.
+fn orbit_changed(selection: &mut OrbitalSelectionState, role: OrbitalSelectionRole) {
+    match role {
+        OrbitalSelectionRole::Chaser => selection.chaser_relative = None,
+        OrbitalSelectionRole::Target => {
+            if let (Some(target), Some(chaser), Some(relative)) = (
+                &selection.target,
+                &mut selection.chaser,
+                &selection.chaser_relative,
+            ) && let Ok(elements) = relative_chaser_elements(
+                target,
+                chaser.elements.epoch,
+                relative.preset,
+                relative.offset_m,
+            ) {
+                chaser.elements = elements;
+            }
+        }
+    }
+}
+
 pub(crate) fn clear_orbit(selection: &mut OrbitalSelectionState, role: OrbitalSelectionRole) {
     *slot(selection, role) = None;
+    orbit_changed(selection, role);
 }
 
 pub(crate) fn set_orbit(
@@ -188,6 +215,7 @@ pub(crate) fn set_orbit(
     selected: SelectedOrbitalObject,
 ) {
     *slot(selection, role) = Some(selected);
+    orbit_changed(selection, role);
 }
 
 pub(crate) fn set_orbital_element(
@@ -200,7 +228,48 @@ pub(crate) fn set_orbital_element(
         write_slider_value_to_elements(&mut selected.elements, field, value);
         // Edited elements are no longer the catalog record (F-27).
         selected.gp = None;
+        orbit_changed(selection, role);
     }
+}
+
+/// `preset`'s name as the card and the chaser's label say it.
+fn preset_label(preset: RelativePreset) -> &'static str {
+    match preset {
+        RelativePreset::VBar => "V-bar",
+        RelativePreset::RBar => "R-bar",
+    }
+}
+
+/// Relative to Target (P9 S5, E3 (a)): the chaser `offset_m` from the target on
+/// `preset`'s line at `start_epoch`, kept as `relative_to_target` for
+/// `project.json`. `Err` (nothing changes) without a target, for offset 0, or when
+/// the sim refuses the start.
+pub(crate) fn place_chaser_relative(
+    selection: &mut OrbitalSelectionState,
+    start_epoch: Epoch,
+    preset: RelativePreset,
+    offset_m: f64,
+) -> Result<(), String> {
+    let target = selection
+        .target
+        .as_ref()
+        .ok_or("Relative to Target needs a target orbit")?;
+    if !(offset_m.is_finite() && offset_m != 0.0) {
+        return Err("Relative to Target needs an offset other than 0".to_string());
+    }
+    let elements = relative_chaser_elements(target, start_epoch, preset, offset_m)?;
+    let previous = selection.chaser.take();
+    selection.chaser = Some(SelectedOrbitalObject {
+        source: OrbitalSelectionSource::Custom {
+            label: format!("{} {offset_m:+} m from the target", preset_label(preset)),
+        },
+        elements,
+        gp: None,
+        mass_kg: previous.as_ref().and_then(|c| c.mass_kg),
+        inertia_kg_m2: previous.and_then(|c| c.inertia_kg_m2),
+    });
+    selection.chaser_relative = Some(RelativeToTarget { preset, offset_m });
+    Ok(())
 }
 
 /// A restored body that still carries its catalog record becomes a catalog
@@ -297,11 +366,81 @@ pub(crate) fn role_action(assigned: bool, row_selected: bool) -> RoleAction {
     }
 }
 
+/// The Relative to Target inputs between frames (egui memory): V-bar +30 m first.
+#[derive(Debug, Clone, Copy)]
+struct RelativeInput {
+    preset: RelativePreset,
+    offset_m: f64,
+}
+
+impl Default for RelativeInput {
+    fn default() -> Self {
+        Self {
+            preset: RelativePreset::VBar,
+            offset_m: 30.0,
+        }
+    }
+}
+
+/// The chaser card's Relative to Target row (P9 S5, E3 (a)): the line, the signed
+/// offset in the toggle's length unit and the button, enabled once the target has
+/// an orbit.
+fn relative_to_target_row(
+    ui: &mut egui::Ui,
+    target_assigned: bool,
+    units: UnitSystem,
+    out: &mut Vec<UiEvent>,
+) {
+    let id = egui::Id::new("chaser_relative_to_target");
+    let mut input: RelativeInput = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    ui.add_enabled_ui(target_assigned, |ui| {
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("chaser_relative_preset")
+                .selected_text(preset_label(input.preset))
+                .width(70.0)
+                .show_ui(ui, |ui| {
+                    for preset in [RelativePreset::VBar, RelativePreset::RBar] {
+                        ui.selectable_value(&mut input.preset, preset, preset_label(preset));
+                    }
+                });
+            let (mut shown, unit) = units.length(input.offset_m);
+            let field = ui.add(
+                egui::DragValue::new(&mut shown)
+                    .speed(1.0)
+                    .suffix(format!(" {unit}")),
+            );
+            if field.changed() {
+                input.offset_m = units.linear_to_metric(shown);
+            }
+            let button = egui::Button::new(egui::RichText::new("Relative to Target").size(11.0))
+                .fill(ui.visuals().panel_fill);
+            let hint = if target_assigned {
+                "Places the chaser this far from the target on the line, at rest relative to it: \
+                 + is ahead (V-bar) or above (R-bar)"
+            } else {
+                "Needs a target orbit first"
+            };
+            if ui
+                .add(button)
+                .on_hover_text(hint)
+                .on_disabled_hover_text(hint)
+                .clicked()
+            {
+                out.push(UiEvent::PlaceChaserRelative {
+                    preset: input.preset,
+                    offset_m: input.offset_m,
+                });
+            }
+        });
+    });
+    ui.data_mut(|d| d.insert_temp(id, input));
+}
+
 fn role_card(
     ui: &mut egui::Ui,
     role: OrbitalSelectionRole,
     selected: Option<&SelectedOrbitalObject>,
-    (row_selected, next_step): (bool, bool),
+    (row_selected, next_step, other_assigned): (bool, bool, bool),
     units: UnitSystem,
     out: &mut Vec<UiEvent>,
 ) {
@@ -358,6 +497,9 @@ fn role_card(
                     out.push(UiEvent::CreateCustomOrbit(role));
                 }
             });
+            if role == OrbitalSelectionRole::Chaser {
+                relative_to_target_row(ui, other_assigned, units, out);
+            }
             if let Some(selected) = selected {
                 for field in ORBITAL_ELEMENT_FIELDS {
                     element_slider(ui, role, field, &selected.elements, units, out);
@@ -397,7 +539,7 @@ pub(super) fn orbital_selection_section(
             ui,
             role,
             selected,
-            (row_selected, next_step),
+            (row_selected, next_step, other.is_some()),
             view.unit_system,
             out,
         );

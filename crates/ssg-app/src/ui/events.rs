@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::ui::catalog_state::{OrbitalElementField, OrbitalSelectionRole};
 use crate::ui::form::UnitSystem;
+use ssg_sim::project::manifest::RelativePreset;
 
 #[derive(Message, Debug, Clone)]
 pub enum UiEvent {
@@ -54,6 +55,12 @@ pub enum UiEvent {
     ClearOrbitalSelection(OrbitalSelectionRole),
     /// Create Custom: this role's orbit becomes the ISS defaults.
     CreateCustomOrbit(OrbitalSelectionRole),
+    /// Relative to Target (P9 S5): the chaser `offset_m` metres from the target on
+    /// `preset`'s line, written to `project.json` as `relative_to_target`.
+    PlaceChaserRelative {
+        preset: RelativePreset,
+        offset_m: f64,
+    },
     /// A slider moved: writes the element (in the slider's units) to the role's orbit.
     SetOrbitalElement {
         role: OrbitalSelectionRole,

@@ -15,6 +15,8 @@ use bevy::math::DVec3;
 use brahe::GM_EARTH;
 use nalgebra::Vector6;
 
+use crate::project::manifest::RelativePreset;
+
 /// The LVLH frame of an orbit at one instant, with ECI-axis unit vectors.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LvlhFrame {
@@ -91,6 +93,32 @@ pub fn cw_gravity_gradient(origin_r_eci: DVec3, offset_eci: DVec3) -> DVec3 {
     let r = origin_r_eci.length();
     let radial = origin_r_eci / r;
     GM_EARTH / r.powi(3) * (3.0 * offset_eci.dot(radial) * radial - offset_eci)
+}
+
+/// The (radial, along, cross) components of a point `offset_m` from the frame's
+/// origin on `preset`'s line: V-bar is `along`, R-bar is `radial`. Positive is ahead
+/// of the target (V-bar) or above it, away from the Earth (R-bar) (P9 A-3).
+pub fn relative_offset_lvlh(preset: RelativePreset, offset_m: f64) -> DVec3 {
+    match preset {
+        RelativePreset::VBar => DVec3::new(0.0, offset_m, 0.0),
+        RelativePreset::RBar => DVec3::new(offset_m, 0.0, 0.0),
+    }
+}
+
+/// The ECI state of a body `offset_m` from `target` on `preset`'s line, at rest in
+/// the target's LVLH frame (P9 S5, A-3): position `r_t + offset·axis`, velocity
+/// `v_t + ω × (offset·axis)`. `None` when the target's frame is undefined
+/// ([`LvlhFrame::from_eci`]).
+pub fn relative_start(
+    target: &Vector6<f64>,
+    preset: RelativePreset,
+    offset_m: f64,
+) -> Option<Vector6<f64>> {
+    let frame = LvlhFrame::from_eci(target)?;
+    let offset = frame.to_eci(relative_offset_lvlh(preset, offset_m));
+    let r = frame.origin_r + offset;
+    let v = frame.origin_v + frame.omega.cross(offset);
+    Some(Vector6::new(r.x, r.y, r.z, v.x, v.y, v.z))
 }
 
 /// The closed-form Clohessy-Wiltshire solution about a circular orbit of mean

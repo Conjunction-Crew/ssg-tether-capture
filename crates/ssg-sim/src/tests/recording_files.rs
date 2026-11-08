@@ -218,6 +218,7 @@ fn q13_project() -> ProjectManifest {
     let selection = OrbitalSelectionState {
         target: Some(q13::catalog_pick("HST", q13::HST_NORAD_ID)),
         chaser: Some(q13::catalog_pick("P0 HST CHASER", q13::CHASER_NORAD_ID)),
+        chaser_relative: None,
     };
     ProjectManifest::from_selection("q13", fixed_epoch(), Some(q13::PLAN_ID), &selection).unwrap()
 }

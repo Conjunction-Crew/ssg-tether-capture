@@ -128,6 +128,29 @@ pub(crate) fn start_state_eci(orbit: &Orbit, start_epoch: Epoch) -> Option<Vecto
     }
 }
 
+/// The ECI state at `start_epoch` of the propagator [`init_orbitals`] builds for
+/// `orbit`. This is [`start_state_eci`] after brahe's `KeplerianPropagator::from_eci`,
+/// which stores the state as osculating elements and so rounds an orbit with
+/// e ≲ 1e-4 to e = 0 (P9 M1). `None` when SGP4 fails.
+pub(crate) fn propagated_start_state(orbit: &Orbit, start_epoch: Epoch) -> Option<Vector6<f64>> {
+    match orbit {
+        Orbit::FromGp(gp) => {
+            let state = sgp4_state_eci(gp, start_epoch).ok()?;
+            KeplerianPropagator::from_eci(start_epoch, state, 1.0)
+                .state_eci(start_epoch)
+                .ok()
+        }
+        _ => start_state_eci(orbit, start_epoch),
+    }
+}
+
+/// Installs the zero EOP provider [`OrbitPlugin`] installs, once per process, for
+/// the code that runs SGP4 outside a sim app (the manifest reader, P9 S5).
+pub(crate) fn use_zero_eop() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| set_global_eop_provider(StaticEOPProvider::from_zero()));
+}
+
 /// A two-body propagator at `start_epoch` from osculating `elements` at `epoch`.
 fn kepler_at_start(
     elements: Vector6<f64>,

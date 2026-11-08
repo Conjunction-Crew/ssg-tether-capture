@@ -123,6 +123,7 @@ fn harness(recordings: &Path, interval: u32) -> (App, FileSink) {
     let selection = OrbitalSelectionState {
         target: Some(q13::catalog_pick("HST", q13::HST_NORAD_ID)),
         chaser: Some(q13::catalog_pick("P0 HST CHASER", q13::CHASER_NORAD_ID)),
+        chaser_relative: None,
     };
     let project =
         ProjectManifest::from_selection("q13", fixed_epoch(), Some(q13::PLAN_ID), &selection)
