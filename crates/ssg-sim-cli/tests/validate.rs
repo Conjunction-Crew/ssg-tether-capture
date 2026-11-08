@@ -211,8 +211,10 @@ fn the_active_plan_may_be_an_example_plan() {
 }
 
 #[test]
-fn a_field_that_is_not_supported_yet_is_an_error() {
-    let project = valid_project("unsupported");
+fn a_chaser_relative_to_the_target_is_accepted() {
+    // P9 S5 (Q10 row 15): was "error: … an orbit relative to the target is not
+    // supported yet; it is applied from v0.4.0-rc.5" and exit 1.
+    let project = valid_project("relative");
     let mut manifest = manifest();
     manifest["chaser"]["orbit"] =
         json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 100.0 } });
@@ -225,14 +227,37 @@ fn a_field_that_is_not_supported_yet_is_an_error() {
 
     let output = validate(&project);
 
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout_lines(&output), ["0 errors, 0 warnings"]);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[test]
+fn a_relative_start_the_propagator_would_move_is_an_error() {
+    // P9 M1-a: an e = 0 target and R-bar 30 m start about 90 m off with brahe 1.3.4.
+    let project = valid_project("relative-refused");
+    let mut manifest = manifest();
+    manifest["target"]["orbit"] = json!({ "elements": {
+        "semi_major_axis_m": 6778137.0, "eccentricity": 0.0, "inclination_rad": 0.9,
+        "raan_rad": 1.0, "arg_perigee_rad": 0.0, "mean_anomaly_rad": 0.5,
+        "epoch_utc": "2026-04-03T16:03:47.002464Z"
+    } });
+    manifest["chaser"]["orbit"] =
+        json!({ "relative_to_target": { "preset": "r_bar", "offset_m": 30.0 } });
+    write_manifest(&project, &manifest);
+
+    let output = validate(&project);
+
     assert_eq!(output.status.code(), Some(1));
-    assert_eq!(
-        stdout_lines(&output),
-        [
-            "error: [project.json] /chaser/orbit/relative_to_target: an orbit relative to the target is not supported yet; it is applied from v0.4.0-rc.5",
-            "1 errors, 0 warnings"
-        ]
+    let lines = stdout_lines(&output);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(
+        lines[0].starts_with(
+            "error: [project.json] /chaser/orbit/relative_to_target: the chaser would start "
+        ),
+        "{lines:?}"
     );
+    assert_eq!(lines[1], "1 errors, 0 warnings");
     let _ = std::fs::remove_dir_all(&project);
 }
 
