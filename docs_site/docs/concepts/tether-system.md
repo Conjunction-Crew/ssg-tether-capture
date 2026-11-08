@@ -53,7 +53,7 @@ The debris's mass is the target's `mass_kg` (2,500 kg by default), its centre of
 
 When a capture starts, the controller pushes the **root in every phase**, and the **tail only in a phase with `tail_actuation: true`**. The interior nodes are never pushed. Each pushed end gets one force per step, bounded by the phase's `max_force_n`.
 
-**Force bound and ramp.** `max_force_n` is an upper bound, not a constant push. The bound rises from 0 to it over 1 s at the capture start and at every phase entry. A change in the push's direction does not restart it.
+**Force bound and ramp.** `max_force_n` is an upper bound, not a constant push. The bound rises from 0 to it over 1 s (`controller.force_ramp_s`) at the capture start and at every phase entry. A change in the push's direction does not restart it.
 
 **The capture sphere.** Each capture starts with a sphere of `capture_sphere.initial_radius_m` (25 m by default) about the target. A phase with `shrink_rate_mps` shrinks it at that rate, down to `capture_sphere.min_radius_m` (0.1 m by default). The root holds the sphere's radius and the tail holds the radius plus 1 m.
 
@@ -93,7 +93,24 @@ c*  = min(tail_spacing_m, 2 R_t sin 75°)
 
 **The magnitude rule.** The push keeps the magnitude of the composed direction, clamped to 1. A small proportional correction of the circle law or the spacing is a small force, not a full-force push in a new direction. The branch law's unit directions give full force as before.
 
-**Transitions.** A phase's transitions check `distance_m` (the root's range to the target), `relative_speed_mps` (in the target's LVLH frame) and `time_in_phase_s`. All conditions of a transition must hold. The controller keeps running in an end phase.
+**Transitions.** A phase's transitions check `distance_m` (the root's range to the target), `relative_speed_mps` (in the target's LVLH frame), `time_in_phase_s`, `closing_rate_mps` (how fast the root's range shrinks, positive while closing) and `tether_straightness` (the rope's largest distance from the root-to-tail line over the root-to-tail distance; 0 = straight). All conditions of a transition must hold ([Project files](./project-files#capture-plans-schema-v1)). The controller keeps running in an end phase.
+
+### Controller gains
+
+A phase's optional `controller` block sets the constants of the laws above for that phase. Each key is optional and defaults to the value the controller has always used. A plan without the block runs bit for bit as before.
+
+| Key | Default | Rule | What it sets |
+|---|---|---|---|
+| `radius_hold_band_m` | 2.0 | greater than 0 | The circle law: the radius error at which the radial term w_r reaches full weight (the 2 m above). |
+| `radial_rate_band_mps` | 0.1 | greater than 0 | The circle law: the outward speed against the sphere's shrink at which the rate term w_v reaches full weight (the 0.1 m/s above). |
+| `spacing_band_m` | 3.0 | greater than 0 | The tail's spacing: the chord error at which the tail's tangent weight saturates (the 3 m above). |
+| `spacing_rate_band_mps` | 0.3 | greater than 0 | The tail's spacing: the difference in the ends' tangent speeds at which the rate term saturates (the 0.3 m/s above). |
+| `plane_hold_band_m` | 1.0 | greater than 0 | `hold_plane`: the height above or below the circling plane at which the push toward it reaches full weight. |
+| `inner_edge_fraction` | 0.8 | greater than 0, less than 1 | The branch law's inner edge as a fraction of the sphere radius; inside it the end is pushed away from the target. |
+| `dead_band_fraction` | 0.02 | at least 0, less than 0.5 | The hysteresis band on the branch law's two edges and the speed limit's band (at least two steps' change of velocity); 0 removes the hysteresis. |
+| `force_ramp_s` | 1.0 | greater than 0 | Seconds the force bound takes to rise from 0 to `max_force_n` at the capture start and at every phase entry. |
+
+A narrower band makes the law stiffer: full force for a smaller error. A wider one makes it gentler. In the plan form the gains are in each phase's collapsed **Controller** group, with the defaults as hints.
 
 ### The example plan
 
