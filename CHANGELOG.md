@@ -27,6 +27,8 @@ GitHub Release description.
 ### Fixed
 - Starting a capture with a plan that cannot run (an unknown plan id, or a plan without phases) no longer ends the capture already in progress; the error is logged and that capture carries on (F-52).
 - The capture sphere shown when the sim screen opens is the active plan's initial radius (`capture_sphere.initial_radius_m`, 100 m for the example plan) instead of a fixed 25 m (F-60).
+- Orbital Selection: each role card's button now reads **Select** (opens the catalog on the map), then **Use Selected** once a catalog object is clicked (it assigns the object, clears the catalog selection and keeps the catalog open), then **Clear** once the role has an orbit. After one role is set, the other card's button is highlighted as the next step. Use Selected no longer looks clickable when nothing is selected (F-45).
+- The collapsed Capture Log bar can no longer be dragged and its buttons are inactive until the log is opened; the ERR, WARN, INFO and DBG filter labels are darker so they read on their highlight (F-67).
 - The capture-plan form shows every phase of a plan (in file order, ids read-only) and each transition's full list of conditions, and saving keeps everything the form does not show: opening, editing and saving any valid plan, in either unit system, loses nothing (F-15). An edited copy of the example plan saves; a migrated v0 plan keeps its `rendezvous` phase and its `migrated_from_v0` notes. Save's messages appear under the field they name. **+ New Plan** starts from the example plan's phases.
 
 ## [v0.4.0-rc.4] 🔬 - 2026-11-07

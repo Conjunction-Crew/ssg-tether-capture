@@ -149,6 +149,14 @@ fn p8_screen_snapshots() {
         assert!(path.is_file());
     }
 
+    // P9 S7: F-45's role buttons and F-67's Capture Log bar.
+    for path in crate::tests::catalog_screen::p9_s7_orbital_snapshots()
+        .into_iter()
+        .chain(crate::tests::capture_log_bar::p9_s7_log_bar_snapshots())
+    {
+        assert!(path.is_file());
+    }
+
     // S5: the sim header, the sidebar and the modals.
     for path in [
         snapshot("s5_header", sim_setup_view(), [1280.0, 72.0], sim_header_ui),
