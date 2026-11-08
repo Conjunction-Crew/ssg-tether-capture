@@ -147,6 +147,7 @@ fn both_bodies() -> OrbitalSelectionState {
     OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+        chaser_relative: None,
     }
 }
 
@@ -259,6 +260,7 @@ fn start_without_both_bodies_writes_nothing() {
     let selection = OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: None,
+        chaser_relative: None,
     };
 
     let (_, after, logged) = start(

@@ -15,6 +15,7 @@ use serde_json::Value;
 use crate::orbit::catalog::{GpElements, JsonOrbital, gp_record_to_elements};
 use crate::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState, SelectedOrbitalObject,
+    relative_chaser_elements,
 };
 use crate::project::epoch::{format_utc, parse_utc};
 
@@ -29,10 +30,6 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// The avian3d features the workspace builds with (`Cargo.toml`); results are
 /// bit-identical only on the same build and platform (F-48).
 const AVIAN_FEATURES: &[&str] = &["simd", "parallel"];
-
-/// Ends every "not supported yet" message (design D2, E1); only
-/// `relative_to_target` is left (P9).
-const NOT_YET: &str = "is not supported yet; it is applied from v0.4.0-rc.5";
 
 /// The six GP fields a body needs besides `NORAD_CAT_ID`, in load order.
 const GP_NUMBER_KEYS: [&str; 6] = [
@@ -191,8 +188,9 @@ pub enum ManifestOrbit {
     Gp(Box<JsonOrbital>),
     /// Osculating Keplerian elements in metres and radians.
     Elements(ManifestElements),
-    /// Chaser only: an offset from the target along V-bar or R-bar. Refused until
-    /// v0.4.0-rc.5.
+    /// Chaser only: an offset from the target along V-bar or R-bar, at rest in the
+    /// target's LVLH frame at the start epoch. The chaser gets the osculating elements
+    /// of that state.
     RelativeToTarget(RelativeToTarget),
 }
 
@@ -225,7 +223,8 @@ pub struct ManifestElements {
 pub struct RelativeToTarget {
     /// The approach line.
     pub preset: RelativePreset,
-    /// Distance from the target in metres.
+    /// Signed distance from the target in metres, not 0: positive ahead of the target
+    /// (V-bar) or above it, away from the Earth (R-bar); negative behind or below.
     pub offset_m: f64,
 }
 
@@ -311,6 +310,8 @@ pub struct ManifestSimInputs {
     pub chaser: SelectedOrbitalObject,
     /// The manifest's active plan id, if it names one.
     pub active_plan: Option<String>,
+    /// The chaser's `relative_to_target`, when it is placed that way (P9 S5).
+    pub chaser_relative: Option<RelativeToTarget>,
 }
 
 /// What reading `project.json` gave: the manifest when it loads (valid), the errors

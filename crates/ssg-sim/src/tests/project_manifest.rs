@@ -318,12 +318,14 @@ fn each_validation_rule_reports_its_message() {
             "[project.json] /chaser/inertia_kg_m2: must be a finite, symmetric, positive-definite 3×3 tensor",
         ),
         (
-            "a chaser relative to the target is not supported yet",
+            // P9 S5: `relative_to_target` is applied (Q10 row 15); was "not supported
+            // yet; it is applied from v0.4.0-rc.5". A zero offset is refused.
+            "a chaser on the target",
             |v| {
                 v["chaser"]["orbit"] =
-                    json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 100.0 } })
+                    json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 0.0 } })
             },
-            "[project.json] /chaser/orbit/relative_to_target: an orbit relative to the target is not supported yet; it is applied from v0.4.0-rc.5",
+            "[project.json] /chaser/orbit/relative_to_target/offset_m: must not be 0",
         ),
         (
             "a target cannot be relative to itself",
@@ -368,15 +370,16 @@ fn independent_errors_are_reported_in_field_order() {
 #[test]
 fn sim_inputs_of_an_invalid_manifest_is_the_validators_errors() {
     let mut manifest = read(&doc()).manifest.unwrap();
+    // P9 S5: was a supported offset refused as "applied from v0.4.0-rc.5".
     manifest.chaser.orbit = ManifestOrbit::RelativeToTarget(RelativeToTarget {
         preset: RelativePreset::VBar,
-        offset_m: 10.0,
+        offset_m: 0.0,
     });
 
     let errors = manifest.sim_inputs().expect_err("refused");
 
     assert_eq!(errors, manifest.validate());
-    assert!(errors[0].contains("applied from v0.4.0-rc.5"), "{errors:?}");
+    assert!(errors[0].ends_with("/offset_m: must not be 0"), "{errors:?}");
 }
 
 #[test]
@@ -560,6 +563,7 @@ fn a_selection_survives_the_manifest_and_a_file() {
     let selection = OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: Some(edited.clone()),
+        chaser_relative: None,
     };
 
     let manifest =
@@ -609,6 +613,7 @@ fn a_selection_needs_both_bodies() {
     let selection = OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: None,
+        chaser_relative: None,
     };
     assert_eq!(
         ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap_err(),
@@ -617,6 +622,7 @@ fn a_selection_needs_both_bodies() {
     let selection = OrbitalSelectionState {
         target: None,
         chaser: selection.target,
+        chaser_relative: None,
     };
     assert_eq!(
         ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap_err(),
@@ -663,6 +669,7 @@ fn save_and_reload_starts_from_what_was_read() {
     let selection = OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+        chaser_relative: None,
     };
     let manifest =
         ProjectManifest::from_selection("proj", fixed_epoch(), Some("example_plan"), &selection)
@@ -689,6 +696,7 @@ fn a_catalog_pick_keeps_its_object_id_through_a_project_json() {
     let selection = OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+        chaser_relative: None,
     };
     let manifest =
         ProjectManifest::from_selection("proj", fixed_epoch(), None, &selection).unwrap();
@@ -713,6 +721,7 @@ fn save_and_reload_without_a_writable_folder_starts_from_the_manifest_itself() {
     let selection = OrbitalSelectionState {
         target: Some(catalog_pick(q13::HST_NORAD_ID, "HST")),
         chaser: Some(catalog_pick(q13::CHASER_NORAD_ID, "Chaser")),
+        chaser_relative: None,
     };
     let manifest =
         ProjectManifest::from_selection("proj", fixed_epoch(), None, &selection).unwrap();
@@ -976,6 +985,7 @@ fn generated_selections_survive_from_selection_and_sim_inputs() {
         let selection = OrbitalSelectionState {
             target: Some(picked),
             chaser: Some(edited.clone()),
+            chaser_relative: None,
         };
 
         let manifest =
@@ -1019,6 +1029,7 @@ fn the_targets_mass_reaches_the_selection_and_survives_writing_it_back() {
     let selection = OrbitalSelectionState {
         target: Some(inputs.target),
         chaser: Some(inputs.chaser),
+        chaser_relative: None,
     };
     let written = ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap();
     assert_eq!(written.target.mass_kg, Some(3200.5));
@@ -1058,6 +1069,7 @@ fn the_chasers_mass_and_both_tensors_reach_the_selection_and_survive_writing_the
     let selection = OrbitalSelectionState {
         target: Some(inputs.target),
         chaser: Some(inputs.chaser),
+        chaser_relative: None,
     };
     let written = ProjectManifest::from_selection("p", fixed_epoch(), None, &selection).unwrap();
     assert_eq!(written.chaser.mass_kg, Some(500.0));
@@ -1200,4 +1212,88 @@ fn the_project_schema_requires_the_v1_keys_and_refuses_unknown_ones() {
     assert_eq!(schema["additionalProperties"], json!(false));
     assert_eq!(schema["properties"]["schema_version"]["minimum"], json!(1));
     assert_eq!(schema["properties"]["schema_version"]["maximum"], json!(1));
+}
+
+// ---------------------------------------------------------------------------
+// relative_to_target (P9 S5, Q10 row 15)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_chaser_relative_to_the_target_reads_writes_and_starts_from_elements() {
+    let mut value = doc();
+    value["chaser"]["orbit"] =
+        json!({ "relative_to_target": { "preset": "r_bar", "offset_m": -30.0 } });
+    let report = read(&value);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let manifest = report.manifest.unwrap();
+
+    // The file round trip keeps the key.
+    let again = read(&serde_json::from_str(&manifest_to_json(&manifest)).unwrap());
+    assert_eq!(again.manifest.as_ref(), Some(&manifest));
+
+    // The sim inputs: the converted elements at the start epoch, and the key kept.
+    let inputs = manifest.sim_inputs().unwrap();
+    let relative = RelativeToTarget {
+        preset: RelativePreset::RBar,
+        offset_m: -30.0,
+    };
+    assert_eq!(inputs.chaser_relative, Some(relative.clone()));
+    assert!(inputs.chaser.gp.is_none());
+    assert_eq!(inputs.chaser.elements.epoch, fixed_epoch());
+    let expected = crate::orbit::selection::relative_chaser_elements(
+        &inputs.target,
+        fixed_epoch(),
+        RelativePreset::RBar,
+        -30.0,
+    )
+    .unwrap();
+    assert_eq!(inputs.chaser.elements.to_vec6(), expected.to_vec6());
+
+    // Written back from the selection: the key, not the elements.
+    let selection = OrbitalSelectionState {
+        target: Some(inputs.target),
+        chaser: Some(inputs.chaser),
+        chaser_relative: inputs.chaser_relative,
+    };
+    let written = ProjectManifest::from_selection(
+        &manifest.name,
+        fixed_epoch(),
+        manifest.active_plan.as_deref(),
+        &selection,
+    )
+    .unwrap();
+    assert_eq!(
+        written.chaser.orbit,
+        ManifestOrbit::RelativeToTarget(relative)
+    );
+}
+
+#[test]
+fn a_relative_start_the_propagator_would_move_is_refused_by_the_reader() {
+    // M1-a: an e = 0 target, R-bar 30 m (90 m off with brahe 1.3.4).
+    let mut value = doc();
+    value["target"]["orbit"] = json!({ "elements": {
+        "semi_major_axis_m": 6778137.0, "eccentricity": 0.0, "inclination_rad": 0.9,
+        "raan_rad": 1.0, "arg_perigee_rad": 0.0, "mean_anomaly_rad": 0.5,
+        "epoch_utc": START
+    } });
+    value["chaser"]["orbit"] =
+        json!({ "relative_to_target": { "preset": "r_bar", "offset_m": 30.0 } });
+
+    let report = read(&value);
+
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].starts_with(
+            "[project.json] /chaser/orbit/relative_to_target: the chaser would start "
+        ),
+        "{:?}",
+        report.errors
+    );
+    assert!(report.manifest.is_none());
+
+    // V-bar 30 m on the same target starts 2e-4 m off: accepted.
+    value["chaser"]["orbit"] =
+        json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 30.0 } });
+    assert!(read(&value).errors.is_empty());
 }

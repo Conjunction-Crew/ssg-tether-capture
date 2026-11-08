@@ -39,6 +39,21 @@ impl ProjectManifest {
         if let Some(recording) = &self.recording {
             recording.validate("/recording", &mut errors);
         }
+        // P9 S5 (M1-a): a chaser placed relative to the target must start where it
+        // says, which needs a valid target, so this runs last.
+        if let ManifestOrbit::RelativeToTarget(relative) = &self.chaser.orbit
+            && errors.is_empty()
+            && let Some(start) = start
+            && let Err(e) = self
+                .target
+                .selected_object("/target", start, None)
+                .map_err(|errors| errors.join("; "))
+                .and_then(|target| {
+                    relative_chaser_elements(&target, start, relative.preset, relative.offset_m)
+                })
+        {
+            errors.push(message("/chaser/orbit/relative_to_target", e));
+        }
         errors
     }
 
@@ -51,17 +66,27 @@ impl ProjectManifest {
         }
         let start_epoch = parse_utc(&self.start_epoch_utc)
             .ok_or_else(|| vec![message("/start_epoch_utc", "is not a UTC epoch")])?;
+        let target = self.target.selected_object("/target", start_epoch, None)?;
+        let chaser = self
+            .chaser
+            .selected_object("/chaser", start_epoch, Some(&target))?;
+        let chaser_relative = match &self.chaser.orbit {
+            ManifestOrbit::RelativeToTarget(relative) => Some(relative.clone()),
+            _ => None,
+        };
         Ok(ManifestSimInputs {
             start_epoch,
-            target: self.target.selected_object("/target", start_epoch)?,
-            chaser: self.chaser.selected_object("/chaser", start_epoch)?,
+            target,
+            chaser,
             active_plan: self.active_plan.clone(),
+            chaser_relative,
         })
     }
 
     /// The manifest of a scenario about to run: the inverse of
     /// [`Self::sim_inputs`]. A body with a catalog record is written as that record
-    /// (`OBJECT_NAME` is its label), any other as its elements. `start_epoch` is
+    /// (`OBJECT_NAME` is its label), any other as its elements; a chaser placed
+    /// relative to the target as its `relative_to_target` (P9 S5). `start_epoch` is
     /// written in the file format. `Err` when the target or the chaser is not
     /// selected.
     pub fn from_selection(
@@ -76,13 +101,17 @@ impl ProjectManifest {
                 .map(ManifestBody::from_selected)
                 .ok_or_else(|| format!("no {role} is selected"))
         };
+        let mut chaser = body("chaser", &selection.chaser)?;
+        if let Some(relative) = &selection.chaser_relative {
+            chaser.orbit = ManifestOrbit::RelativeToTarget(relative.clone());
+        }
         Ok(Self {
             schema_version: MANIFEST_SCHEMA_VERSION,
             name: name.to_string(),
             start_epoch_utc: format_utc(start_epoch),
             active_plan: active_plan.map(str::to_string),
             target: body("target", &selection.target)?,
-            chaser: body("chaser", &selection.chaser)?,
+            chaser,
             built_with: Some(BuiltWith::current()),
             recording: None,
         })
@@ -196,31 +225,31 @@ impl ManifestBody {
             }
             ManifestOrbit::RelativeToTarget(relative) => {
                 let at = format!("{at}/relative_to_target");
-                match role {
-                    Role::Target => errors.push(message(
+                if role == Role::Target {
+                    errors.push(message(
                         &at,
                         "only the chaser can be placed relative to the target",
-                    )),
-                    Role::Chaser => errors.push(message(
-                        &at,
-                        format!("an orbit relative to the target {NOT_YET}"),
-                    )),
+                    ));
                 }
                 if !relative.offset_m.is_finite() {
                     errors.push(message(
                         &format!("{at}/offset_m"),
                         "must be a finite number",
                     ));
+                } else if relative.offset_m == 0.0 {
+                    errors.push(message(&format!("{at}/offset_m"), "must not be 0"));
                 }
             }
         }
     }
 
-    /// The selected object of a valid body. `at` is only used in messages.
+    /// The selected object of a valid body. `at` is only used in messages; `target`
+    /// is the resolved target, which a chaser placed relative to it needs.
     fn selected_object(
         &self,
         at: &str,
         start_epoch: Epoch,
+        target: Option<&SelectedOrbitalObject>,
     ) -> Result<SelectedOrbitalObject, Vec<String>> {
         let source = OrbitalSelectionSource::Custom {
             label: self.label.clone(),
@@ -265,10 +294,26 @@ impl ManifestBody {
                     inertia_kg_m2: self.inertia_kg_m2,
                 })
             }
-            ManifestOrbit::RelativeToTarget(_) => Err(vec![message(
-                &format!("{at}/orbit/relative_to_target"),
-                format!("an orbit relative to the target {NOT_YET}"),
-            )]),
+            ManifestOrbit::RelativeToTarget(relative) => {
+                let refused = |e: String| vec![message(&format!("{at}/orbit/relative_to_target"), e)];
+                let target = target.ok_or_else(|| {
+                    refused("only the chaser can be placed relative to the target".to_string())
+                })?;
+                let elements = relative_chaser_elements(
+                    target,
+                    start_epoch,
+                    relative.preset,
+                    relative.offset_m,
+                )
+                .map_err(refused)?;
+                Ok(SelectedOrbitalObject {
+                    source,
+                    elements,
+                    gp: None,
+                    mass_kg: self.mass_kg,
+                    inertia_kg_m2: self.inertia_kg_m2,
+                })
+            }
         }
     }
 
