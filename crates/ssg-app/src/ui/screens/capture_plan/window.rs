@@ -29,16 +29,45 @@ pub fn capture_plan_form_ui(
     out: &mut Vec<UiEvent>,
 ) {
     title_bar(ui, form, out);
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            egui::Frame::new().inner_margin(20.0).show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 20.0;
-                body(ui, form, out);
-            });
+    // O3 W1.03 (c): every opening starts at the top (the window clears the flag
+    // when the form closes).
+    let first_frame = !ui
+        .ctx()
+        .data_mut(|d| std::mem::replace(d.get_temp_mut_or_default::<bool>(shown_id()), true));
+    // O3 W1.01: a solid, always-visible bar, wider than egui's floating one.
+    ui.spacing_mut().scroll = form_scroll_style();
+    let mut area = egui::ScrollArea::vertical().auto_shrink([false, true]);
+    if first_frame {
+        area = area.vertical_scroll_offset(0.0);
+    }
+    area.show(ui, |ui| {
+        egui::Frame::new().inner_margin(20.0).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 20.0;
+            body(ui, form, out);
         });
+    });
     if let Some(path) = form.overwrite_conflict_path.clone() {
         overwrite_prompt(ui.ctx(), &path, out);
+    }
+}
+
+/// Set while the form is shown; cleared when it closes (O3 W1.03 (c)).
+fn shown_id() -> egui::Id {
+    egui::Id::new("capture_plan_form_shown")
+}
+
+/// The form is closed: its next opening starts at the top (O3 W1.03 (c)).
+pub(crate) fn form_closed(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.remove::<bool>(shown_id()));
+}
+
+/// The form's scroll bar (O3 W1.01): solid, 12 px, its handle visible at rest.
+pub(crate) fn form_scroll_style() -> egui::style::ScrollStyle {
+    egui::style::ScrollStyle {
+        bar_width: 12.0,
+        dormant_background_opacity: 0.3,
+        dormant_handle_opacity: 0.6,
+        ..egui::style::ScrollStyle::solid()
     }
 }
 
@@ -239,24 +268,31 @@ pub(crate) fn units_toggle(ui: &mut egui::Ui, current: UnitSystem, out: &mut Vec
     });
 }
 
-/// A form section: an accent title over a rule, then its rows.
+/// A form section: its rows under an accent title that collapses them (O3
+/// W1.06; open by default), or plain rows without a title.
 pub(super) fn section(
     ui: &mut egui::Ui,
     title: Option<&str>,
     add_rows: impl FnOnce(&mut egui::Ui),
 ) {
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 10.0;
-        if let Some(title) = title {
-            ui.label(
-                egui::RichText::new(title)
-                    .size(15.0)
-                    .color(ui.visuals().hyperlink_color),
-            );
-            ui.separator();
+    let rows = |ui: &mut egui::Ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 10.0;
+            add_rows(ui);
+        });
+    };
+    match title {
+        Some(title) => {
+            let text = egui::RichText::new(title)
+                .size(15.0)
+                .color(ui.visuals().hyperlink_color);
+            egui::CollapsingHeader::new(text)
+                .id_salt(("capture_plan_section", title))
+                .default_open(true)
+                .show(ui, rows);
         }
-        add_rows(ui);
-    });
+        None => rows(ui),
+    }
 }
 
 /// A selectable button: the button fill when chosen, the soft fill otherwise.
@@ -429,12 +465,13 @@ pub fn capture_plan_form_window(
     mut form: ResMut<NewCapturePlanForm>,
     mut events: MessageWriter<UiEvent>,
 ) {
-    if !form.open {
-        return;
-    }
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
+    if !form.open {
+        form_closed(ctx);
+        return;
+    }
     let max_height = ctx.content_rect().height() * 0.88;
     let width = FORM_WIDTH.min(ctx.content_rect().width() * 0.94);
     let mut out = Vec::new();

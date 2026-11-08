@@ -236,5 +236,7 @@ fn p8_screen_snapshots() {
     }
     // P9 S2: the new sections, the Controller group open, + Condition's menu.
     paths.extend(crate::tests::plan_form_fields::p9_s2_snapshots());
+    // P9 Run 4: the W1 walk fix-ups (scroll bar, collapsible sections).
+    paths.extend(crate::tests::plan_form_window::p9_w1_snapshots());
     assert!(paths.iter().all(|path| path.is_file()));
 }
