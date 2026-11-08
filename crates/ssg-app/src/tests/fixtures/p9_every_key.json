@@ -34,6 +34,13 @@
             },
             "time_in_phase_s": {
               "greater_than": 12.5
+            },
+            "closing_rate_mps": {
+              "less_than": 0.75,
+              "greater_than": 0.05
+            },
+            "tether_straightness": {
+              "less_than": 0.15
             }
           }
         },
@@ -66,7 +73,17 @@
       "velocity_scales_with_sphere": true,
       "hold_plane": true,
       "actuation": "circle",
-      "tail_spacing_m": 10.5
+      "tail_spacing_m": 10.5,
+      "controller": {
+        "radius_hold_band_m": 1.5,
+        "radial_rate_band_mps": 0.15,
+        "spacing_band_m": 2.5,
+        "spacing_rate_band_mps": 0.25,
+        "plane_hold_band_m": 0.75,
+        "inner_edge_fraction": 0.7,
+        "dead_band_fraction": 0.03,
+        "force_ramp_s": 2.0
+      }
     },
     {
       "id": "done",
@@ -75,7 +92,8 @@
       "end": "success",
       "tail_actuation": false,
       "hold_plane": true,
-      "actuation": "hold"
+      "actuation": "hold",
+      "controller": {}
     },
     {
       "id": "abort",

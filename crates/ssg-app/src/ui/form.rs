@@ -1,6 +1,8 @@
 use bevy::prelude::*;
+use ssg_sim::capture::gains::{ControllerGains, PhaseController};
 use ssg_sim::capture::plan::{
-    CapturePlan, ConditionBounds, PLAN_SCHEMA_VERSION, TransitionConditions,
+    Actuation, CapturePlan, ConditionBounds, PLAN_SCHEMA_VERSION, PhaseEnd, SpawnOrientation,
+    TransitionConditions,
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,6 +15,7 @@ pub enum UnitSystem {
 const M_PER_FT: f64 = 0.3048;
 const N_PER_LBF: f64 = 4.44822;
 const KM_PER_MI: f64 = 1.609344;
+const KG_PER_LB: f64 = 0.45359237;
 
 /// What a displayed quantity is in this unit system (Q10 row 16). Display only:
 /// files, exports, logs and recordings stay metric.
@@ -35,6 +38,22 @@ impl UnitSystem {
         match self {
             UnitSystem::Metric => (n, "N"),
             UnitSystem::Imperial => (n / N_PER_LBF, "lbf"),
+        }
+    }
+
+    /// A mass: kilograms or pounds (A-6).
+    pub fn mass(self, kg: f64) -> (f64, &'static str) {
+        match self {
+            UnitSystem::Metric => (kg, "kg"),
+            UnitSystem::Imperial => (kg / KG_PER_LB, "lb"),
+        }
+    }
+
+    /// A mass the form shows in this system, in kilograms (rounded as below).
+    pub fn mass_to_metric(self, shown: f64) -> f64 {
+        match self {
+            UnitSystem::Metric => shown,
+            UnitSystem::Imperial => round_to(shown * KG_PER_LB, 1e9),
         }
     }
 
@@ -80,8 +99,12 @@ pub enum Quantity {
     Length,
     Speed,
     Force,
+    /// kg or lb (A-6).
+    Mass,
     /// Seconds: the same in both systems.
     Seconds,
+    /// A fraction, a damping coefficient: no unit.
+    Unitless,
 }
 
 impl Quantity {
@@ -91,7 +114,9 @@ impl Quantity {
             Quantity::Length => unit.length(0.0).1,
             Quantity::Speed => unit.speed(0.0).1,
             Quantity::Force => unit.force(0.0).1,
+            Quantity::Mass => unit.mass(0.0).1,
             Quantity::Seconds => "s",
+            Quantity::Unitless => "",
         }
     }
 
@@ -100,7 +125,8 @@ impl Quantity {
             Quantity::Length => unit.length(metric).0,
             Quantity::Speed => unit.speed(metric).0,
             Quantity::Force => unit.force(metric).0,
-            Quantity::Seconds => metric,
+            Quantity::Mass => unit.mass(metric).0,
+            Quantity::Seconds | Quantity::Unitless => metric,
         }
     }
 
@@ -108,13 +134,22 @@ impl Quantity {
         match self {
             Quantity::Length | Quantity::Speed => unit.linear_to_metric(shown),
             Quantity::Force => unit.force_to_metric(shown),
-            Quantity::Seconds => shown,
+            Quantity::Mass => unit.mass_to_metric(shown),
+            Quantity::Seconds | Quantity::Unitless => shown,
+        }
+    }
+
+    /// `label (unit)`, or `label` for a quantity without a unit.
+    pub fn labelled(self, label: &str, unit: UnitSystem) -> String {
+        match self.unit_label(unit) {
+            "" => label.to_string(),
+            symbol => format!("{label} ({symbol})"),
         }
     }
 
     /// `metric` as the form shows it in `unit`: as the plan file writes it in
     /// metric, at ten decimals otherwise (under the 1e-9 rounding back).
-    fn text(self, unit: UnitSystem, metric: f64) -> String {
+    pub fn text(self, unit: UnitSystem, metric: f64) -> String {
         let shown = self.shown_value(unit, metric);
         let shown = if shown == metric {
             shown
@@ -189,13 +224,19 @@ pub enum ConditionKind {
     Distance,
     RelativeSpeed,
     TimeInPhase,
+    /// Q10 row 6 (S3).
+    ClosingRate,
+    /// E4 (b) (S3).
+    TetherStraightness,
 }
 
 impl ConditionKind {
-    pub const ALL: [ConditionKind; 3] = [
+    pub const ALL: [ConditionKind; 5] = [
         ConditionKind::Distance,
         ConditionKind::RelativeSpeed,
         ConditionKind::TimeInPhase,
+        ConditionKind::ClosingRate,
+        ConditionKind::TetherStraightness,
     ];
 
     /// The key under `all_of`.
@@ -204,6 +245,8 @@ impl ConditionKind {
             ConditionKind::Distance => "distance_m",
             ConditionKind::RelativeSpeed => "relative_speed_mps",
             ConditionKind::TimeInPhase => "time_in_phase_s",
+            ConditionKind::ClosingRate => "closing_rate_mps",
+            ConditionKind::TetherStraightness => "tether_straightness",
         }
     }
 
@@ -212,6 +255,8 @@ impl ConditionKind {
             ConditionKind::Distance => "Distance",
             ConditionKind::RelativeSpeed => "Relative Speed",
             ConditionKind::TimeInPhase => "Time in Phase",
+            ConditionKind::ClosingRate => "Closing Rate",
+            ConditionKind::TetherStraightness => "Tether Straightness",
         }
     }
 
@@ -220,6 +265,8 @@ impl ConditionKind {
             ConditionKind::Distance => Quantity::Length,
             ConditionKind::RelativeSpeed => Quantity::Speed,
             ConditionKind::TimeInPhase => Quantity::Seconds,
+            ConditionKind::ClosingRate => Quantity::Speed,
+            ConditionKind::TetherStraightness => Quantity::Unitless,
         }
     }
 
@@ -228,6 +275,8 @@ impl ConditionKind {
             ConditionKind::Distance => all_of.distance_m,
             ConditionKind::RelativeSpeed => all_of.relative_speed_mps,
             ConditionKind::TimeInPhase => all_of.time_in_phase_s,
+            ConditionKind::ClosingRate => all_of.closing_rate_mps,
+            ConditionKind::TetherStraightness => all_of.tether_straightness,
         }
     }
 
@@ -236,6 +285,102 @@ impl ConditionKind {
             ConditionKind::Distance => &mut all_of.distance_m,
             ConditionKind::RelativeSpeed => &mut all_of.relative_speed_mps,
             ConditionKind::TimeInPhase => &mut all_of.time_in_phase_s,
+            ConditionKind::ClosingRate => &mut all_of.closing_rate_mps,
+            ConditionKind::TetherStraightness => &mut all_of.tether_straightness,
+        }
+    }
+}
+
+/// One of a phase's eight controller gains (`phases[].controller`, S4, E2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControllerKey {
+    RadiusHoldBand,
+    RadialRateBand,
+    SpacingBand,
+    SpacingRateBand,
+    PlaneHoldBand,
+    InnerEdgeFraction,
+    DeadBandFraction,
+    ForceRamp,
+}
+
+impl ControllerKey {
+    pub const ALL: [ControllerKey; 8] = [
+        ControllerKey::RadiusHoldBand,
+        ControllerKey::RadialRateBand,
+        ControllerKey::SpacingBand,
+        ControllerKey::SpacingRateBand,
+        ControllerKey::PlaneHoldBand,
+        ControllerKey::InnerEdgeFraction,
+        ControllerKey::DeadBandFraction,
+        ControllerKey::ForceRamp,
+    ];
+
+    /// The key under `controller`.
+    pub fn key(self) -> &'static str {
+        match self {
+            ControllerKey::RadiusHoldBand => "radius_hold_band_m",
+            ControllerKey::RadialRateBand => "radial_rate_band_mps",
+            ControllerKey::SpacingBand => "spacing_band_m",
+            ControllerKey::SpacingRateBand => "spacing_rate_band_mps",
+            ControllerKey::PlaneHoldBand => "plane_hold_band_m",
+            ControllerKey::InnerEdgeFraction => "inner_edge_fraction",
+            ControllerKey::DeadBandFraction => "dead_band_fraction",
+            ControllerKey::ForceRamp => "force_ramp_s",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ControllerKey::RadiusHoldBand => "Radius Hold Band",
+            ControllerKey::RadialRateBand => "Radial Rate Band",
+            ControllerKey::SpacingBand => "Spacing Band",
+            ControllerKey::SpacingRateBand => "Spacing Rate Band",
+            ControllerKey::PlaneHoldBand => "Plane Hold Band",
+            ControllerKey::InnerEdgeFraction => "Inner Edge Fraction",
+            ControllerKey::DeadBandFraction => "Dead Band Fraction",
+            ControllerKey::ForceRamp => "Force Ramp",
+        }
+    }
+
+    pub fn quantity(self) -> Quantity {
+        match self {
+            ControllerKey::RadiusHoldBand
+            | ControllerKey::SpacingBand
+            | ControllerKey::PlaneHoldBand => Quantity::Length,
+            ControllerKey::RadialRateBand | ControllerKey::SpacingRateBand => Quantity::Speed,
+            ControllerKey::InnerEdgeFraction | ControllerKey::DeadBandFraction => {
+                Quantity::Unitless
+            }
+            ControllerKey::ForceRamp => Quantity::Seconds,
+        }
+    }
+
+    /// The value the controller uses when the key is absent.
+    pub fn default_value(self) -> f64 {
+        let gains = ControllerGains::default();
+        match self {
+            ControllerKey::RadiusHoldBand => gains.radius_hold_band_m,
+            ControllerKey::RadialRateBand => gains.radial_rate_band_mps,
+            ControllerKey::SpacingBand => gains.spacing_band_m,
+            ControllerKey::SpacingRateBand => gains.spacing_rate_band_mps,
+            ControllerKey::PlaneHoldBand => gains.plane_hold_band_m,
+            ControllerKey::InnerEdgeFraction => gains.inner_edge_fraction,
+            ControllerKey::DeadBandFraction => gains.dead_band_fraction,
+            ControllerKey::ForceRamp => gains.force_ramp_s,
+        }
+    }
+
+    pub fn value_mut(self, controller: &mut PhaseController) -> &mut Option<f64> {
+        match self {
+            ControllerKey::RadiusHoldBand => &mut controller.radius_hold_band_m,
+            ControllerKey::RadialRateBand => &mut controller.radial_rate_band_mps,
+            ControllerKey::SpacingBand => &mut controller.spacing_band_m,
+            ControllerKey::SpacingRateBand => &mut controller.spacing_rate_band_mps,
+            ControllerKey::PlaneHoldBand => &mut controller.plane_hold_band_m,
+            ControllerKey::InnerEdgeFraction => &mut controller.inner_edge_fraction,
+            ControllerKey::DeadBandFraction => &mut controller.dead_band_fraction,
+            ControllerKey::ForceRamp => &mut controller.force_ramp_s,
         }
     }
 }
@@ -283,6 +428,15 @@ pub struct PhaseForm {
     /// Empty = no shrink (the key absent).
     pub shrink_rate: NumberField,
     pub transitions: Vec<TransitionForm>,
+    // S2: every other phase key. `None` = the key absent (its default).
+    pub end: Option<PhaseEnd>,
+    pub actuation: Option<Actuation>,
+    pub tail_actuation: Option<bool>,
+    pub tail_spacing: NumberField,
+    pub hold_plane: Option<bool>,
+    pub velocity_scales_with_sphere: Option<bool>,
+    /// `controller`, in [`ControllerKey::ALL`] order; empty = absent.
+    pub controller: [NumberField; 8],
 }
 
 /// A message of Save's validation and the JSON Pointer of the plan value it is
@@ -311,6 +465,17 @@ pub struct NewCapturePlanForm {
     pub tether_type: String,
     /// `device.tether_length_m`; empty = absent (20 m).
     pub tether_length: NumberField,
+    // S2: the rest of `device`; empty / `None` = absent.
+    pub segment_spacing: NumberField,
+    pub segment_mass: NumberField,
+    pub end_mass: NumberField,
+    pub damping_linear: NumberField,
+    pub damping_angular: NumberField,
+    pub spawn_orientation: Option<SpawnOrientation>,
+
+    // Capture sphere (S2); empty = absent.
+    pub initial_radius: NumberField,
+    pub min_radius: NumberField,
 
     /// Every phase of the plan, in file order.
     pub phases: Vec<PhaseForm>,
@@ -348,6 +513,14 @@ impl Default for NewCapturePlanForm {
             tether_name: String::new(),
             tether_type: String::new(),
             tether_length: NumberField::default(),
+            segment_spacing: NumberField::default(),
+            segment_mass: NumberField::default(),
+            end_mass: NumberField::default(),
+            damping_linear: NumberField::default(),
+            damping_angular: NumberField::default(),
+            spawn_orientation: None,
+            initial_radius: NumberField::default(),
+            min_radius: NumberField::default(),
             phases: Vec::new(),
             overwrite_conflict_path: None,
             validation_errors: Vec::new(),
@@ -375,11 +548,24 @@ impl NewCapturePlanForm {
         if unit == from {
             return;
         }
-        self.tether_length.set_unit(Quantity::Length, from, unit);
+        for (field, quantity) in [
+            (&mut self.tether_length, Quantity::Length),
+            (&mut self.segment_spacing, Quantity::Length),
+            (&mut self.segment_mass, Quantity::Mass),
+            (&mut self.end_mass, Quantity::Mass),
+            (&mut self.initial_radius, Quantity::Length),
+            (&mut self.min_radius, Quantity::Length),
+        ] {
+            field.set_unit(quantity, from, unit);
+        }
         for phase in &mut self.phases {
             phase.max_velocity.set_unit(Quantity::Speed, from, unit);
             phase.max_force.set_unit(Quantity::Force, from, unit);
             phase.shrink_rate.set_unit(Quantity::Speed, from, unit);
+            phase.tail_spacing.set_unit(Quantity::Length, from, unit);
+            for (field, key) in phase.controller.iter_mut().zip(ControllerKey::ALL) {
+                field.set_unit(key.quantity(), from, unit);
+            }
             for condition in phase
                 .transitions
                 .iter_mut()

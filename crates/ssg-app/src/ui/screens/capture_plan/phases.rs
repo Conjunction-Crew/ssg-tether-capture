@@ -1,14 +1,27 @@
 //! One form section per phase of the plan, in file order (P9 S1, F-15): its
 //! limits and its transitions, each with every condition it has; all of a
 //! transition's conditions must hold (Q10 row 4). Phase ids are not editable and
-//! phases are not added, removed or reordered here (A-1, E1).
+//! phases are not added, removed or reordered here (A-1, E1). S2 adds every
+//! other phase key, the controller gains and the conditions of S3.
 
 use bevy_egui::egui;
 
 use super::pointer;
-use super::window::{FieldCtx, dropdown, errors_at, number_field, section};
+use super::window::{
+    FieldCtx, choice_row, default_number, dropdown, errors_at, number_field, section,
+};
 use crate::ui::events::UiEvent;
-use crate::ui::form::{PhaseForm, Quantity, TransitionForm};
+use crate::ui::form::{
+    ConditionForm, ConditionKind, ControllerKey, NumberField, PhaseForm, Quantity, TransitionForm,
+};
+use ssg_sim::capture::plan::{Actuation, PhaseEnd};
+
+/// A switch of the plan: absent (its default, off), off or on.
+const SWITCH: [(Option<bool>, &str); 3] = [
+    (None, "Default (off)"),
+    (Some(false), "Off"),
+    (Some(true), "On"),
+];
 
 pub(super) fn phase_sections(
     ui: &mut egui::Ui,
@@ -45,9 +58,87 @@ pub(super) fn phase_sections(
                 &mut phase.shrink_rate,
                 &pointer::phase(i, "shrink_rate_mps"),
             );
+            phase_keys(ui, ctx, i, phase);
             transitions(ui, ctx, i, &mut phase.transitions, &ids, out);
         });
     }
+}
+
+/// S2: the phase keys besides its limits (Q10 row 7, the P7.5 keys) and its
+/// controller gains (Q10 row 17), collapsed.
+fn phase_keys(ui: &mut egui::Ui, ctx: &FieldCtx, i: usize, phase: &mut PhaseForm) {
+    choice_row(
+        ui,
+        ctx,
+        "End",
+        &mut phase.end,
+        &[
+            (None, "None"),
+            (Some(PhaseEnd::Success), "Success"),
+            (Some(PhaseEnd::Abort), "Abort"),
+        ],
+        &pointer::phase(i, "end"),
+    );
+    choice_row(
+        ui,
+        ctx,
+        "Actuation",
+        &mut phase.actuation,
+        &[
+            (None, "Default (circle)"),
+            (Some(Actuation::Circle), "Circle"),
+            (Some(Actuation::Hold), "Hold"),
+        ],
+        &pointer::phase(i, "actuation"),
+    );
+    choice_row(
+        ui,
+        ctx,
+        "Tail Actuation",
+        &mut phase.tail_actuation,
+        &SWITCH,
+        &pointer::phase(i, "tail_actuation"),
+    );
+    number_field(
+        ui,
+        ctx,
+        &Quantity::Length.labelled("Tail Spacing", ctx.unit),
+        "none",
+        &mut phase.tail_spacing,
+        &pointer::phase(i, "tail_spacing_m"),
+    );
+    choice_row(
+        ui,
+        ctx,
+        "Hold Plane",
+        &mut phase.hold_plane,
+        &SWITCH,
+        &pointer::phase(i, "hold_plane"),
+    );
+    choice_row(
+        ui,
+        ctx,
+        "Speed Scales with Sphere",
+        &mut phase.velocity_scales_with_sphere,
+        &SWITCH,
+        &pointer::phase(i, "velocity_scales_with_sphere"),
+    );
+    egui::CollapsingHeader::new(egui::RichText::new("Controller").size(12.0))
+        .id_salt(("phase_controller", i))
+        .default_open(false)
+        .show(ui, |ui| {
+            for (field, key) in phase.controller.iter_mut().zip(ControllerKey::ALL) {
+                default_number(
+                    ui,
+                    ctx,
+                    key.label(),
+                    key.quantity(),
+                    key.default_value(),
+                    field,
+                    &pointer::phase(i, &format!("controller/{}", key.key())),
+                );
+            }
+        });
 }
 
 fn transitions(
@@ -95,7 +186,7 @@ fn transitions(
                 for condition in &mut transition.conditions {
                     let key = condition.kind.key();
                     let label = condition.kind.label();
-                    let unit = condition.kind.quantity().unit_label(ctx.unit);
+                    let quantity = condition.kind.quantity();
                     let at =
                         |rest: &str| pointer::transition(phase, j, &format!("all_of/{key}{rest}"));
                     errors_at(ui, ctx, &at(""));
@@ -103,7 +194,7 @@ fn transitions(
                         number_field(
                             &mut columns[0],
                             ctx,
-                            &format!("{label} less than ({unit})"),
+                            &quantity.labelled(&format!("{label} less than"), ctx.unit),
                             "none",
                             &mut condition.less_than,
                             &at("/less_than"),
@@ -111,13 +202,14 @@ fn transitions(
                         number_field(
                             &mut columns[1],
                             ctx,
-                            &format!("{label} greater than ({unit})"),
+                            &quantity.labelled(&format!("{label} greater than"), ctx.unit),
                             "none",
                             &mut condition.greater_than,
                             &at("/greater_than"),
                         );
                     });
                 }
+                add_condition(ui, ctx, (phase, j), &mut transition.conditions);
             });
     }
     let add = egui::Button::new(egui::RichText::new("+ Add Transition").weak())
@@ -125,4 +217,37 @@ fn transitions(
     if ui.add_enabled(ctx.editable, add).clicked() {
         out.push(UiEvent::AddTransition(phase));
     }
+}
+
+/// "+ Condition": adds one of the conditions the transition does not have yet;
+/// it stays absent until a bound is typed (S2).
+fn add_condition(
+    ui: &mut egui::Ui,
+    ctx: &FieldCtx,
+    id: (usize, usize),
+    conditions: &mut Vec<ConditionForm>,
+) {
+    let missing: Vec<ConditionKind> = ConditionKind::ALL
+        .into_iter()
+        .filter(|kind| conditions.iter().all(|c| c.kind != *kind))
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    ui.add_enabled_ui(ctx.editable, |ui| {
+        ui.push_id(("add_condition", id), |ui| {
+            ui.menu_button("+ Condition", |ui| {
+                for kind in missing {
+                    if ui.button(kind.label()).clicked() {
+                        conditions.push(ConditionForm {
+                            kind,
+                            less_than: NumberField::default(),
+                            greater_than: NumberField::default(),
+                        });
+                        ui.close();
+                    }
+                }
+            });
+        });
+    });
 }

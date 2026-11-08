@@ -11,6 +11,7 @@ use bevy_egui::{EguiContexts, egui};
 use super::{field_pointers, phases, pointer};
 use crate::ui::events::UiEvent;
 use crate::ui::form::{FormError, NewCapturePlanForm, NumberField, Quantity, UnitSystem};
+use ssg_sim::capture::plan::{CapturePlanDevice, SpawnOrientation};
 
 const FORM_WIDTH: f32 = 680.0;
 
@@ -145,6 +146,79 @@ fn body(ui: &mut egui::Ui, form: &mut NewCapturePlanForm, out: &mut Vec<UiEvent>
             &mut form.tether_length,
             pointer::TETHER_LENGTH,
         );
+        // S2: the rest of `device`, each empty = absent (its default as the hint).
+        let defaults = CapturePlanDevice::default();
+        for ((label, quantity, default, value), at) in [
+            (
+                "Segment Spacing",
+                Quantity::Length,
+                defaults.segment_spacing_m(),
+                &mut form.segment_spacing,
+            ),
+            (
+                "Segment Mass",
+                Quantity::Mass,
+                defaults.segment_mass_kg(),
+                &mut form.segment_mass,
+            ),
+            (
+                "End Mass",
+                Quantity::Mass,
+                defaults.end_mass_kg(),
+                &mut form.end_mass,
+            ),
+            (
+                "Linear Damping",
+                Quantity::Unitless,
+                defaults.joint_damping_linear(),
+                &mut form.damping_linear,
+            ),
+            (
+                "Angular Damping (no effect on the rope model)",
+                Quantity::Unitless,
+                defaults.joint_damping_angular(),
+                &mut form.damping_angular,
+            ),
+        ]
+        .into_iter()
+        .zip(pointer::DEVICE_NUMBERS)
+        {
+            default_number(ui, &ctx, label, quantity, default, value, at);
+        }
+        choice_row(
+            ui,
+            &ctx,
+            "Spawn Orientation",
+            &mut form.spawn_orientation,
+            &[
+                (None, "Default (toward target)"),
+                (Some(SpawnOrientation::TowardTarget), "Toward Target"),
+                (Some(SpawnOrientation::VBar), "V-bar"),
+                (Some(SpawnOrientation::RBar), "R-bar"),
+            ],
+            pointer::SPAWN_ORIENTATION,
+        );
+    });
+
+    section(ui, Some("Capture Sphere"), |ui| {
+        default_number(
+            ui,
+            &ctx,
+            "Initial Radius",
+            Quantity::Length,
+            ssg_sim::capture::INITIAL_CAPTURE_SPHERE_RADIUS_M,
+            &mut form.initial_radius,
+            pointer::INITIAL_RADIUS,
+        );
+        default_number(
+            ui,
+            &ctx,
+            "Min Radius",
+            Quantity::Length,
+            ssg_sim::capture::MIN_CAPTURE_SPHERE_RADIUS_M,
+            &mut form.min_radius,
+            pointer::MIN_RADIUS,
+        );
     });
 
     phases::phase_sections(ui, &ctx, &mut form.phases, out);
@@ -229,6 +303,53 @@ pub(super) fn number_field(
     pointer: &str,
 ) {
     field(ui, ctx, label, hint, &mut value.text, pointer);
+}
+
+/// An optional number: its label with the unit, and the default it takes when
+/// empty (shown in the toggle's units) as the hint.
+pub(super) fn default_number(
+    ui: &mut egui::Ui,
+    ctx: &FieldCtx,
+    label: &str,
+    quantity: Quantity,
+    default: f64,
+    value: &mut NumberField,
+    pointer: &str,
+) {
+    let hint = format!("default {}", quantity.text(ctx.unit, default));
+    number_field(
+        ui,
+        ctx,
+        &quantity.labelled(label, ctx.unit),
+        &hint,
+        value,
+        pointer,
+    );
+}
+
+/// An optional key with a few values: one button per option, `None` the key
+/// absent (its default), and Save's messages about `pointer`.
+pub(super) fn choice_row<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    ctx: &FieldCtx,
+    label: &str,
+    value: &mut Option<T>,
+    options: &[(Option<T>, &str)],
+    pointer: &str,
+) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.label(egui::RichText::new(label).size(11.0).weak());
+        ui.horizontal_wrapped(|ui| {
+            for (option, text) in options {
+                let button = ui.add_enabled(ctx.editable, choice(text, *value == *option));
+                if button.clicked() {
+                    *value = *option;
+                }
+            }
+        });
+        errors_at(ui, ctx, pointer);
+    });
 }
 
 /// Save's messages about `pointer`, in the error colour.
