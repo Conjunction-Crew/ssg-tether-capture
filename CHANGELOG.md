@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- Two transition conditions for capture plans: `all_of.closing_rate_mps` (the rate the tether root's range to the target shrinks, m/s, positive while closing) and `all_of.tether_straightness` (how far the tether bows from the straight root-to-tail line, as a fraction of the root-to-tail distance; 0 = straight). Both are optional and combine with the other conditions (all must hold). Plans without them behave as before.
+
 ### Fixed
 - The capture-plan form shows every phase of a plan (in file order, ids read-only) and each transition's full list of conditions, and saving keeps everything the form does not show: opening, editing and saving any valid plan, in either unit system, loses nothing (F-15). An edited copy of the example plan saves; a migrated v0 plan keeps its `rendezvous` phase and its `migrated_from_v0` notes. Save's messages appear under the field they name. **+ New Plan** starts from the example plan's phases.
 

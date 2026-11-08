@@ -91,6 +91,11 @@ pub fn compile_v0(plan: &CapturePlanV0) -> CompiledCapturePlan {
                         // v0 has no time condition.
                         time_in_phase_less_than: None,
                         time_in_phase_greater_than: None,
+                        // Nor the P9 conditions.
+                        closing_rate_less_than: None,
+                        closing_rate_greater_than: None,
+                        tether_straightness_less_than: None,
+                        tether_straightness_greater_than: None,
                     })
                 })
                 .collect(),

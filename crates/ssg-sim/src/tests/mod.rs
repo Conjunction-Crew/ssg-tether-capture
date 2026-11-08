@@ -25,4 +25,5 @@ pub mod session_telemetry;
 pub mod tether_dynamics;
 pub mod tether_spawn;
 pub mod time_step_cap;
+pub mod transition_conditions;
 pub mod unit_tests;
