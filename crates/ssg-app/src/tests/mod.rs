@@ -21,6 +21,8 @@ pub mod plan_form;
 #[cfg(test)]
 pub mod plan_form_fields;
 #[cfg(test)]
+pub mod plan_form_window;
+#[cfg(test)]
 pub mod recording_ui;
 #[cfg(test)]
 pub mod relative_to_target;
