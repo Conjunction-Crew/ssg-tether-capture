@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- Two transition conditions for capture plans: `all_of.closing_rate_mps` (the rate the tether root's range to the target shrinks, m/s, positive while closing) and `all_of.tether_straightness` (how far the tether bows from the straight root-to-tail line, as a fraction of the root-to-tail distance; 0 = straight). Both are optional and combine with the other conditions (all must hold). Plans without them behave as before.
 
 ## [v0.4.0-rc.4] 🔬 - 2026-11-07
 

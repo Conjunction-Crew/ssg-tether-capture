@@ -10,8 +10,8 @@ use avian3d::prelude::RigidBody;
 use avian3d::{
     math::PI,
     prelude::{
-        Forces, LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery, Rotation,
-        WriteRigidBodyForces,
+        DistanceJoint, Forces, LinearVelocity, Position, RigidBodyDisabled, RigidBodyQuery,
+        Rotation, WriteRigidBodyForces,
     },
 };
 use bevy::{ecs::system::SystemParam, log::debug_once, math::DVec3, prelude::*};
@@ -28,6 +28,7 @@ use crate::orbit::lvlh::LvlhFrame;
 use crate::physics_bubble::body_eci_state;
 use crate::recording::inputs::SimInputLog;
 use crate::telemetry::{DataCollection, EphemerisSample, LogEvent, LogLevel};
+use crate::tether::chain_from_joints;
 use crate::time::{ManualPhysics, PHYS_DT, WorldTime};
 
 // Component to add to an entity to attempt a capture.
@@ -224,6 +225,40 @@ pub struct CaptureInputs<'w, 's> {
     orbital_cache: Res<'w, OrbitalCache>,
     world_time: Res<'w, WorldTime>,
     disabled: Query<'w, 's, (), With<RigidBodyDisabled>>,
+    /// The tether's joints, walked for `tether_straightness` only.
+    joints: Query<'w, 's, &'static DistanceJoint>,
+}
+
+/// The `closing_rate_mps` condition's quantity (P9 S3, A-4): the rate at which the
+/// range `|rel_r|` shrinks, `rel_r · rel_v / |rel_r|`, with `rel_r` from the body to
+/// the target and `rel_v` the body's velocity relative to it; positive while
+/// closing. It does not depend on the frame of `rel_v` (`rel_r · (ω × rel_r) = 0`).
+/// `None` at a range of 0.
+pub(crate) fn closing_rate(rel_r: DVec3, rel_v: DVec3) -> Option<f64> {
+    let range = rel_r.length();
+    (range > 0.0).then(|| rel_r.dot(rel_v) / range)
+}
+
+/// The `tether_straightness` condition's quantity (P9 S3, E4 (b)): the largest
+/// distance of a body of `chain` (positions in chain order, root first, tail last)
+/// from the root→tail line, divided by the root-to-tail distance; 0 = straight.
+/// `None` when the root and the tail are within 1e-6 m.
+pub(crate) fn tether_straightness(chain: &[DVec3]) -> Option<f64> {
+    let (&root, &tail) = (chain.first()?, chain.last()?);
+    let chord = tail - root;
+    let length = chord.length();
+    if length < 1e-6 {
+        return None;
+    }
+    let axis = chord / length;
+    let farthest = chain
+        .iter()
+        .map(|&body| {
+            let offset = body - root;
+            (offset - axis * offset.dot(axis)).length()
+        })
+        .fold(0.0, f64::max);
+    Some(farthest / length)
 }
 
 /// The velocity of a tether node relative to the capture target, measured in the
@@ -310,6 +345,8 @@ pub use commands::{SimCommand, SimCommandInputs, apply_sim_commands};
 #[cfg(debug_assertions)]
 pub use state_machine::assert_finite_state;
 pub use state_machine::capture_state_machine_update;
+#[cfg(test)]
+pub(crate) use state_machine::{TransitionInputs, transition_satisfied};
 
 pub struct CapturePlugin;
 
