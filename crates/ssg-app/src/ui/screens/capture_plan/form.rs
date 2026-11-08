@@ -423,14 +423,14 @@ pub fn field_pointers(form: &NewCapturePlanForm) -> Vec<String> {
 /// Save (`overwrite: false`) or Overwrite on the conflict prompt (`true`): an
 /// unchanged edit closes the form; an invalid plan shows its errors; a new plan
 /// whose file exists raises the overwrite prompt; otherwise the plan is written
-/// to `dir`, the user plans are reloaded and the form closes. An edit saved while
-/// a project is open asks for a restart unless only the name changed. Returns
-/// whether a file was written.
+/// to `dir`, the user plans are reloaded and the form closes. An edit saved on
+/// the sim screen asks for a restart unless only the name changed (O3 W1.03 (b)).
+/// Returns whether a file was written.
 pub(crate) fn save_plan_from_form(
     form: &mut NewCapturePlanForm,
     dir: &Path,
     overwrite: bool,
-    project_open: bool,
+    on_sim_screen: bool,
     library: &mut ssg_sim::capture::plan::CapturePlanLibrary,
     log: &mut impl FnMut(LogLevel, String),
 ) -> bool {
@@ -475,7 +475,7 @@ pub(crate) fn save_plan_from_form(
         name: form.draft.name.clone(),
         ..plan
     } == form.draft;
-    let restart = editing && project_open && !only_name_changed;
+    let restart = editing && on_sim_screen && !only_name_changed;
     log(
         LogLevel::Info,
         format!("Capture plan '{}' saved", form.plan_name),

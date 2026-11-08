@@ -51,6 +51,7 @@ pub(crate) struct UiFlowState<'w> {
     plans_dirty: ResMut<'w, UserPlansDirty>,
     exit_confirm: ResMut<'w, ExitConfirmOpen>,
     setup_error: ResMut<'w, WorkingDirectorySetupError>,
+    screen: Res<'w, State<UiScreen>>,
 }
 
 /// What `handle_ui_events` reads and writes of the session: the screens, the
@@ -389,7 +390,9 @@ pub(crate) fn handle_ui_events(
                     &mut form,
                     Path::new(&working_directory.path),
                     overwrite,
-                    selected_project.project_id.is_some(),
+                    // O3 W1.03 (b): only the sim screen runs the plan; the
+                    // project stays selected on Home after Exit Sim.
+                    *flow.screen.get() == UiScreen::Sim,
                     &mut capture_plan_lib,
                     &mut |level, message| {
                         log.write(LogEvent {
