@@ -1,7 +1,7 @@
 {
   "$defs": {
     "Actuation": {
-      "description": "The force law of a phase (P7.5 design D16).",
+      "description": "The force law of a phase.",
       "oneOf": [
         {
           "const": "circle",
@@ -484,7 +484,7 @@
               "type": "null"
             }
           ],
-          "description": "The controller's gains in this phase (P9 S4); every key optional, each\ndefaulting to the value the controller had before. Absent: all defaults."
+          "description": "The controller's gains in this phase; every key optional, each\ndefaulting to the controller's built-in value. Absent: all defaults."
         },
         "end": {
           "anyOf": [
@@ -568,10 +568,10 @@
     },
     "PhaseController": {
       "additionalProperties": false,
-      "description": "A phase's controller gains. Every field is optional; an absent field takes\nthe default the controller had before P9.",
+      "description": "A phase's controller gains. Every field is optional; an absent field takes\nthe controller's built-in default.",
       "properties": {
         "dead_band_fraction": {
-          "description": "The relative width of the hysteresis band on the branch law's inner and\nouter edges, and of the velocity kill band (at least one step's Δv); 0\nremoves the hysteresis. Default 0.02; at least 0 and less than 0.5.",
+          "description": "The relative width of the hysteresis band on the branch law's inner and\nouter edges, and of the velocity kill band (at least two steps' Δv\n(2 × `max_force_n` × step / mass)); 0 removes the hysteresis. Default\n0.02; at least 0 and less than 0.5.",
           "format": "double",
           "type": [
             "number",
@@ -956,7 +956,7 @@
       "type": "object"
     },
     "SpawnOrientation": {
-      "description": "The axis the tether is laid along at spawn (P7.5 design D9).",
+      "description": "The axis the tether is laid along at spawn.",
       "oneOf": [
         {
           "const": "toward_target",
