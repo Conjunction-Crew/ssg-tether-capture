@@ -44,8 +44,13 @@ pub enum UiEvent {
     /// Continue on the restart prompt: the sim stays out of sync.
     DismissRestartPrompt,
     ToggleSatelliteIndicator,
-    /// Use Selected: the selected catalog object becomes this role's orbit.
+    /// Select (F-45): opens the catalog in the map view to pick this role's orbit.
+    SelectFromCatalog(OrbitalSelectionRole),
+    /// Use Selected: the selected catalog object becomes this role's orbit and
+    /// the catalog row selection is cleared (F-45).
     UseCatalogSelection(OrbitalSelectionRole),
+    /// Clear (F-45): this role has no orbit again.
+    ClearOrbitalSelection(OrbitalSelectionRole),
     /// Create Custom: this role's orbit becomes the ISS defaults.
     CreateCustomOrbit(OrbitalSelectionRole),
     /// A slider moved: writes the element (in the slider's units) to the role's orbit.

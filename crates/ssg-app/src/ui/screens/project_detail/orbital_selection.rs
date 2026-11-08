@@ -178,6 +178,10 @@ fn slot(
     }
 }
 
+pub(crate) fn clear_orbit(selection: &mut OrbitalSelectionState, role: OrbitalSelectionRole) {
+    *slot(selection, role) = None;
+}
+
 pub(crate) fn set_orbit(
     selection: &mut OrbitalSelectionState,
     role: OrbitalSelectionRole,
@@ -271,10 +275,33 @@ fn element_slider(
     }
 }
 
+/// The first button of a role card (F-45): the operator's Select → Use Selected
+/// → Clear flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RoleAction {
+    /// No orbit and no catalog row selected: opens the catalog.
+    Select,
+    /// No orbit and a catalog row selected: assigns that row.
+    UseSelected,
+    /// An orbit is assigned: removes it.
+    Clear,
+}
+
+pub(crate) fn role_action(assigned: bool, row_selected: bool) -> RoleAction {
+    if assigned {
+        RoleAction::Clear
+    } else if row_selected {
+        RoleAction::UseSelected
+    } else {
+        RoleAction::Select
+    }
+}
+
 fn role_card(
     ui: &mut egui::Ui,
     role: OrbitalSelectionRole,
     selected: Option<&SelectedOrbitalObject>,
+    (row_selected, next_step): (bool, bool),
     units: UnitSystem,
     out: &mut Vec<UiEvent>,
 ) {
@@ -296,8 +323,36 @@ fn role_card(
                 let soft = ui.visuals().panel_fill;
                 let text =
                     |text| egui::Button::new(egui::RichText::new(text).size(11.0)).fill(soft);
-                if ui.add(text("Use Selected")).clicked() {
-                    out.push(UiEvent::UseCatalogSelection(role));
+                let action = role_action(selected.is_some(), row_selected);
+                let (label, hint, event) = match action {
+                    RoleAction::Select => (
+                        "Select",
+                        "Opens the catalog on the map: click an object, then Use Selected",
+                        UiEvent::SelectFromCatalog(role),
+                    ),
+                    RoleAction::UseSelected => (
+                        "Use Selected",
+                        "Assigns the selected catalog object to this orbit",
+                        UiEvent::UseCatalogSelection(role),
+                    ),
+                    RoleAction::Clear => (
+                        "Clear",
+                        "Removes this orbit",
+                        UiEvent::ClearOrbitalSelection(role),
+                    ),
+                };
+                // The next step of the flow: the other role has its orbit.
+                let mut button = text(label);
+                if next_step && action != RoleAction::Clear {
+                    button = egui::Button::new(
+                        egui::RichText::new(label)
+                            .size(11.0)
+                            .color(ui.visuals().strong_text_color()),
+                    )
+                    .fill(ui.visuals().selection.bg_fill);
+                }
+                if ui.add(button).on_hover_text(hint).clicked() {
+                    out.push(event);
                 }
                 if ui.add(text("Create Custom")).clicked() {
                     out.push(UiEvent::CreateCustomOrbit(role));
@@ -324,10 +379,27 @@ pub(super) fn orbital_selection_section(
     );
     let selected = view.catalog_selection.as_deref().unwrap_or("none");
     ui.label(egui::RichText::new(format!("Selected catalog object: {selected}")).size(11.0));
-    for (role, selected) in [
-        (OrbitalSelectionRole::Target, view.target.as_ref()),
-        (OrbitalSelectionRole::Chaser, view.chaser.as_ref()),
+    let row_selected = view.catalog_selection.is_some();
+    for (role, selected, other) in [
+        (
+            OrbitalSelectionRole::Target,
+            view.target.as_ref(),
+            view.chaser.as_ref(),
+        ),
+        (
+            OrbitalSelectionRole::Chaser,
+            view.chaser.as_ref(),
+            view.target.as_ref(),
+        ),
     ] {
-        role_card(ui, role, selected, view.unit_system, out);
+        let next_step = selected.is_none() && other.is_some();
+        role_card(
+            ui,
+            role,
+            selected,
+            (row_selected, next_step),
+            view.unit_system,
+            out,
+        );
     }
 }

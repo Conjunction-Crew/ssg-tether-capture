@@ -1,6 +1,8 @@
 use bevy::ecs::system::SystemParam;
 
-use super::orbital_selection::{catalog_pick, custom_orbit, set_orbit, set_orbital_element};
+use super::orbital_selection::{
+    catalog_pick, clear_orbit, custom_orbit, set_orbit, set_orbital_element,
+};
 use super::*;
 use ssg_sim::time::SimConfig;
 
@@ -69,7 +71,16 @@ pub fn sim_screen_events(mut events: MessageReader<UiEvent>, mut p: SimScreenEve
                 });
                 if let Some(selected) = entry {
                     set_orbit(&mut p.selection, *role, selected);
+                    // F-45: the row is used; the catalog stays open for the other role.
+                    p.catalog_ui.selected_index = None;
                 }
+            }
+            UiEvent::SelectFromCatalog(_) => {
+                // F-45: `handle_ui_events` switches the camera to the map view.
+                p.catalog_ui.show_catalog = true;
+            }
+            UiEvent::ClearOrbitalSelection(role) => {
+                clear_orbit(&mut p.selection, *role);
             }
             UiEvent::CreateCustomOrbit(role) => {
                 let selected = custom_orbit(*role, p.sim_config.start_epoch);

@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 
 use crate::render::camera::{CameraTarget, cycle_camera_target, set_map_view};
+use crate::render::layers::MAP_LAYER;
 use crate::ui::events::UiEvent;
 use crate::ui::form::{NewCapturePlanForm, SimPlanSyncState};
 use crate::ui::input::step_time_warp;
@@ -321,6 +322,22 @@ pub(crate) fn handle_ui_events(
                     });
                 }
             }
+            // F-45: Select opens the catalog, which only the map view shows;
+            // `sim_screen_events` shows the catalog panel.
+            UiEvent::SelectFromCatalog(_) => {
+                if let Ok((render_layers, atmosphere, atmosphere_settings)) =
+                    scene_camera.single_mut()
+                    && !render_layers.intersects(&RenderLayers::layer(MAP_LAYER))
+                    && let Some(message) =
+                        set_map_view(render_layers, atmosphere, atmosphere_settings)
+                {
+                    log.write(LogEvent {
+                        level: LogLevel::Debug,
+                        source: "ui",
+                        message: message.to_string(),
+                    });
+                }
+            }
             UiEvent::ChangeTimeWarp { increase } => {
                 if let Some(ref mut world_time) = world_time {
                     step_time_warp(
@@ -410,6 +427,7 @@ pub(crate) fn handle_ui_events(
             | UiEvent::DismissRestartPrompt
             | UiEvent::ToggleSatelliteIndicator
             | UiEvent::UseCatalogSelection(_)
+            | UiEvent::ClearOrbitalSelection(_)
             | UiEvent::CreateCustomOrbit(_)
             | UiEvent::SetOrbitalElement { .. } => {}
         }
