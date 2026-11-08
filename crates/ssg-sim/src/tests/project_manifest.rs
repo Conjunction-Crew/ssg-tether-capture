@@ -379,7 +379,10 @@ fn sim_inputs_of_an_invalid_manifest_is_the_validators_errors() {
     let errors = manifest.sim_inputs().expect_err("refused");
 
     assert_eq!(errors, manifest.validate());
-    assert!(errors[0].ends_with("/offset_m: must not be 0"), "{errors:?}");
+    assert!(
+        errors[0].ends_with("/offset_m: must not be 0"),
+        "{errors:?}"
+    );
 }
 
 #[test]

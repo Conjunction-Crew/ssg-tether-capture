@@ -295,7 +295,8 @@ impl ManifestBody {
                 })
             }
             ManifestOrbit::RelativeToTarget(relative) => {
-                let refused = |e: String| vec![message(&format!("{at}/orbit/relative_to_target"), e)];
+                let refused =
+                    |e: String| vec![message(&format!("{at}/orbit/relative_to_target"), e)];
                 let target = target.ok_or_else(|| {
                     refused("only the chaser can be placed relative to the target".to_string())
                 })?;

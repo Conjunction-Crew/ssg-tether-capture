@@ -111,7 +111,10 @@ fn relative_start_is_at_rest_on_its_point() {
                 let chaser = relative_start(&target, preset, offset).expect("frame");
                 let (p, v) = relative_lvlh(&target, &chaser);
                 let miss = (p - relative_offset_lvlh(preset, offset)).length();
-                assert!(miss < 1e-6, "{name} {preset:?} {offset}: position {miss:e} m");
+                assert!(
+                    miss < 1e-6,
+                    "{name} {preset:?} {offset}: position {miss:e} m"
+                );
                 assert!(
                     v.length() < 1e-9,
                     "{name} {preset:?} {offset}: velocity {:e} m/s",
@@ -158,10 +161,7 @@ fn v_bar_on_a_circular_orbit_stays_put_for_one_orbit() {
     let elements =
         relative_chaser_elements(&target, fixed_epoch(), RelativePreset::VBar, offset).unwrap();
     let chaser = elements_start(elements.to_vec6());
-    let period = std::f64::consts::TAU
-        / LvlhFrame::from_eci(&target_state)
-            .unwrap()
-            .mean_motion();
+    let period = std::f64::consts::TAU / LvlhFrame::from_eci(&target_state).unwrap().mean_motion();
     let (p, _) = propagated_lvlh(&target_state, &chaser, period);
     let drift = (p - relative_offset_lvlh(RelativePreset::VBar, offset)).length();
     assert!(
@@ -179,9 +179,7 @@ fn r_bar_drift_matches_cw_over_a_quarter_orbit() {
     let elements =
         relative_chaser_elements(&target, fixed_epoch(), RelativePreset::RBar, offset).unwrap();
     let chaser = elements_start(elements.to_vec6());
-    let n = LvlhFrame::from_eci(&target_state)
-        .unwrap()
-        .mean_motion();
+    let n = LvlhFrame::from_eci(&target_state).unwrap().mean_motion();
     let t = std::f64::consts::FRAC_PI_2 / n;
     let (p, _) = propagated_lvlh(&target_state, &chaser, t);
     let (cw, _) = cw_solution(n, DVec3::new(offset, 0.0, 0.0), DVec3::ZERO, t);
@@ -310,8 +308,5 @@ fn m1_v_bar_30_m_starts_on_its_point_and_follows_cw() {
     let t = world_time.epoch - world_time.start_epoch;
     let (p, _) = lvlh(&app).unwrap();
     let (cw, _) = cw_solution(n, DVec3::new(0.0, 30.0, 0.0), DVec3::ZERO, t);
-    assert!(
-        (p - cw).length() <= 2e-3,
-        "t = {t} s: sim {p:?}, CW {cw:?}"
-    );
+    assert!((p - cw).length() <= 2e-3, "t = {t} s: sim {p:?}, CW {cw:?}");
 }
