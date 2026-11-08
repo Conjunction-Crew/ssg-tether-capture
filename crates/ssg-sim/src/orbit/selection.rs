@@ -142,7 +142,7 @@ pub fn relative_chaser_elements(
         started[2] - target_state[2],
     );
     let miss = (frame.to_lvlh(rel) - relative_offset_lvlh(preset, offset_m)).length();
-    if !(miss <= RELATIVE_START_TOLERANCE_M) {
+    if miss.is_nan() || miss > RELATIVE_START_TOLERANCE_M {
         return Err(format!(
             "the chaser would start {miss:.3} m from its point: the propagator treats an orbit \
              with eccentricity below about 1e-4 as circular (brahe 1.3.4); use V-bar, a smaller \
