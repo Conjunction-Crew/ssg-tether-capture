@@ -70,7 +70,7 @@ jobs:
             if printf '%s\n' "$files" | grep -Eq '^(src/|crates/|assets/|wix/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.cargo/config\.toml$|\.github/workflows/(ci|build-packages)\.yml$)'; then
               rust=true
             fi
-            if printf '%s\n' "$files" | grep -Eq '^(docs_site/|CHANGELOG\.md$|\.github/workflows/ci\.yml$)'; then
+            if printf '%s\n' "$files" | grep -Eq '^(docs_site/|CHANGELOG\.md$|scripts/check_docs_drift\.sh$|scripts/docs_drift_allowlist\.txt$|\.github/workflows/ci\.yml$)'; then
               docs=true
             fi
             full=$HAS_FULL_LABEL
@@ -386,6 +386,23 @@ jobs:
           echo "Versioned docs count: $COUNT (OK)"
 
   # ───────────────────────────────────────────────────────────────────────────
+  # Docs drift guard: every Rust identifier in an inline code span of the docs
+  # must exist in crates/ or be allowlisted (scripts/docs_drift_allowlist.txt).
+  # Runs on docs and on Rust changes: a rename in code can break a page.
+  # ───────────────────────────────────────────────────────────────────────────
+  docs-drift:
+    name: Docs drift guard
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check docs against crates/
+        run: sh scripts/check_docs_drift.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Every PR must add a note under `## [Unreleased]` in CHANGELOG.md, unless it
   # only touches docs, carries the `no-changelog` label, or comes from Dependabot.
   # ───────────────────────────────────────────────────────────────────────────
@@ -412,7 +429,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, rust-linux, coverage, cross-platform, docs-build, changelog]
+    needs: [changes, rust-linux, coverage, cross-platform, docs-build, docs-drift, changelog]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
