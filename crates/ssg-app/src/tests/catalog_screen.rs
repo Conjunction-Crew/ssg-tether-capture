@@ -19,7 +19,8 @@ use crate::ui::catalog_state::{OrbitalElementField, OrbitalSelectionRole, SpaceC
 use crate::ui::events::UiEvent;
 use crate::ui::screens::project_detail::catalog::{catalog_panel_ui, filter_catalog};
 use crate::ui::screens::project_detail::orbital_selection::{
-    OrbitalView, catalog_pick, custom_orbit, restore_catalog_source, slider_value_from_elements,
+    OrbitalView, RoleAction, catalog_pick, custom_orbit, restore_catalog_source, role_action,
+    slider_value_from_elements,
 };
 use crate::ui::screens::project_detail::sidebar::{SimScreenView, sim_sidebar_ui};
 
@@ -216,8 +217,12 @@ fn cards_show_the_source_and_their_buttons_emit_events() {
     harness.get_by_label("Chaser Orbit");
     harness.get_by_label("Chaser: No orbit selected");
 
-    let use_selected = harness.get_all_by_label("Use Selected").next().unwrap();
-    use_selected.click();
+    // F-45 (P9 S7): the assigned target's first button reads Clear; the
+    // unassigned chaser, with a catalog row selected, reads Use Selected.
+    assert!(harness.query_by_label("Select").is_none());
+    harness.get_by_label("Clear").click();
+    harness.run();
+    harness.get_by_label("Use Selected").click();
     harness.run();
     let custom = harness.get_all_by_label("Create Custom").last().unwrap();
     custom.click();
@@ -225,10 +230,41 @@ fn cards_show_the_source_and_their_buttons_emit_events() {
     assert!(matches!(
         harness.state().events.as_slice(),
         [
-            UiEvent::UseCatalogSelection(OrbitalSelectionRole::Target),
+            UiEvent::ClearOrbitalSelection(OrbitalSelectionRole::Target),
+            UiEvent::UseCatalogSelection(OrbitalSelectionRole::Chaser),
             UiEvent::CreateCustomOrbit(OrbitalSelectionRole::Chaser)
         ]
     ));
+}
+
+/// F-45: the first button follows the operator's flow, Select → Use Selected →
+/// Clear.
+#[test]
+fn the_role_button_reads_select_then_use_selected_then_clear() {
+    assert_eq!(role_action(false, false), RoleAction::Select);
+    assert_eq!(role_action(false, true), RoleAction::UseSelected);
+    assert_eq!(role_action(true, false), RoleAction::Clear);
+    assert_eq!(role_action(true, true), RoleAction::Clear);
+
+    // Nothing assigned, no row: both cards read Select, nothing reads Use Selected.
+    let mut view = orbital_view(None);
+    view.orbital.catalog_selection = None;
+    let mut harness = harness_for(view, SIDEBAR, sim_sidebar_ui);
+    harness.get_by_label("Selected catalog object: none");
+    assert_eq!(harness.get_all_by_label("Select").count(), 2);
+    assert!(harness.query_by_label("Use Selected").is_none());
+    assert!(harness.query_by_label("Clear").is_none());
+    harness.get_all_by_label("Select").last().unwrap().click();
+    harness.run();
+    assert!(matches!(
+        harness.state().events.as_slice(),
+        [UiEvent::SelectFromCatalog]
+    ));
+
+    // A row selected: both unassigned cards offer it.
+    let harness = harness_for(orbital_view(None), SIDEBAR, sim_sidebar_ui);
+    assert_eq!(harness.get_all_by_label("Use Selected").count(), 2);
+    assert!(harness.query_by_label("Select").is_none());
 }
 
 #[test]
@@ -285,11 +321,10 @@ fn orbital_events_update_the_selection() {
     app.insert_resource(SpaceObjectCatalog {
         entries: vec![entry(5, 20580, "HST")],
     });
-    // Nothing selected in the catalog: Use Selected does nothing (rc.3).
-    send(
-        &mut app,
-        UiEvent::UseCatalogSelection(OrbitalSelectionRole::Target),
-    );
+    // F-45 (P9 S7; pinned before as "Use Selected does nothing (rc.3)"): with
+    // nothing selected the card offers Select, which opens the catalog.
+    send(&mut app, UiEvent::SelectFromCatalog);
+    assert!(app.world().resource::<SpaceCatalogUiState>().show_catalog);
     assert!(
         app.world()
             .resource::<OrbitalSelectionState>()
@@ -304,6 +339,10 @@ fn orbital_events_update_the_selection() {
         &mut app,
         UiEvent::UseCatalogSelection(OrbitalSelectionRole::Target),
     );
+    // F-45: the row is used up, the catalog stays open for the chaser.
+    let catalog_ui = app.world().resource::<SpaceCatalogUiState>();
+    assert_eq!(catalog_ui.selected_index, None);
+    assert!(catalog_ui.show_catalog);
     send(
         &mut app,
         UiEvent::CreateCustomOrbit(OrbitalSelectionRole::Chaser),
@@ -343,6 +382,15 @@ fn orbital_events_update_the_selection() {
         slider_value_from_elements(&target.elements, OrbitalElementField::SemiMajorAxis),
         7000.0
     );
+
+    // F-45: Clear removes the role's orbit and leaves the other.
+    send(
+        &mut app,
+        UiEvent::ClearOrbitalSelection(OrbitalSelectionRole::Target),
+    );
+    let selection = app.world().resource::<OrbitalSelectionState>();
+    assert!(selection.target.is_none());
+    assert!(selection.chaser.is_some());
 }
 
 /// F-59: a restored body with its catalog record highlights again; its label
@@ -406,6 +454,29 @@ pub(crate) fn s6_snapshots() -> Vec<PathBuf> {
         snapshot(
             "s6_orbital_target_chosen",
             orbital_view(Some(catalog_orbit())),
+            SIDEBAR,
+            sim_sidebar_ui,
+        ),
+    ]
+}
+
+/// The S7 (P9) PNGs: F-45's three button states and the next-step highlight.
+pub(crate) fn p9_s7_orbital_snapshots() -> Vec<PathBuf> {
+    let mut nothing = orbital_view(None);
+    nothing.orbital.catalog_selection = None;
+    let mut target_next = orbital_view(Some(catalog_orbit()));
+    target_next.orbital.catalog_selection = None;
+    vec![
+        snapshot("p9_orbital_select", nothing, [420.0, 900.0], sim_sidebar_ui),
+        snapshot(
+            "p9_orbital_use_selected",
+            orbital_view(None),
+            [420.0, 900.0],
+            sim_sidebar_ui,
+        ),
+        snapshot(
+            "p9_orbital_clear_chaser_next",
+            target_next,
             SIDEBAR,
             sim_sidebar_ui,
         ),
