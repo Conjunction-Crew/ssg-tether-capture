@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.4.0-rc.5] 🔬 - 2026-11-08
+
 ### Added
 - The chaser can start relative to the target: `project.json`'s `chaser.orbit.relative_to_target` (`preset` `v_bar` or `r_bar`, signed `offset_m`, positive ahead of or above the target) places it on that line, at rest relative to the target, and the chaser card's **Relative to Target** control (V-bar/R-bar and an offset in the toggle's length unit) sets it up in the app; Start writes the key (F-47). A start the orbit propagator would move by more than 1 mm (a small R-bar offset from a near-circular target, where brahe 1.3.4 rounds the orbit to circular) is refused with the reason.
 - Two transition conditions for capture plans: `all_of.closing_rate_mps` (the rate the tether root's range to the target shrinks, m/s, positive while closing) and `all_of.tether_straightness` (how far the tether bows from the straight root-to-tail line, as a fraction of the root-to-tail distance; 0 = straight). Both are optional and combine with the other conditions (all must hold). Plans without them behave as before.
