@@ -1,0 +1,87 @@
+# Allowlist for scripts/check_docs_drift.sh. One identifier per line, then
+# `# reason`. No wildcards. An entry the guard no longer needs (the identifier
+# is in crates/, or no doc uses it) fails the check: delete it.
+
+[external]
+# Not Rust symbols of this repository; valid on every page. A new entry needs a
+# reason that says why the name is not a Rust symbol here, and is reviewed in
+# its PR. Never add a stale symbol here: fix the page.
+workflow_dispatch # GitHub Actions trigger event
+workflow_call # GitHub Actions trigger event
+dry_run # input of .github/workflows/release.yml
+RELEASE_APP_ID # repository variable read by release.yml
+RELEASE_APP_PRIVATE_KEY # repository secret read by release.yml
+PackageVersion # WiX MSBuild property (wix/SSG.wixproj, wix/main.wxs)
+WIX # environment variable set by the WiX Toolset installer
+Files # WiX v4 authoring element
+Payloads # WiX v4 authoring element
+x86_64 # CPU architecture name printed by uname -m
+dynamic_linking # Bevy cargo feature
+trace_tracy # Bevy cargo feature
+end_abort # serde snake_case value of EndReason::EndAbort (recording manifest end_reason)
+max_duration # serde snake_case value of EndReason::MaxDuration (recording manifest end_reason)
+max_size # serde snake_case value of EndReason::MaxSize (recording manifest end_reason)
+scenario_q13 # cargo integration-test target (file stem of crates/ssg-sim/tests/scenario_q13.rs)
+scenario_example_plans # cargo integration-test target (file stem of crates/ssg-sim/tests/scenario_example_plans.rs)
+scenario_pause_warp # cargo integration-test target (file stem of crates/ssg-sim/tests/scenario_pause_warp.rs)
+
+[p10-debt]
+# Stale symbols still named by a page, valid only on the page of their group.
+# The rewrite of a page deletes its group; this section is empty at v0.4.0.
+# docs_site/docs/api-reference/components.md
+CaptureGuidanceReadout # stale: not in crates/; removed when this page is rewritten
+CaptureTelemetryReadout # stale: not in crates/; removed when this page is rewritten
+FromTle # stale: not in crates/; removed when this page is rewritten
+TimeWarpReadout # stale: not in crates/; removed when this page is rewritten
+
+# docs_site/docs/api-reference/resources.md
+approach_max_force # stale: not in crates/; removed when this page is rewritten
+approach_max_velocity # stale: not in crates/; removed when this page is rewritten
+approach_transitions # stale: not in crates/; removed when this page is rewritten
+capture_max_force # stale: not in crates/; removed when this page is rewritten
+capture_max_velocity # stale: not in crates/; removed when this page is rewritten
+capture_shrink_rate # stale: not in crates/; removed when this page is rewritten
+distance_kind # stale: not in crates/; removed when this page is rewritten
+distance_value # stale: not in crates/; removed when this page is rewritten
+original_json # stale: not in crates/; removed when this page is rewritten
+poll_new_plan_modal # stale: not in crates/; removed when this page is rewritten
+search_focused # stale: not in crates/; removed when this page is rewritten
+setup_entities # stale: not in crates/; removed when this page is rewritten
+setup_tether # stale: not in crates/; removed when this page is rewritten
+sync_terminal_log_display # stale: not in crates/; removed when this page is rewritten
+terminal_max_force # stale: not in crates/; removed when this page is rewritten
+terminal_max_velocity # stale: not in crates/; removed when this page is rewritten
+terminal_shrink_rate # stale: not in crates/; removed when this page is rewritten
+terminal_transitions # stale: not in crates/; removed when this page is rewritten
+validate_form # stale: not in crates/; removed when this page is rewritten
+
+# docs_site/docs/api-reference/systems.md
+CIVIL_TWILIGHT # stale: not in crates/; removed when this page is rewritten
+DIST_BETWEEN_JOINTS # stale: not in crates/; removed when this page is rewritten
+NUM_TETHER_JOINTS # stale: not in crates/; removed when this page is rewritten
+OrbitalMechanicsPlugin # stale: not in crates/; removed when this page is rewritten
+TerminalLogWrapper # stale: not in crates/; removed when this page is rewritten
+orbit_camera_control_target # stale: not in crates/; removed when this page is rewritten
+setup_entities # stale: not in crates/; removed when this page is rewritten
+setup_tether # stale: not in crates/; removed when this page is rewritten
+sync_terminal_log_display # stale: not in crates/; removed when this page is rewritten
+
+# docs_site/docs/architecture/overview.md
+SyncAnchor # stale: not in crates/; removed when this page is rewritten
+setup_entities # stale: not in crates/; removed when this page is rewritten
+setup_tether # stale: not in crates/; removed when this page is rewritten
+sync_anchor_from_camera_target # stale: not in crates/; removed when this page is rewritten
+
+# docs_site/docs/architecture/plugins.md
+AnchorPlugin # stale: not in crates/; removed when this page is rewritten
+SimStep::SyncAnchor # stale: not in crates/; removed when this page is rewritten
+orbit_camera_control_target # stale: not in crates/; removed when this page is rewritten
+sync_anchor_from_camera_target # stale: not in crates/; removed when this page is rewritten
+
+# docs_site/docs/concepts/camera-system.md
+orbit_camera_control_target # stale: not in crates/; removed when this page is rewritten
+track_objects # stale: not in crates/; removed when this page is rewritten
+
+# docs_site/docs/concepts/capture-log.md
+setup_entities # stale: not in crates/; removed when this page is rewritten
+setup_tether # stale: not in crates/; removed when this page is rewritten

@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Docs
+- Docs drift guard: the new CI job "Docs drift guard" (`scripts/check_docs_drift.sh`) fails when an inline code span in the docs names a Rust identifier that is not in `crates/`. Names that are not Rust symbols of the repository are listed with a reason in `scripts/docs_drift_allowlist.txt`; the pages' known stale symbols are listed per page until those pages are rewritten (F-16)
 
 ## [v0.4.0-rc.5] 🔬 - 2026-11-08
 
