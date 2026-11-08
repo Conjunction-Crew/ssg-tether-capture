@@ -199,10 +199,11 @@ fn start_capture_with_an_unknown_plan_logs_an_error() {
             .contains_key(&target),
         "no data collection for a refused start"
     );
-    // Proposed finding (P5): the previous capture is removed before the plan is
-    // looked up, so a start that fails (here: an unknown plan id) also ends the
-    // capture in progress. Pinned as today's behaviour.
-    assert!(capture_of(&app, previous).is_none());
+    // F-52 (fixed in P9 S6; pinned as `is_none()` before): the plan is looked up
+    // before the previous capture is removed, so a start that fails (here: an
+    // unknown plan id) leaves the capture in progress.
+    assert!(capture_of(&app, previous).is_some());
+    assert_eq!(marked_entities(&mut app), vec![previous]);
 }
 
 #[test]
@@ -225,6 +226,9 @@ fn start_capture_with_a_plan_without_states_logs_an_error() {
     app.world_mut()
         .insert_resource(CaptureSphereRadius { radius: 3.0 });
     let target = app.world_mut().spawn_empty().id();
+    let previous = app.world_mut().spawn_empty().id();
+    apply(&mut app, vec![start(Some(previous), "good")]);
+    app.world_mut().resource_mut::<CaptureSphereRadius>().radius = 3.0;
 
     let logs = apply(&mut app, vec![start(Some(target), "empty")]);
 
@@ -249,6 +253,9 @@ fn start_capture_with_a_plan_without_states_logs_an_error() {
         3.0,
         "the radius is reset only for a start that succeeds"
     );
+    // F-52: a plan without phases is refused before the capture in progress
+    // is touched.
+    assert_eq!(marked_entities(&mut app), vec![previous]);
 }
 
 #[test]

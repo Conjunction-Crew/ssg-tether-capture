@@ -11,6 +11,9 @@
 
 use bevy::prelude::*;
 use bevy::state::state::{EnterSchedules, ExitSchedules, StateTransitionSystems};
+use ssg_sim::capture::CaptureSphereRadius;
+use ssg_sim::capture::plan::CapturePlanLibrary;
+use ssg_sim::project::SelectedProject;
 use ssg_sim::session::SimSession;
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
@@ -38,7 +41,31 @@ impl Plugin for ScreenPlugin {
             .add_systems(
                 StateTransition,
                 drive_sim_session.before(StateTransitionSystems::DependentTransitions),
-            );
+            )
+            .add_systems(OnEnter(UiScreen::Sim), seed_capture_sphere_radius);
+    }
+}
+
+/// F-60 (A-8): the sphere shown before a capture starts is the active plan's
+/// initial radius (`capture_sphere.initial_radius_m`), not the session's 25 m
+/// default. Without an active plan the session's value stays. Runs after
+/// `OnEnter(SimSession::Active)` inserted the radius (see the module docs).
+pub fn seed_capture_sphere_radius(
+    selected_project: Option<Res<SelectedProject>>,
+    capture_plan_lib: Option<Res<CapturePlanLibrary>>,
+    radius: Option<ResMut<CaptureSphereRadius>>,
+) {
+    let (Some(selected_project), Some(capture_plan_lib), Some(mut radius)) =
+        (selected_project, capture_plan_lib, radius)
+    else {
+        return;
+    };
+    if let Some(plan) = selected_project
+        .project_id
+        .as_deref()
+        .and_then(|id| capture_plan_lib.plans.get(id))
+    {
+        radius.radius = plan.initial_capture_radius_m();
     }
 }
 

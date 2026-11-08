@@ -25,6 +25,8 @@ GitHub Release description.
 - Per-phase controller gains: a phase's optional `controller` sets the eight constants of the capture force law (`radius_hold_band_m`, `radial_rate_band_mps`, `spacing_band_m`, `spacing_rate_band_mps`, `plane_hold_band_m`, `inner_edge_fraction`, `dead_band_fraction`, `force_ramp_s`). Each key defaults to the value the controller has always used, so plans without it run exactly as before.
 
 ### Fixed
+- Starting a capture with a plan that cannot run (an unknown plan id, or a plan without phases) no longer ends the capture already in progress; the error is logged and that capture carries on (F-52).
+- The capture sphere shown when the sim screen opens is the active plan's initial radius (`capture_sphere.initial_radius_m`, 100 m for the example plan) instead of a fixed 25 m (F-60).
 - The capture-plan form shows every phase of a plan (in file order, ids read-only) and each transition's full list of conditions, and saving keeps everything the form does not show: opening, editing and saving any valid plan, in either unit system, loses nothing (F-15). An edited copy of the example plan saves; a migrated v0 plan keeps its `rendezvous` phase and its `migrated_from_v0` notes. Save's messages appear under the field they name. **+ New Plan** starts from the example plan's phases.
 
 ## [v0.4.0-rc.4] 🔬 - 2026-11-07
