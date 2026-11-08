@@ -230,7 +230,10 @@ fn p8_screen_snapshots() {
         ("p9_form_view_example", view),
         ("p9_form_edit_user_plan", edit),
     ] {
-        paths.push(snapshot(name, form, [720.0, 3400.0], capture_plan_form_ui));
+        // P9 S2: the form gained the fields of every key; tall enough for all.
+        paths.push(snapshot(name, form, [720.0, 8000.0], capture_plan_form_ui));
     }
+    // P9 S2: the new sections, the Controller group open, + Condition's menu.
+    paths.extend(crate::tests::plan_form_fields::p9_s2_snapshots());
     assert!(paths.iter().all(|path| path.is_file()));
 }

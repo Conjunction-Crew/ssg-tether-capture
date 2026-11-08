@@ -5,15 +5,18 @@
 
 use std::path::Path;
 
+use ssg_sim::capture::gains::PhaseController;
 use ssg_sim::capture::plan::{
-    CapturePlan, CapturePlanDevice, ConditionBounds, Transition, validate_capture_plan,
+    CapturePlan, CapturePlanDevice, CaptureSphere, ConditionBounds, Transition,
+    validate_capture_plan,
 };
 use ssg_sim::project::plan_files::save_plan;
 use ssg_sim::telemetry::LogLevel;
 
 use super::*;
 use crate::ui::form::{
-    ConditionForm, ConditionKind, FormError, NumberError, NumberField, PhaseForm, Quantity,
+    ConditionForm, ConditionKind, ControllerKey, FormError, NumberError, NumberField, PhaseForm,
+    Quantity,
 };
 
 /// The example plan + New Plan starts from (A-2).
@@ -42,6 +45,28 @@ pub mod pointer {
     pub const NAME: &str = "/name";
     pub const TETHER: &str = "/tether";
     pub const TETHER_LENGTH: &str = "/device/tether_length_m";
+    pub const SPAWN_ORIENTATION: &str = "/device/spawn_orientation";
+
+    /// The `device` numbers S2 shows, after the tether length.
+    pub const DEVICE_NUMBERS: [&str; 5] = [
+        "/device/segment_spacing_m",
+        "/device/segment_mass_kg",
+        "/device/end_mass_kg",
+        "/device/joint_damping_linear",
+        "/device/joint_damping_angular",
+    ];
+    pub const INITIAL_RADIUS: &str = "/capture_sphere/initial_radius_m";
+    pub const MIN_RADIUS: &str = "/capture_sphere/min_radius_m";
+
+    /// The phase keys S2 shows besides the limits and the transitions.
+    pub const PHASE_KEYS: [&str; 6] = [
+        "end",
+        "actuation",
+        "tail_actuation",
+        "tail_spacing_m",
+        "hold_plane",
+        "velocity_scales_with_sphere",
+    ];
 
     pub fn phase(i: usize, key: &str) -> String {
         format!("/phases/{i}/{key}")
@@ -85,6 +110,16 @@ fn fill(form: &mut NewCapturePlanForm, plan: CapturePlan) {
     form.tether_name = plan.tether.clone();
     form.tether_type = device.device_type.unwrap_or_default();
     form.tether_length = NumberField::shown(device.tether_length_m, Quantity::Length, unit);
+    form.segment_spacing = NumberField::shown(device.segment_spacing_m, Quantity::Length, unit);
+    form.segment_mass = NumberField::shown(device.segment_mass_kg, Quantity::Mass, unit);
+    form.end_mass = NumberField::shown(device.end_mass_kg, Quantity::Mass, unit);
+    form.damping_linear = NumberField::shown(device.joint_damping_linear, Quantity::Unitless, unit);
+    form.damping_angular =
+        NumberField::shown(device.joint_damping_angular, Quantity::Unitless, unit);
+    form.spawn_orientation = device.spawn_orientation;
+    let sphere = plan.capture_sphere.clone().unwrap_or_default();
+    form.initial_radius = NumberField::shown(sphere.initial_radius_m, Quantity::Length, unit);
+    form.min_radius = NumberField::shown(sphere.min_radius_m, Quantity::Length, unit);
     form.phases = plan
         .phases
         .iter()
@@ -93,6 +128,16 @@ fn fill(form: &mut NewCapturePlanForm, plan: CapturePlan) {
             max_velocity: NumberField::shown(Some(phase.max_velocity_mps), Quantity::Speed, unit),
             max_force: NumberField::shown(Some(phase.max_force_n), Quantity::Force, unit),
             shrink_rate: NumberField::shown(phase.shrink_rate_mps, Quantity::Speed, unit),
+            end: phase.end,
+            actuation: phase.actuation,
+            tail_actuation: phase.tail_actuation,
+            tail_spacing: NumberField::shown(phase.tail_spacing_m, Quantity::Length, unit),
+            hold_plane: phase.hold_plane,
+            velocity_scales_with_sphere: phase.velocity_scales_with_sphere,
+            controller: ControllerKey::ALL.map(|key| {
+                let mut controller = phase.controller.unwrap_or_default();
+                NumberField::shown(*key.value_mut(&mut controller), key.quantity(), unit)
+            }),
             transitions: phase
                 .transitions
                 .iter()
@@ -161,10 +206,51 @@ pub fn plan_from_form(form: &NewCapturePlanForm) -> Result<CapturePlan, Vec<Form
         &mut errors,
     );
     let device_type = Some(form.tether_type.clone()).filter(|t| !t.is_empty());
-    if plan.device.is_some() || length.is_some() || device_type.is_some() {
-        let device = plan.device.get_or_insert_with(CapturePlanDevice::default);
-        device.device_type = device_type;
-        device.tether_length_m = length;
+    let [spacing, segment_mass, end_mass, linear, angular] = [
+        (&form.segment_spacing, Quantity::Length),
+        (&form.segment_mass, Quantity::Mass),
+        (&form.end_mass, Quantity::Mass),
+        (&form.damping_linear, Quantity::Unitless),
+        (&form.damping_angular, Quantity::Unitless),
+    ]
+    .into_iter()
+    .zip(pointer::DEVICE_NUMBERS)
+    .map(|((field, quantity), at)| number(field, quantity, unit, at.to_string(), &mut errors))
+    .collect::<Vec<_>>()
+    .try_into()
+    .expect("five device numbers");
+    let device = CapturePlanDevice {
+        device_type,
+        tether_length_m: length,
+        segment_spacing_m: spacing,
+        segment_mass_kg: segment_mass,
+        end_mass_kg: end_mass,
+        joint_damping_linear: linear,
+        joint_damping_angular: angular,
+        spawn_orientation: form.spawn_orientation,
+    };
+    // An absent `device` stays absent unless a value was entered (S2).
+    if plan.device.is_some() || device != CapturePlanDevice::default() {
+        plan.device = Some(device);
+    }
+    let sphere = CaptureSphere {
+        initial_radius_m: number(
+            &form.initial_radius,
+            Quantity::Length,
+            unit,
+            pointer::INITIAL_RADIUS.to_string(),
+            &mut errors,
+        ),
+        min_radius_m: number(
+            &form.min_radius,
+            Quantity::Length,
+            unit,
+            pointer::MIN_RADIUS.to_string(),
+            &mut errors,
+        ),
+    };
+    if plan.capture_sphere.is_some() || sphere != CaptureSphere::default() {
+        plan.capture_sphere = Some(sphere);
     }
 
     for (i, (phase, shown)) in plan.phases.iter_mut().zip(&form.phases).enumerate() {
@@ -197,6 +283,35 @@ pub fn plan_from_form(form: &NewCapturePlanForm) -> Result<CapturePlan, Vec<Form
             pointer::phase(i, "shrink_rate_mps"),
             &mut errors,
         );
+        phase.end = shown.end;
+        phase.actuation = shown.actuation;
+        phase.tail_actuation = shown.tail_actuation;
+        phase.hold_plane = shown.hold_plane;
+        phase.velocity_scales_with_sphere = shown.velocity_scales_with_sphere;
+        phase.tail_spacing_m = number(
+            &shown.tail_spacing,
+            Quantity::Length,
+            unit,
+            pointer::phase(i, "tail_spacing_m"),
+            &mut errors,
+        );
+        let mut controller = PhaseController::default();
+        for (field, key) in shown.controller.iter().zip(ControllerKey::ALL) {
+            *key.value_mut(&mut controller) = number(
+                field,
+                key.quantity(),
+                unit,
+                pointer::phase(i, &format!("controller/{}", key.key())),
+                &mut errors,
+            );
+        }
+        // An absent `controller` stays absent unless a gain was entered; a
+        // loaded `"controller": {}` is kept.
+        phase.controller = if controller == PhaseController::default() {
+            phase.controller.filter(|c| *c == controller)
+        } else {
+            Some(controller)
+        };
         let transitions: Vec<Transition> = shown
             .transitions
             .iter()
@@ -260,12 +375,25 @@ pub fn plan_from_form(form: &NewCapturePlanForm) -> Result<CapturePlan, Vec<Form
 
 /// Every pointer the form shows a field (or a transition box) for.
 pub fn field_pointers(form: &NewCapturePlanForm) -> Vec<String> {
-    let mut pointers = vec![
-        pointer::NAME.to_string(),
-        pointer::TETHER.to_string(),
-        pointer::TETHER_LENGTH.to_string(),
-    ];
+    let mut pointers: Vec<String> = [
+        pointer::NAME,
+        pointer::TETHER,
+        pointer::TETHER_LENGTH,
+        pointer::SPAWN_ORIENTATION,
+        pointer::INITIAL_RADIUS,
+        pointer::MIN_RADIUS,
+    ]
+    .into_iter()
+    .chain(pointer::DEVICE_NUMBERS)
+    .map(str::to_string)
+    .collect();
     for (i, phase) in form.phases.iter().enumerate() {
+        for key in pointer::PHASE_KEYS {
+            pointers.push(pointer::phase(i, key));
+        }
+        for key in ControllerKey::ALL {
+            pointers.push(pointer::phase(i, &format!("controller/{}", key.key())));
+        }
         for key in [
             "max_velocity_mps",
             "max_force_n",

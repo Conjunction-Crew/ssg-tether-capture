@@ -51,6 +51,8 @@ pub(crate) fn filled_form() -> NewCapturePlanForm {
     form
 }
 
+/// The whole form of the example plan, unscrolled (S2).
+pub(crate) const TALL: [f32; 2] = [720.0, 9000.0];
 const SIZE: [f32; 2] = [720.0, 4000.0];
 
 fn error(pointer: &str, message: &str) -> FormError {
@@ -127,7 +129,8 @@ fn phase_sections_follow_the_file_order() {
 
 #[test]
 fn form_buttons_emit_ui_events() {
-    let mut harness = harness_for(filled_form(), SIZE, capture_plan_form_ui);
+    // Tall enough for every phase's + Add Transition (S2 lengthened the form).
+    let mut harness = harness_for(filled_form(), TALL, capture_plan_form_ui);
     harness.get_by_label("ft (imperial)").click();
     harness.run();
     harness.get_all_by_label("×").next().unwrap().click();
@@ -184,14 +187,15 @@ fn blank_save_shows_the_error_at_the_field() {
     harness.get_by_label("must not be blank");
 }
 
-/// A message about a value the form has no field for goes in the list.
+/// A message about a value the form has no field for goes in the list. (Before
+/// S2 this used `/capture_sphere/min_radius_m`, which now has a field.)
 #[test]
 fn an_error_without_a_field_is_listed() {
     let mut form = filled_form();
-    form.validation_errors = vec![error("/capture_sphere/min_radius_m", "must be less")];
+    form.validation_errors = vec![error("/schema_version", "must be 1")];
     let harness = harness_for(form, SIZE, capture_plan_form_ui);
     harness.get_by_label("Please fix the following errors:");
-    harness.get_by_label("• /capture_sphere/min_radius_m: must be less");
+    harness.get_by_label("• /schema_version: must be 1");
 }
 
 #[test]
