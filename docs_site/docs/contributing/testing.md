@@ -29,11 +29,11 @@ The first workspace build is long (Bevy and its dependencies); later runs are in
 
 | Layer | Where | What it pins |
 |---|---|---|
-| Unit and system tests | `crates/ssg-sim/src/tests/` (`unit_tests`, `capture_*`, `orbit_*`, `project_files`, `tether_spawn`, `core_systems`, `session_telemetry`, `integration_tests`) and `crates/ssg-app/src/tests/` | One function or one system at a time, through a headless Bevy `App` where a system is involved. Every public function of `ssg-sim` has at least one test that asserts on its effect |
-| Characterization tests | `crates/ssg-sim/src/tests/characterization/`, `crates/ssg-app/src/tests/characterization_app/` | The behaviour of the simulation as it is today (P2), including the Q13 scenario checkpoints (`baseline_hubble`). They change only together with a numbered finding (`F-nn`) and an operator-approved before/after |
-| Scenario tests | `crates/ssg-sim/tests/` (`scenario_q13`, `scenario_example_plans`, `scenario_pause_warp`) | Out-of-crate tests that use only the public API and `ssg_sim::test_support`: the Q13 run, every example capture plan on the Q13 pair, pause and time warp |
-| CLI tests | `crates/ssg-sim-cli/tests/` (`smoke`, `determinism`, `harness_parity`) | The built `ssg-sim` binary: output structure and error paths (`smoke`), bit-identical repeated runs and warp 1× vs 16× (`determinism`), and the CLI trajectory against the in-process harness (`harness_parity`) |
-| Ignored long tests | `cli_three_runs_to_capture_identical` (CLI) and `baseline_q13_to_capture` (`ssg-sim`) | Determinism all the way to the `capture` state. They take minutes, so they carry `#[ignore]` and run on the CI schedule, on manual runs and on `full-ci` PRs (see below) |
+| Unit and system tests | `crates/ssg-sim/src/tests/` (`unit_tests`, `capture_*`, `orbit_*`, `project_*`, `plan_*`, `recording_*`, `tether_*`, `controller_gains`, `transition_conditions`, `time_step_cap`, `core_systems`, `session_telemetry`, `integration_tests`) and `crates/ssg-app/src/tests/` | One function or one system at a time, through a headless Bevy `App` where a system is involved. Every public function of `ssg-sim` has at least one test that asserts on its effect |
+| Characterization tests | `crates/ssg-sim/src/tests/characterization/`, `crates/ssg-app/src/tests/characterization_app/` | The behaviour of the simulation as it is, including the reference scenario's checkpoints (`baseline_hubble`). They change only together with a recorded behaviour change and a maintainer-approved before/after |
+| Scenario tests | `crates/ssg-sim/tests/` (`scenario_q13`, `scenario_example_plans`, `scenario_pause_warp`) | Out-of-crate tests that use only the public API and `ssg_sim::test_support`: the reference run, every example capture plan on the reference pair, pause and time warp |
+| CLI tests | `crates/ssg-sim-cli/tests/` (`smoke`, `determinism`, `harness_parity`, `manifest_run`, `record`, `replay`, `validate`, `controller_defaults`) | The built `ssg-sim` binary: output structure and error paths (`smoke`), bit-identical repeated runs and warp 1× vs 16× (`determinism`), the CLI trajectory against the in-process harness (`harness_parity`), runs from `project.json`, recording and replay, `validate`, and the default controller gains |
+| Ignored long tests | `cli_three_runs_to_capture_identical` (CLI), `baseline_q13_to_capture`, the tether and capture behaviour tests (`ssg-sim`) | Runs all the way to the `capture` state and beyond. They take minutes, so they carry `#[ignore]` and run on the CI schedule, on manual runs and on `full-ci` PRs (see below) |
 
 Do not add `#[ignore]` to hide a slow or failing test. A test is ignored only when it is long, it has a named place where it runs, and that place is listed in the [Determinism](../concepts/determinism.md) tests table.
 
@@ -42,15 +42,15 @@ Do not add `#[ignore]` to hide a slow or failing test. A test is ignored only wh
 `ssg_sim::test_support` (feature `test-support`, enabled by the crates' dev-dependencies) is the shared headless harness. Tests in `crates/ssg-sim/src/tests/` use it as `crate::test_support`; out-of-crate tests and the CLI tests use `ssg_sim::test_support`. The app crate wraps it in `crates/ssg-app/src/tests/app_support.rs`.
 
 - **`test_app()`** builds a minimal headless app wired like the real one (`SimPlugins`, no rendering), with a fixed sim epoch. **Advance time only with `tick` / `ticks`** (`app.update()` is exactly one fixed step). Never call `fixed_physics_step` from test code: outside `FixedUpdate` it would step the physics with a wall-clock delta, or not at all.
-- **`fixed_epoch()`** is the sim epoch. Never read the wall clock in a test (F-06).
+- **`fixed_epoch()`** is the sim epoch. Never read the wall clock in a test.
 - **`enter_sim`, `start_running`** switch to the sim screen and start the clock.
 - **`capture_rig`, `rig_set`, `rig_step`** drive the capture state machine with scripted ranges and speeds, without advancing physics. The controller-branch tests use them.
-- **`q13`** builds the Q13 scenario (Hubble and the P0 chaser) through the real body spawner; `q13::run` samples checkpoints every 640 ticks.
+- **`q13`** builds the reference scenario (Hubble and its chaser from `q13_hubble_pair.json`) through the real body spawner; `q13::run` samples checkpoints every 640 ticks.
 - **`LogTap`** collects the `LogEvent` messages. Drain it after every tick, because the message buffers swap each frame.
 - **`TempDir`** is a directory under `std::env::temp_dir()` named after the process id, removed on drop.
 - **`Lcg`** is the fixed-seed generator for property-style tests (below). **`assert_close*`** compare floats with a stated tolerance and a label.
 
-**Tests never touch the user's config directory, home directory or working directory.** Anything that needs files uses a `TempDir`. Functions that read or write the real config (`load_from_config`, `save_to_config`, `set_working_directory`) are tested through path-taking helpers (`read_config_file`, `write_config_file`) and are listed as approved exceptions in the public-function inventory.
+**Tests never touch the user's config directory, home directory or working directory.** Anything that needs files uses a `TempDir`. Functions that read or write the real config (`load_from_config`, `save_to_config`, `set_working_directory`) are tested through path-taking helpers (`read_config_file`, `write_config_file`) and are the approved exceptions to testing a public function directly.
 
 ### Property-style tests
 
@@ -66,7 +66,7 @@ Results are bit-identical **per platform**, not across platforms (see [Determini
 
 - Each determinism test compares runs with each other on the same platform (`determinism`, `harness_parity`, `baseline_q13_fixed_epoch_short`). These run everywhere.
 - The pinned numeric goldens (the capture checkpoints, the CLI `state_hash`) hold on macOS/aarch64 only. They are never asserted on Linux or Windows, and a test never carries a `cfg(target_os)` branch or a loosened tolerance to paper over a platform difference.
-- **The CLI and the harness are offset by one step (F-51).** The CLI measures from step 2 (three updates, the capture command applied in the third); `q13::build` ticks once more, so the harness measures from step 3. Compare the two **by absolute step**: the CLI sample at step `s` and the harness checkpoint with the same `s` are the same trajectory point, bit for bit. `harness_parity` checks this; neither side's step semantics change, because that would move a pinned value.
+- **The CLI and the harness are offset by one step.** The CLI measures from step 2 (three updates, the capture command applied in the third); `q13::build` ticks once more, so the harness measures from step 3. Compare the two **by absolute step**: the CLI sample at step `s` and the harness checkpoint with the same `s` are the same trajectory point, bit for bit. `harness_parity` checks this; neither side's step semantics change, because that would move a pinned value.
 
 ## Coverage
 
@@ -97,9 +97,9 @@ The "Lint and test (Linux)" job prints **Test execution time** (the sum of the `
 
 ## Adding a test
 
-- **A function or a system** → a test in the matching file under `crates/ssg-sim/src/tests/` (or a new file declared in `src/tests/mod.rs`), built on `test_app()` and `tick` / `ticks`. Add the function to `plans/stage-5/results/pub-fn-inventory.md` if it is new and public.
+- **A function or a system** → a test in the matching file under `crates/ssg-sim/src/tests/` (or a new file declared in `src/tests/mod.rs`), built on `test_app()` and `tick` / `ticks`.
 - **Behaviour across the public API** → a file in `crates/ssg-sim/tests/`, using only `ssg_sim::…`.
-- **The binary** → `crates/ssg-sim-cli/tests/`, running the built `ssg-sim` with the Q13 project.
+- **The binary** → `crates/ssg-sim-cli/tests/`, running the built `ssg-sim` with the reference project.
 - **Many inputs** → a property-style test with `Lcg`.
 - **Anything with files** → a `TempDir`.
 - Avoid `app.run()`; `app.update()` advances one fixed step.

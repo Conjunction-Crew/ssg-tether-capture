@@ -4,343 +4,163 @@ sidebar_position: 2
 
 # Resources
 
-:::note
-Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
-:::
+Resources are single values stored in the Bevy `World`, not attached to an entity. They are grouped below by crate, then module. Paths in `ssg_app` are given for orientation: the app's modules are private to its crate.
 
-Resources are singleton values stored globally in the Bevy `World`. Unlike components they are not attached to entities. Source: `src/resources/`.
+**Lifetimes.** Most resources live for the whole run (inserted by their plugin). The *session resources* exist only while `SimSession::Active` (the sim screen): `OrbitalCache`, `WorldTime` and `CaptureSphereRadius` are inserted on entering it and removed on leaving it; `RecordingBodies` exists from the body spawn to the end of the session; `Celestials` exists while the app is on `UiScreen::Sim`.
 
 ---
 
-## `Celestials`
+## `ssg-sim`
 
-**Source:** `src/resources/celestials.rs`
+### `time`
 
-Tracks all planetary/celestial body entities by name.
+#### `WorldTime`
 
-```rust
-pub struct Celestials {
-    pub planets: HashMap<String, Entity>,
-}
-```
+`ssg_sim::time::WorldTime` · The sim clock (session resource). See [Time Warp](../concepts/time-warp).
 
-Populated during `setup_celestial` (Startup). Known keys after startup:
-
-| Key | Description |
-|---|---|
-| `"Earth"` | 3D scene Earth entity (on `SCENE_LAYER`) |
-| `"Map_Earth"` | Scaled-down map view Earth entity (on `MAP_LAYER`) |
-
-Systems that need to find Earth by name query this resource rather than running a component query.
-
----
-
-## `OrbitalCache`
-
-**Source:** `src/resources/orbital_cache.rs`
-
-Tracks tether and debris entities by their `object_id` string, and caches current ECI state vectors.
-
-```rust
-pub struct OrbitalCache {
-    pub tethers: HashMap<String, Vec<Entity>>,
-    pub debris: HashMap<String, Entity>,
-    pub eci_states: HashMap<Entity, Vector6<f64>>,
-}
-```
-
-`tethers` maps each tether ID to the list of all joint entities in the chain. `eci_states` is populated each physics tick by `cache_eci_states` and consumed by the GPU compute pipeline and capture algorithms. Populated during `setup_tether` and `setup_entities`. Used by the project detail screen to resolve the tether entity from a capture plan's `tether` field.
-
----
-
-## `CapturePlanLibrary`
-
-**Source:** `src/resources/capture_plans.rs`
-
-Holds all loaded capture plans, split into user and example sets.
-
-```rust
-pub struct CapturePlanLibrary {
-    /// Union of user_plans and example_plans — used by simulation systems.
-    pub plans: HashMap<String, CapturePlan>,
-    /// Plans loaded from the user's working directory.
-    pub user_plans: HashMap<String, CapturePlan>,
-    /// Plans loaded from assets/example_capture_plans.
-    pub example_plans: HashMap<String, CapturePlan>,
-    /// Plans pre-compiled into a structure optimised for runtime algorithms.
-    pub compiled_plans: HashMap<String, CompiledCapturePlan>,
-}
-```
-
-Plan keys are file stems (e.g. `"example_plan"` for `example_plan.json`). Loaded on home screen entry and reloaded whenever the user saves or edits a plan.
-
-Use `insert_plan(plan_id, plan)` to add a plan — this both inserts into `plans` and compiles it into `compiled_plans`.
-
-`CompiledCapturePlan` is a pre-processed representation optimised for the capture state machine. It contains:
-
-| Type | Description |
-|---|---|
-| `CompiledCapturePlan` | Owns a `Vec<CompiledCaptureState>` and a `state_indices` map for O(1) lookup by ID |
-| `CompiledCaptureState` | Holds pre-parsed `parameters` and `transitions` |
-| `CompiledCaptureStateParameters` | Typed `max_velocity`, `max_force`, and optional `shrink_rate` (f64) |
-| `CompiledCaptureTransition` | Typed `to`, and optional `distance_less_than` / `distance_greater_than` / `relative_velocity_*` bounds |
-
-The free functions `load_plans_from_dir(path)` and `load_plans_from_dir_with_errors(path)` are used by the home screen and save event handler. `load_plans_from_dir_with_errors` returns both the successfully loaded plans and a `HashMap<String, Vec<String>>` of per-file validation errors. `validate_capture_plan(plan_id, plan)` and `build_capture_component(plan_id, plan, physics_time_secs)` are also available as helpers.
-
----
-
-## `WorkingDirectory`
-
-**Source:** `src/resources/working_directory.rs`
-
-Tracks the user-selected directory where capture plan JSON files are read from and saved to.
-
-```rust
-pub struct WorkingDirectory {
-    pub path: String,
-    pub pending_path: String,
-}
-```
-
-`path` is the active directory. `pending_path` is a staging field used while the user is browsing for a new directory on the setup screen.
-
----
-
-## `NewCapturePlanForm`
-
-**Source:** `src/resources/capture_plan_form.rs`
-
-Drives the new/edit/view capture plan modal. The form is visible when `open == true`; the `poll_new_plan_modal` system in `UiPlugin` watches this resource for changes and spawns or despawns the modal UI accordingly.
-
-Key fields:
-
-| Field | Type | Description |
+| Field | Type | Meaning |
 |---|---|---|
-| `open` | `bool` | Whether the modal is visible |
-| `plan_name` | `String` | Plan name (used to derive the save filename) |
-| `tether_name` | `String` | Tether identifier string |
-| `tether_type` | `String` | Device type (e.g. `"tether"`) |
-| `tether_length` | `String` | Physical tether length in metres (stored as string for the input field) |
-| `approach_max_velocity` / `approach_max_force` | `String` | Approach phase parameters |
-| `approach_transitions` | `Vec<TransitionForm>` | Approach-state transition conditions |
-| `terminal_max_velocity` / `terminal_max_force` / `terminal_shrink_rate` | `String` | Terminal phase parameters |
-| `terminal_transitions` | `Vec<TransitionForm>` | Terminal-state transition conditions |
-| `capture_max_velocity` / `capture_max_force` / `capture_shrink_rate` | `String` | Capture phase parameters |
-| `overwrite_conflict_path` | `Option<String>` | Set when a filename conflict is detected on save (create mode only) |
-| `validation_errors` | `Vec<String>` | Populated by `validate_form` before display |
-| `unit_system` | `UnitSystem` | `Metric` (default) or `Imperial`; values are converted to metric on save |
-| `editing_plan_id` | `Option<String>` | `Some(id)` when editing an existing plan; `None` for a new plan |
-| `show_restart_prompt` | `bool` | Set after saving an edited plan in the sim screen to prompt user to reset |
-| `read_only` | `bool` | When `true` the form is view-only (e.g. viewing an example plan) |
-| `original_json` | `Option<Value>` | Snapshot of the plan JSON taken when the form is opened for editing; used to detect actual changes |
+| `multiplier` | `u32` | The requested warp: fixed steps per `FixedUpdate` run (1, 2, 4, … up to `MAX_TIME_WARP` = 8192) |
+| `effective_multiplier` | `u32` | The steps the last run executed (at most `StepCap`); 0 before the first run |
+| `epoch` | `Epoch` | The current sim epoch; each fixed step adds `PHYS_DT` |
+| `start_epoch` | `Epoch` | The epoch the session started at |
 
-`reset()` returns the form to its default state (including clearing `editing_plan_id` and `read_only`).
+`change_warp` steps the warp ladder; a step down at 1x pauses (`PauseState::Paused`).
 
-`TransitionForm` carries `to`, `distance_kind` (`"less_than"` or `"greater_than"`), and `distance_value`.
+#### `SimConfig`
 
----
+`ssg_sim::time::SimConfig` · The simulation's explicit inputs: `start_epoch`. The app, the CLI or the test harness inserts it before entering the sim; the sim never reads the wall clock. `setup_time` resets `WorldTime` from it.
 
-## `SimPlanSyncState`
+#### `StepCap`
 
-**Source:** `src/resources/capture_plan_form.rs`
+`ssg_sim::time::StepCap` · The most fixed steps one `FixedUpdate` run may execute; default `MAX_STEPS_PER_UPDATE` (64). It changes how many steps run per update, never which steps. The app adapts it to the machine between updates (`adapt_step_cap`); the CLI keeps the default.
 
-Tracks whether the currently-loaded simulation plan is in sync with the saved version on disk.
+### `project`
 
-```rust
-pub struct SimPlanSyncState {
-    pub in_sync: bool,
-    pub restart_requested: bool,
-}
-```
+#### `SelectedProject`
 
-When the user edits and saves a plan while the sim screen is open, `in_sync` is set to `false`. The polling system then shows a restart prompt in the UI. Setting `restart_requested` triggers a sim reset.
+`ssg_sim::project::SelectedProject` · `project_id: Option<String>`, the plan id of the open project.
 
----
+#### `WorkingDirectory`
 
-## `WorldTime`
+`ssg_sim::project::WorkingDirectory` · `path` (the working directory in use) and `pending_path` (the path being typed on the setup screen). The app registers it (`UiPlugin`); `set_working_directory` saves the path to the config file.
 
-**Source:** `src/resources/world_time.rs`
+#### `AssetsDir`
 
-Controls simulation time speed and tracks the current simulation epoch. See [Time Warp](../concepts/time-warp) for usage.
+`ssg_sim::project::AssetsDir` · The `assets/` directory datasets are read from. The app inserts the directory it resolved at start-up (inside the `.app` bundle on macOS), the CLI and the test harness theirs.
 
-```rust
-pub struct WorldTime {
-    pub multiplier: u32, // default: 1
-    pub epoch: Epoch,    // default: Epoch::now()
-}
-```
+### `orbit`
 
-The epoch is advanced each physics tick by the `fixed_physics_step` system, scaled by `multiplier`. All propagator queries use `WorldTime::epoch`.
+#### `OrbitalCache`
 
----
+`ssg_sim::orbit::cache::OrbitalCache` · Session resource.
 
-## `SpaceObjectCatalog`
-
-**Source:** `src/resources/space_catalog.rs`
-
-Holds the in-memory catalogue of all loaded orbital objects.
-
-```rust
-pub struct SpaceObjectCatalog {
-    pub entries: Vec<SpaceCatalogEntry>,
-}
-```
-
-Each `SpaceCatalogEntry` carries:
-
-| Field | Description |
-|---|---|
-| `gpu_index` | Index into the GPU ECI state buffer for this object |
-| `norad_id` | NORAD catalogue number |
-| `object_name` | Object name from the dataset |
-| `object_id` | International designator |
-| `search_blob` | Pre-built lowercase search string for fast filtering |
-
-`display_name()` and `display_label()` are convenience methods that fall back gracefully when name/ID fields are empty.
-
----
-
-## `SpaceCatalogUiState`
-
-**Source:** `src/resources/space_catalog.rs`
-
-Drives the Space Catalog panel in the sim sidebar.
-
-| Field | Description |
-|---|---|
-| `show_catalog` | Whether the catalog panel is expanded |
-| `show_points` | Whether GPU debris points are visible on the map |
-| `search_text` | Current text in the search input |
-| `search_focused` | Whether the search field is keyboard-focused |
-| `selected_index` | Currently highlighted entry in the filtered results |
-| `page` | Current results page |
-
----
-
-## `FilteredSpaceCatalogResults`
-
-**Source:** `src/resources/space_catalog.rs`
-
-A `Vec<usize>` of indices into `SpaceObjectCatalog::entries` that match the current search text. Updated each frame by the catalog search system.
-
----
-
-## `CaptureSphereRadius`
-
-**Source:** `src/resources/capture_plans.rs`
-
-The radius (metres) of the virtual capture sphere around the tether root. Objects entering this radius are considered candidates for capture. Initialised to `25.0` m when the sim starts.
-
----
-
-## `CapturePlanLoadErrors`
-
-**Source:** `src/resources/capture_plans.rs`
-
-Accumulates per-file validation errors for capture plans that failed to parse or failed `validate_capture_plan`. Used to surface load errors in the UI.
-
-```rust
-pub struct CapturePlanLoadErrors {
-    pub errors: HashMap<String, Vec<String>>,
-}
-```
-
----
-
-## `Settings`
-
-**Source:** `src/resources/settings.rs`
-
-Holds debug visualisation toggles.
-
-| Field | Default | Description |
+| Field | Type | Meaning |
 |---|---|---|
-| `dev_gizmos` | `false` | Show development debug gizmos (floating origin marker, physics bubble) |
-| `capture_gizmos` | `false` | Show capture force vector gizmos |
+| `tethers` | `HashMap<String, Vec<Entity>>` | Tether name → its root and its tail (the interior nodes are reached through the joints) |
+| `debris` | `HashMap<String, Entity>` | Debris name → entity (the capture target is `"Satellite1"`) |
+| `eci_states` | `HashMap<Entity, Vector6<f64>>` | Every body's ECI state at the current epoch, written by `cache_eci_states` each fixed step |
+| `com_rv` | `HashMap<Entity, (DVec3, DVec3)>` | Tether root → the tether's centre of mass position and velocity, written by `calculate_com_rv` |
 
-Toggled at runtime by `toggle_capture_gizmos` (keyboard input) and read by `dev_gizmos` / `capture_gizmos` systems.
+#### `SpaceObjectCatalog`
 
----
+`ssg_sim::orbit::catalog::SpaceObjectCatalog` · `entries`: one `SpaceCatalogEntry` per object of the datasets in `assets/datasets/`, loaded by `load_dataset_entities` on entering the sim. The Space Catalog panel searches it.
 
-## UI resources
+#### `GpuElements`
 
-The following resources are initialised by `UiPlugin` (source: `src/ui/`):
+`ssg_sim::orbit::catalog::GpuElements` · The catalog's elements in the layout the GPU propagates (`GpuOrbitalElements`), filled by `load_dataset_entities`; the app's `GpuComputePlugin` extracts it to the render world.
 
-| Resource | Description |
+#### `GpuComputeEpochOrigin`
+
+`ssg_sim::orbit::catalog::GpuComputeEpochOrigin` · The epoch the GPU buffer's elements are taken at (`None` until the catalog is loaded).
+
+#### `OrbitalSelectionState`
+
+`ssg_sim::orbit::selection::OrbitalSelectionState` · The bodies chosen before Start: `target` and `chaser` (each an optional `SelectedOrbitalObject`), and `chaser_relative` when the chaser is placed relative to the target. `spawn_selected_bodies` reads it.
+
+### `capture`
+
+#### `CaptureSphereRadius`
+
+`ssg_sim::capture::CaptureSphereRadius` · Session resource. `radius`, in metres: the capture sphere's current radius. Set to the plan's initial radius at each capture start (25 m by default) and shrunk by the controller.
+
+#### `CapturePlanLibrary`
+
+`ssg_sim::capture::plan::CapturePlanLibrary` · Every loaded capture plan.
+
+| Field | Meaning |
 |---|---|
-| `SelectedProject` | The currently-selected capture plan's ID (`Option<String>`) |
-| `UiTheme` | Colour palette used by all UI screens |
+| `plans` | The union of the user and example plans; what the simulation reads |
+| `user_plans` | Plans from the working directory |
+| `example_plans` | Plans from `assets/example_capture_plans/` |
+| `compiled_plans` | Each plan compiled for the controller (`CompiledCapturePlan`) |
+
+`insert_plan` stores a plan and its compiled form. See [Project Files](../concepts/project-files#capture-plans-schema-v1) for the file format.
+
+### `telemetry`
+
+#### `CaptureLog`
+
+`ssg_sim::telemetry::CaptureLog` · The log shown in the terminal panel: a ring buffer of `LogEntry` values (`entries`), at most `max_entries` (256), the oldest dropped first. `collect_log_events` fills it from `LogEvent` messages on every screen. See [Capture Log](../concepts/capture-log).
+
+A `LogEntry` has `timestamp` (sim time `HH:MM:SS`, or `--:--:--` outside a session), `epoch_utc`, `level` (`LogLevel`: `Error`, `Warn`, `Info`, `Debug`), `source` and `message`.
+
+#### `DataCollection`
+
+`ssg_sim::telemetry::DataCollection` · Samples per capture entity: `velocity` and `position` (relative speed and range against time, for the plots and the CSV export) and `ephemeris` (`EphemerisSample`, one per second of a running capture, for the OEM export). `forces` is not written today.
+
+### `recording`
+
+See [Recordings](../concepts/recordings).
+
+#### `SimInputLog`
+
+`ssg_sim::recording::inputs::SimInputLog` · Every sim-affecting input of the session from step 0 (`entries`, each a `RecordedInput`: the step it applies after and a `RecordedCommand`), whether a recording runs or not. Reset on entering the session.
+
+#### `Recorder`
+
+`ssg_sim::recording::recorder::Recorder` · The recorder's `state`: `RecorderState::Idle` or `Recording` with the running recording.
+
+#### `RecordingSettings`
+
+`ssg_sim::recording::recorder::RecordingSettings` · The project's `recording` block: `auto_start_phase`, `auto_stop_on_end` (default true), `stop_after_end_s` (60), `keyframe_interval_steps` (32), `max_duration_s` (1800), `max_size_mb` (100), `max_tether_bodies` (200).
+
+#### `RecordingSink`
+
+`ssg_sim::recording::RecordingSink` · Where frames go: a boxed `FrameSink`, by default the in-memory `MemorySink`. The app installs a sink writing `<project>/recordings/` when the sim starts; the CLI installs its own.
+
+#### `RecordingBodies`
+
+`ssg_sim::recording::RecordingBodies` · The recorded bodies in table order (`entities`, `roles`): the target first, then the tether root, the interior nodes and the tail. Built by `build_recording_bodies` after the spawn.
 
 ---
 
-## `CaptureLog`
+## `ssg-app`
 
-**Source:** `src/resources/capture_log.rs`
+### `render`
 
-A ring-buffer log that accumulates structured `LogEntry` records emitted by simulation systems. Displayed in the [Capture Log Terminal](../concepts/capture-log) widget on the sim screen.
-
-```rust
-pub struct CaptureLog {
-    pub entries: VecDeque<LogEntry>,
-    pub max_entries: usize, // default: 256
-}
-```
-
-When `entries.len() == max_entries`, `push()` evicts the oldest entry before appending the new one. The buffer is **never cleared automatically**; only the **Clear** button in the terminal header empties it.
-
-### `LogEntry`
-
-```rust
-pub struct LogEntry {
-    pub timestamp_s: f64, // WorldTime epoch seconds at time of emission
-    pub level: LogLevel,
-    pub source: &'static str, // e.g. "capture", "propagation", "sim"
-    pub message: String,
-}
-```
-
-### `LogLevel`
-
-```rust
-pub enum LogLevel { Error, Warn, Info, Debug }
-```
-
-| Variant | Display label | Colour |
+| Resource | Module | Purpose |
 |---|---|---|
-| `Error` | `ERR` | Red |
-| `Warn` | `WARN` | Yellow |
-| `Info` | `INFO` | White |
-| `Debug` | `DBG` | Grey |
+| `Celestials` | `render::celestial` | `planets`: name → entity, `"Earth"` (scene) and `"Map_Earth"` (map); filled by `setup_celestial` |
+| `RenderCatalogElements` | `render::gpu_compute` | The render-world copy of `GpuElements`, in the shader's layout |
 
-### `LogEvent`
+### `ui` — state of the screens and windows
 
-```rust
-#[derive(Message)]
-pub struct LogEvent {
-    pub level: LogLevel,
-    pub source: &'static str,
-    pub message: String,
-}
-```
-
-The decoupled message type used by simulation systems to submit log entries without taking `ResMut<CaptureLog>` directly. Registered with `add_message::<LogEvent>()` in `UiPlugin`. Collected each frame by `collect_log_events`.
-
----
-
-## `CaptureLogUiState`
-
-**Source:** `src/resources/capture_log.rs`
-
-Tracks the runtime state of the Capture Log Terminal panel.
-
-```rust
-pub struct CaptureLogUiState {
-    pub is_open: bool,
-    pub active_filters: HashSet<LogLevel>, // all four levels active by default
-    pub last_rendered_count: usize,
-    pub is_user_scrolled: bool,
-    pub selected_indices: HashSet<usize>, // indices into the filtered view
-}
-```
-
-`last_rendered_count` is compared against `CaptureLog::entries.len()` each frame to determine whether `sync_terminal_log_display` needs to rebuild the row list. Reset to `0` on `UiScreen::Sim` entry so the panel redraws on re-entry.
+| Resource | Module | Purpose |
+|---|---|---|
+| `UiTheme` | `ui::theme` | The colour palette; `visuals_from_theme` turns it into egui visuals |
+| `Settings` | `ui::settings` | `dev_gizmos` (`O`), `capture_gizmos` (`C`), `unit_system` (Metric/Imperial, this launch only) |
+| `NewCapturePlanForm` | `ui::form` | The plan form: `open`, the `draft` plan it edits, and one field per key it shows |
+| `SimPlanSyncState` | `ui::form` | `in_sync` (false after **Continue** on the restart prompt: the sim runs without the saved plan change) and `restart_requested` (set by Reset/Restart Sim) |
+| `HudReadouts` | `ui::hud` | The sidebar's texts (time warp, sim time, telemetry, guidance) and the bodies and plan they describe |
+| `CaptureLogUiState` | `ui::log_ui` | The terminal panel: open or not, level filters, scroll and row selection |
+| `CapturePlanLoadErrors` | `ui::log_ui` | Plan file → its validation errors, for plans that failed to load |
+| `SpaceCatalogUiState` | `ui::catalog_state` | The catalog panel: shown or not, catalog points shown, satellite indicator shown, search text, selected row, page |
+| `FilteredSpaceCatalogResults` | `ui::catalog_state` | Indices into `SpaceObjectCatalog::entries` that match the search |
+| `CsvExportState` | `ui::egui` | The data collection window's CSV export (file name, completed exports, last error) and the plot session |
+| `RecordingPanel` | `ui::recording` | The Recording window: the settings being edited, the recorder's last messages, the last Save result |
+| `RecordingsList` | `ui::replay` | The Recordings window: the listed recordings and the load in flight |
+| `ReplaySession` | `ui::replay` | The recording being played: its `Player`, body roles and shapes, frame epochs, and how its build differs from this one. Exists only in `SimState::Replay` |
+| `ReturnToSim` | `ui::replay` | Set by Exit replay: Home re-enters the sim screen on the next frame |
+| `ExitConfirmOpen` | `ui::screens::project_detail` | The exit-confirm modal is open |
+| `WorkingDirectorySetupError` | `ui::screens::working_directory_setup` | The last failure to use the selected directory |

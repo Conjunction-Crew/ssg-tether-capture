@@ -127,7 +127,7 @@ The shipped `example_plan` captures the Hubble debris in six phases:
 
 ## Measured behaviour
 
-On the Q13 Hubble scenario (fixed epoch, macOS/aarch64), with the default rope:
+On the reference Hubble scenario (`scenario_q13`, fixed epoch, macOS/aarch64), with the default rope:
 
 | Measure | Value |
 |---|---|

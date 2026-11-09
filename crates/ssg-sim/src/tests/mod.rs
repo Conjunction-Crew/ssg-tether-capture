@@ -23,6 +23,7 @@ pub mod recording_inputs;
 pub mod recording_player;
 pub mod recording_recorder;
 pub mod recording_tap;
+pub mod schema_docs;
 pub mod session_telemetry;
 pub mod tether_dynamics;
 pub mod tether_spawn;

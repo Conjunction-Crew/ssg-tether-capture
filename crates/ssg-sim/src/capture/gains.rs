@@ -12,7 +12,7 @@ use super::{
 };
 
 /// A phase's controller gains. Every field is optional; an absent field takes
-/// the default the controller had before P9.
+/// the controller's built-in default.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -46,8 +46,9 @@ pub struct PhaseController {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inner_edge_fraction: Option<f64>,
     /// The relative width of the hysteresis band on the branch law's inner and
-    /// outer edges, and of the velocity kill band (at least one step's Δv); 0
-    /// removes the hysteresis. Default 0.02; at least 0 and less than 0.5.
+    /// outer edges, and of the velocity kill band (at least two steps' Δv
+    /// (2 × `max_force_n` × step / mass)); 0 removes the hysteresis. Default
+    /// 0.02; at least 0 and less than 0.5.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dead_band_fraction: Option<f64>,
     /// Seconds the force bound takes to rise from 0 to `max_force_n` at the

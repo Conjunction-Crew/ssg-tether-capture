@@ -4,188 +4,136 @@ sidebar_position: 3
 
 # Systems
 
-:::note
-Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
-:::
-
-Systems are functions that run on matching sets of entities every frame (or on a schedule). Source: `src/systems/`.
+Systems, the messages they exchange, the states they run in and the sets that order them. Grouped by crate, then module. The UI systems are on the [UI](./ui) page; the plugins that register everything are on [Plugins](../architecture/plugins).
 
 ---
 
-## Setup systems (`setup.rs`)
+## States
 
-These run once on `OnEnter(UiScreen::Sim)`, chained in order.
+| State | Path | Values | Driven by |
+|---|---|---|---|
+| `SimSession` | `ssg_sim::session::SimSession` | `Idle` (default), `Active` | The app mirrors its `UiScreen` into it (`Active` ⇔ the sim screen); the CLI and the tests set it directly. `Active` holds the session resources, the bodies and the clock |
+| `SimState` | `ssg_sim::session::SimState` | `Setup` (default), `Running`, `Replay` | `Setup` before Start; `Running` once the bodies spawn; `Replay` while a recording plays (visual-only bodies, no physics step, no sim commands, no recorder) |
+| `PauseState` | `ssg_sim::session::PauseState` | `Running` (default), `Paused` | The time-warp ladder: a step down at 1x pauses. Pause is a state, never a 0x warp |
 
-### `setup_lighting`
+The app's own screen state, `UiScreen`, is on the [UI](./ui#screens-and-the-sim-session) page.
 
-Spawns a `DirectionalLight` for the sun and a second for the moon, both visible on `SCENE_LAYER` and `MAP_LAYER`. Sun uses `AMBIENT_DAYLIGHT` illuminance; moon uses `CIVIL_TWILIGHT`.
+## Schedule and system sets
 
-### `setup_celestial`
+| Item | Path | Meaning |
+|---|---|---|
+| `ManualPhysics` | `ssg_sim::time::ManualPhysics` | The schedule of one fixed step: Avian3D's physics, then the `SimStep` chain. Run by `fixed_physics_step` |
+| `SimStep` | `ssg_sim::SimStep` | `CenterOfMass`, `OriginReset`, `CacheEci`, `Bubble`, `RelativeDynamics`, `Capture`, `Record`: chained in this order inside `PhysicsSystems::Last` (see [Overview](../architecture/overview#the-fixed-step)) |
+| `SimSet` | `ssg_sim::SimSet` | Sets in other schedules the app orders against: `SessionInit` (`OnEnter(SimSession::Active)`: session resources, dataset load, sim clock), `SpawnBodies` (`OnEnter(SimState::Running)`: the tether and the debris), `ApplyCommands` (`Last`: queued `SimCommand`s applied) |
 
-Spawns the Earth entity and registers it in `Celestials`. Also spawns a scaled-down `Map_Earth` for the map view. Both use the 8K KTX2 Earth texture.
+## Messages
 
-Registers both with keys `"Earth"` and `"Map_Earth"` in the `Celestials` resource.
-
-### `setup_tether`
-
-Spawns the tether joint chain. Creates `NUM_TETHER_JOINTS` rigid body entities each separated by `DIST_BETWEEN_JOINTS` metres, links them with `TetherNode`, and registers the root in `OrbitalCache::tethers`.
-
-### `setup_entities`
-
-Spawns the atmosphere, skybox, orbit camera, and initial debris/capture target entities. Also configures auto-exposure compensation curves and HDR bloom.
-
----
-
-## Propagation systems (`propagation.rs`)
-
-### `load_dataset_entities`
-
-**Schedule:** `OnEnter(UiScreen::Sim)` (chained after setup systems)
-
-Loads all JSON orbital datasets from `assets/datasets/`. For each `JsonOrbital` entry, registers the object in `SpaceObjectCatalog` and uploads ECI state data to the GPU buffer used by `GpuComputePlugin`.
-
-### `init_orbitals`
-
-**Schedule:** `First` (via `OrbitalMechanicsPlugin`)
-
-Processes newly-spawned `Orbit` components. Converts TLE or classical elements into a `brahe::KeplerianPropagator` and stores it in the entity's `Orbital` component. Removes the `Orbit` component after initialisation.
-
-### `cache_eci_states`
-
-**Schedule:** `ManualPhysics::First` (via `OrbitalMechanicsPlugin`)
-
-Iterates all entities with an `Orbital` component and calls `propagator.state_eci(epoch)` using the current `WorldTime::epoch`. Writes the resulting `Vector6<f64>` into `OrbitalCache::eci_states` so that downstream physics and algorithm systems can read ECI state without querying the propagator directly.
-
-### `physics_bubble_add_remove`
-
-**Schedule:** `ManualPhysics::Prepare`
-
-Enables or disables the Avian3D `RigidBody` on each orbital entity based on its distance from the tether root. Bodies within `PHYSICS_ENABLE_RADIUS` get an active `RigidBody`; bodies outside `PHYSICS_DISABLE_RADIUS` have it removed. This prevents the physics solver from integrating objects that are too far away to interact with the tether.
-
-### `target_entity_reset_origin`
-
-**Schedule:** `ManualPhysics::Prepare`
-
-Shifts the `CameraTarget` entity back toward the world origin when its position exceeds `MAX_ORIGIN_OFFSET`. Applies the same offset uniformly to all other entity transforms to preserve relative positions (floating origin step for physics).
-
-### `floating_origin_update_visuals`
-
-**Schedule:** `Update`
-
-Syncs Bevy `Transform` positions for all orbital entities from their Avian3D physics `Position` (or from `OrbitalCache::eci_states` for inactive bodies), accounting for the current floating origin offset.
+| Message | Path | Written by | Read by |
+|---|---|---|---|
+| `LogEvent` | `ssg_sim::telemetry::LogEvent` | Any system: `level`, `source`, `message` | `collect_log_events` → `CaptureLog` |
+| `SimCommand` | `ssg_sim::capture::SimCommand` | The app (`StartCapture { target, plan_id }`, the Capture button), the CLI | `apply_sim_commands` |
+| `CaptureTransition` | `ssg_sim::capture::CaptureTransition` | `capture_state_machine_update`, at each phase change: `entity`, `from`, `to`, `epoch` (the sub-step it fired in), `reason` | The recorder; the CLI |
+| `CaptureEnded` | `ssg_sim::capture::CaptureEnded` | Once, when a capture enters a phase with `end`: `entity`, `phase`, `outcome`, `epoch`. The controller keeps running in that phase | The recorder (automatic stop) |
+| `OriginReset` | `ssg_sim::floating_origin::OriginReset` | `target_entity_reset_origin`: `step`, `com_r`, `com_v` (the shift applied to every enabled body) | The recorder |
+| `RecorderCommand` | `ssg_sim::recording::recorder::RecorderCommand` | The app's Recording window, the CLI: `Start { name }`, `Stop` | `apply_recorder_commands` |
+| `RecorderEvent` | `ssg_sim::recording::recorder::RecorderEvent` | The recorder: `Started`, `Stopped`, `Warning` (80 % of a cap), `Refused`; each is also a log line | The app's Recording window |
+| `UiEvent` | `ssg_app::ui::events::UiEvent` | The egui screens | `handle_ui_events`, `sim_screen_events` (see [UI](./ui#events)) |
 
 ---
 
-## Camera systems (`orbit_camera.rs`)
+## `ssg-sim` systems
 
-### `orbit_camera_input`
+### `session`
 
-**Schedule:** `Update`
+| System | Schedule | Purpose |
+|---|---|---|
+| `init_sim_resources` | `OnEnter(SimSession::Active)`, `SimSet::SessionInit` (first) | Inserts `OrbitalCache`, `WorldTime` at `SimConfig::start_epoch`, `CaptureSphereRadius` (25 m); unpauses |
+| `remove_sim_resources` | `OnExit(SimSession::Active)` | Removes those three resources |
 
-Reads mouse delta (right-click drag) and scroll wheel input. Updates `OrbitCamera` yaw, pitch, and distance for the active view.
+### `time`
 
-### `orbit_camera_switch_target`
+| System | Schedule | Purpose |
+|---|---|---|
+| `setup_time` | `OnEnter(SimSession::Active)`, `SimSet::SessionInit` (last) | Resets the clock to `SimConfig::start_epoch` at 1x and logs the start epoch |
+| `fixed_physics_step` | `FixedUpdate` at `FIXED_HZ` (64 Hz), while the session is active, the sim running and not paused | Runs `min(multiplier, StepCap)` fixed steps; each adds `PHYS_DT` to the epoch and runs `ManualPhysics`. Records the count in `effective_multiplier`. No step debt is carried over |
+| `configure_catch_up_window` | `Startup` | Lowers Bevy's catch-up window to 3 fixed steps, so one slow frame cannot multiply the work of a run |
 
-**Schedule:** `Update`
+### `orbit`
 
-On left-click, raycasts into the scene. If an `Orbital` entity is hit, transfers `CameraTarget` to that entity.
+| System | Schedule | Purpose |
+|---|---|---|
+| `load_dataset_entities` | `OnEnter(SimSession::Active)`, `SimSet::SessionInit` | Loads the GP datasets in `assets/datasets/` into `SpaceObjectCatalog` and `GpuElements` |
+| `init_orbitals` | `First`, while the session is active | Builds the propagator of each new `Orbit`: catalog records from SGP4 at the start epoch, elements at their own epoch; then two-body propagation. The first time in a session it records the session-start entry of `SimInputLog` |
+| `cache_eci_states` | `ManualPhysics`, `SimStep::CacheEci` | Writes every body's ECI state at the current epoch to `OrbitalCache::eci_states` |
 
-### `orbit_camera_control_target`
+### `floating_origin`
 
-**Schedule:** `Update`
+| System | Schedule | Purpose |
+|---|---|---|
+| `calculate_com_rv` | `ManualPhysics`, `SimStep::CenterOfMass` | Mass-weighted centre of mass position and velocity of each tether's enabled bodies → `OrbitalCache::com_rv` |
+| `target_entity_reset_origin` | `ManualPhysics`, `SimStep::OriginReset` | When the anchor tether's centre of mass is farther than `MAX_ORIGIN_OFFSET` (50 m) from the origin: shifts every enabled body's position and velocity by minus that centre, rebuilds their propagators by plus it, and writes `OriginReset` |
 
-Updates `OrbitCamera::focus` to match the current `CameraTarget`'s world position.
+See [Floating Origin](../concepts/floating-origin).
 
-### `orbit_camera_track`
+### `physics_bubble`
 
-**Schedule:** `PostUpdate` (after `floating_origin_update_visuals`)
+| System | Schedule | Purpose |
+|---|---|---|
+| `physics_bubble_add_remove` | `ManualPhysics`, `SimStep::Bubble` | Disables a body's physics (`RigidBodyDisabled`) beyond `PHYSICS_DISABLE_RADIUS` (110 m) from the anchor and enables it again within `PHYSICS_ENABLE_RADIUS` (100 m); rebuilds the body's propagator at each change and mirrors disabled bodies' bubble-frame state each step |
+| `apply_relative_gravity` | `ManualPhysics`, `SimStep::RelativeDynamics` | Applies the differential two-body acceleration about the bubble frame's origin to every enabled dynamic body |
 
-Computes and applies the final camera `Transform` from `OrbitCamera` yaw/pitch/distance/focus.
+### `tether`
 
----
+| System | Schedule | Purpose |
+|---|---|---|
+| `spawn_selected_bodies` | `OnEnter(SimState::Running)`, `SimSet::SpawnBodies` | Spawns the tether (root at the origin, laid along the plan's spawn orientation) for the chaser and the debris for the target of `OrbitalSelectionState`; registers them in `OrbitalCache` |
 
-## User input systems (`user_input.rs`)
+### `capture`
 
-### `toggle_map_view`
+| System | Schedule | Purpose |
+|---|---|---|
+| `apply_sim_commands` | `Last`, `SimSet::ApplyCommands` | Applies queued `SimCommand`s: `StartCapture` puts `CaptureComponent` on the target and `CaptureForce` on the tether root and tail, sets the capture sphere to the plan's initial radius, and appends the input to `SimInputLog`. A refused command changes nothing |
+| `capture_state_machine_update` | `ManualPhysics`, `SimStep::Capture` | One controller step per capture: evaluates the current phase's transitions, applies the phase's forces to the tether (ramped up to `max_force_n`), shrinks the capture sphere, records the plot and ephemeris samples, and writes `CaptureTransition`, `CaptureEnded` and log lines |
+| `assert_finite_state` | `ManualPhysics`, after `capture_state_machine_update`, debug builds only | Panics on a non-finite position or velocity of an enabled body, naming the entity and the step |
 
-Toggles the active camera between scene view (`SCENE_LAYER`) and map view (`MAP_LAYER`) on `M` key press.
+See [Tether System](../concepts/tether-system).
 
-### `toggle_origin`
+### `telemetry`
 
-Toggles the floating origin debug marker visibility on `O` key press.
+| System | Schedule | Purpose |
+|---|---|---|
+| `collect_log_events` | `Last` | Appends the frame's `LogEvent`s to `CaptureLog`, stamped with the sim time (or none outside a session), on every screen |
 
-### `toggle_capture_gizmos`
+### `recording`
 
-Toggles `Settings::capture_gizmos` on the assigned key press, enabling or disabling capture force vector visualisation.
+| System | Schedule | Purpose |
+|---|---|---|
+| `reset_sim_input_log`, `reset_recorder` | `OnEnter(SimSession::Active)`, before `SimSet::SessionInit` | A new session starts with an empty input log and an idle recorder |
+| `build_recording_bodies` | `OnEnter(SimState::Running)`, after `SimSet::SpawnBodies` | Builds `RecordingBodies`: the target, then the tether from the root along the joints to the tail |
+| `record_step` | `ManualPhysics`, `SimStep::Record` | The frame tap: after every fixed step, writes a frame every `keyframe_interval_steps` steps (and at the first and last step), with the step's resets, transitions and end events. Reads only |
+| `apply_recorder_commands` | `Last`, after `SimSet::ApplyCommands`, while the session is active | Applies `RecorderCommand`s and the automatic start when a capture's first phase is `auto_start_phase` |
+| `end_recording_on_exit`, `remove_recording_bodies` | `OnExit(SimSession::Active)`, chained | Ends a running recording when the session ends, then removes `RecordingBodies` |
 
-### `change_time_warp`
-
-Adjusts `WorldTime::multiplier` on `,` / `.` key press.
-
-### `map_orbitals`
-
-Repositions map-view entity transforms based on current `OrbitalCache::eci_states`, scaled by `MAP_UNITS_TO_M`.
-
----
-
-## Physics systems (`physics.rs`)
-
-### `fixed_physics_step`
-
-**Schedule:** `FixedUpdate`
-
-Manually runs the `ManualPhysics` schedule at a fixed frequency (`FIXED_HZ`). This decouples all physics and orbital capture calculations from the frame rate, ensuring deterministic timesteps regardless of rendering load.
-
----
-
-## Capture algorithm systems (`capture_algorithms.rs`)
-
-### `capture_state_machine_update`
-
-**Schedule:** `ManualPhysics::Last`
-
-Advances the capture state machine for any entity carrying `CaptureComponent`. Each tick it:
-
-1. Looks up the `CompiledCapturePlan` from `CapturePlanLibrary::compiled_plans`.
-2. Evaluates all `CompiledCaptureTransition` conditions for the current state (distance and relative velocity bounds against values in `OrbitalCache::eci_states`).
-3. On a matching transition, switches `CaptureComponent::current_state` and records `state_enter_time_s`.
-4. Applies `max_velocity` and `max_force` constraints from `CompiledCaptureStateParameters` as Avian3D forces on the tether root joint.
-5. If the state carries a `shrink_rate`, decrements the tether joint separations each tick.
-
----
-
-## Gizmo systems (`gizmos.rs`)
-
-### `dev_gizmos`
-
-**Schedule:** `Update`
-
-Draws developer debug gizmos when `Settings::dev_gizmos` is true: floating origin sphere and physics-bubble radius around the camera target.
-
-### `capture_gizmos`
-
-**Schedule:** `Update`
-
-Draws force vector gizmos for the active capture sequence when `Settings::capture_gizmos` is true.
-
-### `orbital_gizmos`
-
-**Schedule:** `Last`
-
-Draws orbital path gizmos for all active `Orbital` entities in the map view layer.
+A run with a recording is bit-identical to the run without. See [Recordings](../concepts/recordings).
 
 ---
 
-## Capture Log systems (`ui/plugin.rs`)
+## `ssg-app` render systems
 
-### `collect_log_events`
+| System | Module | Schedule | Purpose |
+|---|---|---|---|
+| `setup_lighting` | `render::celestial` | `OnEnter(UiScreen::Sim)` | The sun and the moon as directional lights on both views |
+| `setup_celestial` | `render::celestial` | `OnEnter(UiScreen::Sim)` | The scene Earth (`Earth`, `SCENE_LAYER`) and the map Earth (`MAP_LAYER`), registered in `Celestials` |
+| `setup_camera` | `render::camera` | `OnEnter(UiScreen::Sim)` | The 3D camera with `OrbitCamera`, bloom, auto-exposure, the skybox and the atmosphere |
+| `place_replay_earth` | `render::celestial` | `Update` in a replay | Places the Earth and its atmosphere from the player's frame origin (scene view) |
+| `orbit_camera_input`, `orbit_camera_switch_target`, `orbit_camera_track` | `render::camera` | `Update`, `Update`, `PostUpdate` | See [Plugins → OrbitCameraPlugin](../architecture/plugins#orbitcameraplugin) |
+| `attach_tether_visuals` | `render::attach` | `OnEnter(SimState::Running)` after `SimSet::SpawnBodies`; `OnEnter(SimState::Replay)` | A mesh per new `TetherShape` |
+| `attach_debris_scene` | `render::attach` | The same | The glTF scene of each new `DebrisBody` |
+| `attach_camera_target` | `render::attach` | `OnEnter(SimState::Running)` after `SimSet::SpawnBodies` | Puts `CameraTarget` on the new `SimAnchor` body unless a body already has it |
+| `floating_origin_update_visuals` | `render::floating_origin_visuals` (registered by `GizmoPlugin`) | `Update` while the sim runs | Moves the Earth and the atmosphere so the camera target stays in place in the scene view |
+| `dev_gizmos` | `render::gizmos` | `Update` while the sim runs | When `Settings::dev_gizmos` (`O`): the origin axes and the physics-bubble sphere, scene view only |
+| `capture_gizmos` | `render::gizmos` | `Update` while the sim runs | When `Settings::capture_gizmos` (`C`): the capture spheres, the applied force and the relative velocity as rays, scene view only |
+| `tether_segments` | `render::gizmos` | `Update` on the sim screen | A line between consecutive tether bodies (the rope), scene view, also in a replay |
+| `orbital_gizmos` | `render::gizmos` | `Last` on the sim screen | In the map view: the orbits of the bodies, of the catalog object selected in the panel and of the chosen target and chaser |
 
-**Schedule:** `Update`
-
-Collects all `LogEvent` messages emitted during the frame and appends them to `CaptureLog` (evicting the oldest entry when the ring buffer is full). Stamps each entry with the current `WorldTime::epoch` in seconds. Runs unconditionally so events are never dropped regardless of which screen is active.
-
-### `sync_terminal_log_display`
-
-**Schedule:** `Update` (runs only in `UiScreen::Sim`)
-
-Rebuilds the `TerminalLogWrapper` child list when the number of entries in `CaptureLog` changes or when `CaptureLogUiState::active_filters` is modified. Applies level-filter visibility, per-row selection highlighting, and auto-scrolls the viewport to the bottom unless the user has manually scrolled up (`CaptureLogUiState::is_user_scrolled`).
+The GPU catalog systems are described under [Plugins → GpuComputePlugin](../architecture/plugins#gpucomputeplugin).

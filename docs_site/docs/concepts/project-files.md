@@ -4,11 +4,7 @@ sidebar_position: 9
 
 # Project files
 
-:::note Draft
-This page describes the file formats of v0.4.0-rc.5. It is a draft; the full documentation pass comes later.
-:::
-
-A project is a folder. Sharing a project means zipping the folder; opening one means pointing the application (or `ssg-sim`) at it. Every file the project holds is plain JSON, text or CSV (except a recording's keyframe table, which is Parquet), and every JSON file has a published [JSON Schema](#json-schemas) and an integer `schema_version`.
+A project is a folder. Sharing a project means zipping the folder ([Sharing a project](#sharing-a-project)); opening one means pointing the application (or `ssg-sim`) at it. Every file the project holds is plain JSON, text or CSV (except a recording's keyframe table, which is Parquet), and every JSON file has a published [JSON Schema](#json-schemas) and an integer `schema_version`.
 
 ## The project folder
 
@@ -271,6 +267,27 @@ ssg-sim validate my-project
 ```
 
 reads `project.json`, every plan file and every recording under `recordings/` and prints one `error:`, `warning:` or `info:` line per finding, then the totals; the exit code is 0 without errors and 1 with errors. See [Running without a window](../getting-started/headless-cli#checking-a-project).
+
+## Sharing a project
+
+To share a project, send the whole folder (zipped):
+
+| Send | Why |
+|---|---|
+| `project.json` | The scenario: the start epoch, the target and the chaser with their orbits (a catalog record is copied in whole), the active plan, the recording settings |
+| `<plan-id>.json` | The capture plans. A project that runs the shipped `example_plan` needs no plan file: the receiver's application has it |
+| `datasets/` | Only if you want the receiver to browse the same catalog. The run does not read it: `project.json` holds its own copy of each record, and `source.dataset` is provenance only |
+| `recordings/` | The recordings, if the receiver should play them back |
+
+`exports/`, `logs/` and `runs/` are outputs; send them only if the receiver needs them.
+
+Before sending, run `ssg-sim validate <project>`: it checks every file the receiver will read, and warns about unfinished recordings. The files hold no absolute paths (`source.dataset` is relative to the project folder), so the folder can be unzipped anywhere.
+
+What the receiver gets:
+
+- **The same build on the same platform** reproduces every run bit for bit, and re-simulates the recordings frame for frame.
+- **Another platform or version** runs the same scenario, but the trajectory may differ, from the last bits at first to metres later in a contact-rich capture ([Determinism](./determinism#across-platforms)). Recordings still play back exactly as recorded on every platform; `ssg-sim replay` reports the difference when it re-simulates them.
+- **Any 0.4.x** opens a project written by any other 0.4.x ([Versions and compatibility](#versions-and-compatibility)).
 
 ## JSON Schemas
 
