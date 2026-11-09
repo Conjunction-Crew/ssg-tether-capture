@@ -8,7 +8,9 @@ use egui_kittest::kittest::Queryable;
 
 use crate::tests::egui_support::harness_for;
 use crate::ui::events::UiEvent;
-use crate::ui::events_handler::select_working_directory;
+use crate::ui::events_handler::{
+    continues_without_saved_config, select_working_directory, select_working_directory_with,
+};
 use crate::ui::screens::home::{HomeView, PlanCard, home_ui};
 use crate::ui::screens::working_directory_setup::{
     WorkingDirectorySetupView, working_directory_setup_ui,
@@ -148,6 +150,90 @@ fn bad_path_shows_error() {
     );
     harness.get_by_label(&message);
     harness.get_by_label("Select");
+}
+
+/// #176 (F-33), OQ2 (a): the folder is fine but the config cannot be written.
+#[test]
+fn an_unsaved_config_sets_the_folder_for_the_session_and_says_so() {
+    let dir = TempDir::new("p10_5_unsaved_config");
+    let good = dir.path().join("wd").to_string_lossy().to_string();
+    let mut working_directory = WorkingDirectory {
+        path: "/before".to_string(),
+        pending_path: good.clone(),
+    };
+
+    let outcome = select_working_directory_with(&mut working_directory, &good, |wd, path| {
+        // set_working_directory: the path is set, then the config write fails.
+        wd.path = path.to_string();
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Permission denied (os error 13)",
+        ))
+    });
+
+    let message = outcome
+        .expect("the folder was created")
+        .expect("the config was not saved");
+    assert_eq!(
+        message,
+        "The folder is set for this session, but it could not be saved for the next \
+         launch: Permission denied (os error 13). Select again to continue."
+    );
+    assert_eq!(working_directory.path, good, "set for this session");
+    assert!(std::path::Path::new(&good).is_dir());
+
+    let harness = harness_for(
+        setup_view(&good, Some(&message)),
+        [800.0, 600.0],
+        working_directory_setup_ui,
+    );
+    harness.get_by_label(&message);
+    harness.get_by_label("Select");
+}
+
+#[test]
+fn a_saved_config_selects_without_a_message() {
+    let dir = TempDir::new("p10_5_saved_config");
+    let good = dir.path().join("wd").to_string_lossy().to_string();
+    let mut working_directory = WorkingDirectory {
+        path: "/before".to_string(),
+        pending_path: good.clone(),
+    };
+    let outcome = select_working_directory_with(&mut working_directory, &good, |wd, path| {
+        wd.path = path.to_string();
+        Ok(())
+    });
+    assert_eq!(outcome, Ok(None));
+    assert_eq!(working_directory.path, good);
+}
+
+#[test]
+fn a_second_select_of_the_same_path_continues_without_a_saved_config() {
+    let message = "The folder is set for this session, but it could not be saved …";
+    // First Select: nothing showing yet → stay and show the message.
+    assert!(!continues_without_saved_config(
+        None, message, "/before", "/wd"
+    ));
+    // Second Select of the same path with that message showing → Home.
+    assert!(continues_without_saved_config(
+        Some(message),
+        message,
+        "/wd",
+        "/wd"
+    ));
+    // Another path, or another message showing → stay.
+    assert!(!continues_without_saved_config(
+        Some(message),
+        message,
+        "/wd",
+        "/other"
+    ));
+    assert!(!continues_without_saved_config(
+        Some("Failed to create working directory: …"),
+        message,
+        "/wd",
+        "/wd"
+    ));
 }
 
 #[test]
