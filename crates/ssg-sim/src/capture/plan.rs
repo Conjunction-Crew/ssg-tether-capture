@@ -94,7 +94,7 @@ pub struct CapturePlanDevice {
     pub spawn_orientation: Option<SpawnOrientation>,
 }
 
-/// The axis the tether is laid along at spawn (P7.5 design D9).
+/// The axis the tether is laid along at spawn.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -238,13 +238,13 @@ pub struct Phase {
     /// pre-O5 law). Greater than 0 and less than `device.tether_length_m`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_spacing_m: Option<f64>,
-    /// The controller's gains in this phase (P9 S4); every key optional, each
-    /// defaulting to the value the controller had before. Absent: all defaults.
+    /// The controller's gains in this phase; every key optional, each
+    /// defaulting to the controller's built-in value. Absent: all defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<PhaseController>,
 }
 
-/// The force law of a phase (P7.5 design D16).
+/// The force law of a phase.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
