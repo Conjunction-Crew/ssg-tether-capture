@@ -94,4 +94,4 @@ The `source` field identifies which subsystem emitted the entry:
 
 The log is backed by a `CaptureLog` resource — a ring buffer capped at 1,024 entries. When the buffer is full, the oldest DBG entry is evicted first; an ERR, WARN or INFO entry is evicted (oldest first) only when no DBG entry is left, so the phase transitions of a whole capture stay in the log. Simulation systems emit `LogEvent` messages which are collected each frame by the `collect_log_events` system and appended to the buffer with the current simulation timestamp.
 
-Log entries persist across sim screen re-entries. Only the scroll position and row selection are reset when you navigate back to the sim screen.
+Each sim session has its own log: the entries are cleared when you leave the sim screen (back to Home, or through a restart), so the panel and **Save** hold one session. Lines logged on Home after you leave stay and appear at the top of the next session's log. When you come back to the sim screen the panel starts collapsed and its level filters are kept; the scroll position and row selection are reset.
