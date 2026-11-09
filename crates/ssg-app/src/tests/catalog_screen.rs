@@ -482,3 +482,67 @@ pub(crate) fn p9_s7_orbital_snapshots() -> Vec<PathBuf> {
         ),
     ]
 }
+
+/// #177 (F-68), OQ3 (a): Use Selected shows a catalog body at the sim's start
+/// epoch (the osculating elements of its SGP4 state there), and an edit starts
+/// from what is shown.
+#[test]
+fn use_selected_shows_the_pick_at_the_start_epoch_and_an_edit_starts_from_it() {
+    use ssg_sim::orbit::selection::EditableOrbitalElements;
+    use ssg_sim::time::SimConfig;
+
+    let start = fixed_epoch() + 219.0 * 86_400.0;
+    let mut app = sim_screen_app();
+    app.insert_resource(SimConfig { start_epoch: start });
+    let hst = entry(5, 20580, "HST");
+    let at_start = EditableOrbitalElements::from_gp_at(&hst.gp, start).unwrap();
+    let at_record = EditableOrbitalElements::from_gp(&hst.gp);
+    app.insert_resource(SpaceObjectCatalog {
+        entries: vec![hst.clone()],
+    });
+    app.world_mut()
+        .resource_mut::<SpaceCatalogUiState>()
+        .selected_index = Some(0);
+    send(
+        &mut app,
+        UiEvent::UseCatalogSelection(OrbitalSelectionRole::Target),
+    );
+
+    let target = app
+        .world()
+        .resource::<OrbitalSelectionState>()
+        .target
+        .clone()
+        .unwrap();
+    assert_eq!(
+        target.gp.as_ref(),
+        Some(&hst.gp),
+        "the sim still starts it from SGP4"
+    );
+    assert_eq!(target.elements.epoch, start);
+    assert_eq!(target.elements.to_vec6(), at_start.to_vec6());
+    assert!(
+        (target.elements.raan_rad - at_record.raan_rad).abs() > 0.5,
+        "not the record's elements at its epoch"
+    );
+
+    send(
+        &mut app,
+        UiEvent::SetOrbitalElement {
+            role: OrbitalSelectionRole::Target,
+            field: OrbitalElementField::SemiMajorAxis,
+            value: 7000.0,
+        },
+    );
+    let edited = app
+        .world()
+        .resource::<OrbitalSelectionState>()
+        .target
+        .clone()
+        .unwrap();
+    assert!(edited.gp.is_none());
+    assert_eq!(edited.elements.epoch, start);
+    assert_eq!(edited.elements.raan_rad, at_start.raan_rad);
+    assert_eq!(edited.elements.arg_perigee_rad, at_start.arg_perigee_rad);
+    assert_eq!(edited.elements.mean_anomaly_rad, at_start.mean_anomaly_rad);
+}
