@@ -277,10 +277,33 @@ pub(crate) fn handle_ui_events(
                 flow.exit_confirm.0 = false;
             }
             UiEvent::WorkingDirectorySelected(path) => {
+                let previous = working_directory.path.clone();
                 match select_working_directory(&mut working_directory, path) {
-                    Ok(()) => {
+                    Ok(None) => {
                         flow.setup_error.0 = None;
                         next_screen.set(UiScreen::Home);
+                    }
+                    // #176: the folder is set for this session; the screen says the
+                    // config was not saved, and a second Select continues.
+                    Ok(Some(message))
+                        if continues_without_saved_config(
+                            flow.setup_error.0.as_deref(),
+                            &message,
+                            &previous,
+                            path,
+                        ) =>
+                    {
+                        flow.setup_error.0 = None;
+                        next_screen.set(UiScreen::Home);
+                    }
+                    Ok(Some(message)) => {
+                        warn!("{message}");
+                        log.write(LogEvent {
+                            level: LogLevel::Warn,
+                            source: "ui",
+                            message: message.clone(),
+                        });
+                        flow.setup_error.0 = Some(message);
                     }
                     Err(message) => {
                         warn!("{message}");
@@ -457,13 +480,41 @@ pub(crate) fn handle_ui_events(
 /// Creates `path` and makes it the working directory (path and config). The
 /// folder is created first, so on a failure the working directory and the
 /// config are unchanged and the error is returned for the setup screen (F-33).
+/// `Ok(Some(message))`: the folder is the working directory for this session but
+/// the config file could not be written (#176); the message is for the screen.
 pub(crate) fn select_working_directory(
     working_directory: &mut WorkingDirectory,
     path: &str,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
+    select_working_directory_with(working_directory, path, set_working_directory)
+}
+
+/// [`select_working_directory`] with the step that sets the working directory and
+/// saves the config (`set_working_directory` in the app; a test passes its own).
+pub(crate) fn select_working_directory_with(
+    working_directory: &mut WorkingDirectory,
+    path: &str,
+    set: impl FnOnce(&mut WorkingDirectory, &str) -> std::io::Result<()>,
+) -> Result<Option<String>, String> {
     std::fs::create_dir_all(path)
-        .and_then(|()| set_working_directory(working_directory, path))
-        .map_err(|e| format!("Failed to create working directory: {e}"))
+        .map_err(|e| format!("Failed to create working directory: {e}"))?;
+    Ok(set(working_directory, path).err().map(|e| {
+        format!(
+            "The folder is set for this session, but it could not be saved for the next \
+             launch: {e}. Select again to continue."
+        )
+    }))
+}
+
+/// Whether a Select whose config could not be saved goes on to Home (#176, OQ2
+/// (a)): the same path was selected again while the screen showed that message.
+pub(crate) fn continues_without_saved_config(
+    showing: Option<&str>,
+    message: &str,
+    previous_path: &str,
+    path: &str,
+) -> bool {
+    showing == Some(message) && previous_path == path
 }
 
 pub(crate) fn poll_home_plan_refresh(

@@ -1,6 +1,7 @@
 //! The working-directory setup screen on egui (P8 S3). The path is a typed
 //! text field that **Browse** also fills; a directory that cannot be created
-//! keeps the screen open and shows the error under the field (F-33).
+//! keeps the screen open and shows the error under the field (F-33), and so does a
+//! config file that cannot be written, until Select is pressed again (#176).
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};

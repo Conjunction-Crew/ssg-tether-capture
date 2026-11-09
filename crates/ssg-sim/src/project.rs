@@ -77,29 +77,27 @@ pub(crate) fn read_config_file(path: &Path) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-pub fn save_to_config(working_dir: &str) {
+/// Saves `working_dir` to the config file; `Ok` when the platform has no config
+/// directory (nothing to save). The error is returned for the caller to show (#176).
+pub fn save_to_config(working_dir: &str) -> std::io::Result<()> {
     let Some(path) = config_path() else {
-        return;
+        return Ok(());
     };
-    write_config_file(&path, working_dir);
+    write_config_file(&path, working_dir)
 }
 
 /// Writes the config file at `path` (creating its directory) with `working_dir` as
-/// the `working_directory` entry; failures are logged, not returned.
-pub(crate) fn write_config_file(path: &Path, working_dir: &str) {
-    if let Some(parent) = path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        warn!("Failed to create config directory: {e}");
-        return;
+/// the `working_directory` entry; a failure to create the directory or to write the
+/// file is returned (#176).
+pub(crate) fn write_config_file(path: &Path, working_dir: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
     }
     let value = serde_json::json!({
         "schema_version": CONFIG_SCHEMA_VERSION,
         "working_directory": working_dir,
     });
-    if let Err(e) = std::fs::write(path, value.to_string()) {
-        warn!("Failed to save config: {e}");
-    }
+    std::fs::write(path, value.to_string())
 }
 
 impl Default for WorkingDirectory {
@@ -147,11 +145,14 @@ pub fn load_plans_from_dir_with_errors(
 #[derive(Resource, Debug, Clone)]
 pub struct AssetsDir(pub PathBuf);
 
-/// Sets the working directory, saves it to the config file and creates it.
+/// Sets the working directory, creates it, then saves it to the config file. The
+/// error is the folder's when it cannot be created (nothing is saved then), else
+/// the config file's (#176): the working directory is set for this session either
+/// way.
 pub fn set_working_directory(wd: &mut WorkingDirectory, path: &str) -> std::io::Result<()> {
     wd.path = path.to_string();
-    save_to_config(path);
-    fs::create_dir_all(path)
+    fs::create_dir_all(path)?;
+    save_to_config(path)
 }
 
 /// Writes `json`, pretty-printed, to `dir/filename`.

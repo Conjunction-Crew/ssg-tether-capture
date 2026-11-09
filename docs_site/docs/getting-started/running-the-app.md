@@ -28,7 +28,7 @@ Run from the **repository root** (the directory holding `Cargo.toml` and `assets
 
 ## First launch
 
-On launch the app shows the **Select Working Directory** screen. Type a folder path or click **Browse** to choose the directory where your capture plan JSON files will be stored, then click **Select** or press Enter to go to the home screen. A folder that cannot be created keeps you on this screen, with the error under the path. The next launch opens here with the same folder filled in. You can change the directory at any time with the **Change Directory** button on the home screen.
+On launch the app shows the **Select Working Directory** screen. Type a folder path or click **Browse** to choose the directory where your capture plan JSON files will be stored, then click **Select** or press Enter to go to the home screen. A folder that cannot be created keeps you on this screen, with the error under the path. If the folder is fine but the app cannot save it for the next launch (its settings folder is read-only, for example), the screen says so and the folder is used for this session; click **Select** again to continue. The next launch opens here with the same folder filled in. You can change the directory at any time with the **Change Directory** button on the home screen.
 
 ## Capture plans
 
