@@ -587,12 +587,16 @@ fn a_selection_survives_the_manifest_and_a_file() {
         inputs.target.gp, original.gp,
         "the GP elements come back equal"
     );
+    // #177: a loaded pick shows the osculating elements of its SGP4 state at the
+    // start epoch, as a fresh pick does.
+    let at_start =
+        EditableOrbitalElements::from_gp_at(original.gp.as_ref().unwrap(), fixed_epoch()).unwrap();
     assert_eq!(
         inputs.target.elements.to_vec6(),
-        original.elements.to_vec6(),
+        at_start.to_vec6(),
         "and so do the elements derived from them"
     );
-    assert_eq!(inputs.target.elements.epoch, original.elements.epoch);
+    assert_eq!(inputs.target.elements.epoch, fixed_epoch());
     assert!(
         matches!(&inputs.target.source, OrbitalSelectionSource::Custom { label } if label == "HST")
     );
@@ -941,7 +945,9 @@ fn generated_gp_records_give_the_same_elements_through_a_project_json() {
         );
         assert_eq!(
             inputs.target.elements.to_vec6(),
-            EditableOrbitalElements::from_gp(&expected).to_vec6(),
+            EditableOrbitalElements::from_gp_at(&expected, inputs.start_epoch)
+                .unwrap_or_else(|| EditableOrbitalElements::from_gp(&expected))
+                .to_vec6(),
             "seed {seed:#x} case {case}"
         );
     }

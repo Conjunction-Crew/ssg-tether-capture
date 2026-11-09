@@ -131,10 +131,13 @@ fn source_label(selected: &SelectedOrbitalObject) -> String {
     }
 }
 
-/// `Use Selected`: the orbit a catalog entry gives.
+/// `Use Selected`: the orbit a catalog entry gives, shown at the sim's start
+/// epoch (#177): the osculating elements of its SGP4 state there, or the record's
+/// elements at its epoch when SGP4 fails. The sim still starts it from SGP4.
 pub(crate) fn catalog_pick(
     catalog_index: usize,
     entry: &SpaceCatalogEntry,
+    start_epoch: Epoch,
 ) -> SelectedOrbitalObject {
     SelectedOrbitalObject {
         source: OrbitalSelectionSource::Catalog {
@@ -142,7 +145,8 @@ pub(crate) fn catalog_pick(
             gpu_index: entry.gpu_index,
             label: entry.display_label(),
         },
-        elements: EditableOrbitalElements::from_gp(&entry.gp),
+        elements: EditableOrbitalElements::from_gp_at(&entry.gp, start_epoch)
+            .unwrap_or_else(|| EditableOrbitalElements::from_gp(&entry.gp)),
         gp: Some(entry.gp.clone()),
         mass_kg: None,
         inertia_kg_m2: None,
