@@ -3,6 +3,8 @@ pub mod app_support;
 #[cfg(test)]
 pub mod capture_log_bar;
 #[cfg(test)]
+pub mod capture_log_session;
+#[cfg(test)]
 pub mod catalog_screen;
 #[cfg(test)]
 pub mod characterization_app;
@@ -16,6 +18,8 @@ pub mod egui_support;
 pub mod home_screens;
 #[cfg(test)]
 pub mod integration_app;
+#[cfg(test)]
+pub mod map_labels;
 #[cfg(test)]
 pub mod plan_form;
 #[cfg(test)]

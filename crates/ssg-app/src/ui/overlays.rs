@@ -6,6 +6,7 @@ use avian3d::prelude::{RigidBodyDisabled, RigidBodyQueryReadOnly};
 use bevy::camera::visibility::RenderLayers;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::ecs::system::SystemParam;
+use bevy::math::DVec3;
 use bevy::prelude::*;
 
 use crate::render::layers::{MAP_LAYER, SCENE_LAYER, eci_position_to_map};
@@ -16,6 +17,7 @@ use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::catalog::{
     GpuComputeEpochOrigin, GpuElements, SpaceObjectCatalog, propagate_catalog_eci_state,
 };
+use ssg_sim::physics_bubble::body_eci_state;
 
 #[derive(Component, Debug, Clone, Default)]
 pub struct OrbitLabel {
@@ -181,25 +183,44 @@ pub fn map_orbitals(
         let Some(entity) = label.entity else {
             continue;
         };
-        let Ok((rb, _disabled, entity)) = rigidbodies.get(entity) else {
+        let Ok((rb, disabled, entity)) = rigidbodies.get(entity) else {
             continue;
         };
 
-        let Some(params) = orbital_cache.eci_states.get(&entity) else {
+        let Some(world_position) = orbit_label_map_position(
+            &orbital_cache,
+            entity,
+            rb.position.0,
+            rb.linear_velocity.0,
+            disabled,
+        ) else {
             continue;
         };
-
-        let world_position = eci_position_to_map(Vec3::new(
-            (params[0] + rb.position.0.x) as f32,
-            (params[1] + rb.position.0.y) as f32,
-            (params[2] + rb.position.0.z) as f32,
-        ));
 
         if let Ok(viewport_position) = cam.world_to_viewport(cam_transform, world_position) {
             node.top = Val::Px(viewport_position.y);
             node.left = Val::Px(viewport_position.x);
         }
     }
+}
+
+/// Where [`map_orbitals`] places a body's label in the map scene: its ECI
+/// position ([`body_eci_state`]: a disabled body sits at its cached state, an
+/// enabled one at the cached state plus its bubble position, #123). `None` before
+/// the body has a cached state.
+pub fn orbit_label_map_position(
+    orbital_cache: &OrbitalCache,
+    entity: Entity,
+    position: DVec3,
+    linear_velocity: DVec3,
+    disabled: bool,
+) -> Option<Vec3> {
+    let eci = body_eci_state(orbital_cache, entity, position, linear_velocity, disabled)?;
+    Some(eci_position_to_map(Vec3::new(
+        eci[0] as f32,
+        eci[1] as f32,
+        eci[2] as f32,
+    )))
 }
 
 /// The catalog's orbital elements and the clock they are propagated to.

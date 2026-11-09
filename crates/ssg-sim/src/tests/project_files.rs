@@ -390,7 +390,7 @@ fn write_config_file_creates_the_directory_and_reads_back() {
     let dir = TempDir::new("config-write");
     let file = dir.path().join("nested").join("deeper").join("config.json");
 
-    write_config_file(&file, "/projects/capture");
+    write_config_file(&file, "/projects/capture").unwrap();
 
     assert!(file.is_file(), "the file and its parents are created");
     let value: serde_json::Value =
@@ -444,7 +444,7 @@ fn write_config_file_replaces_the_previous_content() {
         r#"{"working_directory": "/old", "theme": "dark"}"#,
     );
 
-    write_config_file(&file, "/new");
+    write_config_file(&file, "/new").unwrap();
 
     let value: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
@@ -465,7 +465,7 @@ fn write_config_file_round_trips_awkward_paths() {
         "/ünïcödé/目录",
         "",
     ] {
-        write_config_file(&file, path);
+        write_config_file(&file, path).unwrap();
         assert_eq!(read_config_file(&file).as_deref(), Some(path), "{path:?}");
     }
 }
@@ -476,10 +476,11 @@ fn write_config_file_under_a_regular_file_writes_nothing() {
     let blocker = dir.write("blocker", "I am a file, not a directory");
     let file = blocker.join("config.json");
 
-    // The parent cannot be created: the failure is logged (a warning), not
-    // returned, and nothing appears.
-    write_config_file(&file, "/never");
+    // The parent cannot be created: the failure is returned (#176), and nothing
+    // appears.
+    let result = write_config_file(&file, "/never");
 
+    assert!(result.is_err(), "{result:?}");
     assert!(!Path::new(&file).exists());
     assert_eq!(
         std::fs::read_to_string(&blocker).unwrap(),

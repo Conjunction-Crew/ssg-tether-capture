@@ -21,8 +21,8 @@ use ssg_sim::project::manifest::ProjectManifest;
 use ssg_sim::project::recording::{RecordingBodyRole, RecordingSource};
 use ssg_sim::recording::RecordingSink;
 use ssg_sim::recording::files::{
-    FileSink, KeyframeRow, KeyframeWriter, RecordingContext, read_jsonl, read_keyframes,
-    read_recording,
+    DefaultName, FileSink, KeyframeRow, KeyframeWriter, RecordingContext, read_jsonl,
+    read_keyframes, read_recording,
 };
 use ssg_sim::recording::inputs::{RecordedCommand, RecordedInput};
 use ssg_sim::recording::player::Player;
@@ -134,7 +134,7 @@ fn harness(recordings: &Path, interval: u32) -> (App, FileSink) {
     };
     let sink = FileSink::new(RecordingContext {
         recordings_dir: recordings.to_path_buf(),
-        default_name: "auto".to_string(),
+        default_name: DefaultName::Fixed("auto".to_string()),
         source: RecordingSource::Cli,
         plan_id: q13::PLAN_ID.to_string(),
         plan,

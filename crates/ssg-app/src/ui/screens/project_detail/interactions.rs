@@ -67,7 +67,7 @@ pub fn sim_screen_events(mut events: MessageReader<UiEvent>, mut p: SimScreenEve
             UiEvent::UseCatalogSelection(role) => {
                 let entry = p.catalog_ui.selected_index.and_then(|index| {
                     let entry = p.catalog.as_ref()?.entries.get(index)?;
-                    Some(catalog_pick(index, entry))
+                    Some(catalog_pick(index, entry, p.sim_config.start_epoch))
                 });
                 if let Some(selected) = entry {
                     set_orbit(&mut p.selection, *role, selected);

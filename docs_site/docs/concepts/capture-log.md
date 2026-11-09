@@ -37,7 +37,7 @@ Filter changes take effect immediately and re-render the visible rows without cl
 Each copied line has the format:
 
 ```
-[HH:MM:SS] [LEVEL] source: message
+[HH:MM:SS.mmm] [LEVEL] source: message
 ```
 
 ## Auto-scroll
@@ -55,12 +55,12 @@ Click **Save** to write the buffer to `logs/<plan-id>_<sim-time>.jsonl` in the p
 The file has one JSON object per entry, oldest first:
 
 ```json
-{"timestamp":"16:03:47","epoch_utc":"2026-04-03T16:03:47.002464Z","level":"Info","source":"time","message":"Sim start epoch: …"}
+{"timestamp":"16:03:47.002","epoch_utc":"2026-04-03T16:03:47.002464Z","level":"Info","source":"time","message":"Sim start epoch: …"}
 ```
 
 | Field | Meaning |
 |---|---|
-| `timestamp` | Simulation time of day, `HH:MM:SS` (UTC), as the panel shows it |
+| `timestamp` | Simulation time of day, `HH:MM:SS.mmm` (UTC, truncated to the millisecond), as the panel shows it |
 | `epoch_utc` | Full simulation epoch, `YYYY-MM-DDTHH:MM:SS.ffffffZ` (UTC, microseconds), the format of `project.json` |
 | `level` | `Error`, `Warn`, `Info` or `Debug` |
 | `source` | The emitting subsystem (see below) |
@@ -92,6 +92,6 @@ The `source` field identifies which subsystem emitted the entry:
 
 ## Implementation details
 
-The log is backed by a `CaptureLog` resource — a ring buffer capped at 256 entries. Older entries are evicted when the buffer is full. Simulation systems emit `LogEvent` messages which are collected each frame by the `collect_log_events` system and appended to the buffer with the current simulation timestamp.
+The log is backed by a `CaptureLog` resource — a ring buffer capped at 1,024 entries. When the buffer is full, the oldest DBG entry is evicted first; an ERR, WARN or INFO entry is evicted (oldest first) only when no DBG entry is left, so the phase transitions of a whole capture stay in the log. Simulation systems emit `LogEvent` messages which are collected each frame by the `collect_log_events` system and appended to the buffer with the current simulation timestamp.
 
-Log entries persist across sim screen re-entries. Only the scroll position and row selection are reset when you navigate back to the sim screen.
+Each sim session has its own log: the entries are cleared when you leave the sim screen (back to Home, or through a restart), so the panel and **Save** hold one session. Lines logged on Home after you leave stay and appear at the top of the next session's log. When you come back to the sim screen the panel starts collapsed and its level filters are kept; the scroll position and row selection are reset.

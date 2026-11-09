@@ -33,7 +33,7 @@ use ssg_sim::project::manifest::{ProjectManifest, read_manifest_file};
 use ssg_sim::project::recording::RecordingSource;
 use ssg_sim::project::{AssetsDir, SelectedProject, format_utc, parse_utc};
 use ssg_sim::recording::RecordingSink;
-use ssg_sim::recording::files::{FileSink, RecordingContext, WrittenRecording};
+use ssg_sim::recording::files::{DefaultName, FileSink, RecordingContext, WrittenRecording};
 use ssg_sim::recording::recorder::{RecorderCommand, RecordingSettings};
 use ssg_sim::session::{SimSession, SimState};
 use ssg_sim::telemetry::{EphemerisSample, LogEvent, LogLevel};
@@ -366,7 +366,7 @@ fn set_up_recording(
     project.recording = block.cloned();
     let sink = FileSink::new(RecordingContext {
         recordings_dir: args.project_dir.join("recordings"),
-        default_name: name.to_string(),
+        default_name: DefaultName::Fixed(name.to_string()),
         source: RecordingSource::Cli,
         plan_id: run.plan.to_string(),
         plan,
