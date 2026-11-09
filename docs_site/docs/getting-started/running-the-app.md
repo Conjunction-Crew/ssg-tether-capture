@@ -12,7 +12,7 @@ From the repository root:
 cargo run
 ```
 
-Bevy will compile the project and open the application window. The first build takes longer due to shader compilation and asset preprocessing.
+This builds and runs the desktop app (`ssg-app`, the workspace's default member) and opens its window. The first build takes longer due to shader compilation and asset preprocessing.
 
 ## Release build
 
@@ -24,7 +24,7 @@ cargo run --release
 
 ## Working directory
 
-The app resolves asset paths relative to the working directory. Always run from the **repository root** (i.e., the directory containing `Cargo.toml` and `assets/`), not from within `src/`.
+Run from the **repository root** (the directory holding `Cargo.toml` and `assets/`): a development build reads `assets/` relative to the current directory. An installed macOS app reads the assets inside its bundle instead.
 
 ## First launch
 
@@ -38,7 +38,7 @@ From the home screen:
 - Click any plan card to load it and open the simulation view (Project Detail screen)
 - Click the **edit** button on a user plan card to re-open the form pre-filled for editing
 
-Plans are stored as JSON files in your working directory. Example plans (loaded from `assets/capture_plans/`) are read-only and cannot be edited.
+Plans are stored as JSON files in your working directory. Example plans (loaded from `assets/example_capture_plans/`) are read-only and cannot be edited.
 
 ## The simulation screen
 
@@ -57,49 +57,35 @@ The sidebar on the right holds these sections, top to bottom:
 
 ## Controls
 
-### Camera navigation
+The keys act on the sim screen, except while you type in a text field.
+
+### Camera
 
 | Input | Action |
 |---|---|
-| Right-click + drag | Orbit the camera |
-| `Ctrl` + left-click + drag | Orbit the camera (trackpad-friendly alternative) |
+| Right-click + drag | Orbit the camera around its target |
 | Scroll wheel | Zoom in / out |
-| `Tab` | Cycle camera tracking target |
+| `Tab` (or **Cycle Target (Tab)**) | Move the camera to the next body |
 
-### On-screen orbit controls widget
+The camera starts on the tether root once the simulation runs. Clicking a body does not select it.
 
-A small control pad is displayed in the bottom-left corner of the 3D view. It
-provides an alternative to right-click drag that works well on trackpads, touch
-screens, or any pointer device.
+### Other keys
 
-| Control | Action |
+| Key | Action |
 |---|---|
-| ← ↑ ↓ → arrows | Orbit the camera left, up, down, right |
-| `+` / `−` | Zoom in / out |
-| o | Reset view to default position |
-| Left-click + drag inside the widget box | Orbit the camera (same as right-click drag) |
-
-**Hold-to-accelerate:** Holding any direction or zoom button for more than 5
-seconds ramps the movement speed up to 2.5× normal, making large viewpoint
-changes faster without sacrificing precision on short taps.
-
-### Other controls
-
-| Input | Action |
-|---|---|
-| `M` | Toggle between scene view and orbital map view |
-| `O` | Toggle the floating origin debug marker |
-| `,` / `.` | Decrease / increase time warp multiplier |
-| Click an object | Select it as the camera tracking target |
+| `M` (or **Map View (M)**) | Toggle between the scene view and the orbital map view |
+| `C` (or **Toggle Capture Gizmos (C)**) | Show or hide the capture gizmos: the capture sphere, the applied force and the relative velocity |
+| `O` | Show or hide the developer gizmos: the origin axes and the physics-bubble sphere (scene view) |
+| `,` / `.` | One step down / up the time-warp ladder; down at 1× pauses, up resumes (not in a replay) |
 
 ## Capture Log Terminal
 
-A collapsible panel at the bottom of the sim screen displays real-time structured log output from the capture state machine, propagation system, and simulation events. Click **^** to expand it. Entries are colour-coded by severity and can be filtered, selected, and copied to the clipboard. See [Capture Log](../concepts/capture-log) for full details.
+A collapsible panel at the bottom of the sim screen shows the log of the simulation and the app. Click the arrow beside **Capture Log** to open it. Entries are colour-coded by level and can be filtered, selected, copied and saved. See [Capture Log](../concepts/capture-log).
 
 ## Running tests
 
 ```bash
-cargo test
+cargo test --workspace --locked
 ```
 
-Both unit and integration tests live under `src/tests/`. See [Testing](../contributing/testing) for details.
+See [Testing](../contributing/testing) for where the tests live and the slow tests run on demand.

@@ -159,8 +159,8 @@ rustup component add rustfmt clippy rust-src
 **Verify:**
 
 ```bash
-rustup show                  # host: aarch64-apple-darwin, active toolchain: stable-aarch64-apple-darwin
-rustc --version              # must be ≥ 1.85 (Cargo.toml uses edition = "2024")
+rustup show                  # host: aarch64-apple-darwin
+rustc --version              # inside the repository: 1.99.1, the version rust-toolchain.toml pins
 cargo --version
 cargo clippy --version
 cargo fmt --version
@@ -223,7 +223,7 @@ From the repository root:
 cargo build
 ```
 
-The first build downloads the crates.io dependencies **and** the project's forked Bevy (`Conjunction-Crew/ssg-bevy`, branch `ssg-bevy-0.18.0`, configured via `[patch.crates-io]` in `Cargo.toml`). It then compiles everything, which takes **5–15 minutes** on an M-series Mac. Later builds are incremental.
+The first build downloads the crates.io dependencies **and** the project's forked Bevy (`Conjunction-Crew/ssg-bevy`, Bevy 0.18.0 pinned at revision `f93dee9`, configured via `[patch.crates-io]` in `Cargo.toml`). It then compiles everything, which takes **5–15 minutes** on an M-series Mac. Later builds are incremental.
 
 Then run what CI runs:
 

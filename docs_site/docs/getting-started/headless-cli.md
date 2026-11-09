@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # Running without a window (`ssg-sim`)
 
-`ssg-sim` runs a capture scenario headless: no window, no rendering, no UI. It uses the same simulation core as the app and writes the result to files. It is built from the `crates/ssg-sim-cli` crate:
+`ssg-sim` runs a capture scenario headless: no window, no rendering, no UI. It uses the same simulation core as the app and writes the result to files. It is **not in the installers**: build it from source (see [Prerequisites](./prerequisites)) from the `crates/ssg-sim-cli` crate, and run it with `cargo run`, or use the built `target/release/ssg-sim`:
 
 ```bash
 cargo run --release -p ssg-sim-cli -- run <project-dir> --target <NORAD> --chaser <NORAD> [options]
