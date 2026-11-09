@@ -412,3 +412,113 @@ fn lvlh_frames_of_generated_orbits_are_consistent() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// #177 (F-68): a picked catalog body is shown at the start epoch
+// ---------------------------------------------------------------------------
+
+/// A start 219 days after the HST record's epoch (Q13, the issue's case).
+fn start_219_days_later() -> brahe::Epoch {
+    fixed_epoch() + 219.0 * 86_400.0
+}
+
+/// Where the app's selection gizmo draws a body's marker: the f32 catalog
+/// propagation of `elements` at their epoch (`gizmos.rs`,
+/// `draw_orbital_selection_from_elements`).
+fn marker(elements: &EditableOrbitalElements) -> DVec3 {
+    let point = crate::orbit::catalog::GpuOrbitalElements {
+        id: 0,
+        a: elements.semi_major_axis_m as f32,
+        e: elements.eccentricity as f32,
+        i: elements.inclination_rad as f32,
+        raan: elements.raan_rad as f32,
+        argp: elements.arg_perigee_rad as f32,
+        mean_anomaly: elements.mean_anomaly_rad as f32,
+        epoch_offset_seconds: 0.0,
+    };
+    let (position, _) =
+        crate::orbit::catalog::propagate_catalog_eci_state(&point, 0.0).expect("a bound orbit");
+    position.as_dvec3()
+}
+
+fn sgp4_start(gp: &GpElements, start: brahe::Epoch) -> Vector6<f64> {
+    crate::orbit::start_state_eci(&Orbit::FromGp(gp.clone()), start).expect("SGP4")
+}
+
+#[test]
+fn a_pick_at_a_later_start_shows_the_osculating_elements_of_its_sgp4_start_state() {
+    let gp = hst_gp();
+    let start = start_219_days_later();
+    let state = sgp4_start(&gp, start);
+    let osculating = brahe::coordinates::state_eci_to_koe(state, AngleFormat::Radians);
+
+    let at_start = EditableOrbitalElements::from_gp_at(&gp, start).expect("SGP4");
+    let at_record = EditableOrbitalElements::from_gp(&gp);
+
+    assert_eq!(at_start.epoch, start);
+    assert!((at_start.raan_rad - osculating[3]).abs() <= 1e-9);
+    assert!((at_start.arg_perigee_rad - osculating[4]).abs() <= 1e-9);
+    assert!((at_start.mean_anomaly_rad - osculating[5]).abs() <= 1e-9);
+    let sgp4 = DVec3::new(state[0], state[1], state[2]);
+    let marker_at_start = marker(&at_start).distance(sgp4);
+    let marker_at_record = marker(&at_record).distance(sgp4);
+    assert!(
+        marker_at_start <= 5.0,
+        "the marker is {marker_at_start} m from the SGP4 start position"
+    );
+    // The v0.4.0 card (the record's elements at its epoch) is far off (the defect).
+    assert!(marker_at_record > 100_000.0, "{marker_at_record} m");
+    println!(
+        "#177 HST, start = record + 219 d: RAAN {:.6} rad (v0.4.0 {:.6}), argp {:.6} (v0.4.0 {:.6}), \
+         M {:.6} (v0.4.0 {:.6}); marker to SGP4 start {:.3} m (v0.4.0 {:.0} m)",
+        at_start.raan_rad,
+        at_record.raan_rad,
+        at_start.arg_perigee_rad,
+        at_record.arg_perigee_rad,
+        at_start.mean_anomaly_rad,
+        at_record.mean_anomaly_rad,
+        marker_at_start,
+        marker_at_record,
+    );
+}
+
+#[test]
+fn a_chaser_30_m_from_a_picked_target_is_drawn_next_to_it() {
+    use crate::orbit::selection::{
+        OrbitalSelectionSource, SelectedOrbitalObject, relative_chaser_elements,
+    };
+    use crate::project::manifest::RelativePreset;
+
+    let gp = hst_gp();
+    let start = start_219_days_later();
+    let pick = |elements| SelectedOrbitalObject {
+        source: OrbitalSelectionSource::Custom {
+            label: "HST".to_string(),
+        },
+        elements,
+        gp: Some(gp.clone()),
+        mass_kg: None,
+        inertia_kg_m2: None,
+    };
+    let target = pick(EditableOrbitalElements::from_gp_at(&gp, start).unwrap());
+    let v040_target = pick(EditableOrbitalElements::from_gp(&gp));
+
+    let chaser = relative_chaser_elements(&target, start, RelativePreset::VBar, 30.0).unwrap();
+    let apart = marker(&chaser).distance(marker(&target.elements));
+    // The chaser's elements come from the target's SGP4 start (gp: Some) either way.
+    let v040_apart = marker(&chaser).distance(marker(&v040_target.elements));
+    assert!(apart <= 50.0, "the markers are {apart} m apart");
+    assert!(v040_apart > 100_000.0, "{v040_apart} m");
+    println!(
+        "#177 HST + chaser 30 m V-bar, start = record + 219 d: markers {apart:.3} m apart (v0.4.0 {v040_apart:.0} m)"
+    );
+}
+
+#[test]
+fn from_gp_keeps_the_records_elements_at_its_epoch() {
+    // F-27, plan A-5: the CLI and the reference test read from_gp; it is unchanged.
+    let gp = hst_gp();
+    let e = EditableOrbitalElements::from_gp(&gp);
+    assert_eq!(e.epoch, gp.epoch);
+    assert_eq!(e.to_vec6(), gp.kepler_elements_rad());
+}
