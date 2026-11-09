@@ -68,7 +68,7 @@ A key left out takes its default, and so does an empty field in the form: the fo
 
 ## Not yet available
 
-These are planned after v0.4.0 and tracked in the project's [GitHub issues](https://github.com/Conjunction-Crew/ssg-tether-capture/issues):
+These are planned after v0.4.0 and tracked in [#178, "Post-v0.4.0: determinism across platforms, guidance and control"](https://github.com/Conjunction-Crew/ssg-tether-capture/issues/178) and its guidance-and-control issue [#174](https://github.com/Conjunction-Crew/ssg-tether-capture/issues/174):
 
 - **Adding, removing, reordering or renaming phases in the form.** The form edits the phases a plan has; to change the list, edit the plan file (the form keeps what it does not show).
 - **Abort triggers.** An `abort` end phase is reached only through an ordinary transition built from the five conditions above; there are no dedicated abort conditions yet.
