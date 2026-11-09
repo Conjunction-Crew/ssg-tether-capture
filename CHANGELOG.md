@@ -23,6 +23,7 @@ GitHub Release description.
 ### Docs
 - Docs drift guard: the new CI job "Docs drift guard" (`scripts/check_docs_drift.sh`) fails when an inline code span in the docs names a Rust identifier that is not in `crates/`. Names that are not Rust symbols of the repository are listed with a reason in `scripts/docs_drift_allowlist.txt`; the pages' known stale symbols are listed per page until those pages are rewritten (F-16)
 - Architecture and API reference rewritten against the three-crate workspace: the workspace layout and dependency rule, the entry points, the fixed step and its seven `SimStep` sets, every plugin's registrations, the single 3D camera's scene/map layers, and every public component, resource, message, state and system set by crate and module. The "paths predate the workspace split" notes are gone (F-16)
+- Concepts pages checked against the code: the camera page describes the one 3D camera, `Tab` cycling and the scene/map layers (no click-to-select, no `track_objects`); the floating-origin page gives the radii and the reset's real order; the capture log page has the current panel controls and log sources; orbital mechanics has the full `SimStep` chain, the dataset load on entering the session and the element conversions in use. Determinism gains an **Across platforms** section (the anchor two pages link to), Project files a **Sharing a project** section, and the draft notes are gone (F-16, F-50)
 
 ## [v0.4.0-rc.5] 🔬 - 2026-11-08
 

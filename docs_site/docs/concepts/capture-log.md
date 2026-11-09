@@ -4,11 +4,11 @@ sidebar_position: 5
 
 # Capture Log
 
-The Capture Log is a real-time terminal panel anchored to the bottom of the sim screen. It records structured log messages from the capture state machine, propagation system, and simulation setup, giving you a timestamped, filterable audit trail of everything that happens during a capture attempt.
+The Capture Log is a real-time terminal panel anchored to the bottom of the sim screen. It records log messages from the simulation (the capture controller, propagation, the physics bubble, the recorder) and from the app, giving you a timestamped, filterable audit trail of everything that happens during a capture attempt.
 
 ## Opening the panel
 
-By default the panel is collapsed. Click the **^** button in the header to expand the log viewport. The button label changes to **v** while the panel is open. Click again to collapse it.
+By default the panel is collapsed to its toolbar. Click the arrow at the left of **Capture Log** to open the log viewport, and again to collapse it. While it is collapsed, the filter buttons, **Clear** and **Save** are shown but disabled, and the panel cannot be resized; open, it can be dragged between a quarter and three quarters of the window's height.
 
 ## Log levels
 
@@ -23,7 +23,7 @@ Each entry is tagged with one of four severity levels:
 
 ## Filtering by level
 
-The header row contains four toggle buttons — one for each level. Click a button to hide entries of that level. An inactive (hidden) level is shown with a dimmed background. Click again to re-enable it.
+The toolbar has four toggle buttons, one per level. Click a button to hide entries of that level; a hidden level's label is greyed out. Click again to show them.
 
 Filter changes take effect immediately and re-render the visible rows without clearing the underlying buffer.
 
@@ -42,15 +42,15 @@ Each copied line has the format:
 
 ## Auto-scroll
 
-The viewport automatically scrolls to the newest entry when new messages arrive. If you manually scroll up, auto-scroll pauses so you can read earlier entries. It resumes when you scroll back to the bottom.
+The viewport keeps the newest entry in view. Scrolling up pauses this so you can read earlier entries; it resumes when a new entry arrives or a filter changes.
 
 ## Clearing the log
 
-Click the **Clear** button in the header to empty the log buffer. This does not affect the simulation — only the displayed log entries are removed.
+Click **Clear** to empty the log buffer. This does not affect the simulation — only the displayed log entries are removed.
 
 ## Saving the log
 
-Click **Save** in the header to write the buffer to `logs/<plan-id>_<sim-time>.jsonl` in the project folder. `<plan-id>` is the active capture plan's id (the plan file's name without `.json`; `unnamed` when no plan is active), with every character other than letters, digits, `-` and `_` replaced by `_`. `<sim-time>` is the simulation time when you clicked, with the same characters replaced by `-`. A line in the log says where the file went.
+Click **Save** to write the buffer to `logs/<plan-id>_<sim-time>.jsonl` in the project folder. `<plan-id>` is the active capture plan's id (the plan file's name without `.json`; `unnamed` when no plan is active), with every character other than letters, digits, `-` and `_` replaced by `_`. `<sim-time>` is the simulation epoch when you clicked, with the same characters replaced by `-`. A line in the log says where the file went.
 
 The file has one JSON object per entry, oldest first:
 
@@ -79,10 +79,16 @@ The `source` field identifies which subsystem emitted the entry:
 
 | Source | Description |
 |---|---|
-| `sim` | Simulation setup and initialisation events (`setup_entities`, `setup_tether`) |
-| `capture` | Capture state machine transitions and errors (`capture_state_machine_update`) |
-| `propagation` | Orbital propagation events, physics bubble add/remove, dataset parse errors |
-| `ui` | UI-driven events (capture plan loading, screen navigation) |
+| `time` | The sim start epoch |
+| `propagation` | SGP4 failures, physics bubble enable/disable, floating-origin resets, the dataset object count, element parse errors |
+| `dataset` | Reading the catalog dataset files in `assets/datasets/` |
+| `tether` | Spawning the tether (for example, no start state for the chosen spawn orientation) |
+| `capture` | The capture controller: phase transitions, the end of a capture, errors |
+| `recording` | The recorder: start, stop, warnings, refusals |
+| `replay` | Opening a recording for replay |
+| `project` | Reading and writing `project.json` |
+| `ui` | Actions in the app: capture start, time warp, view and camera-target changes, plan loading and saving |
+| `system` | The panel's own **Save** |
 
 ## Implementation details
 
