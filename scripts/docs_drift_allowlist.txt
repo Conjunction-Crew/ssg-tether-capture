@@ -28,56 +28,6 @@ scenario_pause_warp # cargo integration-test target (file stem of crates/ssg-sim
 [p10-debt]
 # Stale symbols still named by a page, valid only on the page of their group.
 # The rewrite of a page deletes its group; this section is empty at v0.4.0.
-# docs_site/docs/api-reference/components.md
-CaptureGuidanceReadout # stale: not in crates/; removed when this page is rewritten
-CaptureTelemetryReadout # stale: not in crates/; removed when this page is rewritten
-FromTle # stale: not in crates/; removed when this page is rewritten
-TimeWarpReadout # stale: not in crates/; removed when this page is rewritten
-
-# docs_site/docs/api-reference/resources.md
-approach_max_force # stale: not in crates/; removed when this page is rewritten
-approach_max_velocity # stale: not in crates/; removed when this page is rewritten
-approach_transitions # stale: not in crates/; removed when this page is rewritten
-capture_max_force # stale: not in crates/; removed when this page is rewritten
-capture_max_velocity # stale: not in crates/; removed when this page is rewritten
-capture_shrink_rate # stale: not in crates/; removed when this page is rewritten
-distance_kind # stale: not in crates/; removed when this page is rewritten
-distance_value # stale: not in crates/; removed when this page is rewritten
-original_json # stale: not in crates/; removed when this page is rewritten
-poll_new_plan_modal # stale: not in crates/; removed when this page is rewritten
-search_focused # stale: not in crates/; removed when this page is rewritten
-setup_entities # stale: not in crates/; removed when this page is rewritten
-setup_tether # stale: not in crates/; removed when this page is rewritten
-sync_terminal_log_display # stale: not in crates/; removed when this page is rewritten
-terminal_max_force # stale: not in crates/; removed when this page is rewritten
-terminal_max_velocity # stale: not in crates/; removed when this page is rewritten
-terminal_shrink_rate # stale: not in crates/; removed when this page is rewritten
-terminal_transitions # stale: not in crates/; removed when this page is rewritten
-validate_form # stale: not in crates/; removed when this page is rewritten
-
-# docs_site/docs/api-reference/systems.md
-CIVIL_TWILIGHT # stale: not in crates/; removed when this page is rewritten
-DIST_BETWEEN_JOINTS # stale: not in crates/; removed when this page is rewritten
-NUM_TETHER_JOINTS # stale: not in crates/; removed when this page is rewritten
-OrbitalMechanicsPlugin # stale: not in crates/; removed when this page is rewritten
-TerminalLogWrapper # stale: not in crates/; removed when this page is rewritten
-orbit_camera_control_target # stale: not in crates/; removed when this page is rewritten
-setup_entities # stale: not in crates/; removed when this page is rewritten
-setup_tether # stale: not in crates/; removed when this page is rewritten
-sync_terminal_log_display # stale: not in crates/; removed when this page is rewritten
-
-# docs_site/docs/architecture/overview.md
-SyncAnchor # stale: not in crates/; removed when this page is rewritten
-setup_entities # stale: not in crates/; removed when this page is rewritten
-setup_tether # stale: not in crates/; removed when this page is rewritten
-sync_anchor_from_camera_target # stale: not in crates/; removed when this page is rewritten
-
-# docs_site/docs/architecture/plugins.md
-AnchorPlugin # stale: not in crates/; removed when this page is rewritten
-SimStep::SyncAnchor # stale: not in crates/; removed when this page is rewritten
-orbit_camera_control_target # stale: not in crates/; removed when this page is rewritten
-sync_anchor_from_camera_target # stale: not in crates/; removed when this page is rewritten
-
 # docs_site/docs/concepts/camera-system.md
 orbit_camera_control_target # stale: not in crates/; removed when this page is rewritten
 track_objects # stale: not in crates/; removed when this page is rewritten
