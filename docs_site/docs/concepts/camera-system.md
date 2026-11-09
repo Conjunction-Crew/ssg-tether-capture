@@ -4,11 +4,11 @@ sidebar_position: 3
 
 # Camera System
 
-The orbit camera allows the user to inspect orbital objects from any angle in both the 3D scene view and the orbital map view.
+One 3D camera shows the sim, in either the **scene view** (the bodies at full scale, around the camera target) or the **map view** (the Earth scaled down, with orbits and the catalog). It orbits a target: drag to turn it, scroll to zoom.
 
-## OrbitCamera component
+## OrbitCamera
 
-Entities that act as cameras carry an `OrbitCamera` component, which stores separate parameters for the scene view and the map view:
+The camera entity carries an `OrbitCamera` component with one set of parameters per view:
 
 ```rust
 pub struct OrbitCamera {
@@ -17,30 +17,32 @@ pub struct OrbitCamera {
 }
 ```
 
-`OrbitCameraParams` controls focus point, distance, yaw, pitch, zoom limits, input sensitivity, and the up-vector. The two parameter sets allow the scene camera and map camera to maintain independent zoom/orientation state when switching between views.
+`OrbitCameraParams` holds the focus point, distance, yaw, pitch, the distance limits (0.5 to 10000), the input sensitivity, the pitch limit (1.55 rad) and the up vector. Because each view has its own set, switching views keeps each view's zoom and angle.
+
+`orbit_camera_input` (`Update`) changes the active view's parameters: holding the right mouse button and dragging turns the camera (yaw and pitch), the scroll wheel changes the distance. Neither acts while the pointer is over a UI panel.
 
 ## CameraTarget
 
-The `CameraTarget` marker component identifies which entity the orbit camera is currently tracking. Only one entity should carry `CameraTarget` at a time.
+The `CameraTarget` marker is on the body the camera looks at; one body carries it at a time. When the bodies spawn, `attach_camera_target` puts it on the tether root (the `SimAnchor` body). `Tab`, or the sidebar's target button, moves it to the next body (`orbit_camera_switch_target`, `cycle_camera_target`).
 
-The `orbit_camera_switch_target` system updates which entity holds `CameraTarget` when the user clicks an orbital object. The `orbit_camera_control_target` system reads the target's current `TrueParams` position and updates the camera focus accordingly.
+`CameraTarget` is a viewing marker only: the floating origin and the physics bubble follow `SimAnchor`, so cycling the target never changes the simulation.
 
-`orbit_camera_track` then runs in `PostUpdate` (after `floating_origin`) to apply the final camera transform.
+`orbit_camera_track` (`PostUpdate`, before transforms propagate) places the camera each frame:
 
-## Scene/map view toggle
+- **Scene view:** the focus is the target's position; "up" points away from the Earth.
+- **Map view:** the focus is the target's ECI position scaled to map units.
 
-The `toggle_map_view` system (registered in `lib.rs` `Update`) switches the active render layer when the user presses `M`:
+In the scene view, `floating_origin_update_visuals` places the Earth and its atmosphere each frame at the target's position minus its ECI position, so the Earth sits where it is relative to the target. The scene uses ECI axes; positions are never rotated.
 
-- **Scene view** (`SCENE_LAYER = 0`) — full 3D Earth rendering with atmosphere, bloom, and auto-exposure.
-- **Map view** (`MAP_LAYER = 1`) — a top-down schematic view with a scaled-down Earth and orbital gizmos showing object paths.
+## Scene and map view
 
-Each view has its own camera entity; only the active camera has its output enabled.
+`M`, or the view button in the sidebar, switches the camera between the two render layers (`set_map_view`):
 
-## TrackObject and OrbitLabel
+- **Scene view** (`SCENE_LAYER`): the full-scale Earth with its atmosphere, the tether and the debris, the capture and dev gizmos.
+- **Map view** (`MAP_LAYER`): the Earth scaled by `MAP_UNITS_TO_M`, the orbit paths, the catalog points and the Space Catalog panel.
 
-Two UI-helper components work alongside the camera:
+The camera starts in the map view; a replay opens in the scene view. See [Render Layers](../architecture/render-layers).
 
-- `TrackObject { entity: Option<Entity> }` — attached to UI elements that should follow a specific entity's screen position.
-- `OrbitLabel { entity: Option<Entity> }` — marks a text label that displays information about a tracked orbital entity.
+## Overlays
 
-These are processed by the `track_objects` system in `Update`.
+Small bevy_ui overlays follow bodies on screen: the tether's label in the map view (`OrbitLabel`, placed by `map_orbitals`), the box around the catalog object selected in the panel (`SelectedCatalogOverlay`) and the satellite indicator on the capture target (`SatelliteIndicatorOverlay`). See [UI → Overlays](../api-reference/ui#overlays-bevy_ui).

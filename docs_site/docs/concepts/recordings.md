@@ -4,10 +4,6 @@ sidebar_position: 10
 
 # Recordings
 
-:::note Draft
-This page describes recording and replay as of v0.4.0-rc.2. It is a draft; the full documentation pass comes later.
-:::
-
 A recording stores a segment of a running simulation in the project folder, under `recordings/<name>/`. You can play it back in the application (pause, step, rewind, slow down, speed up) as often as you like, and `ssg-sim replay` can check it against a fresh simulation of the same inputs.
 
 A recording is a **viewing and analysis record**: playback shows the recorded states and never runs the physics again. Re-simulation is used only to verify a recording.
