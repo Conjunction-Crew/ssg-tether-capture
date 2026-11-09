@@ -15,7 +15,7 @@ use crate::tests::app_support::{test_app, tick};
 use crate::ui::recording::{
     MAX_STEP_CAP, MIN_STEP_CAP, PanelAction, RecordingPanel, adapt_step_cap, apply_panel_action,
     collect_recorder_events, install_recording_sink, next_step_cap, panel_status, projected_bytes,
-    recording_name, save_recording_settings,
+    recording_context, recording_name, save_recording_settings,
 };
 use crate::ui::replay::{
     ReplayBody, load_replay_session, replay_shapes, scan_recordings, spawn_replay_bodies,
@@ -158,6 +158,40 @@ fn recording_names_are_the_plan_and_a_stamp() {
     );
     // A plan id that is not a file name is sanitised.
     assert_eq!(recording_name("my plan/1", "S"), "my_plan_1-S");
+}
+
+/// #127: the sink's default name is stamped when an automatic recording starts,
+/// `<plan-id>-<stamp>` as `recording_name` makes it.
+#[test]
+fn the_sinks_default_name_is_the_plan_and_the_stamp_at_the_start() {
+    use ssg_sim::recording::files::DefaultName;
+    fn stamp() -> String {
+        "20261109T120000Z".to_string()
+    }
+    let mut app = test_app();
+    ssg_sim::test_support::load_example_plans(&mut app);
+    let plan = app
+        .world()
+        .resource::<ssg_sim::capture::plan::CapturePlanLibrary>()
+        .plans[q13::PLAN_ID]
+        .clone();
+    let context = recording_context(
+        std::path::Path::new("/project"),
+        "my plan/1",
+        plan,
+        None,
+        RecordingSettings::default(),
+        "HST".to_string(),
+        stamp,
+    );
+    assert!(matches!(
+        &context.default_name,
+        DefaultName::Stamped { prefix, .. } if prefix == "my_plan_1"
+    ));
+    assert_eq!(
+        context.default_name.resolve(),
+        recording_name("my plan/1", "20261109T120000Z")
+    );
 }
 
 #[test]

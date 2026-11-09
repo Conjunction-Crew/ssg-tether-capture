@@ -21,7 +21,7 @@ use ssg_sim::project::manifest::{
 };
 use ssg_sim::project::recording::RecordingSource;
 use ssg_sim::project::{SelectedProject, WorkingDirectory};
-use ssg_sim::recording::files::{FileSink, RecordingContext};
+use ssg_sim::recording::files::{DefaultName, FileSink, RecordingContext};
 use ssg_sim::recording::recorder::{
     Recorder, RecorderCommand, RecorderEvent, RecorderState, RecordingSettings,
 };
@@ -167,11 +167,16 @@ pub(crate) fn recording_context(
     project: Option<ProjectManifest>,
     settings: RecordingSettings,
     target_name: String,
-    stamp: &str,
+    stamp: fn() -> String,
 ) -> RecordingContext {
     RecordingContext {
         recordings_dir: dir.join("recordings"),
-        default_name: recording_name(plan_id, stamp),
+        // #127: stamped when an automatic recording starts, not when the sink is
+        // installed; the same `<plan-id>-<stamp>` as `recording_name`.
+        default_name: DefaultName::Stamped {
+            prefix: sanitize_file_stem(plan_id),
+            stamp,
+        },
         source: RecordingSource::App,
         plan_id: plan_id.to_string(),
         plan,
@@ -222,7 +227,7 @@ pub fn install_recording_sink(
         manifest,
         settings,
         body_label(&selection, false),
-        &utc_stamp(),
+        utc_stamp,
     ));
     commands.insert_resource(RecordingSink(Box::new(sink)));
 }
