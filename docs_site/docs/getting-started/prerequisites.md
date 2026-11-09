@@ -14,7 +14,7 @@ Install Rust via [rustup](https://rustup.rs/):
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-The project targets **stable Rust**. Check `Cargo.toml` for the minimum supported version.
+The project pins its toolchain in `rust-toolchain.toml` (Rust 1.99.1, with rustfmt and clippy); rustup installs that version the first time you build in the repository.
 
 ## System dependencies
 
@@ -120,7 +120,6 @@ The app loads KTX2-compressed textures and font files at runtime from the `asset
 | Asset | Path |
 |---|---|
 | Earth texture (8K) | `assets/textures/earth_8192x4096_uastc.ktx2` |
-| Star field (8K) | `assets/textures/8k_stars_uastc.ktx2` |
 | HDR cubemap | `assets/textures/hdr-cubemap-2048x2048.ktx2` |
 | UI font | `assets/fonts/FiraMono-Medium.ttf` |
 
