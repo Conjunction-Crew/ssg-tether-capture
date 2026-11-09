@@ -4,13 +4,36 @@ use super::*;
 
 // ─── The file sink ────────────────────────────────────────────────────────────
 
+/// The name of a recording that has none of its own (an automatic start).
+#[derive(Debug, Clone)]
+pub enum DefaultName {
+    /// Always this name (the CLI, the tests).
+    Fixed(String),
+    /// `<prefix>-<stamp()>`, the stamp taken when the recording starts (#127):
+    /// the app passes its wall-clock stamp; the sim never reads the clock (F-06).
+    Stamped {
+        prefix: String,
+        stamp: fn() -> String,
+    },
+}
+
+impl DefaultName {
+    /// The name for a recording that starts now.
+    pub fn resolve(&self) -> String {
+        match self {
+            DefaultName::Fixed(name) => name.clone(),
+            DefaultName::Stamped { prefix, stamp } => format!("{prefix}-{}", stamp()),
+        }
+    }
+}
+
 /// What the sink knows about the run besides the frames.
 #[derive(Debug, Clone)]
 pub struct RecordingContext {
     /// The folder `recordings/` of the project; created on demand.
     pub recordings_dir: PathBuf,
     /// The name of a recording that has none of its own (an automatic start).
-    pub default_name: String,
+    pub default_name: DefaultName,
     pub source: RecordingSource,
     pub plan_id: String,
     pub plan: CapturePlan,
@@ -155,7 +178,12 @@ impl Inner {
             return;
         };
         let dir = &context.recordings_dir;
-        let stem = sanitize_file_stem(header.name.as_deref().unwrap_or(&context.default_name));
+        let stem = sanitize_file_stem(
+            &header
+                .name
+                .clone()
+                .unwrap_or_else(|| context.default_name.resolve()),
+        );
         // A recording the caller named never overwrites another.
         let name = if header.name.is_some() {
             stem

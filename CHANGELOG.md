@@ -25,6 +25,7 @@ GitHub Release description.
 - The capture log starts empty in each sim session: it is cleared when you leave the sim screen (lines logged on Home afterwards are kept), and the panel starts collapsed with its level filters kept (#122).
 - In the map view, the label of a body outside the physics bubble now sits on its marker instead of being offset by the body's last bubble position (#123).
 - When the working directory's folder is fine but the app cannot save it for the next launch, the working-directory screen now says so instead of failing silently; the folder is used for this session and a second **Select** continues (#176).
+- A recording started automatically (`recording.auto_start_phase`) is named with the time it starts instead of the time the sim started, so it sorts after a manual recording made before it (#127).
 
 ## [v0.4.0] - 2026-11-09
 

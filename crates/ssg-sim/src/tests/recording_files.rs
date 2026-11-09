@@ -20,9 +20,9 @@ use crate::project::recording::{
     RecordingSource, RecordingStartTrigger, read_recording_file,
 };
 use crate::recording::files::{
-    FileSink, FrameLine, KeyframeRow, KeyframeWriter, ROW_GROUP_FRAMES, RecordingContext,
-    TransitionLine, check_recording, list_recording_dirs, read_jsonl, read_keyframes,
-    read_recording,
+    DefaultName, FileSink, FrameLine, KeyframeRow, KeyframeWriter, ROW_GROUP_FRAMES,
+    RecordingContext, TransitionLine, check_recording, list_recording_dirs, read_jsonl,
+    read_keyframes, read_recording,
 };
 use crate::recording::inputs::{RecordedCommand, RecordedInput};
 use crate::recording::recorder::{RecorderCommand, RecordingSettings};
@@ -226,7 +226,7 @@ fn q13_project() -> ProjectManifest {
 fn context(recordings: &Path) -> RecordingContext {
     RecordingContext {
         recordings_dir: recordings.to_path_buf(),
-        default_name: "auto".to_string(),
+        default_name: DefaultName::Fixed("auto".to_string()),
         source: RecordingSource::Cli,
         plan_id: q13::PLAN_ID.to_string(),
         plan: example_plan(),
@@ -503,6 +503,55 @@ fn an_automatic_recording_takes_the_default_name_and_a_free_suffix() {
         .collect();
     assert_eq!(names, ["auto", "auto-2", "auto-3"]);
     assert!(sink.results().iter().all(Result::is_ok));
+}
+
+/// The stamp the next automatic start reads ([`stamped_now`]).
+static STAMP: std::sync::Mutex<&str> = std::sync::Mutex::new("");
+
+fn stamped_now() -> String {
+    STAMP.lock().unwrap().to_string()
+}
+
+/// #127: an automatic recording is named when it starts, not when the sink is
+/// installed.
+#[test]
+fn an_automatic_recording_takes_the_stamp_of_its_start() {
+    let dir = TempDir::new("sink_stamped_names");
+    let recordings = dir.path().join("recordings");
+    *STAMP.lock().unwrap() = "A";
+    let mut sink = FileSink::new(RecordingContext {
+        default_name: DefaultName::Stamped {
+            prefix: q13::PLAN_ID.to_string(),
+            stamp: stamped_now,
+        },
+        ..context(&recordings)
+    });
+    *STAMP.lock().unwrap() = "B";
+    let frames = sample_frames(2, 5);
+    record(&mut sink, None, &frames, &session_inputs());
+    *STAMP.lock().unwrap() = "C";
+    record(&mut sink, None, &frames, &session_inputs());
+    // A manual start keeps the name it was given.
+    record(&mut sink, Some("manual"), &frames, &session_inputs());
+
+    let names: Vec<String> = list_recording_dirs(&recordings)
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            format!("{}-B", q13::PLAN_ID),
+            format!("{}-C", q13::PLAN_ID),
+            "manual".to_string()
+        ]
+    );
+    assert!(sink.results().iter().all(Result::is_ok));
+}
+
+#[test]
+fn a_fixed_default_name_resolves_to_itself() {
+    assert_eq!(DefaultName::Fixed("auto".to_string()).resolve(), "auto");
 }
 
 #[test]
