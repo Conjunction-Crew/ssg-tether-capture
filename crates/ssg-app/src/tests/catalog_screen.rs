@@ -191,7 +191,7 @@ fn an_empty_catalog_says_it_is_loading() {
 }
 
 fn catalog_orbit() -> SelectedOrbitalObject {
-    catalog_pick(0, &entry(0, 20580, "HST"))
+    catalog_pick(0, &entry(0, 20580, "HST"), fixed_epoch())
 }
 
 fn orbital_view(target: Option<SelectedOrbitalObject>) -> SimScreenView {
@@ -402,7 +402,7 @@ fn a_restored_catalog_body_is_a_catalog_selection_again() {
         source: OrbitalSelectionSource::Custom {
             label: "Hubble".to_string(),
         },
-        ..catalog_pick(1, &catalog[1])
+        ..catalog_pick(1, &catalog[1], fixed_epoch())
     };
     restore_catalog_source(&mut restored, &catalog);
     assert!(matches!(
@@ -421,7 +421,7 @@ fn a_restored_edited_or_unknown_body_stays_custom() {
         ..selected
     };
 
-    let mut edited = custom(catalog_pick(0, &catalog[0]));
+    let mut edited = custom(catalog_pick(0, &catalog[0], fixed_epoch()));
     edited.gp = None;
     restore_catalog_source(&mut edited, &catalog);
     assert!(matches!(
@@ -429,7 +429,7 @@ fn a_restored_edited_or_unknown_body_stays_custom() {
         OrbitalSelectionSource::Custom { .. }
     ));
 
-    let mut unknown = custom(catalog_pick(0, &entry(0, 99, "Gone")));
+    let mut unknown = custom(catalog_pick(0, &entry(0, 99, "Gone"), fixed_epoch()));
     restore_catalog_source(&mut unknown, &catalog);
     assert!(matches!(
         unknown.source,
@@ -481,4 +481,68 @@ pub(crate) fn p9_s7_orbital_snapshots() -> Vec<PathBuf> {
             sim_sidebar_ui,
         ),
     ]
+}
+
+/// #177 (F-68), OQ3 (a): Use Selected shows a catalog body at the sim's start
+/// epoch (the osculating elements of its SGP4 state there), and an edit starts
+/// from what is shown.
+#[test]
+fn use_selected_shows_the_pick_at_the_start_epoch_and_an_edit_starts_from_it() {
+    use ssg_sim::orbit::selection::EditableOrbitalElements;
+    use ssg_sim::time::SimConfig;
+
+    let start = fixed_epoch() + 219.0 * 86_400.0;
+    let mut app = sim_screen_app();
+    app.insert_resource(SimConfig { start_epoch: start });
+    let hst = entry(5, 20580, "HST");
+    let at_start = EditableOrbitalElements::from_gp_at(&hst.gp, start).unwrap();
+    let at_record = EditableOrbitalElements::from_gp(&hst.gp);
+    app.insert_resource(SpaceObjectCatalog {
+        entries: vec![hst.clone()],
+    });
+    app.world_mut()
+        .resource_mut::<SpaceCatalogUiState>()
+        .selected_index = Some(0);
+    send(
+        &mut app,
+        UiEvent::UseCatalogSelection(OrbitalSelectionRole::Target),
+    );
+
+    let target = app
+        .world()
+        .resource::<OrbitalSelectionState>()
+        .target
+        .clone()
+        .unwrap();
+    assert_eq!(
+        target.gp.as_ref(),
+        Some(&hst.gp),
+        "the sim still starts it from SGP4"
+    );
+    assert_eq!(target.elements.epoch, start);
+    assert_eq!(target.elements.to_vec6(), at_start.to_vec6());
+    assert!(
+        (target.elements.raan_rad - at_record.raan_rad).abs() > 0.5,
+        "not the record's elements at its epoch"
+    );
+
+    send(
+        &mut app,
+        UiEvent::SetOrbitalElement {
+            role: OrbitalSelectionRole::Target,
+            field: OrbitalElementField::SemiMajorAxis,
+            value: 7000.0,
+        },
+    );
+    let edited = app
+        .world()
+        .resource::<OrbitalSelectionState>()
+        .target
+        .clone()
+        .unwrap();
+    assert!(edited.gp.is_none());
+    assert_eq!(edited.elements.epoch, start);
+    assert_eq!(edited.elements.raan_rad, at_start.raan_rad);
+    assert_eq!(edited.elements.arg_perigee_rad, at_start.arg_perigee_rad);
+    assert_eq!(edited.elements.mean_anomaly_rad, at_start.mean_anomaly_rad);
 }

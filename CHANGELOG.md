@@ -26,6 +26,7 @@ GitHub Release description.
 - In the map view, the label of a body outside the physics bubble now sits on its marker instead of being offset by the body's last bubble position (#123).
 - When the working directory's folder is fine but the app cannot save it for the next launch, the working-directory screen now says so instead of failing silently; the folder is used for this session and a second **Select** continues (#176).
 - A recording started automatically (`recording.auto_start_phase`) is named with the time it starts instead of the time the sim started, so it sorts after a manual recording made before it (#127).
+- A target or chaser picked from the catalog is shown at the sim's start epoch: its card, orbit line and marker now give the osculating elements of its SGP4 state there instead of the record's elements at the record's epoch, also when a saved project is opened, and editing an element starts from what the card shows. The sim's start is unchanged (#177).
 
 ## [v0.4.0] - 2026-11-09
 
