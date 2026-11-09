@@ -191,7 +191,7 @@ fn an_empty_catalog_says_it_is_loading() {
 }
 
 fn catalog_orbit() -> SelectedOrbitalObject {
-    catalog_pick(0, &entry(0, 20580, "HST"))
+    catalog_pick(0, &entry(0, 20580, "HST"), fixed_epoch())
 }
 
 fn orbital_view(target: Option<SelectedOrbitalObject>) -> SimScreenView {
@@ -402,7 +402,7 @@ fn a_restored_catalog_body_is_a_catalog_selection_again() {
         source: OrbitalSelectionSource::Custom {
             label: "Hubble".to_string(),
         },
-        ..catalog_pick(1, &catalog[1])
+        ..catalog_pick(1, &catalog[1], fixed_epoch())
     };
     restore_catalog_source(&mut restored, &catalog);
     assert!(matches!(
@@ -421,7 +421,7 @@ fn a_restored_edited_or_unknown_body_stays_custom() {
         ..selected
     };
 
-    let mut edited = custom(catalog_pick(0, &catalog[0]));
+    let mut edited = custom(catalog_pick(0, &catalog[0], fixed_epoch()));
     edited.gp = None;
     restore_catalog_source(&mut edited, &catalog);
     assert!(matches!(
@@ -429,7 +429,7 @@ fn a_restored_edited_or_unknown_body_stays_custom() {
         OrbitalSelectionSource::Custom { .. }
     ));
 
-    let mut unknown = custom(catalog_pick(0, &entry(0, 99, "Gone")));
+    let mut unknown = custom(catalog_pick(0, &entry(0, 99, "Gone"), fixed_epoch()));
     restore_catalog_source(&mut unknown, &catalog);
     assert!(matches!(
         unknown.source,

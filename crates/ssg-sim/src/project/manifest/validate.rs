@@ -262,10 +262,12 @@ impl ManifestBody {
                         "the record does not give an orbit",
                     )]
                 })?;
-                // A catalog pick, as the app makes it (F-27): SGP4 at the start epoch.
+                // A catalog pick, as the app makes it (F-27): SGP4 at the start epoch,
+                // shown at the start epoch (#177).
                 Ok(SelectedOrbitalObject {
                     source,
-                    elements: EditableOrbitalElements::from_gp(&gp),
+                    elements: EditableOrbitalElements::from_gp_at(&gp, start_epoch)
+                        .unwrap_or_else(|| EditableOrbitalElements::from_gp(&gp)),
                     gp: Some(gp),
                     mass_kg: self.mass_kg,
                     inertia_kg_m2: self.inertia_kg_m2,

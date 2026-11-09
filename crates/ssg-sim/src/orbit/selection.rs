@@ -8,7 +8,7 @@ use nalgebra::Vector6;
 
 use crate::orbit::catalog::GpElements;
 use crate::orbit::lvlh::{LvlhFrame, relative_offset_lvlh, relative_start};
-use crate::orbit::{Orbit, propagated_start_state, use_zero_eop};
+use crate::orbit::{Orbit, propagated_start_state, start_state_eci, use_zero_eop};
 use crate::project::manifest::{RelativePreset, RelativeToTarget};
 
 #[derive(Debug, Clone)]
@@ -51,6 +51,26 @@ impl EditableOrbitalElements {
             mean_anomaly_rad: elements[5],
             epoch: gp.epoch,
         }
+    }
+
+    /// The osculating elements, at `epoch`, of the state SGP4 gives the record at
+    /// `epoch` (#177, F-68): the orbit a catalog pick starts from when the sim
+    /// starts at `epoch` (`start_state_eci`, then brahe's `state_eci_to_koe`).
+    /// `None` when SGP4 fails. [`Self::from_gp`] keeps the record's own elements at
+    /// its epoch.
+    pub fn from_gp_at(gp: &GpElements, epoch: Epoch) -> Option<Self> {
+        use_zero_eop();
+        let state = start_state_eci(&Orbit::FromGp(gp.clone()), epoch)?;
+        let e = state_eci_to_koe(state, AngleFormat::Radians);
+        Some(Self {
+            semi_major_axis_m: e[0],
+            eccentricity: e[1],
+            inclination_rad: e[2],
+            raan_rad: e[3],
+            arg_perigee_rad: e[4],
+            mean_anomaly_rad: e[5],
+            epoch,
+        })
     }
 
     pub fn to_vec6(self) -> Vector6<f64> {
