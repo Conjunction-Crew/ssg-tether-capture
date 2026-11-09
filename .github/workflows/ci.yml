@@ -167,7 +167,7 @@ jobs:
         # LEVERS and P11PROBE lines.  Runs even when an earlier step failed.
         if: success() || failure()
         env:
-          P11_PROBE_CONFIG: A
+          P11_PROBE_CONFIG: B
         run: cargo test -p ssg-sim --test p11_probe --locked -- --nocapture
 
       - name: Upload the P11 probe output
@@ -349,7 +349,7 @@ jobs:
         # LEVERS and P11PROBE lines.  Runs even when an earlier step failed.
         if: needs.changes.outputs.full == 'true' && (success() || failure())
         env:
-          P11_PROBE_CONFIG: A
+          P11_PROBE_CONFIG: B
         run: cargo test -p ssg-sim --test p11_probe --locked -- --nocapture
 
       - name: Upload the P11 probe output
