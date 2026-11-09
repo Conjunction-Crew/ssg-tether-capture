@@ -142,7 +142,7 @@ fn reentering_the_sim_starts_from_fresh_session_resources() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn entering_the_sim_logs_the_start_epoch_with_an_hh_mm_ss_timestamp() {
+fn entering_the_sim_logs_the_start_epoch_with_an_hh_mm_ss_mmm_timestamp() {
     let mut app = test_app();
     assert!(app.world().resource::<CaptureLog>().entries.is_empty());
 
@@ -161,8 +161,8 @@ fn entering_the_sim_logs_the_start_epoch_with_an_hh_mm_ss_timestamp() {
     assert_eq!(entry.source, "time");
     assert_eq!(entry.message, format!("Sim start epoch: {}", fixed_epoch()));
     assert_eq!(
-        entry.timestamp, "16:03:47",
-        "the time of day of the fixed epoch (2026-04-03 16:03:47 UTC)"
+        entry.timestamp, "16:03:47.002",
+        "the time of day of the fixed epoch (2026-04-03 16:03:47.002464 UTC), to the ms"
     );
     assert_eq!(entry.epoch_utc, "2026-04-03T16:03:47.002464Z");
 }
@@ -180,7 +180,10 @@ fn the_log_timestamp_follows_the_sim_clock() {
     let entry = log.entries.back().unwrap();
     assert_eq!(entry.message, "an hour later");
     assert_eq!(entry.level, LogLevel::Warn);
-    assert_eq!(entry.timestamp, "17:05:50", "16:03:47 + 1 h 2 min 3 s");
+    assert_eq!(
+        entry.timestamp, "17:05:50.002",
+        "16:03:47.002 + 1 h 2 min 3 s"
+    );
     assert_eq!(entry.epoch_utc, "2026-04-03T17:05:50.002464Z");
 }
 

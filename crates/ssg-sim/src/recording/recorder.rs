@@ -20,7 +20,7 @@ use crate::recording::{
     BYTES_PER_BODY_FRAME, BodyFrame, EndReason, Frame, RecordedTransition, RecordingBodies,
     RecordingEnd, RecordingHeader, RecordingSink, StartTrigger,
 };
-use crate::telemetry::{LogEntry, LogEvent, LogLevel};
+use crate::telemetry::{LogEntry, LogEvent, LogLevel, log_timestamp};
 use crate::time::{FIXED_HZ, PHYS_DT, WorldTime};
 
 /// The per-project recording settings (the `recording` block of `project.json`,
@@ -472,11 +472,8 @@ impl Ctx<'_, '_, '_, '_> {
 
 /// The capture log's entry for `event` at `epoch` (`collect_log_events`).
 fn log_entry(epoch: brahe::Epoch, event: &LogEvent) -> LogEntry {
-    let full = format!("{epoch}");
     LogEntry {
-        timestamp: full
-            .get(11..19)
-            .map_or_else(|| full.clone(), str::to_string),
+        timestamp: log_timestamp(epoch),
         epoch_utc: format_utc(epoch),
         level: event.level,
         source: event.source,
