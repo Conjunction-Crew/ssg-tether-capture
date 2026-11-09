@@ -4,154 +4,143 @@ sidebar_position: 1
 
 # Components
 
-:::note
-Paths below predate the v0.3.1 workspace split; see [Architecture → Overview](../architecture/overview). Rewritten in P10.
-:::
-
-Components are data attached to ECS entities. Source: `src/components/`.
+Components are data attached to entities. They are grouped below by crate, then module. Paths in `ssg_app` are given for orientation: the app's modules are private to its crate.
 
 ---
 
-## Orbital components (`orbit.rs`)
+## `ssg-sim`
 
-### `Orbit`
+### `orbit` — orbital state
 
-Init-only component. Controls how an entity's orbital state is initialised.
+#### `Orbit`
 
-```rust
-pub enum Orbit {
-    FromTle(String),
-    FromElements(Vector6<f64>),
-}
-```
+`ssg_sim::orbit::Orbit` · How a body's orbit starts. Requires `Orbital`. `init_orbitals` builds the body's propagator from it.
 
-`FromTle` accepts a raw Two-Line Element set string. `FromElements` accepts a `nalgebra::Vector6<f64>` of classical orbital elements `[a, e, i, Ω, ω, M]` in SI units and radians.
+| Variant | Meaning |
+|---|---|
+| `FromElements(Vector6<f64>)` | Osculating Keplerian elements `[a, e, i, Ω, ω, M]` (metres, radians) at the start epoch |
+| `FromElementsAt { elements, epoch }` | The same elements, taken at `epoch` |
+| `FromGp(GpElements)` | A catalog GP record: the start state comes from SGP4 at the start epoch |
 
-Once `init_orbitals` processes this component it can be removed. The `#[require(Orbital)]` attribute ensures an `Orbital` is always present on the same entity.
+Every body starts at `WorldTime::start_epoch`; from then on it is propagated as a two-body (Kepler) orbit.
 
----
+#### `Orbital`
 
-### `Orbital`
+`ssg_sim::orbit::Orbital` · The runtime orbital state of a body.
 
-The primary runtime state for an orbital body.
-
-| Field | Type | Description |
+| Field | Type | Meaning |
 |---|---|---|
-| `object_id` | `String` | Unique identifier string |
-| `parent_entity` | `Option<Entity>` | Parent body (e.g. Earth for a satellite) |
-| `propagator` | `Option<KeplerianPropagator>` | Brahe propagator, populated by `init_orbitals` |
+| `object_id` | `String` | Not read today |
+| `parent_entity` | `Option<Entity>` | Not read today |
+| `propagator` | `Option<KeplerianPropagator>` | brahe's Kepler propagator, set by `init_orbitals` |
 
-ECI position and velocity are computed by calling `propagator.state_eci(epoch)`, which returns a `nalgebra::Vector6<f64>`. The result is cached in `OrbitalCache::eci_states` each physics tick by `cache_eci_states`.
+For a body inside the physics bubble, the propagator describes the bubble frame's origin and the body's ECI state is that origin plus its `Position` and `LinearVelocity`. For a body outside it, the propagator is the body's own orbit. See [Floating Origin](../concepts/floating-origin).
 
----
+### `anchor`
 
-### `TetherNode`
+#### `SimAnchor`
 
-Marks an entity as a joint in a tether chain and holds a reference to the root joint.
+`ssg_sim::anchor::SimAnchor` · Marker on the body the floating origin and the physics bubble are centred on: the tether root, inserted when the tether spawns. The camera target is separate and never moves it.
 
-```rust
-pub struct TetherNode {
-    pub root: Entity,
-}
-```
+### `tether` — the spawned bodies
 
----
+#### `TetherRoot`
 
-### `Earth`
+`ssg_sim::tether::TetherRoot` · Marker on the first body of the tether (the chaser). It also carries `SimAnchor`.
 
-Zero-data marker component used to query the Earth entity.
+#### `TetherNode`
 
----
+`ssg_sim::tether::TetherNode` · On every other tether body (interior nodes and the tail). `root: Entity` is the tether's root. Consecutive bodies are linked by distance joints.
 
-### `JsonOrbital` / `JsonOrbitalData`
+#### `TetherShape`
 
-Deserialization types for orbital data loaded from JSON files in `assets/datasets/`. These map the space-data JSON format (GP element sets) to Rust structs.
+`ssg_sim::tether::TetherShape` · The visual shape of a tether body, for the renderer: `Sphere { radius }` or `Cylinder { radius, length }` (metres). `attach_tether_visuals` gives each body a mesh from it.
 
-`JsonOrbital` holds optional fields matching GP element-set keys (`OBJECT_NAME`, `OBJECT_ID`, `EPOCH`, `MEAN_MOTION`, `ECCENTRICITY`, `INCLINATION`, `RA_OF_ASC_NODE`, `ARG_OF_PERICENTER`, `MEAN_ANOMALY`, `NORAD_CAT_ID`, `BSTAR`, etc.).
+#### `DebrisBody`
 
-`JsonOrbitalData` wraps a `Vec<JsonOrbital>` with an optional dataset `name`. It accepts both a bare JSON array and an object with `"name"` and `"data"` keys.
+`ssg_sim::tether::DebrisBody` · On the capture target. `model_path` is the glTF scene `attach_debris_scene` loads.
 
-Loaded by `load_dataset_entities` on `OnEnter(UiScreen::Sim)` and used to spawn GPU-rendered debris points via `GpuComputePlugin`.
+### `capture` — the capture controller
 
----
+#### `CaptureComponent`
 
-## Capture components (`capture_components.rs`)
+`ssg_sim::capture::CaptureComponent` · On the body being captured while a capture runs (at most one). Inserted by `apply_sim_commands` from a `SimCommand::StartCapture`.
 
-### `CaptureComponent`
+| Field | Type | Meaning |
+|---|---|---|
+| `plan_id` | `String` | The capture plan |
+| `current_state` | `String` | The current phase's id |
+| `state_enter_time_s` | `f64` | Sim seconds since the start epoch when the phase was entered |
+| `state_elapsed_time_s` | `f64` | Seconds in the current phase |
+| `sphere_radius_at_entry_m` | `f64` | The capture-sphere radius when the phase was entered |
 
-Attached to the tether entity when a capture sequence is in progress. There should only ever be 0 or 1 entity with this component at a time.
+`capture_state_machine_update` reads and advances it every fixed step.
 
-```rust
-pub struct CaptureComponent {
-    pub plan_id: String,
-    pub current_state: String,
-    pub state_enter_time_s: f64,
-    pub state_elapsed_time_s: f64,
-}
-```
+#### `CaptureForce`
 
-The `capture_state_machine_update` system reads this component each physics tick to decide which forces to apply to the tether, and advances `current_state` when transition conditions are met.
+`ssg_sim::capture::CaptureForce` · The controller's state and output on the tether root and the tail while a capture runs; inserted and removed with `CaptureComponent`.
 
-### `CapturePlan`
-
-Deserialised structure of a capture plan JSON file.
-
-```rust
-pub struct CapturePlan {
-    pub name: String,
-    pub tether: String,
-    pub states: Vec<State>,
-    pub device: Option<CapturePlanDevice>,
-}
-```
-
-`CapturePlanDevice` carries `device_type` and `tether_length` (metres). `State` carries `id`, optional `next`, `parameters` (JSON object), and `transitions` (JSON array). Pre-compiled into a `CompiledCapturePlan` by `CapturePlanLibrary::insert_plan` for fast runtime access.
+| Field | Type | Meaning |
+|---|---|---|
+| `applied` | `DVec3` | The force handed to the physics this step, in N (zero for a body the phase does not push); the capture gizmo draws it |
+| `ramp_n` | `f64` | The ramped force bound in N: 0 at the capture start and at each phase entry, rising to the phase's `max_force_n` |
+| `direction` | `DVec3` | Unit direction of the last non-zero force |
+| `inner`, `outer`, `kill` | `bool` | The branch states (inside the inner edge, outside the outer edge, above the speed limit), with the dead band |
 
 ---
 
-## Camera components (`orbit_camera.rs`)
+## `ssg-app`
 
-### `OrbitCamera`
+### `render::camera`
 
-Controls camera behaviour; holds separate param sets for scene and map views.
+#### `OrbitCamera`
 
-```rust
-pub struct OrbitCamera {
-    pub scene_params: OrbitCameraParams,
-    pub map_params: OrbitCameraParams,
-}
-```
+`ssg_app::render::camera::OrbitCamera` · On the one 3D camera. `scene_params` and `map_params` are two `OrbitCameraParams`, one per view.
 
-`OrbitCameraParams` fields: `focus`, `distance`, `yaw`, `pitch`, `min_distance`, `max_distance`, `sensitivity`, `max_pitch`, `up`.
+| `OrbitCameraParams` field | Default |
+|---|---|
+| `focus` | origin |
+| `distance` | 30.0 |
+| `yaw`, `pitch` | 0.0 |
+| `min_distance`, `max_distance` | 0.5, 10000.0 |
+| `sensitivity` | 0.005 (0.002 on Windows) |
+| `max_pitch` | 1.55 rad |
+| `up` | +Y |
 
----
+#### `CameraTarget`
 
-### `CameraTarget`
+`ssg_app::render::camera::CameraTarget` · Marker on the body the camera looks at. Put on the `SimAnchor` body when it spawns (`attach_camera_target`); `Tab` moves it. A viewing marker only: it does not move the floating origin or the bubble.
 
-Zero-data marker. The entity bearing this component is the camera's current tracking target.
+### `render::celestial`
 
----
+#### `Earth`
 
-## UI components (`user_interface.rs`)
+`ssg_app::render::celestial::Earth` · Marker on the scene Earth.
 
-### `TimeWarpReadout`
+### `render::gpu_compute`
 
-Marker component on the UI text node that displays the current `WorldTime::multiplier`.
+#### `MapOrbitPointMarker`
 
-### `CaptureTelemetryReadout`
+`ssg_app::render::gpu_compute::MapOrbitPointMarker` · Marker on each catalog point of the map view; its visibility follows the catalog panel's points toggle.
 
-Drives the live telemetry text node in the sim sidebar. Holds the `target_entity` and `reference_entity` being tracked and a `target_label` string.
+### `ui::overlays` — the bevy_ui overlays of the 3D view
 
-### `CaptureGuidanceReadout`
+| Component | Purpose |
+|---|---|
+| `OrbitLabel` | The label node for `entity: Option<Entity>` (the tether), placed over it in the map view |
+| `SelectedCatalogOverlay` | The box drawn around the catalog object selected in the panel |
+| `SelectedCatalogOverlayLabel` | Its text |
+| `SatelliteIndicatorOverlay` | The marker of the capture target; `entity` and `label` |
+| `SatelliteIndicatorOverlayLabel` | Its text |
 
-Similar to `CaptureTelemetryReadout` but drives the capture guidance panel. Also carries `plan_id` so it can look up the active capture plan.
+### `ui::replay`
 
-### `OrbitLabel`
+#### `ReplayBody`
 
-Marks a UI text node as an orbital information label for a specific entity.
+`ssg_app::ui::replay::ReplayBody` · On each visual-only body of a replay; `index` is the body's index in the recording's body table.
 
-```rust
-pub struct OrbitLabel {
-    pub entity: Option<Entity>,
-}
-```
+### `ui::screens::project_detail`
+
+#### `SimScreen`
+
+`ssg_app::ui::screens::project_detail::SimScreen` · Marker on the root node of the sim screen's bevy_ui overlays; despawned when the screen is rebuilt or left.

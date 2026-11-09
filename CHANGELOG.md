@@ -22,6 +22,7 @@ GitHub Release description.
 
 ### Docs
 - Docs drift guard: the new CI job "Docs drift guard" (`scripts/check_docs_drift.sh`) fails when an inline code span in the docs names a Rust identifier that is not in `crates/`. Names that are not Rust symbols of the repository are listed with a reason in `scripts/docs_drift_allowlist.txt`; the pages' known stale symbols are listed per page until those pages are rewritten (F-16)
+- Architecture and API reference rewritten against the three-crate workspace: the workspace layout and dependency rule, the entry points, the fixed step and its seven `SimStep` sets, every plugin's registrations, the single 3D camera's scene/map layers, and every public component, resource, message, state and system set by crate and module. The "paths predate the workspace split" notes are gone (F-16)
 
 ## [v0.4.0-rc.5] 🔬 - 2026-11-08
 

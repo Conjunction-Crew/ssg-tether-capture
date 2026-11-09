@@ -4,41 +4,46 @@ sidebar_position: 3
 
 # Render Layers
 
-Bevy's `RenderLayers` component controls which cameras can see which entities. The app uses three non-overlapping layers so that the 3D scene, the orbital map, and the UI are rendered independently.
+Bevy's `RenderLayers` component decides which cameras see which entities. The app uses three layers, defined in `crates/ssg-app/src/render/layers.rs`.
 
-## Layer assignments
+## Layers and cameras
 
-| Constant | Value | Camera | What renders on it |
+| Constant | Value | Seen by | What is on it |
 |---|---|---|---|
-| `SCENE_LAYER` | `0` | Main 3D scene camera | Earth mesh, tether/debris entities, sun/moon lights, atmosphere, skybox |
-| `MAP_LAYER` | `1` | Map camera | Scaled-down Earth, orbital gizmos, map-view positions of tracked objects |
-| `UI_LAYER` | `2` | `UiCamera` (UiPlugin) | All Bevy UI nodes (home screen, project detail, labels) |
+| `SCENE_LAYER` | `0` | The 3D camera in the scene view | The Earth at full scale, the tether bodies' meshes, the debris model, the sun and moon lights, the capture gizmos, the dev gizmos |
+| `MAP_LAYER` | `1` | The 3D camera in the map view | The Earth scaled by `MAP_UNITS_TO_M`, the catalog points, the orbit gizmos, the sun and moon lights |
+| `UI_LAYER` | `2` | The 2D UI camera | The bevy_ui overlays of the sim screen (the tether's map label, the selected-catalog box, the satellite indicator) |
 
-Constants are defined in `src/constants.rs`.
+There is **one 3D camera** (`OrbitCamera`, spawned by `setup_camera` on entering the sim screen). It sees one layer at a time: the scene or the map. It starts on `MAP_LAYER`. A replay switches it to the scene view when it opens.
 
-## Why separate layers?
+The 2D UI camera (`order: 1`, no clear) draws the overlays on top of the 3D camera's image. The egui screens and windows are drawn by `bevy_egui`, not through these layers.
 
-- **Post-processing isolation** — bloom and auto-exposure only apply to the scene camera; the UI stays crisp.
-- **Independent clear colour** — the map view can use a different background without affecting the 3D scene.
-- **Z-fighting prevention** — UI nodes rendered at UI depth do not interfere with 3D mesh depth buffers.
+The default gizmo group is configured for both `SCENE_LAYER` and `MAP_LAYER`; the systems that draw into it check which view is active. `CaptureGizmoConfigGroup` is on `SCENE_LAYER` only.
 
-## Map view toggle
+## The map view toggle
 
-The `toggle_map_view` system (registered in `lib.rs`, `Update`) switches the active camera between `SCENE_LAYER` and `MAP_LAYER` when the user presses `M`. Only one camera is active at a time outside the UI layer.
+`M` (or the map/scene button) runs `set_map_view` (`render/camera.rs`) on the 3D camera:
+
+| From | To | Also |
+|---|---|---|
+| Scene view | `MAP_LAYER` | The atmosphere moves to the origin and its scale becomes `MAP_UNITS_TO_M` metres per unit |
+| Map view | `SCENE_LAYER` | The atmosphere's scale becomes 1 metre per unit |
+
+`OrbitCamera` keeps separate parameters for the two views (`scene_params`, `map_params`), so each view keeps its own zoom and angle. Systems that draw for one view only read the camera's `RenderLayers` (for example, `orbital_gizmos` returns in the scene view and `capture_gizmos` in the map view).
 
 ## Adding entities to a layer
 
-Attach `RenderLayers` at spawn time:
+Attach `RenderLayers` when spawning:
 
 ```rust
-// Visible in scene view only
+// The scene view only
 RenderLayers::layer(SCENE_LAYER)
 
-// Visible in both scene and map views
+// Both views (the lights do this)
 RenderLayers::from_layers(&[SCENE_LAYER, MAP_LAYER])
 
-// UI layer
-RenderLayers::layer(UI_LAYER)
+// The map view only
+RenderLayers::layer(MAP_LAYER)
 ```
 
-Entities without a `RenderLayers` component default to layer `0` (scene only).
+An entity without a `RenderLayers` component is on layer `0` (the scene view).
