@@ -3,6 +3,8 @@ pub mod app_support;
 #[cfg(test)]
 pub mod capture_log_bar;
 #[cfg(test)]
+pub mod capture_log_session;
+#[cfg(test)]
 pub mod catalog_screen;
 #[cfg(test)]
 pub mod characterization_app;

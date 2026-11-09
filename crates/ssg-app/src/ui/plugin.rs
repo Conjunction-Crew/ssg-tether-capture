@@ -53,6 +53,7 @@ use crate::ui::theme::UiTheme;
 use ssg_sim::SimSet;
 use ssg_sim::project::WorkingDirectory;
 use ssg_sim::session::SimState;
+use ssg_sim::telemetry::CaptureLog;
 
 pub struct UiPlugin;
 
@@ -180,7 +181,11 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 OnExit(UiScreen::Sim),
-                (cleanup_project_detail_screen, reset_space_catalog_ui_state),
+                (
+                    cleanup_project_detail_screen,
+                    reset_space_catalog_ui_state,
+                    clear_capture_log,
+                ),
             )
             .add_systems(
                 Last,
@@ -285,9 +290,19 @@ fn reset_sync_state(mut sync_state: ResMut<SimPlanSyncState>) {
     };
 }
 
-fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
-    // Preserve active_filters and existing log entries across sim screen re-entries,
-    // but reset per-frame UI state (scroll position, selection).
+/// Each sim session starts with its own log (#122): the entries are cleared on
+/// leaving the sim screen. Lines logged on Home after that are kept into the next
+/// session (F-42).
+pub(crate) fn clear_capture_log(mut log: ResMut<CaptureLog>) {
+    log.clear();
+}
+
+pub(crate) fn reset_terminal_log_ui_state(mut log_ui: ResMut<CaptureLogUiState>) {
+    // The entries were cleared on leaving the sim (`clear_capture_log`); lines
+    // logged on Home since are kept. Preserve active_filters across sim screen
+    // re-entries, but start collapsed (#122) and reset per-frame UI state (scroll
+    // position, selection).
+    log_ui.is_open = false;
     log_ui.is_user_scrolled = false;
     log_ui.selected_rows = None;
     log_ui.selection_anchor = None;
