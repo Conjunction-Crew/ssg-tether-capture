@@ -19,6 +19,8 @@ pub mod home_screens;
 #[cfg(test)]
 pub mod integration_app;
 #[cfg(test)]
+pub mod map_labels;
+#[cfg(test)]
 pub mod plan_form;
 #[cfg(test)]
 pub mod plan_form_fields;

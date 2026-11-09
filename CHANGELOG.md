@@ -23,6 +23,7 @@ GitHub Release description.
 ### Fixed
 - The capture log holds a whole capture: 1,024 entries, and a full log drops its oldest DBG lines first, so phase transitions, warnings and errors stay. Timestamps show milliseconds (`HH:MM:SS.mmm`) in the panel, in a saved log and in a recording's `log.jsonl` (the same keys as before), and the physics-bubble lines give the distance in metres instead of `0 km` (#175).
 - The capture log starts empty in each sim session: it is cleared when you leave the sim screen (lines logged on Home afterwards are kept), and the panel starts collapsed with its level filters kept (#122).
+- In the map view, the label of a body outside the physics bubble now sits on its marker instead of being offset by the body's last bubble position (#123).
 
 ## [v0.4.0] - 2026-11-09
 
