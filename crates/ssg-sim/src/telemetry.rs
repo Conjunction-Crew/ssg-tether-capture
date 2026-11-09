@@ -35,7 +35,7 @@ impl LogLevel {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LogEntry {
-    /// Simulation timestamp formatted as "HH:MM:SS" (UTC).
+    /// Simulation timestamp formatted as "HH:MM:SS.mmm" (UTC; [`log_timestamp`]).
     pub timestamp: String,
     /// The simulation epoch in the project-file format (`format_utc`, µs).
     pub epoch_utc: String,
@@ -46,6 +46,9 @@ pub struct LogEntry {
 }
 
 // ─── CaptureLog Resource ──────────────────────────────────────────────────────
+
+/// The number of entries the capture log holds (#175).
+pub const CAPTURE_LOG_CAPACITY: usize = 1024;
 
 /// Global ring-buffer of log entries written by simulation subsystems.
 #[derive(Resource)]
@@ -58,16 +61,24 @@ impl Default for CaptureLog {
     fn default() -> Self {
         Self {
             entries: VecDeque::new(),
-            max_entries: 256,
+            max_entries: CAPTURE_LOG_CAPACITY,
         }
     }
 }
 
 impl CaptureLog {
-    /// Append an entry, evicting the oldest if the buffer is full.
+    /// Append an entry. A full buffer evicts its oldest DBG entry, or its oldest
+    /// entry when it holds no DBG entry (#175).
     pub fn push(&mut self, entry: LogEntry) {
         if self.entries.len() >= self.max_entries {
-            self.entries.pop_front();
+            match self.entries.iter().position(|e| e.level == LogLevel::Debug) {
+                Some(i) => {
+                    self.entries.remove(i);
+                }
+                None => {
+                    self.entries.pop_front();
+                }
+            }
         }
         self.entries.push_back(entry);
     }
@@ -90,7 +101,16 @@ pub struct LogEvent {
 
 /// The [`LogEntry::timestamp`] of an entry written with no sim session (F-42):
 /// there is no sim clock to read.
-pub const NO_SIM_TIME: &str = "--:--:--";
+pub const NO_SIM_TIME: &str = "--:--:--.---";
+
+/// The [`LogEntry::timestamp`] of an entry at `epoch`: `HH:MM:SS.mmm`, the time of
+/// day of [`format_utc`] truncated to milliseconds (the same instant as
+/// `epoch_utc`). The capture log and the recorder's `log.jsonl` both use it.
+pub fn log_timestamp(epoch: Epoch) -> String {
+    let full = format_utc(epoch);
+    full.get(11..23)
+        .map_or_else(|| full.clone(), str::to_string)
+}
 
 /// Collects [`LogEvent`]s emitted this frame and appends them to [`CaptureLog`],
 /// on every screen (F-42). Outside a sim session the entry has no sim time:
@@ -102,15 +122,10 @@ pub fn collect_log_events(
 ) {
     for event in events.read() {
         let (timestamp, epoch_utc) = match &world_time {
-            Some(world_time) => {
-                let full_ts = format!("{}", world_time.epoch);
-                // Extract HH:MM:SS from ISO timestamp (chars 11–19 of "YYYY-MM-DDTHH:MM:SS…").
-                let timestamp = full_ts
-                    .get(11..19)
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| full_ts.clone());
-                (timestamp, format_utc(world_time.epoch))
-            }
+            Some(world_time) => (
+                log_timestamp(world_time.epoch),
+                format_utc(world_time.epoch),
+            ),
             None => (NO_SIM_TIME.to_string(), String::new()),
         };
         capture_log.push(LogEntry {

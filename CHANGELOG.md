@@ -20,6 +20,8 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Fixed
+- The capture log holds a whole capture: 1,024 entries, and a full log drops its oldest DBG lines first, so phase transitions, warnings and errors stay. Timestamps show milliseconds (`HH:MM:SS.mmm`) in the panel, in a saved log and in a recording's `log.jsonl` (the same keys as before), and the physics-bubble lines give the distance in metres instead of `0 km` (#175).
 
 ## [v0.4.0] - 2026-11-09
 

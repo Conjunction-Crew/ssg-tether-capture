@@ -1,6 +1,7 @@
 pub mod capture_behaviour;
 pub mod capture_commands;
 pub mod capture_controller;
+pub mod capture_log_buffer;
 pub mod capture_plan_props;
 pub mod characterization;
 pub mod controller_gains;

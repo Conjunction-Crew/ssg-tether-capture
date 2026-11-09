@@ -92,9 +92,9 @@ pub fn physics_bubble_add_remove(
                 level: LogLevel::Debug,
                 source: "propagation",
                 message: format!(
-                    "Physics disabled for entity {:?} (dist {:.0} km from target)",
+                    "Physics disabled for entity {:?} (dist {:.1} m from target)",
                     entity,
-                    rb.position.0.length() / 1000.0,
+                    rb.position.0.length(),
                 ),
             });
         } else if disabled_entities.contains(entity)
@@ -115,9 +115,9 @@ pub fn physics_bubble_add_remove(
                 level: LogLevel::Debug,
                 source: "propagation",
                 message: format!(
-                    "Physics enabled for entity {:?} (dist {:.0} km from target)",
+                    "Physics enabled for entity {:?} (dist {:.1} m from target)",
                     entity,
-                    rb.position.0.length() / 1000.0,
+                    rb.position.0.length(),
                 ),
             });
         }

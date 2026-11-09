@@ -191,11 +191,11 @@ fn char_bubble_disables_above_110m() {
 
     eci_of(&app, anchor);
     assert!(is_disabled(&app, body));
-    // The log text always says `0 km` (F-26); do not "fix" it.
+    // F-26: fixed in P10.5 (#175): the log text gives the distance in metres.
     assert_eq!(
         bubble_messages(&events),
         vec![format!(
-            "Physics disabled for entity {body:?} (dist 0 km from target)"
+            "Physics disabled for entity {body:?} (dist 111.0 m from target)"
         )]
     );
     // Its propagator was rebuilt from the anchor's state plus its relative state
@@ -280,7 +280,7 @@ fn bubble_enable_rebuilds_propagator() {
     assert_eq!(
         bubble_messages(&events),
         vec![format!(
-            "Physics enabled for entity {body:?} (dist 0 km from target)"
+            "Physics enabled for entity {body:?} (dist 99.0 m from target)"
         )]
     );
 
@@ -357,7 +357,7 @@ fn bubble_missing_state_skips_entity() {
     assert_eq!(
         bubble_messages(&events),
         vec![format!(
-            "Physics disabled for entity {b:?} (dist 0 km from target)"
+            "Physics disabled for entity {b:?} (dist 111.0 m from target)"
         )]
     );
 }
