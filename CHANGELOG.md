@@ -20,7 +20,19 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Highlights
+v0.4.0 is the first stable release since v0.3.3. What it brings, by area; the details are in the changelog's v0.4.0-rc.1 to v0.4.0-rc.5 sections.
+- **Projects and plan files.** A project folder with a `project.json` manifest (the start epoch, the active plan, the target and the chaser); capture plans in schema v1 (phases, metric unit-suffixed keys, transition conditions that must all hold, end phases), with older plans migrated on load without loss; published JSON Schemas for the plan, the project and the recording manifest (v0.4.0-rc.1).
+- **Headless `ssg-sim`.** `ssg-sim validate` checks a project; `ssg-sim run` takes its scenario from `project.json` and also writes a CCSDS OEM ephemeris (v0.4.0-rc.1); `run --record` writes a recording and `ssg-sim replay` re-simulates one and compares every frame (v0.4.0-rc.2).
+- **Determinism.** The command line and the app simulate the same world, debris contacts included, and a recording made in the app re-simulates bit for bit on the machine and build that made it (v0.4.0-rc.3). The Determinism page states what holds across platforms.
+- **Recordings.** Record a capture in the app or with `ssg-sim`, play it back with a transport (step, scrub, reverse, 1/8× to 64×), and verify it with `ssg-sim replay` (v0.4.0-rc.2).
+- **The rope tether and the capture controller.** The tether is a rope of point masses that touches itself and the debris; the controller pushes within a ramped force bound, circles the target and wraps it, and the example plan runs to its end phase (v0.4.0-rc.3). Per-phase controller gains and the closing-rate and tether-straightness conditions (v0.4.0-rc.5).
+- **The egui UI.** The app's screens are egui, with one Metric/Imperial toggle, the sim start epoch and sim time, and a working-directory path you can type (v0.4.0-rc.4).
+- **Planner options.** The plan form edits every key of every phase and saving loses nothing; a chaser can start on the target's V-bar or R-bar (v0.4.0-rc.5).
+- **Docs.** Pages rewritten against the code and kept there by a CI drift guard; a capture plan schema page generated from the JSON Schema; planner options, Bevy fork and release checklist pages; a docs home (the Docs list below).
+
 ### Docs
+- CHANGELOG: the v0.4.0 highlights above. The drift guard's allowlist loses its empty `[p10-debt]` section (F-16)
 - Docs drift guard: the new CI job "Docs drift guard" (`scripts/check_docs_drift.sh`) fails when an inline code span in the docs names a Rust identifier that is not in `crates/`. Names that are not Rust symbols of the repository are listed with a reason in `scripts/docs_drift_allowlist.txt`; the pages' known stale symbols are listed per page until those pages are rewritten (F-16)
 - Architecture and API reference rewritten against the three-crate workspace: the workspace layout and dependency rule, the entry points, the fixed step and its seven `SimStep` sets, every plugin's registrations, the single 3D camera's scene/map layers, and every public component, resource, message, state and system set by crate and module. The "paths predate the workspace split" notes are gone (F-16)
 - Concepts pages checked against the code: the camera page describes the one 3D camera, `Tab` cycling and the scene/map layers (no click-to-select, no `track_objects`); the floating-origin page gives the radii and the reset's real order; the capture log page has the current panel controls and log sources; orbital mechanics has the full `SimStep` chain, the dataset load on entering the session and the element conversions in use. Determinism gains an **Across platforms** section (the anchor two pages link to), Project files a **Sharing a project** section, and the draft notes are gone (F-16, F-50)
