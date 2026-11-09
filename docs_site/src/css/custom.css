@@ -46,6 +46,17 @@
 /* Navbar dark mode — space header matching the Figma app */
 [data-theme='dark'] .navbar {
   border-bottom: 1px solid #1e293b;
+}
+
+/* The blur sits on a layer behind the navbar's content, not on .navbar: a
+   backdrop-filter on .navbar makes it the containing block of the fixed mobile
+   sidebar, which then collapses into the header and the menu does not open
+   (#128). */
+[data-theme='dark'] .navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -139,50 +150,4 @@
 [data-theme='dark'] .screenshot-frame {
   border-color: rgba(255, 255, 255, 0.04);
   box-shadow: 0 8px 22px rgba(2, 6, 23, 0.6);
-}
-
-/* Navbar sizing */
-:root {
-  --ifm-navbar-height: 5rem;
-}
-
-/* Navbar dark mode — space header matching the Figma app */
-[data-theme='dark'] .navbar {
-  border-bottom: 1px solid #1e293b;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.navbar__logo {
-  display: flex;
-  align-items: center;
-  margin-right: 0.75rem;
-}
-
-.navbar__logo img {
-  height: 3.5rem;
-}
-
-.navbar__title {
-  font-size: 1.4rem;
-}
-
-.navbar__link {
-  font-size: 1.1rem;
-}
-
-/* Hero banner — space gradient matching the Figma home screen */
-[data-theme='dark'] .hero--primary {
-  background: linear-gradient(
-    135deg,
-    #020617 0%,
-    #0c1a3d 40%,
-    #0a0f1e 70%,
-    #020617 100%
-  );
-  color: #f8fafc;
-}
-
-[data-theme='dark'] .hero--primary .hero__subtitle {
-  color: #94a3b8;
 }
