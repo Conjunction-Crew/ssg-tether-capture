@@ -20,6 +20,9 @@ GitHub Release description.
 
 ## [Unreleased]
 
+
+## [v0.4.0] - 2026-11-09
+
 ### Highlights
 v0.4.0 is the first stable release since v0.3.3. What it brings, by area; the details are in the changelog's v0.4.0-rc.1 to v0.4.0-rc.5 sections.
 - **Projects and plan files.** A project folder with a `project.json` manifest (the start epoch, the active plan, the target and the chaser); capture plans in schema v1 (phases, metric unit-suffixed keys, transition conditions that must all hold, end phases), with older plans migrated on load without loss; published JSON Schemas for the plan, the project and the recording manifest (v0.4.0-rc.1).
