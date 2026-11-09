@@ -25,7 +25,3 @@ scenario_q13 # cargo integration-test target (file stem of crates/ssg-sim/tests/
 scenario_example_plans # cargo integration-test target (file stem of crates/ssg-sim/tests/scenario_example_plans.rs)
 scenario_pause_warp # cargo integration-test target (file stem of crates/ssg-sim/tests/scenario_pause_warp.rs)
 manifest_run # cargo integration-test target (file stem of crates/ssg-sim-cli/tests/manifest_run.rs)
-
-[p10-debt]
-# Stale symbols still named by a page, valid only on the page of their group.
-# The rewrite of a page deletes its group; this section is empty at v0.4.0.
