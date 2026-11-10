@@ -10,7 +10,7 @@
 //! translated expression for expression: ERFA's operation order and literal digits
 //! are kept, C `fmod(a, b)` is `a % b`, `sin`, `cos`, `atan` and `atan2` are
 //! [`crate::math`] (the `libm` crate), `sqrt` stays `std` (exact in IEEE 754), and no
-//! `mul_add` is used. The series of `nut00a` and `s06` are summed from the last term
+//! fused multiply-add is used. The series of `nut00a` and `s06` are summed from the last term
 //! to the first, as in ERFA. Matrices are ERFA's `double[3][3]`, row by row.
 //! Two-argument dates are ERFA's two-part Julian dates (`date1 + date2`).
 //!
