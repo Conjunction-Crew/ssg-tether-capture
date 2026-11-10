@@ -7397,6 +7397,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sgp4-portable"
+version = "0.4.1"
+dependencies = [
+ "chrono",
+ "libm",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7685,6 +7693,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "brahe",
+ "chrono",
  "csv",
  "dirs 7.0.0",
  "libm",
@@ -7693,6 +7702,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sgp4-portable",
  "ssg-sim",
 ]
 

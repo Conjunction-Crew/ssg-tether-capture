@@ -1,0 +1,22 @@
+# sgp4 2.3.0 (MIT) with every math call on the libm crate. See README.md.
+[package]
+name = "sgp4-portable"
+version.workspace = true
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "sgp4p"
+doctest = false
+
+[features]
+default = ["alloc", "libm"]
+alloc = []
+libm = []
+std = []
+serde = []
+
+[dependencies]
+chrono = { version = "0.4.41", default-features = false }
+libm = { workspace = true }

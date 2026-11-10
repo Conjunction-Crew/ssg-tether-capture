@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod kepler;
 pub mod lvlh;
 pub mod selection;
+pub mod sgp4_start;
 
 use std::sync::PoisonError;
 
