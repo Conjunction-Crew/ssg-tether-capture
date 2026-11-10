@@ -106,6 +106,7 @@ fn universal_step(state: &Vector6<f64>, dt: f64) -> Result<Vector6<f64>, String>
     // Newton's iteration on the universal anomaly.
     let mut chi = sqrt_mu * alpha.abs() * dt;
     let mut converged = false;
+    let mut last_delta = f64::INFINITY;
     for _ in 0..50 {
         let psi = chi * chi * alpha;
         let (c2, c3) = stumpff(psi);
@@ -115,10 +116,18 @@ fn universal_step(state: &Vector6<f64>, dt: f64) -> Result<Vector6<f64>, String>
         let df = rdotv / sqrt_mu * chi * (1.0 - psi * c3) + (1.0 - alpha * r0n) * chi2 * c2 + r0n;
         let delta = f / df;
         chi -= delta;
+        last_delta = delta;
         if delta.abs() <= 4.0 * f64::EPSILON * chi.abs() {
             converged = true;
             break;
         }
+    }
+    // On eccentric orbits Newton can end in a two-value cycle a few ULP wide, just
+    // above the test above (|delta| up to about 7 eps |chi| at e = 0.73); that chi
+    // is converged too. It is accepted only after the loop, so a case that meets
+    // the test exits at the same iteration and keeps its bits.
+    if !converged && last_delta.abs() <= 16.0 * f64::EPSILON * chi.abs() {
+        converged = true;
     }
     if !converged {
         return Err(format!("universal Kepler: no convergence (dt {dt} s)"));
