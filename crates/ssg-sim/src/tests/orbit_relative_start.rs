@@ -1,18 +1,18 @@
 //! P9 S5: the V-bar/R-bar start (`relative_to_target`, Q10 row 15, F-47). The
-//! conversion on the target's LVLH frame, brahe's elements round trip, the CW
-//! checks, the near-circular guard (operator decision M1-a) and the M1 run.
+//! conversion on the target's LVLH frame, the elements round trip, the CW
+//! checks, near-circular and equatorial targets (F-69), the start guard (operator
+//! decision M1-a) and the M1 run.
 //! Numbers: `plans/stage-9/results/s5-m1.md`.
 
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use brahe::coordinates::state_eci_to_koe;
-use brahe::{AngleFormat, Epoch};
+use brahe::Epoch;
 use nalgebra::Vector6;
 
 use crate::capture::plan::CapturePlanLibrary;
 use crate::orbit::cache::OrbitalCache;
-use crate::orbit::kepler::TwoBody;
+use crate::orbit::kepler::{TwoBody, state_to_elements};
 use crate::orbit::lvlh::{LvlhFrame, cw_solution, relative_offset_lvlh, relative_start};
 use crate::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
@@ -125,10 +125,10 @@ fn relative_start_is_at_rest_on_its_point() {
     }
 }
 
-// (2) brahe's elements round trip, where its near-circular rounding does not apply
-// (M1: ≤ 2.7e-6 m and 3.1e-9 m/s; the tolerance is about 4× that).
+// (2) The elements round trip, every preset and offset on both targets (F-69: the
+// conversion does not round a small eccentricity).
 #[test]
-fn elements_round_trip_within_1e5_m() {
+fn elements_round_trip_within_1e6_m() {
     let hst_state = start_state(&hst());
     let circular_state = start_state(&circular());
     let mut cases: Vec<(&str, &Vector6<f64>, RelativePreset, f64)> = Vec::new();
@@ -137,17 +137,19 @@ fn elements_round_trip_within_1e5_m() {
             cases.push(("HST", &hst_state, preset, offset));
         }
     }
-    for offset in [1_000.0, -1_000.0] {
-        cases.push(("circular", &circular_state, RelativePreset::RBar, offset));
+    for preset in PRESETS {
+        for offset in OFFSETS {
+            cases.push(("circular", &circular_state, preset, offset));
+        }
     }
     for (name, target, preset, offset) in cases {
         let chaser = relative_start(target, preset, offset).expect("frame");
-        let back = elements_start(state_eci_to_koe(chaser, AngleFormat::Radians));
+        let back = elements_start(state_to_elements(chaser));
         let (dp, dv) = (
             (v3(&back, 0) - v3(&chaser, 0)).length(),
             (v3(&back, 3) - v3(&chaser, 3)).length(),
         );
-        assert!(dp < 1e-5, "{name} {preset:?} {offset}: position {dp:e} m");
+        assert!(dp < 1e-6, "{name} {preset:?} {offset}: position {dp:e} m");
         assert!(dv < 1e-8, "{name} {preset:?} {offset}: velocity {dv:e} m/s");
     }
 }
@@ -191,29 +193,69 @@ fn r_bar_drift_matches_cw_over_a_quarter_orbit() {
     );
 }
 
-// M1-a: the guard. On an e = 0 target, R-bar 30 m would start 90 m off (brahe
-// 1.3.4 rounds the chaser's e = 1.3e-5 to 0); V-bar 30 m is 2e-4 m off and passes.
+/// A target given as elements at the start epoch: a = 6,918 km, eccentricity `e`,
+/// inclination `inclination_rad` (the F-69 cases).
+fn target_with(e: f64, inclination_rad: f64) -> SelectedOrbitalObject {
+    SelectedOrbitalObject {
+        source: OrbitalSelectionSource::Custom {
+            label: format!("e {e:e}, i {inclination_rad}"),
+        },
+        elements: EditableOrbitalElements {
+            semi_major_axis_m: 6_918_000.0,
+            eccentricity: e,
+            inclination_rad,
+            raan_rad: 4.0063,
+            arg_perigee_rad: 0.9066,
+            mean_anomaly_rad: 0.5,
+            epoch: fixed_epoch(),
+        },
+        gp: None,
+        mass_kg: None,
+        inertia_kg_m2: None,
+    }
+}
+
+// F-69: before P11, brahe 1.3.4 rounded an eccentricity below about 1e-4 to 0, and
+// an R-bar 30 m start from an e = 0 target was refused (90 m off). Now every start
+// from a near-circular or equatorial target lands on its point.
 #[test]
-fn a_start_the_propagator_would_move_is_refused() {
-    let target = circular();
+fn starts_from_near_circular_and_equatorial_targets_land_on_their_point() {
+    let mut targets: Vec<SelectedOrbitalObject> = [0.0, 1e-9, 1e-5, 9e-5]
+        .into_iter()
+        .map(|e| target_with(e, 0.4969))
+        .collect();
+    targets.push(target_with(1e-5, 0.0));
+    for target in &targets {
+        let name = match &target.source {
+            OrbitalSelectionSource::Custom { label } => label.clone(),
+            other => panic!("{other:?}"),
+        };
+        let target_state = start_state(target);
+        for preset in PRESETS {
+            for offset in [30.0, 1_000.0] {
+                let elements = relative_chaser_elements(target, fixed_epoch(), preset, offset)
+                    .unwrap_or_else(|e| panic!("{name} {preset:?} {offset}: {e}"));
+                let chaser = elements_start(elements.to_vec6());
+                let (p, _) = relative_lvlh(&target_state, &chaser);
+                let miss = (p - relative_offset_lvlh(preset, offset)).length();
+                assert!(miss <= 1e-6, "{name} {preset:?} {offset}: {miss:e} m");
+            }
+        }
+    }
+}
+
+// M1-a: the 1 mm guard stays, now against a degenerate target: a target whose
+// state is not a number gives the guard's error.
+#[test]
+fn a_degenerate_target_is_refused_by_the_start_guard() {
+    let mut target = circular();
+    target.elements.semi_major_axis_m = f64::NAN;
     let refused =
         relative_chaser_elements(&target, fixed_epoch(), RelativePreset::RBar, 30.0).unwrap_err();
-    assert!(
-        refused.starts_with("the chaser would start ") && refused.contains("less circular"),
-        "{refused}"
+    assert_eq!(
+        refused,
+        "the chaser would start NaN m from its point; choose another offset or target"
     );
-    let miss: f64 = refused["the chaser would start ".len()..]
-        .split(' ')
-        .next()
-        .unwrap()
-        .parse()
-        .unwrap();
-    assert!(miss > 80.0, "{refused}");
-
-    let accepted = relative_chaser_elements(&target, fixed_epoch(), RelativePreset::VBar, 30.0);
-    assert!(accepted.is_ok(), "{accepted:?}");
-    let accepted = relative_chaser_elements(&hst(), fixed_epoch(), RelativePreset::RBar, 30.0);
-    assert!(accepted.is_ok(), "{accepted:?}");
     assert_eq!(RELATIVE_START_TOLERANCE_M, 1e-3);
 }
 

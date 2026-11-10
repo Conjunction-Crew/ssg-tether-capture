@@ -2,11 +2,11 @@
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use brahe::coordinates::state_eci_to_koe;
-use brahe::{AngleFormat, Epoch};
+use brahe::Epoch;
 use nalgebra::Vector6;
 
 use crate::orbit::catalog::GpElements;
+use crate::orbit::kepler::state_to_elements;
 use crate::orbit::lvlh::{LvlhFrame, relative_offset_lvlh, relative_start};
 use crate::orbit::{Orbit, start_state_eci, use_zero_eop};
 use crate::project::manifest::{RelativePreset, RelativeToTarget};
@@ -55,13 +55,13 @@ impl EditableOrbitalElements {
 
     /// The osculating elements, at `epoch`, of the state SGP4 gives the record at
     /// `epoch` (#177, F-68): the orbit a catalog pick starts from when the sim
-    /// starts at `epoch` (`start_state_eci`, then brahe's `state_eci_to_koe`).
+    /// starts at `epoch` (`start_state_eci`, then [`state_to_elements`]).
     /// `None` when SGP4 fails. [`Self::from_gp`] keeps the record's own elements at
     /// its epoch.
     pub fn from_gp_at(gp: &GpElements, epoch: Epoch) -> Option<Self> {
         use_zero_eop();
         let state = start_state_eci(&Orbit::FromGp(gp.clone()), epoch)?;
-        let e = state_eci_to_koe(state, AngleFormat::Radians);
+        let e = state_to_elements(state);
         Some(Self {
             semi_major_axis_m: e[0],
             eccentricity: e[1],
@@ -125,14 +125,13 @@ pub struct OrbitalSelectionState {
 }
 
 /// The farthest the chaser's start may land from its V-bar/R-bar point, in metres
-/// (P9 M1, operator decision M1-a). brahe 1.3.4 rounds an orbit with e ≲ 1e-4 to
-/// e = 0, which on a near-circular target moves the start by up to `a·e`.
+/// (P9 M1, operator decision M1-a): a guard against a degenerate target.
 pub const RELATIVE_START_TOLERANCE_M: f64 = 1e-3;
 
 /// The chaser's osculating elements at `start_epoch` for a start `offset_m` from
 /// `target` on `preset`'s line, at rest in the target's LVLH frame (P9 S5, A-3):
 /// [`relative_start`] from the target's start state as the sim propagates it, then
-/// brahe's `state_eci_to_koe`. `Err` with the reason when the target has no start
+/// [`state_to_elements`]. `Err` with the reason when the target has no start
 /// state or LVLH frame, or when the elements, propagated as the sim does, start
 /// farther than [`RELATIVE_START_TOLERANCE_M`] from that point.
 pub fn relative_chaser_elements(
@@ -146,7 +145,7 @@ pub fn relative_chaser_elements(
         .ok_or("the target has no start state (SGP4 failed)")?;
     let chaser = relative_start(&target_state, preset, offset_m)
         .ok_or("the target's orbit has no LVLH frame")?;
-    let e = state_eci_to_koe(chaser, AngleFormat::Radians);
+    let e = state_to_elements(chaser);
     let started = start_state_eci(
         &Orbit::FromElementsAt {
             elements: e,
@@ -164,9 +163,7 @@ pub fn relative_chaser_elements(
     let miss = (frame.to_lvlh(rel) - relative_offset_lvlh(preset, offset_m)).length();
     if miss.is_nan() || miss > RELATIVE_START_TOLERANCE_M {
         return Err(format!(
-            "the chaser would start {miss:.3} m from its point: the propagator treats an orbit \
-             with eccentricity below about 1e-4 as circular (brahe 1.3.4); use V-bar, a smaller \
-             offset, or a target whose orbit is less circular"
+            "the chaser would start {miss:.3} m from its point; choose another offset or target"
         ));
     }
     Ok(EditableOrbitalElements {
