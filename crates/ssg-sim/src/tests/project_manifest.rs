@@ -1278,8 +1278,9 @@ fn a_chaser_relative_to_the_target_reads_writes_and_starts_from_elements() {
 }
 
 #[test]
-fn a_relative_start_the_propagator_would_move_is_refused_by_the_reader() {
-    // M1-a: an e = 0 target, R-bar 30 m (90 m off with brahe 1.3.4).
+fn a_relative_start_from_a_circular_target_is_accepted_by_the_reader() {
+    // F-69: an e = 0 target, R-bar 30 m (refused before P11: brahe 1.3.4 rounded
+    // the chaser's small eccentricity and the start was 90 m off).
     let mut value = doc();
     value["target"]["orbit"] = json!({ "elements": {
         "semi_major_axis_m": 6778137.0, "eccentricity": 0.0, "inclination_rad": 0.9,
@@ -1291,17 +1292,10 @@ fn a_relative_start_the_propagator_would_move_is_refused_by_the_reader() {
 
     let report = read(&value);
 
-    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
-    assert!(
-        report.errors[0].starts_with(
-            "[project.json] /chaser/orbit/relative_to_target: the chaser would start "
-        ),
-        "{:?}",
-        report.errors
-    );
-    assert!(report.manifest.is_none());
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert!(report.manifest.is_some());
 
-    // V-bar 30 m on the same target starts 2e-4 m off: accepted.
+    // V-bar 30 m on the same target: accepted too.
     value["chaser"]["orbit"] =
         json!({ "relative_to_target": { "preset": "v_bar", "offset_m": 30.0 } });
     assert!(read(&value).errors.is_empty());
