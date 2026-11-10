@@ -33,7 +33,7 @@ fn hst() -> SelectedOrbitalObject {
     q13::catalog_pick("HST", q13::HST_NORAD_ID)
 }
 
-/// An e = 0 target, where brahe 1.3.4 would move an R-bar 30 m start (M1-a).
+/// An e = 0 target given as elements.
 fn circular() -> SelectedOrbitalObject {
     SelectedOrbitalObject {
         source: OrbitalSelectionSource::Custom {
@@ -164,6 +164,10 @@ fn a_placement_the_sim_refuses_changes_nothing() {
         place_chaser_relative(&mut selection, fixed_epoch(), RelativePreset::VBar, 0.0),
         Err("Relative to Target needs an offset other than 0".to_string())
     );
+    // A degenerate target (its state is not a number) fails the 1 mm start guard.
+    let mut degenerate = circular();
+    degenerate.elements.semi_major_axis_m = f64::NAN;
+    selection.target = Some(degenerate);
     let refused = place_chaser_relative(&mut selection, fixed_epoch(), RelativePreset::RBar, 30.0)
         .unwrap_err();
     assert!(refused.starts_with("the chaser would start "), "{refused}");

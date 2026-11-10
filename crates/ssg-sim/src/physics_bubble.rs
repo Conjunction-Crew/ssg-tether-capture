@@ -29,13 +29,13 @@ use avian3d::prelude::{
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use brahe::KeplerianPropagator;
 use nalgebra::Vector6;
 
 use crate::SimStep;
 use crate::anchor::SimAnchor;
 use crate::orbit::Orbital;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::orbit::lvlh::differential_gravity;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::{ManualPhysics, WorldTime};
@@ -81,11 +81,7 @@ pub fn physics_bubble_add_remove(
 
         if !disabled_entities.contains(entity) && rb.position.0.length() > PHYSICS_DISABLE_RADIUS {
             // The leaving body's own orbit: the frame state plus its relative state.
-            orbital.propagator = Some(KeplerianPropagator::from_eci(
-                world_time.epoch,
-                target_rv + relative,
-                1.0,
-            ));
+            orbital.propagator = Some(TwoBody::from_eci(world_time.epoch, target_rv + relative));
 
             commands.entity(entity).insert(RigidBodyDisabled);
             log_events.write(LogEvent {
@@ -101,11 +97,7 @@ pub fn physics_bubble_add_remove(
             && rb.position.0.length() < PHYSICS_ENABLE_RADIUS
         {
             // F-07: the entering body's propagator becomes the frame origin's orbit.
-            orbital.propagator = Some(KeplerianPropagator::from_eci(
-                world_time.epoch,
-                entity_rv - relative,
-                1.0,
-            ));
+            orbital.propagator = Some(TwoBody::from_eci(world_time.epoch, entity_rv - relative));
 
             commands.entity(entity).remove::<RigidBodyDisabled>();
 

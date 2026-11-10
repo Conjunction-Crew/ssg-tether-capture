@@ -516,3 +516,22 @@ fn bad_replay_arguments_and_folders_exit_2() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The committed recording `tests/fixtures/q13-6400` (the reference scenario,
+/// 6,400 steps, made on macOS by `scripts/regenerate_recording_fixture.sh`)
+/// re-simulates bit for bit on every platform. Its `app_version` is not asserted:
+/// the release bumps the version, and the recording is made again only when a
+/// golden moves.
+#[test]
+fn the_committed_recording_replays_on_every_platform() {
+    let fixture = repo_root().join("crates/ssg-sim-cli/tests/fixtures/q13-6400");
+    let dir = temp_dir("committed");
+    copy_dir(&fixture, &dir);
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["built_with"]["target"], "aarch64-macos");
+
+    let out = expect_exit(&replay(&dir, &[]), 0);
+    assert!(out.contains(&identical(201)), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

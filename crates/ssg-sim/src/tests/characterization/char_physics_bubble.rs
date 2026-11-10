@@ -8,6 +8,7 @@
 
 use crate::anchor::SimAnchor;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::telemetry::LogLevel;
 use crate::test_support::{
@@ -18,8 +19,6 @@ use crate::time::WorldTime;
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use brahe::KeplerianPropagator;
-use brahe::utils::DOrbitStateProvider;
 use nalgebra::Vector6;
 
 /// A harness app in `SimState::Running`.
@@ -89,7 +88,7 @@ fn eci_of(app: &App, entity: Entity) -> Vector6<f64> {
         .expect("no cached ECI state for the entity")
 }
 
-fn propagator(app: &App, entity: Entity) -> KeplerianPropagator {
+fn propagator(app: &App, entity: Entity) -> TwoBody {
     app.world()
         .get::<Orbital>(entity)
         .unwrap()

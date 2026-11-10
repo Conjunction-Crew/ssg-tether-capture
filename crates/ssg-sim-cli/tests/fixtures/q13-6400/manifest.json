@@ -1,0 +1,591 @@
+{
+  "schema_version": 1,
+  "built_with": {
+    "app_version": "0.4.1",
+    "target": "aarch64-macos",
+    "avian_features": [
+      "enhanced-determinism",
+      "parallel"
+    ]
+  },
+  "plan_id": "example_plan",
+  "plan": {
+    "schema_version": 1,
+    "name": "example_plan",
+    "tether": "Tether1",
+    "device": {
+      "type": "tether",
+      "tether_length_m": 20.0
+    },
+    "capture_sphere": {
+      "initial_radius_m": 100.0,
+      "min_radius_m": 4.5
+    },
+    "phases": [
+      {
+        "id": "rendezvous",
+        "max_velocity_mps": 18.0,
+        "max_force_n": 25.0,
+        "transitions": [
+          {
+            "to": "approach",
+            "all_of": {
+              "distance_m": {
+                "less_than": 2000.0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "approach",
+        "max_velocity_mps": 2.0,
+        "max_force_n": 3.0,
+        "transitions": [
+          {
+            "to": "final_approach",
+            "all_of": {
+              "distance_m": {
+                "less_than": 300.0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "final_approach",
+        "max_velocity_mps": 0.3,
+        "max_force_n": 3.0,
+        "transitions": [
+          {
+            "to": "terminal",
+            "all_of": {
+              "distance_m": {
+                "less_than": 120.0
+              },
+              "relative_speed_mps": {
+                "less_than": 0.35
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "terminal",
+        "max_velocity_mps": 0.5,
+        "max_force_n": 2.0,
+        "shrink_rate_mps": 0.05,
+        "transitions": [
+          {
+            "to": "capture",
+            "all_of": {
+              "distance_m": {
+                "less_than": 5.0
+              }
+            }
+          },
+          {
+            "to": "final_approach",
+            "all_of": {
+              "distance_m": {
+                "greater_than": 120.0
+              }
+            }
+          }
+        ],
+        "tail_actuation": true,
+        "hold_plane": true,
+        "tail_spacing_m": 12.0
+      },
+      {
+        "id": "capture",
+        "max_velocity_mps": 0.5,
+        "max_force_n": 2.0,
+        "shrink_rate_mps": 0.005,
+        "transitions": [
+          {
+            "to": "hold",
+            "all_of": {
+              "time_in_phase_s": {
+                "greater_than": 90.0
+              }
+            }
+          }
+        ],
+        "tail_actuation": true,
+        "hold_plane": true
+      },
+      {
+        "id": "hold",
+        "max_velocity_mps": 0.0,
+        "max_force_n": 2.0,
+        "end": "success",
+        "tail_actuation": true,
+        "hold_plane": true,
+        "actuation": "hold"
+      }
+    ]
+  },
+  "start_step": 2,
+  "start_epoch_utc": "2026-04-03T16:03:47.033714Z",
+  "keyframe_interval_steps": 32,
+  "bodies": [
+    {
+      "index": 0,
+      "role": "target",
+      "name": "HST"
+    },
+    {
+      "index": 1,
+      "role": "tether_root",
+      "name": "Tether root"
+    },
+    {
+      "index": 2,
+      "role": "tether_node",
+      "name": "Tether node 1"
+    },
+    {
+      "index": 3,
+      "role": "tether_node",
+      "name": "Tether node 2"
+    },
+    {
+      "index": 4,
+      "role": "tether_node",
+      "name": "Tether node 3"
+    },
+    {
+      "index": 5,
+      "role": "tether_node",
+      "name": "Tether node 4"
+    },
+    {
+      "index": 6,
+      "role": "tether_node",
+      "name": "Tether node 5"
+    },
+    {
+      "index": 7,
+      "role": "tether_node",
+      "name": "Tether node 6"
+    },
+    {
+      "index": 8,
+      "role": "tether_node",
+      "name": "Tether node 7"
+    },
+    {
+      "index": 9,
+      "role": "tether_node",
+      "name": "Tether node 8"
+    },
+    {
+      "index": 10,
+      "role": "tether_node",
+      "name": "Tether node 9"
+    },
+    {
+      "index": 11,
+      "role": "tether_node",
+      "name": "Tether node 10"
+    },
+    {
+      "index": 12,
+      "role": "tether_node",
+      "name": "Tether node 11"
+    },
+    {
+      "index": 13,
+      "role": "tether_node",
+      "name": "Tether node 12"
+    },
+    {
+      "index": 14,
+      "role": "tether_node",
+      "name": "Tether node 13"
+    },
+    {
+      "index": 15,
+      "role": "tether_node",
+      "name": "Tether node 14"
+    },
+    {
+      "index": 16,
+      "role": "tether_node",
+      "name": "Tether node 15"
+    },
+    {
+      "index": 17,
+      "role": "tether_node",
+      "name": "Tether node 16"
+    },
+    {
+      "index": 18,
+      "role": "tether_node",
+      "name": "Tether node 17"
+    },
+    {
+      "index": 19,
+      "role": "tether_node",
+      "name": "Tether node 18"
+    },
+    {
+      "index": 20,
+      "role": "tether_node",
+      "name": "Tether node 19"
+    },
+    {
+      "index": 21,
+      "role": "tether_node",
+      "name": "Tether node 20"
+    },
+    {
+      "index": 22,
+      "role": "tether_node",
+      "name": "Tether node 21"
+    },
+    {
+      "index": 23,
+      "role": "tether_node",
+      "name": "Tether node 22"
+    },
+    {
+      "index": 24,
+      "role": "tether_node",
+      "name": "Tether node 23"
+    },
+    {
+      "index": 25,
+      "role": "tether_node",
+      "name": "Tether node 24"
+    },
+    {
+      "index": 26,
+      "role": "tether_node",
+      "name": "Tether node 25"
+    },
+    {
+      "index": 27,
+      "role": "tether_node",
+      "name": "Tether node 26"
+    },
+    {
+      "index": 28,
+      "role": "tether_node",
+      "name": "Tether node 27"
+    },
+    {
+      "index": 29,
+      "role": "tether_node",
+      "name": "Tether node 28"
+    },
+    {
+      "index": 30,
+      "role": "tether_node",
+      "name": "Tether node 29"
+    },
+    {
+      "index": 31,
+      "role": "tether_node",
+      "name": "Tether node 30"
+    },
+    {
+      "index": 32,
+      "role": "tether_node",
+      "name": "Tether node 31"
+    },
+    {
+      "index": 33,
+      "role": "tether_node",
+      "name": "Tether node 32"
+    },
+    {
+      "index": 34,
+      "role": "tether_node",
+      "name": "Tether node 33"
+    },
+    {
+      "index": 35,
+      "role": "tether_node",
+      "name": "Tether node 34"
+    },
+    {
+      "index": 36,
+      "role": "tether_node",
+      "name": "Tether node 35"
+    },
+    {
+      "index": 37,
+      "role": "tether_node",
+      "name": "Tether node 36"
+    },
+    {
+      "index": 38,
+      "role": "tether_node",
+      "name": "Tether node 37"
+    },
+    {
+      "index": 39,
+      "role": "tether_node",
+      "name": "Tether node 38"
+    },
+    {
+      "index": 40,
+      "role": "tether_node",
+      "name": "Tether node 39"
+    },
+    {
+      "index": 41,
+      "role": "tether_node",
+      "name": "Tether node 40"
+    },
+    {
+      "index": 42,
+      "role": "tether_node",
+      "name": "Tether node 41"
+    },
+    {
+      "index": 43,
+      "role": "tether_node",
+      "name": "Tether node 42"
+    },
+    {
+      "index": 44,
+      "role": "tether_node",
+      "name": "Tether node 43"
+    },
+    {
+      "index": 45,
+      "role": "tether_node",
+      "name": "Tether node 44"
+    },
+    {
+      "index": 46,
+      "role": "tether_node",
+      "name": "Tether node 45"
+    },
+    {
+      "index": 47,
+      "role": "tether_node",
+      "name": "Tether node 46"
+    },
+    {
+      "index": 48,
+      "role": "tether_node",
+      "name": "Tether node 47"
+    },
+    {
+      "index": 49,
+      "role": "tether_node",
+      "name": "Tether node 48"
+    },
+    {
+      "index": 50,
+      "role": "tether_node",
+      "name": "Tether node 49"
+    },
+    {
+      "index": 51,
+      "role": "tether_node",
+      "name": "Tether node 50"
+    },
+    {
+      "index": 52,
+      "role": "tether_node",
+      "name": "Tether node 51"
+    },
+    {
+      "index": 53,
+      "role": "tether_node",
+      "name": "Tether node 52"
+    },
+    {
+      "index": 54,
+      "role": "tether_node",
+      "name": "Tether node 53"
+    },
+    {
+      "index": 55,
+      "role": "tether_node",
+      "name": "Tether node 54"
+    },
+    {
+      "index": 56,
+      "role": "tether_node",
+      "name": "Tether node 55"
+    },
+    {
+      "index": 57,
+      "role": "tether_node",
+      "name": "Tether node 56"
+    },
+    {
+      "index": 58,
+      "role": "tether_node",
+      "name": "Tether node 57"
+    },
+    {
+      "index": 59,
+      "role": "tether_node",
+      "name": "Tether node 58"
+    },
+    {
+      "index": 60,
+      "role": "tether_node",
+      "name": "Tether node 59"
+    },
+    {
+      "index": 61,
+      "role": "tether_node",
+      "name": "Tether node 60"
+    },
+    {
+      "index": 62,
+      "role": "tether_node",
+      "name": "Tether node 61"
+    },
+    {
+      "index": 63,
+      "role": "tether_node",
+      "name": "Tether node 62"
+    },
+    {
+      "index": 64,
+      "role": "tether_node",
+      "name": "Tether node 63"
+    },
+    {
+      "index": 65,
+      "role": "tether_node",
+      "name": "Tether node 64"
+    },
+    {
+      "index": 66,
+      "role": "tether_node",
+      "name": "Tether node 65"
+    },
+    {
+      "index": 67,
+      "role": "tether_node",
+      "name": "Tether node 66"
+    },
+    {
+      "index": 68,
+      "role": "tether_node",
+      "name": "Tether node 67"
+    },
+    {
+      "index": 69,
+      "role": "tether_node",
+      "name": "Tether node 68"
+    },
+    {
+      "index": 70,
+      "role": "tether_node",
+      "name": "Tether node 69"
+    },
+    {
+      "index": 71,
+      "role": "tether_node",
+      "name": "Tether node 70"
+    },
+    {
+      "index": 72,
+      "role": "tether_node",
+      "name": "Tether node 71"
+    },
+    {
+      "index": 73,
+      "role": "tether_node",
+      "name": "Tether node 72"
+    },
+    {
+      "index": 74,
+      "role": "tether_node",
+      "name": "Tether node 73"
+    },
+    {
+      "index": 75,
+      "role": "tether_node",
+      "name": "Tether node 74"
+    },
+    {
+      "index": 76,
+      "role": "tether_node",
+      "name": "Tether node 75"
+    },
+    {
+      "index": 77,
+      "role": "tether_tail",
+      "name": "Tether tail"
+    }
+  ],
+  "limits": {
+    "max_duration_s": 1800.0,
+    "max_tether_bodies": 200,
+    "max_size_mb": 100.0
+  },
+  "project": {
+    "schema_version": 1,
+    "name": "ssg-sim run",
+    "start_epoch_utc": "2026-04-03T16:03:47.002464Z",
+    "active_plan": "example_plan",
+    "target": {
+      "label": "HST",
+      "orbit": {
+        "gp": {
+          "OBJECT_NAME": "HST",
+          "OBJECT_ID": "1990-037B",
+          "EPOCH": "2026-04-03T16:03:47.002464",
+          "MEAN_MOTION": 15.29899616,
+          "ECCENTRICITY": 0.0002132,
+          "INCLINATION": 28.4724,
+          "RA_OF_ASC_NODE": 229.5454,
+          "ARG_OF_PERICENTER": 51.9469,
+          "MEAN_ANOMALY": 308.1319,
+          "EPHEMERIS_TYPE": 0,
+          "CLASSIFICATION_TYPE": "U",
+          "NORAD_CAT_ID": 20580,
+          "BSTAR": 0.00040809,
+          "MEAN_MOTION_DOT": 0.00012406,
+          "MEAN_MOTION_DDOT": 0.0
+        }
+      }
+    },
+    "chaser": {
+      "label": "P0 HST CHASER",
+      "orbit": {
+        "gp": {
+          "OBJECT_NAME": "P0 HST CHASER",
+          "OBJECT_ID": "P0-CHASER-1",
+          "EPOCH": "2026-04-03T16:03:47.002464",
+          "MEAN_MOTION": 15.29899616,
+          "ECCENTRICITY": 0.0002632,
+          "INCLINATION": 28.4724,
+          "RA_OF_ASC_NODE": 229.5454,
+          "ARG_OF_PERICENTER": 51.9469,
+          "MEAN_ANOMALY": 308.1069,
+          "EPHEMERIS_TYPE": 0,
+          "CLASSIFICATION_TYPE": "U",
+          "NORAD_CAT_ID": 99901,
+          "BSTAR": 0.00040809,
+          "MEAN_MOTION_DOT": 0.00012406,
+          "MEAN_MOTION_DDOT": 0.0
+        }
+      }
+    },
+    "built_with": {
+      "app_version": "0.4.1",
+      "target": "aarch64-macos",
+      "avian_features": [
+        "enhanced-determinism",
+        "parallel"
+      ]
+    }
+  },
+  "source": "cli",
+  "end_step": 6402,
+  "end_reason": "session_end",
+  "start_trigger": "manual"
+}

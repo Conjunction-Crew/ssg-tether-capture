@@ -5,7 +5,7 @@
 use crate::orbit::catalog::SpaceObjectCatalog;
 use crate::orbit::selection::EditableOrbitalElements;
 use crate::test_support::q13::{self, CHASER_NORAD_ID, HST_NORAD_ID, Q13Run, catalog_pick};
-use crate::test_support::{assert_close, enter_sim, fixed_epoch, repo_root, test_app};
+use crate::test_support::{enter_sim, fixed_epoch, repo_root, test_app};
 
 fn element_bits(elements: &EditableOrbitalElements) -> [u64; 6] {
     [
@@ -143,44 +143,41 @@ const SHORT_TICKS: u64 = 6_400;
 /// The transition order every platform logs in the first 6,400 ticks.
 const SHORT_ORDER: &[(&str, &str)] = &[("rendezvous", "approach")];
 
-// Golden values captured on the P7.5 S9 and S10 branches on macos/aarch64 (the rope
+// Golden values captured on the P7.5 S9 and S10 branches (the rope
 // of point masses at 8 substeps laid away from the target, after S1's root-only push and
 // ramped force bound; S6's circling axis Z, self-contact and the debris collider
 // fitted to the model; S9's proportional speed limiter and the O4 example plan (a
 // 100 m sphere, `final_approach` from 300 m, terminal from 120 m below 0.35 m/s at
 // a constant speed with the plane held, `hold` 90 s after the capture entry); S10's
 // circle law, the tail's lag law at 12 m and the magnitude rule, which move only
-// the capture entry and its range; F-66, F-64 and F-31). The P7.5 re-baseline v2:
-// `rendezvous` → `approach` at 6,005, `final_approach` at 31,274, `terminal` at
-// 68,770 and `capture` at 191,186. They hold on macOS/aarch64
-// only: Linux and Windows CI reach `approach` at a nearby step with different
-// ranges (P4 S6 lever run, F-17; the measured tolerance is in
-// docs_site/docs/concepts/determinism.md), so only `baseline_q13_to_capture` checks
-// them (operator decision, 2026-10-26).
+// the capture entry and its range; F-66, F-64 and F-31), re-baselined in P11 when
+// the orbit and frame math moved to portable code (F-48, F-69):
+// `rendezvous` → `approach` at 6,005, `final_approach` at 31,281, `terminal` at
+// 68,707 and `capture` at 191,125. They hold on every platform, bit for bit (one
+// set of goldens, no `cfg`); `baseline_q13_to_capture` checks them.
 /// `(step, state, range_m)` every 640 ticks, the first 6,400 ticks of a
 /// fixed-epoch run.
 const SHORT_CHECKPOINTS: &[(u64, &str, f64)] = &[
-    (643, "rendezvous", 3481.7777811531587),
-    (1_283, "rendezvous", 3324.744572327554),
-    (1_923, "rendezvous", 3144.761243911426),
-    (2_563, "rendezvous", 2964.835952984182),
-    (3_203, "rendezvous", 2785.0055455146417),
-    (3_843, "rendezvous", 2605.303559537981),
-    (4_483, "rendezvous", 2425.766416747478),
-    (5_123, "rendezvous", 2246.4336823131816),
-    (5_763, "rendezvous", 2067.358739181581),
-    (6_403, "approach", 1897.9105166255683),
+    (643, "rendezvous", 3481.7777811468914),
+    (1_283, "rendezvous", 3324.7445723219807),
+    (1_923, "rendezvous", 3144.7612438933484),
+    (2_563, "rendezvous", 2964.835952967305),
+    (3_203, "rendezvous", 2785.005545504244),
+    (3_843, "rendezvous", 2605.3035595184274),
+    (4_483, "rendezvous", 2425.766416730939),
+    (5_123, "rendezvous", 2246.4336823079925),
+    (5_763, "rendezvous", 2067.358739166689),
+    (6_403, "approach", 1897.9105166168981),
 ];
 /// The fixed-epoch run to `capture`: every transition, and the final range.
 const CAPTURE_TRANSITIONS: &[(u64, &str, &str)] = &[
     (6_005, "rendezvous", "approach"),
-    (31_274, "approach", "final_approach"),
-    (68_770, "final_approach", "terminal"),
-    (191_186, "terminal", "capture"),
+    (31_281, "approach", "final_approach"),
+    (68_707, "final_approach", "terminal"),
+    (191_125, "terminal", "capture"),
 ];
-const CAPTURE_FINAL_RANGE_M: f64 = 4.999341418497718;
-/// Baseline ranges carry 1e-6 m (A-3).
-const RANGE_TOL_M: f64 = 1e-6;
+/// The range at the capture entry, compared bit for bit.
+const CAPTURE_FINAL_RANGE_M: f64 = 4.999366791133396;
 
 fn transition_order(run: &Q13Run) -> Vec<(&str, &str)> {
     run.transitions
@@ -192,7 +189,7 @@ fn transition_order(run: &Q13Run) -> Vec<(&str, &str)> {
 /// CI guard on every platform: the fixed-epoch scenario for 6,400 ticks (100 s
 /// of sim time, past the first transition), run twice in one process. It checks
 /// same-process determinism and the transition order; the step indices and
-/// ranges are platform-specific (F-17) and are checked by `baseline_q13_to_capture`.
+/// ranges are checked by `baseline_q13_to_capture`.
 #[test]
 fn baseline_q13_fixed_epoch_short() {
     let first = q13::run(SHORT_TICKS, false);
@@ -252,7 +249,7 @@ fn spread(runs: &[Q13Run]) -> serde_json::Value {
 
 /// Opt-in measurement: the fixed-epoch scenario to `capture`, twice in one
 /// process. Both runs must reach `capture`, be bit-identical and match the
-/// macOS/aarch64 goldens. The P2/P3 app-path runs (wall-clock start epoch, a
+/// goldens bit for bit, on every platform. The P2/P3 app-path runs (wall-clock start epoch, a
 /// configurable run count) were retired in P4 S6: the sim has no wall-clock path
 /// and the app-path band is retired (Q41).
 #[test]
@@ -279,7 +276,8 @@ fn baseline_q13_to_capture() {
     }
     assert_runs_identical(&fixed[0], &fixed[1], "fixed epoch, to capture");
 
-    // The macOS/aarch64 goldens (P3's exact fixed-epoch check, baseline doc §4).
+    // The goldens, the same on every platform (P3's exact fixed-epoch check, now
+    // bit for bit).
     let run = &fixed[0];
     let transitions: Vec<(u64, &str, &str)> = run
         .transitions
@@ -291,19 +289,19 @@ fn baseline_q13_to_capture() {
         run.final_sample.step,
         CAPTURE_TRANSITIONS[CAPTURE_TRANSITIONS.len() - 1].0
     );
-    assert_close(
-        run.final_sample.range_m,
-        CAPTURE_FINAL_RANGE_M,
-        RANGE_TOL_M,
-        "final range at capture",
+    assert_eq!(
+        run.final_sample.range_m.to_bits(),
+        CAPTURE_FINAL_RANGE_M.to_bits(),
+        "final range at capture: {} m",
+        run.final_sample.range_m
     );
     for (sample, &(step, state, range_m)) in run.checkpoints.iter().zip(SHORT_CHECKPOINTS) {
         assert_eq!((sample.step, sample.state.as_str()), (step, state));
-        assert_close(
-            sample.range_m,
-            range_m,
-            RANGE_TOL_M,
-            &format!("range at step {step}"),
+        assert_eq!(
+            sample.range_m.to_bits(),
+            range_m.to_bits(),
+            "range at step {step}: {} m",
+            sample.range_m
         );
     }
 }

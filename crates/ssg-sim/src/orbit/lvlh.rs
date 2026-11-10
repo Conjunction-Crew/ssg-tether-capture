@@ -15,6 +15,7 @@ use bevy::math::DVec3;
 use brahe::GM_EARTH;
 use nalgebra::Vector6;
 
+use crate::math;
 use crate::project::manifest::RelativePreset;
 
 /// The LVLH frame of an orbit at one instant, with ECI-axis unit vectors.
@@ -84,7 +85,7 @@ impl LvlhFrame {
 /// map shader uses `3.9860044e14`.)
 pub fn differential_gravity(origin_r_eci: DVec3, offset_eci: DVec3) -> DVec3 {
     let r = origin_r_eci + offset_eci;
-    GM_EARTH * (origin_r_eci / origin_r_eci.length().powi(3) - r / r.length().powi(3))
+    GM_EARTH * (origin_r_eci / math::powi(origin_r_eci.length(), 3) - r / math::powi(r.length(), 3))
 }
 
 /// The linearised form of [`differential_gravity`], CW's gravity-gradient term:
@@ -92,7 +93,7 @@ pub fn differential_gravity(origin_r_eci: DVec3, offset_eci: DVec3) -> DVec3 {
 pub fn cw_gravity_gradient(origin_r_eci: DVec3, offset_eci: DVec3) -> DVec3 {
     let r = origin_r_eci.length();
     let radial = origin_r_eci / r;
-    GM_EARTH / r.powi(3) * (3.0 * offset_eci.dot(radial) * radial - offset_eci)
+    GM_EARTH / math::powi(r, 3) * (3.0 * offset_eci.dot(radial) * radial - offset_eci)
 }
 
 /// The (radial, along, cross) components of a point `offset_m` from the frame's
@@ -125,7 +126,7 @@ pub fn relative_start(
 /// motion `n`: position and velocity at `t` from `(x0, v0)`, all as (radial,
 /// along, cross) components. Tests and docs only.
 pub fn cw_solution(n: f64, x0: DVec3, v0: DVec3, t: f64) -> (DVec3, DVec3) {
-    let (s, c) = (n * t).sin_cos();
+    let (s, c) = math::sin_cos(n * t);
     let nt = n * t;
     let position = DVec3::new(
         (4.0 - 3.0 * c) * x0.x + s / n * v0.x + 2.0 / n * (1.0 - c) * v0.y,

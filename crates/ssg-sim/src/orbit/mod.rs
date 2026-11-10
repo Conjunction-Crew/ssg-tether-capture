@@ -11,15 +11,14 @@ pub mod sgp4_start;
 use std::sync::PoisonError;
 
 use bevy::prelude::*;
+use brahe::Epoch;
 use brahe::eop::{StaticEOPProvider, set_global_eop_provider};
-use brahe::propagators::SGPPropagator;
-use brahe::utils::DOrbitStateProvider;
-use brahe::{Epoch, KeplerianPropagator};
 use nalgebra::Vector6;
 
 use crate::SimStep;
 use crate::orbit::cache::OrbitalCache;
 use crate::orbit::catalog::GpElements;
+use crate::orbit::kepler::TwoBody;
 use crate::recording::inputs::SimInputLog;
 use crate::session::SimSession;
 use crate::telemetry::{LogEvent, LogLevel};
@@ -34,7 +33,7 @@ pub struct Orbital {
     // unused today; the P3 component/resource audit decides
     #[allow(dead_code)]
     pub parent_entity: Option<Entity>,
-    pub propagator: Option<KeplerianPropagator>,
+    pub propagator: Option<TwoBody>,
 }
 
 // Init methods for orbital objects
@@ -99,7 +98,7 @@ pub fn init_orbitals(
                 kepler_at_start(*elements, *epoch, start_epoch)
             }
             Orbit::FromGp(gp) => match sgp4_state_eci(gp, start_epoch) {
-                Ok(state) => Some(KeplerianPropagator::from_eci(start_epoch, state, 1.0)),
+                Ok(state) => Some(TwoBody::from_eci(start_epoch, state)),
                 Err(e) => {
                     log_events.write(LogEvent {
                         level: LogLevel::Error,
@@ -131,22 +130,6 @@ pub(crate) fn start_state_eci(orbit: &Orbit, start_epoch: Epoch) -> Option<Vecto
     }
 }
 
-/// The ECI state at `start_epoch` of the propagator [`init_orbitals`] builds for
-/// `orbit`. This is [`start_state_eci`] after brahe's `KeplerianPropagator::from_eci`,
-/// which stores the state as osculating elements and so rounds an orbit with
-/// e ≲ 1e-4 to e = 0 (P9 M1). `None` when SGP4 fails.
-pub(crate) fn propagated_start_state(orbit: &Orbit, start_epoch: Epoch) -> Option<Vector6<f64>> {
-    match orbit {
-        Orbit::FromGp(gp) => {
-            let state = sgp4_state_eci(gp, start_epoch).ok()?;
-            KeplerianPropagator::from_eci(start_epoch, state, 1.0)
-                .state_eci(start_epoch)
-                .ok()
-        }
-        _ => start_state_eci(orbit, start_epoch),
-    }
-}
-
 /// Installs the zero EOP provider [`OrbitPlugin`] installs, once per process, for
 /// the code that runs SGP4 outside a sim app (the manifest reader, P9 S5).
 pub(crate) fn use_zero_eop() {
@@ -155,43 +138,21 @@ pub(crate) fn use_zero_eop() {
 }
 
 /// A two-body propagator at `start_epoch` from osculating `elements` at `epoch`.
-fn kepler_at_start(
-    elements: Vector6<f64>,
-    epoch: Epoch,
-    start_epoch: Epoch,
-) -> Option<KeplerianPropagator> {
-    let propagator =
-        KeplerianPropagator::from_keplerian(epoch, elements, brahe::AngleFormat::Radians, 1.0);
-    let eci = propagator.state_eci(start_epoch).ok()?;
-    Some(KeplerianPropagator::from_eci(start_epoch, eci, 1.0))
+fn kepler_at_start(elements: Vector6<f64>, epoch: Epoch, start_epoch: Epoch) -> Option<TwoBody> {
+    let eci = TwoBody::from_elements(epoch, elements)
+        .state_eci(start_epoch)
+        .ok()?;
+    Some(TwoBody::from_eci(start_epoch, eci))
 }
 
-/// The SGP4 state of `gp` at `epoch`, in brahe's ECI (GCRF) frame. The object
-/// name and id are not passed: synthetic ids (e.g. "P0-CHASER-1") fail brahe's
-/// international-designator check, and SGP4 does not use them.
+/// The SGP4 state of `gp` at `epoch`, in the ECI (GCRF) frame: the portable SGP4
+/// copy's TEME state ([`sgp4_start::teme_state`]) rotated by [`frames::teme_to_gcrf`],
+/// the chain brahe's `SGPPropagator::state_eci` applies (F-48).
 fn sgp4_state_eci(gp: &GpElements, epoch: Epoch) -> Result<Vector6<f64>, String> {
-    let propagator = SGPPropagator::from_omm_elements(
-        &gp.epoch_str,
-        gp.mean_motion_rev_per_day,
-        gp.eccentricity,
-        gp.inclination_deg,
-        gp.raan_deg,
-        gp.arg_perigee_deg,
-        gp.mean_anomaly_deg,
-        gp.norad_id as u64,
-        1.0,
-        None,
-        None,
-        gp.classification,
-        gp.bstar,
-        gp.mean_motion_dot,
-        gp.mean_motion_ddot,
-        gp.ephemeris_type,
-        None,
-        None,
-    )
-    .map_err(|e| e.to_string())?;
-    propagator.state_eci(epoch).map_err(|e| e.to_string())
+    Ok(frames::teme_to_gcrf(
+        sgp4_start::teme_state(gp, epoch)?,
+        epoch,
+    ))
 }
 
 pub fn cache_eci_states(

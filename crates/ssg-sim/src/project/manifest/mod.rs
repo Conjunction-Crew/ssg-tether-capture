@@ -29,7 +29,7 @@ pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// The avian3d features the workspace builds with (`Cargo.toml`); results are
 /// bit-identical only on the same build and platform (F-48).
-const AVIAN_FEATURES: &[&str] = &["simd", "parallel"];
+const AVIAN_FEATURES: &[&str] = &["enhanced-determinism", "parallel"];
 
 /// The six GP fields a body needs besides `NORAD_CAT_ID`, in load order.
 const GP_NUMBER_KEYS: [&str; 6] = [

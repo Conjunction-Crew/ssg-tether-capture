@@ -74,7 +74,7 @@ The manifest records what a run needs besides the plan: the start epoch, the act
 | `v_bar` | ahead of the target, along its velocity | behind it |
 | `r_bar` | above the target, away from the Earth | below it |
 
-The target's start state is taken as the simulation propagates it (SGP4 for a `gp` orbit), and the chaser's osculating elements at the start epoch are computed from it. The target must have a `gp` or `elements` orbit. A start that the orbit propagator would move by more than 1 mm is refused with the reason. This happens with a small R-bar offset from a near-circular target, because the propagator treats an orbit with an eccentricity below about 1e-4 as circular. `ssg-sim validate` applies the same check.
+The target's start state is taken as the simulation propagates it (SGP4 for a `gp` orbit), and the chaser's osculating elements at the start epoch are computed from it. The target must have a `gp` or `elements` orbit. A start that would land more than 1 mm from its point is refused with the reason; `ssg-sim validate` applies the same check.
 
 In the application, the chaser card's third row sets it up: **V-bar** or **R-bar**, the offset (in the toggle's length unit) and **Relative to Target**, enabled once the target has an orbit. Start writes the key, and opening the project restores it.
 

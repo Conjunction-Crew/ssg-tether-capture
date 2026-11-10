@@ -32,7 +32,7 @@ Every body starts at `WorldTime::start_epoch`; from then on it is propagated as 
 |---|---|---|
 | `object_id` | `String` | Not read today |
 | `parent_entity` | `Option<Entity>` | Not read today |
-| `propagator` | `Option<KeplerianPropagator>` | brahe's Kepler propagator, set by `init_orbitals` |
+| `propagator` | `Option<TwoBody>` | the two-body propagator (`orbit::kepler`), set by `init_orbitals` |
 
 For a body inside the physics bubble, the propagator describes the bubble frame's origin and the body's ECI state is that origin plus its `Position` and `LinearVelocity`. For a body outside it, the propagator is the body's own orbit. See [Floating Origin](../concepts/floating-origin).
 

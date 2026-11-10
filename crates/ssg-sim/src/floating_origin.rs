@@ -2,14 +2,13 @@
 
 use avian3d::prelude::{RigidBodyDisabled, RigidBodyQuery};
 use bevy::{math::DVec3, prelude::*};
-use brahe::KeplerianPropagator;
-use brahe::utils::DOrbitStateProvider;
 use nalgebra::DVector;
 
 use crate::SimStep;
 use crate::anchor::SimAnchor;
 use crate::orbit::Orbital;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::physics_bubble::PHYSICS_ENABLE_RADIUS;
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::tether::{TetherNode, TetherRoot};
@@ -113,7 +112,7 @@ pub fn target_entity_reset_origin(
                 ]);
 
             // Rebuild propagator
-            *prop = KeplerianPropagator::from_eci(world_time.epoch, new_rv, 1.0);
+            *prop = TwoBody::from_eci(world_time.epoch, new_rv);
         }
     });
 

@@ -30,7 +30,6 @@ use crate::tether::{
     chain_from_joints, spawn_debris, spawn_selected_bodies, spawn_tether,
 };
 use crate::time::ManualPhysics;
-use brahe::utils::DOrbitStateProvider;
 
 /// A plan whose `device` block (if any) is `device_json`, with tether `tether`.
 fn plan_with(tether: &str, device_json: Option<&str>) -> String {

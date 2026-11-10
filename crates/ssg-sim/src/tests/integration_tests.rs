@@ -14,7 +14,6 @@ use crate::time::{PHYS_DT, WorldTime};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use brahe::utils::DOrbitStateProvider;
 
 #[test]
 fn minimal_rigidbody_setup() {

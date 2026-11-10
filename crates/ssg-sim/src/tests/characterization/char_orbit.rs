@@ -5,8 +5,9 @@
 use crate::anchor::SimAnchor;
 use crate::capture::plan::CapturePlanLibrary;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::orbit::selection::{OrbitalSelectionState, SelectedOrbitalObject};
-use crate::orbit::{ISS_ORBIT, Orbit, Orbital};
+use crate::orbit::{ISS_ORBIT, Orbit, Orbital, frames, sgp4_start};
 use crate::project::SelectedProject;
 use crate::test_support::{
     assert_close, assert_close_vec6, enter_sim, fixed_epoch, fixed_propagator, kepler_eci,
@@ -16,9 +17,7 @@ use crate::time::{SimConfig, WorldTime};
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use brahe::propagators::SGPPropagator;
-use brahe::propagators::traits::SStatePropagator;
 use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, KeplerianPropagator};
 use nalgebra::Vector6;
 
 fn eci_of(app: &App, entity: Entity) -> Vector6<f64> {
@@ -204,7 +203,7 @@ fn q13_picks() -> (SelectedOrbitalObject, SelectedOrbitalObject) {
     )
 }
 
-fn propagator_of(app: &App, entity: Entity) -> &KeplerianPropagator {
+fn propagator_of(app: &App, entity: Entity) -> &TwoBody {
     app.world()
         .get::<Orbital>(entity)
         .expect("Orbital missing")
@@ -255,16 +254,20 @@ fn sgp4_state_at_start_epoch_matches_brahe() {
     .expect("SGP4 state");
 
     let state = propagator.state_eci(fixed_epoch()).unwrap();
-    // Bit-equal to a two-body propagator seeded with brahe's SGP4 state...
+    // Bit-equal to the portable SGP4 and TEME -> GCRF chain (F-48)...
+    let gp = q13::catalog_pick("HST", q13::HST_NORAD_ID)
+        .gp
+        .expect("the HST pick's record");
+    let portable = frames::teme_to_gcrf(
+        sgp4_start::teme_state(&gp, fixed_epoch()).expect("portable SGP4"),
+        fixed_epoch(),
+    );
     assert_eq!(
         state.map(f64::to_bits),
-        KeplerianPropagator::from_eci(fixed_epoch(), direct, 1.0)
-            .state_eci(fixed_epoch())
-            .unwrap()
-            .map(f64::to_bits),
-        "start state vs a Kepler propagator seeded from brahe's SGP4 state"
+        portable.map(f64::to_bits),
+        "start state vs the portable SGP4 and frames chain"
     );
-    // ...which returns that state up to the elements round trip.
+    // ...which is within 1e-6 m and 1e-9 m/s of brahe's SGP4 state.
     let (dr, dv) = pair_geometry(&state, &direct);
     println!("HST start state vs brahe SGP4: |dr| {dr:e} m, |dv| {dv:e} m/s");
     assert!(dr < 1e-6 && dv < 1e-9, "|dr| {dr:e} m, |dv| {dv:e} m/s");
@@ -316,10 +319,9 @@ fn from_elements_at_honours_epoch() {
         "at start",
     );
     // Elements valid 600 s earlier have moved on by 600 s of mean motion.
-    let expected_early =
-        KeplerianPropagator::from_keplerian(early, ISS_ORBIT, AngleFormat::Radians, 1.0)
-            .state_eci(fixed_epoch())
-            .unwrap();
+    let expected_early = TwoBody::from_elements(early, ISS_ORBIT)
+        .state_eci(fixed_epoch())
+        .unwrap();
     assert_close_vec6(&s_early, &expected_early, 1e-6, "600 s earlier");
     let (apart, _) = pair_geometry(&s_early, &s_start);
     println!("start states 600 s of mean motion apart: {apart:.1} m");
@@ -385,13 +387,9 @@ fn catalog_pick_edited_falls_back_to_kepler() {
     app.update();
     // The edited elements at their epoch (the start epoch here), seeded as
     // `init_orbitals` seeds every two-body start.
-    let expected = KeplerianPropagator::from_eci(
-        fixed_epoch(),
-        kepler_eci(edited.to_vec6(), edited.epoch),
-        1.0,
-    )
-    .state_eci(fixed_epoch())
-    .unwrap();
+    let expected = TwoBody::from_eci(fixed_epoch(), kepler_eci(edited.to_vec6(), edited.epoch))
+        .state_eci(fixed_epoch())
+        .unwrap();
     assert_eq!(
         propagator_of(&app, debris)
             .state_eci(fixed_epoch())

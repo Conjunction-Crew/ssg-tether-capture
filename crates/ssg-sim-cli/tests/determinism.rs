@@ -1,13 +1,17 @@
 //! The determinism contract, checked on the built `ssg-sim` binary (F-17, P4 S6):
 //! the same build, platform, project and inputs give bit-identical output, and the
-//! time warp does not change the result. Platform-independent: each test compares
-//! runs with each other, never with the macOS goldens.
+//! time warp does not change the result. Each test compares runs with each other;
+//! the to-capture test also asserts the reference state hash, on every platform.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 /// The Q13 fixture's GP epoch, as in the harness (`fixed_epoch()`).
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
+
+/// `state_hash` of the reference scenario after `--steps 196608` (in `capture`),
+/// the same on every platform.
+const CAPTURE_196608_HASH: &str = "798e4d9934d87bf2";
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -141,9 +145,9 @@ fn cli_three_runs_to_capture_identical() {
     let children: Vec<_> = runs
         .iter()
         .map(|(out, warp)| {
-            // The capture entry moved to step 191,186 (the O5 corrections; S9:
-            // 190,101), past S6's 172,032: 196,608 = 3,072 × 64 ends in `capture`,
-            // before the hold entry (196,947).
+            // The capture entry is at step 191,125 (P11; before: 191,186), past
+            // S6's 172,032: 196,608 = 3,072 × 64 ends in `capture`, before the
+            // hold entry (196,886).
             command(&project, out, &["--steps", "196608", "--warp", warp])
                 .spawn()
                 .expect("the binary starts")
@@ -188,6 +192,12 @@ fn cli_three_runs_to_capture_identical() {
             "{out}: transitions"
         );
         assert_eq!(summary["final"], summary_0["final"], "{out}: final sample");
+    }
+    for ((out, _), (_, summary)) in runs.iter().zip(&results) {
+        assert_eq!(
+            summary["state_hash"], CAPTURE_196608_HASH,
+            "{out}: state_hash"
+        );
     }
     let _ = std::fs::remove_dir_all(&project);
 }

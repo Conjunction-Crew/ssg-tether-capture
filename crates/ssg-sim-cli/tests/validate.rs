@@ -233,9 +233,10 @@ fn a_chaser_relative_to_the_target_is_accepted() {
 }
 
 #[test]
-fn a_relative_start_the_propagator_would_move_is_an_error() {
-    // P9 M1-a: an e = 0 target and R-bar 30 m start about 90 m off with brahe 1.3.4.
-    let project = valid_project("relative-refused");
+fn a_relative_start_from_a_circular_target_is_valid() {
+    // F-69: an e = 0 target and R-bar 30 m (an error before P11: brahe 1.3.4 rounded
+    // the chaser's small eccentricity and the start was about 90 m off).
+    let project = valid_project("relative-circular");
     let mut manifest = manifest();
     manifest["target"]["orbit"] = json!({ "elements": {
         "semi_major_axis_m": 6778137.0, "eccentricity": 0.0, "inclination_rad": 0.9,
@@ -248,16 +249,8 @@ fn a_relative_start_the_propagator_would_move_is_an_error() {
 
     let output = validate(&project);
 
-    assert_eq!(output.status.code(), Some(1));
-    let lines = stdout_lines(&output);
-    assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(
-        lines[0].starts_with(
-            "error: [project.json] /chaser/orbit/relative_to_target: the chaser would start "
-        ),
-        "{lines:?}"
-    );
-    assert_eq!(lines[1], "1 errors, 0 warnings");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout_lines(&output), ["0 errors, 0 warnings"]);
     let _ = std::fs::remove_dir_all(&project);
 }
 

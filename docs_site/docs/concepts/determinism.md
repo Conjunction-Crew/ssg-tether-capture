@@ -10,7 +10,7 @@ The simulation is deterministic per build and platform. This page states what th
 
 **Same build, same platform, same project and the same input sequence give bit-identical results:** the same `trajectory.csv`, byte for byte, and the same `state_hash` in `summary.json`.
 
-The reference goldens hold on macOS/aarch64; CI on every platform checks run-to-run identity instead. They come from the reference scenario (`scenario_q13`: the Hubble Space Telescope as the target, a chaser placed near it, a fixed epoch, the example plan): `rendezvous → approach` at step 6,005, `approach → final_approach` at 31,274, `final_approach → terminal` at 68,770 and `terminal → capture` at 191,186 with a range of 4.999341 m, and a 6,400-step `state_hash` of `719f23004973b0ab`. No tether body touches the debris before the capture phase; in the capture phase the rope wraps the bus.
+The reference goldens hold on macOS/aarch64; CI on every platform checks run-to-run identity instead. They come from the reference scenario (`scenario_q13`: the Hubble Space Telescope as the target, a chaser placed near it, a fixed epoch, the example plan): `rendezvous → approach` at step 6,005, `approach → final_approach` at 31,281, `final_approach → terminal` at 68,707 and `terminal → capture` at 191,125 with a range of 4.999367 m, and a 6,400-step `state_hash` of `5496fcd1fb51cb11`. No tether body touches the debris before the capture phase; in the capture phase the rope wraps the bus.
 
 ## Across platforms
 

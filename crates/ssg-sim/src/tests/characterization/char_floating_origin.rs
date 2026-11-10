@@ -6,6 +6,7 @@
 use crate::anchor::SimAnchor;
 use crate::floating_origin::MAX_ORIGIN_OFFSET;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::orbit::{ISS_ORBIT, Orbital};
 use crate::telemetry::LogLevel;
 use crate::test_support::{
@@ -17,8 +18,6 @@ use crate::time::{PHYS_DT, WorldTime};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use brahe::KeplerianPropagator;
-use brahe::utils::DOrbitStateProvider;
 use nalgebra::Vector6;
 
 /// A harness app in `SimState::Running`.
@@ -53,7 +52,7 @@ fn spawn_body(app: &mut App, position: DVec3, velocity: DVec3, offset_eci: DVec3
         .id()
 }
 
-fn orbital_propagator(app: &App, entity: Entity) -> KeplerianPropagator {
+fn orbital_propagator(app: &App, entity: Entity) -> TwoBody {
     app.world()
         .get::<Orbital>(entity)
         .expect("Orbital missing")
