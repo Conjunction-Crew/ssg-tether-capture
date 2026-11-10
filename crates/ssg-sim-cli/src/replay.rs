@@ -31,14 +31,108 @@ use ssg_sim::time::{FIXED_HZ, MAX_STEPS_PER_UPDATE, PHYS_DT, StepCap, WorldTime}
 use crate::args::ReplayArgs;
 use crate::scenario::sim_app;
 
-/// Exit 1's message (C9): `built_with.target` equality does not pin the C math
-/// library.
-pub const SAME_BUILD_DIFFERS: &str =
-    "same target and version: a defect, or a different C library or toolchain (F-48)";
+/// Which build made a recording, as far as re-simulation is concerned.
+#[derive(Debug, PartialEq)]
+enum Maker {
+    /// The same version and avian features, and the same commit when both name
+    /// one: re-simulation must be identical on every platform.
+    ThisBuild,
+    /// Another version, avian feature set or commit: one phrase per difference.
+    OtherBuild { what: Vec<String> },
+}
 
-/// Exit 3's message.
-pub const OTHER_BUILD_DIFFERS: &str = "the recording was made by another target or version: \
-     re-simulation differs across platforms and versions (F-48)";
+/// Judges `recorded` (the recording's `built_with`) against `current` (this
+/// build). `target` never enters: the same version gives the same result on
+/// every platform. The commits are compared only when both are present, as plain
+/// strings (`-dirty` is part of the name).
+fn judge(recorded: &BuiltWith, current: &BuiltWith) -> Maker {
+    let mut what = Vec::new();
+    if recorded.app_version != current.app_version {
+        what.push(format!(
+            "version {} (this build is {})",
+            recorded.app_version, current.app_version
+        ));
+    }
+    if recorded.avian_features != current.avian_features {
+        what.push(format!(
+            "avian features [{}] (this build has [{}])",
+            recorded.avian_features.join(", "),
+            current.avian_features.join(", ")
+        ));
+    }
+    if let (Some(recorded), Some(current)) = (&recorded.commit, &current.commit)
+        && recorded != current
+    {
+        what.push(format!("commit {recorded} (this build is {current})"));
+    }
+    if what.is_empty() {
+        Maker::ThisBuild
+    } else {
+        Maker::OtherBuild { what }
+    }
+}
+
+/// `version V, commit C` of a build (`commit unknown` without one).
+fn version_and_commit(built: &BuiltWith) -> String {
+    format!(
+        "version {}, commit {}",
+        built.app_version,
+        built.commit.as_deref().unwrap_or("unknown")
+    )
+}
+
+/// The `built with:` line: what differs from this build (version, platform,
+/// avian features), then the recording's commit when it names one.
+fn built_with_line(recorded: &BuiltWith, current: &BuiltWith) -> String {
+    let mut parts = recorded.differences(current);
+    if let Some(commit) = &recorded.commit {
+        match &current.commit {
+            Some(own) if own == commit => {}
+            Some(own) => parts.push(format!("commit {commit} (this build is {own})")),
+            None => parts.push(format!("commit {commit} (this build names none)")),
+        }
+    }
+    match (parts.is_empty(), &recorded.commit) {
+        (true, Some(commit)) => format!("built with: this build (commit {commit})"),
+        (true, None) => "built with: this build".to_string(),
+        (false, _) => format!("built with: {}", parts.join("; ")),
+    }
+}
+
+/// Exit 1's message: the recording was made by this build and re-simulates
+/// differently, on any platform.
+fn defect_message(recorded: &BuiltWith, current: &BuiltWith) -> String {
+    let mut message = format!(
+        "the recording was made by this build ({}, on {}) and does not re-simulate \
+         identically here ({}): a defect; please report it with the recording.",
+        version_and_commit(recorded),
+        recorded.target,
+        current.target
+    );
+    let dirty = |built: &BuiltWith| {
+        built
+            .commit
+            .as_deref()
+            .is_some_and(|c| c.ends_with("-dirty"))
+    };
+    if dirty(recorded) || dirty(current) {
+        message.push_str(
+            "\none of the two builds had uncommitted changes, which the commit name cannot \
+             tell apart.",
+        );
+    }
+    message
+}
+
+/// Exit 3's message: another build made the recording.
+fn other_build_message(recorded: &BuiltWith, current: &BuiltWith) -> String {
+    format!(
+        "the recording was made by another build ({}; this build is {}): a difference is \
+         expected. Re-simulation is identical only for the same version.",
+        version_and_commit(recorded),
+        version_and_commit(current)
+    )
+}
 
 /// The first differing body of a frame.
 struct Difference {
@@ -192,12 +286,8 @@ pub fn replay(args: &ReplayArgs) -> u8 {
         (last - first) as f64 / FIXED_HZ,
         manifest.keyframe_interval_steps
     );
-    let differences = manifest.built_with.differences(&BuiltWith::current());
-    if differences.is_empty() {
-        println!("built with: this build");
-    } else {
-        println!("built with: {}", differences.join("; "));
-    }
+    let current = BuiltWith::current();
+    println!("{}", built_with_line(&manifest.built_with, &current));
     if args.frames_only {
         println!("frames only: the files agree; not re-simulated");
         return 0;
@@ -235,14 +325,22 @@ pub fn replay(args: &ReplayArgs) -> u8 {
     if let Some((largest, step, body)) = comparison.largest {
         println!("largest |Δposition|: {largest:e} m (frame step {step}, body {body})");
     }
-    if differences.is_empty() {
-        println!("{SAME_BUILD_DIFFERS}");
-        1
-    } else {
-        println!("{OTHER_BUILD_DIFFERS}");
-        3
+    match judge(&manifest.built_with, &current) {
+        Maker::ThisBuild => {
+            println!("{}", defect_message(&manifest.built_with, &current));
+            1
+        }
+        Maker::OtherBuild { what } => {
+            println!("made by another build: {}", what.join("; "));
+            println!("{}", other_build_message(&manifest.built_with, &current));
+            3
+        }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/replay.rs"]
+mod tests;
 
 /// Runs the recorded session from step 0 to the last frame and compares each
 /// frame as it is reached.
