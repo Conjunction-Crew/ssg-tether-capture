@@ -92,26 +92,26 @@ checks the recording's files, re-simulates the run from step 0 with the recorded
 
 ```text
 recording my-project/recordings/r: 78 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
-built with: this build
+built with: this build (commit 0123456789ab)
 re-simulated steps 0–130 with k = 1: frames: 5, identical: 5
 ```
 
-On a difference it prints the first one (frame step, body, |Δposition|, |Δvelocity|) and the largest |Δposition|. `--frames-only` checks the files without re-simulating. A recording that has no `project` in its manifest still plays, but it cannot be re-simulated.
+The `built with:` line names what differs from the running build (version, platform, avian features) and the recording's commit when it has one. On a difference it prints the first one (frame step, body, |Δposition|, |Δvelocity|) and the largest |Δposition|. `--frames-only` checks the files without re-simulating. A recording that has no `project` in its manifest still plays, but it cannot be re-simulated.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | Every frame is identical. |
-| 1 | A difference, although the recording was made by this target and version: **"same target and version: a defect, or a different C library or toolchain"**. The same target does not pin the platform's C math library: two Linux/x86_64 machines with different C library versions may legitimately differ. |
-| 3 | A difference, and the recording was made by another target or version. This is expected across platforms and versions ([Determinism](./determinism#across-platforms)). |
+| 1 | A difference, although this build made the recording: the same version and avian features, and the same commit when both builds name one. The platform does not matter: the same version re-simulates identically on Linux, macOS and Windows, so this is a defect: **"the recording was made by this build (version V, commit C, on TARGET) and does not re-simulate identically here (TARGET'): a defect; please report it with the recording."** When either commit ends in `-dirty`, one more line says that a build with uncommitted changes cannot be told apart by its commit name. |
+| 3 | A difference, and another version or commit made the recording: **"the recording was made by another build (version V, commit C; this build is version V', commit C'): a difference is expected. Re-simulation is identical only for the same version."** An older recording replayed by a newer build is exit 3. |
 | 2 | Usage error or invalid recording, including an app recording whose input log lacks the spawn-update step count (a command-line recording without it is re-simulated with k = 1). |
 
 ### What re-simulation promises
 
-Playback is identical on every platform. On the machine and the build that recorded it, a recording re-simulates bit for bit, whether `ssg-sim run --record` or the app made it. The simulation owns the debris collider and its mass properties, so the command line and the app simulate the same world, tether–debris contacts included. An app recording of the Hubble capture, made through the wrap and the hold with the warp changed four times, replays with every frame identical.
+Playback is identical on every platform. A recording made by this version re-simulates bit for bit on Linux, macOS and Windows, whether `ssg-sim run --record` or the app made it ([Determinism](./determinism#across-platforms)). The simulation owns the debris collider and its mass properties, so the command line and the app simulate the same world, tether–debris contacts included. An app recording of the Hubble capture, made through the wrap and the hold with the warp changed four times, replays with every frame identical.
 
-The recording's `built_with` names the target and the crate version, not the commit. Two builds of the same version (for example two branches before a release) both count as "this build", so a recording replayed on a different build of the same version that differs is reported with exit 1.
+The recording's `built_with` names the version, the avian features, the platform it was made on and, from version 0.5 on, the commit (`built_with.commit`: `git rev-parse --short=12 HEAD`, with `-dirty` when tracked files had uncommitted changes). Replay judges by the version and the avian features, and by the commit when the recording and the running build both name one. Two builds of the same version from different commits (for example two branches before a release) are told apart, so a difference between them is exit 3. A recording without a commit (made before 0.5, or by a build made outside a git checkout) is judged by the version and the avian features. Versions before 0.5 cannot read a recording that names a commit.
 
-On another machine, platform or build, re-simulation may differ, and `ssg-sim replay` reports by how much.
+A recording made by another version or commit may re-simulate differently, and `ssg-sim replay` reports by how much.
 
 ## Unfinished recordings
 

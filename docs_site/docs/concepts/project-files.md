@@ -47,7 +47,7 @@ The manifest records what a run needs besides the plan: the start epoch, the act
       "epoch_utc": "2026-04-03T16:03:47.002464Z"
     } }
   },
-  "built_with": { "app_version": "0.4.0-rc.1", "target": "aarch64-macos", "avian_features": ["simd", "parallel"] }
+  "built_with": { "app_version": "0.5.0-rc.1", "target": "aarch64-macos", "avian_features": ["enhanced-determinism", "parallel"], "commit": "0123456789ab" }
 }
 ```
 
@@ -62,7 +62,7 @@ The manifest records what a run needs besides the plan: the start epoch, the act
 | `source` | Where the orbit came from (dataset path and NORAD id). Provenance only; a missing dataset file is a warning. |
 | `mass_kg` | Mass in kg, greater than 0. The target's is the debris's (2,500 kg without it); the chaser's is the tether root's (the root is the chaser; without it the root takes the plan's `end_mass_kg`). |
 | `inertia_kg_m2` | Inertia tensor in kg m², row-major: finite, symmetric and positive definite. It is taken in the simulation's ECI-aligned axes at spawn, because every body starts with the identity attitude and there is no attitude model. The target's is the debris's (without it, that of its collider boxes at its mass). The chaser's is loaded onto the root and has no effect while the root's rotation is locked ([Tether System](./tether-system#the-rope)). |
-| `built_with` | The build that wrote the file. Only `ssg-sim validate` reads it, to say when the build or platform differs: results are bit-identical only on the same build and platform ([Determinism](./determinism)). |
+| `built_with` | The build that wrote the file: `app_version`, `target` (the platform), `avian_features` and, optionally, `commit` (`git rev-parse --short=12 HEAD`, with `-dirty` when tracked files had uncommitted changes; absent when the build was made outside a git checkout). Only `ssg-sim validate` reads it, to say when the build differs: results are bit-identical for the same version on every platform ([Determinism](./determinism)). |
 | `recording` | Optional: the project's recording settings ([below](#the-recording-block)). Absent: recordings start and stop only by hand. |
 
 ### A chaser relative to the target
@@ -168,6 +168,7 @@ Every rule above is checked when a plan or manifest is read, and each problem is
 - Every file type carries an integer `schema_version`: plans, `project.json`, the recording manifest and `config.json` (a config without it is read as before).
 - A reader **refuses** a `schema_version` it does not know, and refuses **unknown keys**, naming the key. Refusing is deliberate: a file that is read with a part ignored could simulate something other than what it says.
 - Inside 0.4.x a schema only grows by **optional** keys whose absence reproduces the earlier behaviour. New keys can still appear while v0.4.0 is in its release-candidate line, so a file written by a later candidate can be refused by an earlier one, with the key named. From v0.4.0 on, patch releases add no keys, so a file written by any 0.4.x opens in every 0.4.y.
+- Version 0.5 adds the optional key `commit` to `built_with` (in `project.json` and in the recording manifest). 0.5 reads every 0.4.x file; a 0.4.x build refuses a file written by 0.5 that carries the key, and names it.
 - A change that breaks this needs `schema_version` 2 and a conversion from 1.
 
 ## Exports
@@ -218,7 +219,7 @@ The manifest says what was recorded and how to read the rest:
 | Key | Meaning |
 |---|---|
 | `schema_version` | `1` |
-| `built_with` | The build that recorded (`app_version`, `target`, `avian_features`). A recording re-simulates bit for bit only on the machine that recorded it ([Recordings](./recordings#what-re-simulation-promises)). |
+| `built_with` | The build that recorded (`app_version`, `target`, `avian_features` and, optionally, `commit`, as in `project.json`). A recording re-simulates bit for bit with the same version (and commit, when both builds name one) on Linux, macOS and Windows ([Recordings](./recordings#what-re-simulation-promises)). |
 | `plan_id`, `plan` | The id of the capture plan and a copy of it (schema v1) as it was when the recording started. |
 | `start_step`, `start_epoch_utc` | The simulation step and epoch of the first frame. |
 | `keyframe_interval_steps` | Steps between two frames (K); at least 1. |
@@ -285,8 +286,8 @@ Before sending, run `ssg-sim validate <project>`: it checks every file the recei
 
 What the receiver gets:
 
-- **The same build on the same platform** reproduces every run bit for bit, and re-simulates the recordings frame for frame.
-- **Another platform or version** runs the same scenario, but the trajectory may differ, from the last bits at first to metres later in a contact-rich capture ([Determinism](./determinism#across-platforms)). Recordings still play back exactly as recorded on every platform; `ssg-sim replay` reports the difference when it re-simulates them.
+- **The same version, on Linux, macOS or Windows,** reproduces every run bit for bit, and re-simulates the recordings frame for frame ([Determinism](./determinism#across-platforms)).
+- **Another version** runs the same scenario, but the trajectory may differ, from the last bits at first to metres later in a contact-rich capture. Recordings still play back exactly as recorded; `ssg-sim replay` reports the difference when it re-simulates them (exit 3).
 - **Any 0.4.x** opens a project written by any other 0.4.x ([Versions and compatibility](#versions-and-compatibility)).
 
 ## JSON Schemas

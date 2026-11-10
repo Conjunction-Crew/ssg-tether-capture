@@ -1,7 +1,8 @@
 //! `ssg-sim replay` (P7 S4, R7): a recording re-simulates bit for bit on the
 //! machine that made it, whatever the spawn-update step count k (C1), across
 //! floating-origin resets (C2) and with an input applied in a zero-step update; a
-//! changed DOUBLE gives exit 1 (C9), another build exit 3, a missing
+//! changed DOUBLE gives exit 1 when this build made the recording, on whatever
+//! platform, and exit 3 when another version or commit made it; a missing
 //! `SessionStart` k = 1 for `source: cli` and exit 2 otherwise. Recordings are made
 //! in this process by the library recorder and the file sink, or by `ssg-sim run
 //! --record`, and compared with themselves, so the tests hold on every platform.
@@ -17,7 +18,7 @@ use ssg_sim::capture::plan::CapturePlanLibrary;
 use ssg_sim::orbit::cache::OrbitalCache;
 use ssg_sim::orbit::selection::OrbitalSelectionState;
 use ssg_sim::project::SelectedProject;
-use ssg_sim::project::manifest::ProjectManifest;
+use ssg_sim::project::manifest::{BuiltWith, ProjectManifest};
 use ssg_sim::project::recording::{RecordingBodyRole, RecordingSource};
 use ssg_sim::recording::RecordingSink;
 use ssg_sim::recording::files::{
@@ -36,8 +37,15 @@ use ssg_sim::time::{PHYS_DT, WorldTime};
 /// The Q13 fixture's GP epoch, as in the harness (`fixed_epoch()`).
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
 
-const SAME_BUILD_DIFFERS: &str =
-    "same target and version: a defect, or a different C library or toolchain (F-48)";
+/// Exit 1's message: this build made the recording, and it differs.
+const DEFECT: &str = "and does not re-simulate identically here (";
+/// The end of exit 1's message.
+const DEFECT_END: &str = "): a defect; please report it with the recording.";
+/// The end of exit 3's message.
+const OTHER_BUILD: &str =
+    "a difference is expected. Re-simulation is identical only for the same version.";
+/// This build's version.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -267,7 +275,7 @@ fn recordings_with_each_spawn_update_step_count_replay_exactly() {
         out.contains("with k = 1: frames: 4, identical: ") && !out.contains(&identical(4)),
         "{out}"
     );
-    assert!(out.contains(SAME_BUILD_DIFFERS), "{out}");
+    assert!(out.contains(DEFECT) && out.contains(DEFECT_END), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -379,6 +387,35 @@ fn a_run_record_recording_replays_and_each_edit_gives_its_exit_code() {
         out.contains(&format!("with k = 1: {}", identical(5))),
         "{out}"
     );
+    // The recording names this build's commit, when the build has one, and replay
+    // shows it.
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(original.join("manifest.json")).unwrap())
+            .unwrap();
+    let own_commit = BuiltWith::current().commit;
+    assert_eq!(
+        manifest["built_with"].get("commit").and_then(Value::as_str),
+        own_commit.as_deref()
+    );
+    if let Some(commit) = &own_commit {
+        assert!(
+            out.contains(&format!("built with: this build (commit {commit})")),
+            "{out}"
+        );
+    }
+
+    // A manifest without `commit` (made before 0.5, or outside git) reads and replays.
+    let no_commit = recordings.join("no-commit");
+    copy_dir(&original, &no_commit);
+    edit_manifest(&no_commit, |m| {
+        m["built_with"].as_object_mut().unwrap().remove("commit");
+    });
+    println!("built_with.commit removed:");
+    let out = expect_exit(&replay(&no_commit, &[]), 0);
+    assert!(
+        out.contains("built with: this build\n") && out.contains(&identical(5)),
+        "{out}"
+    );
 
     println!("--frames-only:");
     let out = expect_exit(&replay(&original, &["--frames-only"]), 0);
@@ -468,22 +505,65 @@ fn a_run_record_recording_replays_and_each_edit_gives_its_exit_code() {
         out.contains("first difference: frame step 34, body 5 (tether_node), |Δposition| 0e0 m"),
         "{out}"
     );
-    assert!(out.contains(SAME_BUILD_DIFFERS), "{out}");
+    assert!(
+        out.contains("the recording was made by this build (version ")
+            && out.contains(DEFECT)
+            && out.contains(DEFECT_END),
+        "{out}"
+    );
 
-    // The same difference in a recording another platform made: exit 3.
+    // The same difference in a recording another platform made: still exit 1, a
+    // defect (the same version gives the same result on every platform).
     edit_manifest(&flipped, |m| {
         m["built_with"]["target"] = "riscv64-plan9".into()
     });
     println!("the same, with built_with.target edited:");
-    let out = expect_exit(&replay(&flipped, &[]), 3);
+    let out = expect_exit(&replay(&flipped, &[]), 1);
     assert!(
         out.contains("built with: platform riscv64-plan9 (this build is"),
         "{out}"
     );
     assert!(
-        out.contains("(F-48)") && !out.contains(SAME_BUILD_DIFFERS),
+        out.contains(", on riscv64-plan9) and does not re-simulate identically here (")
+            && out.contains(DEFECT_END),
         "{out}"
     );
+
+    // Another version made it: exit 3, naming both versions.
+    edit_manifest(&flipped, |m| {
+        m["built_with"]["app_version"] = "0.0.1".into()
+    });
+    println!("the same, with built_with.app_version edited:");
+    let out = expect_exit(&replay(&flipped, &[]), 3);
+    assert!(
+        out.contains("the recording was made by another build (version 0.0.1, commit ")
+            && out.contains(&format!("; this build is version {VERSION}, commit "))
+            && out.contains(OTHER_BUILD),
+        "{out}"
+    );
+    assert!(!out.contains(DEFECT), "{out}");
+
+    // Another commit made it: exit 3 when this build names its commit too (built
+    // outside git it does not, and the version decides: exit 1).
+    edit_manifest(&flipped, |m| {
+        m["built_with"]["app_version"] = VERSION.into();
+        m["built_with"]["commit"] = "000000000000".into();
+    });
+    println!("the same version, with built_with.commit edited:");
+    match &own_commit {
+        Some(own) => {
+            let out = expect_exit(&replay(&flipped, &[]), 3);
+            assert!(
+                out.contains(&format!(
+                    "made by another build: commit 000000000000 (this build is {own})"
+                )) && out.contains(OTHER_BUILD),
+                "{out}"
+            );
+        }
+        None => {
+            expect_exit(&replay(&flipped, &[]), 1);
+        }
+    }
     let _ = std::fs::remove_dir_all(&project);
 }
 

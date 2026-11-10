@@ -44,8 +44,10 @@ recording under <project-dir>/recordings; it prints
 
 replay checks a recording's files and re-simulates it from step 0 with its inputs,
 comparing every frame bit for bit (--frames-only: check the files only). Exit 0: every
-frame identical; 1: a difference with the same target and version; 3: a difference with
-another target or version (expected, F-48); 2: usage error or invalid recording.";
+frame identical; 1: a difference although this build made the recording (same version,
+avian features and, when both name one, commit; on any platform): a defect; 3: a
+difference, and another version or commit made it (expected); 2: usage error or
+invalid recording.";
 
 pub const DEFAULT_PLAN: &str = "example_plan";
 

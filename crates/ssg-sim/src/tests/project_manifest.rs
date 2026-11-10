@@ -501,6 +501,7 @@ fn a_manifest_from_another_build_gets_a_note() {
         app_version: "0.0.1".to_string(),
         target: "nowhere-os".to_string(),
         avian_features: vec!["parallel".to_string()],
+        commit: None,
     });
     save_manifest(dir.path(), &manifest).unwrap();
 
@@ -510,7 +511,7 @@ fn a_manifest_from_another_build_gets_a_note() {
     assert_eq!(
         report.notes,
         [format!(
-            "[project.json] /built_with: written by app version 0.0.1 (this build is {}), platform nowhere-os (this build is {}), avian features [parallel] (this build has [enhanced-determinism, parallel]); results are bit-identical only on the same build and platform",
+            "[project.json] /built_with: written by app version 0.0.1 (this build is {}), platform nowhere-os (this build is {}), avian features [parallel] (this build has [enhanced-determinism, parallel]); re-simulation is identical only for the same version",
             running.app_version, running.target
         )]
     );
