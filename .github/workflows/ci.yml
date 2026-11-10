@@ -141,6 +141,13 @@ jobs:
         # Every clippy warning fails the job.
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Platform-math guard
+        # The simulation gives the same bits on Linux, macOS and Windows only if
+        # its library code stays off each platform's math library: the self-test
+        # proves each check fires on a seeded violation, then the tree is checked
+        # (std float methods, brahe items, dependency features).
+        run: sh scripts/check_platform_math.sh --self-test && sh scripts/check_platform_math.sh
+
       - name: ssg-sim has no render dependency
         # The simulation core must stay headless: none of the renderer, window,
         # UI or egui crates may appear in its normal dependency tree.
