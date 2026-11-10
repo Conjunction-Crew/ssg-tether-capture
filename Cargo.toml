@@ -14,7 +14,7 @@ description = "Orbital tether capture simulation and mission planning."
 
 [workspace.dependencies]
 bevy = { version = "0.18.0", default-features = false }
-avian3d = { version = "0.6.1", default-features = false, features = ["simd", "parallel", "3d", "f64", "parry-f64", "xpbd_joints", "collider-from-mesh", "bevy_scene"] }
+avian3d = { version = "0.6.1", default-features = false, features = ["enhanced-determinism", "parallel", "3d", "f64", "parry-f64", "xpbd_joints", "collider-from-mesh", "bevy_scene"] }
 bevy_egui = "0.39.1"
 egui_plot = "0.34.1"
 serde = { version = "1.0.228", features = ["derive"] }
