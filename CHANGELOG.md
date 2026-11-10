@@ -20,6 +20,11 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Changed
+- Results are now the same on Linux, macOS and Windows for the same version: the orbit propagation, SGP4, the TEME to GCRF frame conversion and the simulation's own trigonometry run on portable math, and the physics engine runs with its enhanced-determinism option. Every reference number moved once: the reference scenario now enters `capture` at step 191,125 with a range of 4.999367 m (before: step 191,186, 4.999341 m, on macOS only) and its 6,400-step state hash is `5496fcd1fb51cb11` (before: `719f23004973b0ab`). A recording made by an earlier version re-simulates with a difference from the first steps.
+
+### Fixed
+- A chaser placed relative to a near-circular or equatorial target (Relative to Target, `relative_to_target`) starts on its point: a small eccentricity is no longer rounded to zero, so an R-bar start of 30 m from a circular target, which was refused because it would have started about 90 m off, is now accepted and lands within a micrometre.
 
 ## [v0.4.1] - 2026-11-09
 

@@ -149,4 +149,4 @@ ssg-sim run my-project --target 20580 --chaser 99901 \
   --epoch 2026-04-03T16:03:47.002464 --stop-at-capture
 ```
 
-On macOS (Apple Silicon) this ends in `capture` at step 191186, range 4.999341 m, with the transitions at steps 6005 (`approach`), 31274 (`final_approach`), 68770 (`terminal`) and 191186 (`capture`); a release build takes about 75 s on an M-series Mac. Linux and Windows reach the same phases at slightly different steps ([Determinism](../concepts/determinism#across-platforms)). With `--epoch now` (the default) the start epoch is the wall clock, as in the app, and the capture step varies from run to run.
+This ends in `capture` at step 191125, range 4.999367 m, with the transitions at steps 6005 (`approach`), 31281 (`final_approach`), 68707 (`terminal`) and 191125 (`capture`), on Linux, macOS and Windows alike; a release build takes about 75 s on an M-series Mac. With `--epoch now` (the default) the start epoch is the wall clock, as in the app, and the capture step varies from run to run.

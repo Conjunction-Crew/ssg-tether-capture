@@ -127,7 +127,7 @@ The shipped `example_plan` captures the Hubble debris in six phases:
 
 ## Measured behaviour
 
-On the reference Hubble scenario (`scenario_q13`, fixed epoch, macOS/aarch64), with the default rope:
+On the reference Hubble scenario (`scenario_q13`, fixed epoch; the same on every platform), with the default rope:
 
 | Measure | Value |
 |---|---|
@@ -135,13 +135,13 @@ On the reference Hubble scenario (`scenario_q13`, fixed epoch, macOS/aarch64), w
 | the same: root-to-tail distance; tether–tether touching pairs | 20.0141 m (+0.07 %); 0 |
 | the same: the chain's speed against F/m | −0.167 % |
 | A 10-minute rest in R-bar: fastest node relative to the root | 0.0098 m/s |
-| Terminal phase, sphere at least 20 m: the ends' separation, min / mean | 11.65 / 12.08 m |
+| Terminal phase, sphere at least 20 m: the ends' separation, min / mean | 11.10 / 12.23 m |
 | Terminal phase: root-to-tail touches while the rope turns onto the circle | 0 |
 | Terminal phase: the root's radius error; its closing rate | +0.005 to +0.630 m; 0.014 to 0.073 m/s (the sphere shrinks at 0.05 m/s) |
-| Terminal phase: force reversals, root / tail | 3 / 1 |
+| Terminal phase: force reversals, root / tail | 0 / 1 |
 | First tether–debris contact | in the capture phase (none before) |
-| Capture phase: the wrap | 1.25 turns, on the bus only |
-| Hold phase: the ends' speed after the first minute | 0.003 m/s or less |
+| Capture phase: the wrap | 1.27 turns, on the bus only |
+| Hold phase: the ends' speed after the first minute | 0.005 m/s or less |
 | Wall time per step (the test harness, Apple M1) | 0.50 ms |
 
 The phase steps and the state hashes of this run are the reference goldens ([Determinism](./determinism#across-platforms)).
