@@ -20,7 +20,11 @@ GitHub Release description.
 
 ## [Unreleased]
 
+### Added
+- `built_with` in `project.json` and in a recording's `manifest.json` gains the optional key `commit`: the commit the build was made from (`git rev-parse --short=12 HEAD`, with `-dirty` when tracked files had uncommitted changes; absent in a build made outside a git checkout). Files without it still read. v0.4.x cannot read a file that carries it: it refuses the unknown key and names it.
+
 ### Changed
+- `ssg-sim replay`'s exit codes 1 and 3 now follow the cross-platform contract. Exit 1 (before: a difference with the same target and version, "a defect, or a different C library or toolchain") now means a difference although this build made the recording (the same version and avian features, and the same commit when both name one), on any platform: a defect to report. Exit 3 (before: a difference with another target or version, expected across platforms) now means another version or commit made it; another platform alone no longer gives exit 3. The `built with:` line shows the recording's commit, and `ssg-sim validate`'s note on a project written by another build no longer says results differ by platform.
 - Results are now the same on Linux, macOS and Windows for the same version: the orbit propagation, SGP4, the TEME to GCRF frame conversion and the simulation's own trigonometry run on portable math, and the physics engine runs with its enhanced-determinism option. Every reference number moved once: the reference scenario now enters `capture` at step 191,125 with a range of 4.999367 m (before: step 191,186, 4.999341 m, on macOS only) and its 6,400-step state hash is `5496fcd1fb51cb11` (before: `719f23004973b0ab`). A recording made by an earlier version re-simulates with a difference from the first steps.
 
 ### Fixed

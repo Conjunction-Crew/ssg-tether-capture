@@ -51,8 +51,10 @@ recording under <project-dir>/recordings; it prints
 
 replay checks a recording's files and re-simulates it from step 0 with its inputs,
 comparing every frame bit for bit (--frames-only: check the files only). Exit 0: every
-frame identical; 1: a difference with the same target and version; 3: a difference with
-another target or version (expected, F-48); 2: usage error or invalid recording.
+frame identical; 1: a difference although this build made the recording (same version,
+avian features and, when both name one, commit; on any platform): a defect; 3: a
+difference, and another version or commit made it (expected); 2: usage error or
+invalid recording.
 ```
 
 A fixed step is 1/64 s of simulation time. `--steps` and `--sample-every` count fixed steps, whatever the warp, so runs at different warps sample the same steps and write the same `trajectory.csv`. One update runs `--warp` fixed steps (at most 64, the simulation's per-update cap). `--stop-at-capture` stops at the end of the update in which `capture` was reached, so at `--warp 16` the run may go on up to 15 steps past the capture step; the transition steps in `summary.json` are exact at any warp.
@@ -91,7 +93,7 @@ checks the recording's files, re-simulates it from step 0 with the scenario, pla
 
 ```text
 recording my-project/recordings/r: 78 bodies, 5 frames, steps 2–130 (2.00 s), a frame every 32 steps
-built with: this build
+built with: this build (commit 0123456789ab)
 re-simulated steps 0–130 with k = 1: frames: 5, identical: 5
 ```
 
@@ -100,12 +102,12 @@ On a difference it also prints the first one and the largest:
 ```text
 first difference: frame step 34, body 5 (tether_node), |Δposition| 0e0 m, |Δvelocity| 1.1102230246251565e-16 m/s
 largest |Δposition|: 0e0 m (frame step 34, body 5)
-same target and version: a defect, or a different C library or toolchain (F-48)
+the recording was made by this build (version 0.5.0-rc.1, commit 0123456789ab, on aarch64-macos) and does not re-simulate identically here (x86_64-linux): a defect; please report it with the recording.
 ```
 
-`--frames-only` checks the files and does not re-simulate. The exit code is 0 when every frame is identical; 1 for a difference although the recording was made by this target and version (a defect, or a different C library or toolchain); 3 for a difference when it was made by another target or version (expected across platforms and versions); 2 for a usage error or an invalid recording, including an app recording without the spawn-update step count.
+`--frames-only` checks the files and does not re-simulate. The exit code is 0 when every frame is identical; 1 for a difference although this build made the recording (the same version and avian features, and the same commit when both builds name one), on whatever platform: a defect; 3 for a difference when another version or commit made it (expected: "the recording was made by another build (…): a difference is expected. Re-simulation is identical only for the same version."), which is also what an older recording gives on a newer build; 2 for a usage error or an invalid recording, including an app recording without the spawn-update step count.
 
-On the machine and the build that recorded it, a recording replays with exit 0, whether `ssg-sim run --record` or the app made it; see [Recordings](../concepts/recordings#what-re-simulation-promises).
+A recording made by the same version replays with exit 0 on Linux, macOS and Windows, whether `ssg-sim run --record` or the app made it; see [Recordings](../concepts/recordings#what-re-simulation-promises).
 
 ## Checking a project
 
@@ -124,7 +126,7 @@ error: [project.json] /active_plan: no plan `nope` in the project or the example
 - `error:` lines are problems that stop a run: a file that is not valid JSON, an unknown key (named), a `schema_version` this build does not read, a value out of range, an orbit that gives no initial state, an `active_plan` that is neither a project plan nor an example plan, and the fields the manifest has but that are applied from a later release (`ssg-sim` says "applied from v0.4.0-rc.4").
 - `warning:` lines are things that do not stop a run: a plan file in the old (v0) format that was migrated in memory, with what the migration could not carry over, a `source.dataset` that no longer exists, a `recording.auto_start_phase` that names no phase of the active plan, and an unfinished recording (`<name>.partial`, left by a crash; it cannot be recovered).
 - For each recording, `error:` lines name what makes it unreadable (a missing `keyframes.parquet`, a row or step count that does not match the manifest, frames out of order), and an `info:` line gives its frames, bodies and steps.
-- `info:` lines say that the folder has no `project.json` (it is read as a v0 project), has no plan files, or that `project.json` was written by another build or platform (results are bit-identical only on the same build and platform).
+- `info:` lines say that the folder has no `project.json` (it is read as a v0 project), has no plan files, or that `project.json` was written by another build (version, platform or avian features; re-simulation is identical only for the same version).
 
 The exit code is 0 without errors, 1 with errors and 2 for a usage error (no directory, an unknown option). Nothing is written or changed.
 
@@ -135,7 +137,7 @@ The exit code is 0 without errors, 1 with errors and 2 for a usage error (no dir
 - `ephemeris.oem`: a CCSDS Orbit Ephemeris Message (OEM 2.0, KVN text) with two segments, the target and then the chaser (the tether root), one state at every `--sample-every` fixed step. `REF_FRAME = GCRF`, `CENTER_NAME = EARTH`, `TIME_SYSTEM = UTC`; `OBJECT_NAME` is the body's label and `OBJECT_ID` the GP record's own (for Hubble `1990-037B`), else the label; `CREATION_DATE` is the run's start epoch, so the same run writes the same bytes. Positions are in km with 6 decimals (1 mm), velocities in km/s with 9 decimals (1 µm/s). The tests read it back with brahe's OEM parser. A run that stops before its first sample writes no `ephemeris.oem`.
 - `state_hash`: a 64-bit FNV-1a hash (16 hex digits) of the sampled state: per sample, the step and the tether root's and the debris's position and velocity, bit for bit. Two runs with the same hash sampled bit-identical states.
 
-What a fixed `--epoch` guarantees, and what differs between platforms, is described in [Determinism](../concepts/determinism).
+What a fixed `--epoch` guarantees, on every platform, is described in [Determinism](../concepts/determinism).
 
 The exit code is 0 on success, 1 on a failure (missing plan, NORAD id not found, an invalid `project.json`, no capture with `--stop-at-capture`) and 2 for a usage error.
 

@@ -17,26 +17,26 @@ const ED: &[&str] = &["enhanced-determinism", "parallel"];
 /// the commit decide; the platform never does.
 #[test]
 fn judge_decides_by_version_features_and_commit_never_by_target() {
-    let current = build("0.5.0", "x86_64-linux", ED, Some("0123456789ab"));
+    let current = build("0.5.0", "riscv64-linux", ED, Some("0123456789ab"));
     let other = |what: &[&str]| Maker::OtherBuild {
         what: what.iter().map(|w| w.to_string()).collect(),
     };
     let cases: [(&str, BuiltWith, Maker); 9] = [
         (
             "same everything",
-            build("0.5.0", "x86_64-linux", ED, Some("0123456789ab")),
+            build("0.5.0", "riscv64-linux", ED, Some("0123456789ab")),
             Maker::ThisBuild,
         ),
         (
             "other version",
-            build("0.4.0", "x86_64-linux", ED, Some("0123456789ab")),
+            build("0.4.0", "riscv64-linux", ED, Some("0123456789ab")),
             other(&["version 0.4.0 (this build is 0.5.0)"]),
         ),
         (
             "other avian features",
             build(
                 "0.5.0",
-                "x86_64-linux",
+                "riscv64-linux",
                 &["simd", "parallel"],
                 Some("0123456789ab"),
             ),
@@ -51,12 +51,12 @@ fn judge_decides_by_version_features_and_commit_never_by_target() {
         ),
         (
             "both commits, different",
-            build("0.5.0", "x86_64-linux", ED, Some("ba9876543210")),
+            build("0.5.0", "riscv64-linux", ED, Some("ba9876543210")),
             other(&["commit ba9876543210 (this build is 0123456789ab)"]),
         ),
         (
             "the same commit, one dirty",
-            build("0.5.0", "x86_64-linux", ED, Some("0123456789ab-dirty")),
+            build("0.5.0", "riscv64-linux", ED, Some("0123456789ab-dirty")),
             other(&["commit 0123456789ab-dirty (this build is 0123456789ab)"]),
         ),
         (
@@ -73,7 +73,7 @@ fn judge_decides_by_version_features_and_commit_never_by_target() {
             "version, features and commit all differ",
             build(
                 "0.4.0",
-                "x86_64-windows",
+                "riscv64-windows",
                 &["simd", "parallel"],
                 Some("ba9876543210"),
             ),
@@ -89,7 +89,7 @@ fn judge_decides_by_version_features_and_commit_never_by_target() {
     }
 
     // This build without a commit (built outside git): judged by version and features.
-    let no_commit = build("0.5.0", "x86_64-linux", ED, None);
+    let no_commit = build("0.5.0", "riscv64-linux", ED, None);
     assert_eq!(
         judge(
             &build("0.5.0", "aarch64-macos", ED, Some("ba9876543210")),
@@ -102,16 +102,16 @@ fn judge_decides_by_version_features_and_commit_never_by_target() {
 
 #[test]
 fn the_messages_name_the_builds() {
-    let current = build("0.5.0", "x86_64-linux", ED, Some("0123456789ab"));
+    let current = build("0.5.0", "riscv64-linux", ED, Some("0123456789ab"));
     let recorded = build("0.5.0", "aarch64-macos", ED, Some("0123456789ab"));
     assert_eq!(
         defect_message(&recorded, &current),
         "the recording was made by this build (version 0.5.0, commit 0123456789ab, on \
-         aarch64-macos) and does not re-simulate identically here (x86_64-linux): a defect; \
+         aarch64-macos) and does not re-simulate identically here (riscv64-linux): a defect; \
          please report it with the recording."
     );
     let dirty = build("0.5.0", "aarch64-macos", ED, Some("0123456789ab-dirty"));
-    let message = defect_message(&dirty, &build("0.5.0", "x86_64-linux", ED, None));
+    let message = defect_message(&dirty, &build("0.5.0", "riscv64-linux", ED, None));
     assert!(
         message.ends_with(
             "\none of the two builds had uncommitted changes, which the commit name cannot \
@@ -131,17 +131,17 @@ fn the_messages_name_the_builds() {
         "built with: this build (commit 0123456789ab)"
     );
     assert_eq!(
-        built_with_line(&build("0.5.0", "x86_64-linux", ED, None), &current),
+        built_with_line(&build("0.5.0", "riscv64-linux", ED, None), &current),
         "built with: this build"
     );
     assert_eq!(
         built_with_line(&recorded, &current),
-        "built with: platform aarch64-macos (this build is x86_64-linux)"
+        "built with: platform aarch64-macos (this build is riscv64-linux)"
     );
     assert_eq!(
         built_with_line(
-            &build("0.5.0", "x86_64-linux", ED, Some("ba9876543210")),
-            &build("0.5.0", "x86_64-linux", ED, None)
+            &build("0.5.0", "riscv64-linux", ED, Some("ba9876543210")),
+            &build("0.5.0", "riscv64-linux", ED, None)
         ),
         "built with: commit ba9876543210 (this build names none)"
     );

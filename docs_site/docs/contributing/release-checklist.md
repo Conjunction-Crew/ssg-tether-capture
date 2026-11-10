@@ -77,7 +77,8 @@ From the repository root, at the release branch:
 |---|---|---|
 | 7.1 | `cargo run --release --locked -p ssg-sim-cli -- validate <wd>` | A totals line with `0 errors`; exit code 0. |
 | 7.2 | `cargo run --release --locked -p ssg-sim-cli -- run <wd> --steps 6400` | `<wd>/runs/<stamp>/` with `summary.json`, `trajectory.csv` and `ephemeris.oem`; exit code 0. |
-| 7.3 | `cargo run --release --locked -p ssg-sim-cli -- replay <wd>/recordings/<name>` | `built with: this build` and every frame identical; exit code 0. |
+| 7.3 | `cargo run --release --locked -p ssg-sim-cli -- replay <wd>/recordings/<name>` | `built with: this build (commit …)` and every frame identical; exit code 0. A recording made by the same build on another platform replays the same way: `built with: platform …`, every frame identical, exit code 0. |
+| 7.4 | `cargo run --release --locked -p ssg-sim-cli -- replay <a recording made by the previous release>` | `built with: app version <previous> (this build is <new>)`; when the release moved the simulation's numbers, a first difference, `made by another build: version …` and exit code 3 (when it moved none, every frame is identical and the exit code is 0). |
 
 ## 8 · After the release
 
