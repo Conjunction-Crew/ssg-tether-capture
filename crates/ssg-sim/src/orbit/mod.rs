@@ -13,8 +13,6 @@ use std::sync::PoisonError;
 use bevy::prelude::*;
 use brahe::Epoch;
 use brahe::eop::{StaticEOPProvider, set_global_eop_provider};
-use brahe::propagators::SGPPropagator;
-use brahe::utils::DOrbitStateProvider;
 use nalgebra::Vector6;
 
 use crate::SimStep;
@@ -147,32 +145,14 @@ fn kepler_at_start(elements: Vector6<f64>, epoch: Epoch, start_epoch: Epoch) -> 
     Some(TwoBody::from_eci(start_epoch, eci))
 }
 
-/// The SGP4 state of `gp` at `epoch`, in brahe's ECI (GCRF) frame. The object
-/// name and id are not passed: synthetic ids (e.g. "P0-CHASER-1") fail brahe's
-/// international-designator check, and SGP4 does not use them.
+/// The SGP4 state of `gp` at `epoch`, in the ECI (GCRF) frame: the portable SGP4
+/// copy's TEME state ([`sgp4_start::teme_state`]) rotated by [`frames::teme_to_gcrf`],
+/// the chain brahe's `SGPPropagator::state_eci` applies (F-48).
 fn sgp4_state_eci(gp: &GpElements, epoch: Epoch) -> Result<Vector6<f64>, String> {
-    let propagator = SGPPropagator::from_omm_elements(
-        &gp.epoch_str,
-        gp.mean_motion_rev_per_day,
-        gp.eccentricity,
-        gp.inclination_deg,
-        gp.raan_deg,
-        gp.arg_perigee_deg,
-        gp.mean_anomaly_deg,
-        gp.norad_id as u64,
-        1.0,
-        None,
-        None,
-        gp.classification,
-        gp.bstar,
-        gp.mean_motion_dot,
-        gp.mean_motion_ddot,
-        gp.ephemeris_type,
-        None,
-        None,
-    )
-    .map_err(|e| e.to_string())?;
-    propagator.state_eci(epoch).map_err(|e| e.to_string())
+    Ok(frames::teme_to_gcrf(
+        sgp4_start::teme_state(gp, epoch)?,
+        epoch,
+    ))
 }
 
 pub fn cache_eci_states(
