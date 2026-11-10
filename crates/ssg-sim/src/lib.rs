@@ -8,6 +8,7 @@
 pub mod anchor;
 pub mod capture;
 pub mod floating_origin;
+pub mod math;
 pub mod orbit;
 pub mod physics_bubble;
 pub mod project;
