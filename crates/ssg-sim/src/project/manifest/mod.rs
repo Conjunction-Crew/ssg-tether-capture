@@ -461,7 +461,7 @@ pub fn read_manifest_file(dir: &Path) -> Option<ManifestReport> {
                 report.notes.push(message(
                     "/built_with",
                     format!(
-                        "written by {}; results are bit-identical only on the same build and platform",
+                        "written by {}; re-simulation is identical only for the same version",
                         differences.join(", ")
                     ),
                 ));

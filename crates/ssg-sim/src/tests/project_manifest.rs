@@ -511,7 +511,7 @@ fn a_manifest_from_another_build_gets_a_note() {
     assert_eq!(
         report.notes,
         [format!(
-            "[project.json] /built_with: written by app version 0.0.1 (this build is {}), platform nowhere-os (this build is {}), avian features [parallel] (this build has [enhanced-determinism, parallel]); results are bit-identical only on the same build and platform",
+            "[project.json] /built_with: written by app version 0.0.1 (this build is {}), platform nowhere-os (this build is {}), avian features [parallel] (this build has [enhanced-determinism, parallel]); re-simulation is identical only for the same version",
             running.app_version, running.target
         )]
     );
