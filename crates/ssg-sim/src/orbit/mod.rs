@@ -2,6 +2,7 @@
 
 pub mod cache;
 pub mod catalog;
+pub mod frames;
 pub mod kepler;
 pub mod lvlh;
 pub mod selection;
