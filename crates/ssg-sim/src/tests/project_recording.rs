@@ -44,6 +44,7 @@ fn sample() -> RecordingManifest {
             app_version: "0.4.0-rc.1".to_string(),
             target: "aarch64-macos".to_string(),
             avian_features: vec!["simd".to_string(), "parallel".to_string()],
+            commit: None,
         },
         plan_id: "example_plan".to_string(),
         plan: example_plan(),
@@ -651,6 +652,44 @@ fn the_optional_keys_round_trip_and_an_unfinished_manifest_stays_valid() {
         assert!(plain.get(key).is_none(), "{key}");
     }
     assert!(plain["limits"].get("max_size_mb").is_none());
+}
+
+#[test]
+fn built_with_commit_is_optional_and_round_trips() {
+    // Without it (a build outside git, or a recording before 0.5) the key is absent.
+    let plain = doc();
+    assert!(plain["built_with"].get("commit").is_none(), "{plain}");
+    assert!(read_recording_value(&plain).errors.is_empty());
+
+    let mut manifest = sample();
+    manifest.built_with.commit = Some("0123456789ab-dirty".to_string());
+    let value: Value = serde_json::from_str(&recording_manifest_to_json(&manifest)).unwrap();
+    assert_eq!(value["built_with"]["commit"], json!("0123456789ab-dirty"));
+    let report = read_recording_value(&value);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.manifest.unwrap(), manifest);
+
+    let mut wrong = value.clone();
+    wrong["built_with"]["commit"] = json!(5);
+    let errors = read_recording_value(&wrong).errors;
+    assert!(
+        errors[0].starts_with("[manifest.json] /built_with"),
+        "{errors:?}"
+    );
+
+    let schema = serde_json::to_value(schemars::schema_for!(RecordingManifest)).unwrap();
+    let built_with = schema["$defs"]["BuiltWith"].clone();
+    assert!(
+        built_with["properties"].get("commit").is_some(),
+        "{built_with}"
+    );
+    assert!(
+        !built_with["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("commit")),
+        "{built_with}"
+    );
 }
 
 #[test]

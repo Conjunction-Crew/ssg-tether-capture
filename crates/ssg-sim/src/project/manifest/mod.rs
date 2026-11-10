@@ -28,7 +28,8 @@ pub const MANIFEST_FILE: &str = "project.json";
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 /// The avian3d features the workspace builds with (`Cargo.toml`); results are
-/// bit-identical only on the same build and platform (F-48).
+/// bit-identical only for the same version, whatever the platform (the guard
+/// `scripts/check_platform_math.sh` checks this list against the tree).
 const AVIAN_FEATURES: &[&str] = &["enhanced-determinism", "parallel"];
 
 /// The six GP fields a body needs besides `NORAD_CAT_ID`, in load order.
@@ -262,7 +263,16 @@ pub struct BuiltWith {
     pub target: String,
     /// The avian3d features the physics was built with.
     pub avian_features: Vec<String>,
+    /// The commit the build was made from (`git rev-parse --short=12 HEAD`, with
+    /// `-dirty` when tracked files had uncommitted changes); absent in a build
+    /// made outside a git checkout and in files written before version 0.5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
+
+/// The commit of the running build, set by `build.rs` when it was built in a git
+/// checkout.
+const BUILD_COMMIT: Option<&str> = option_env!("SSG_BUILD_COMMIT");
 
 impl BuiltWith {
     /// The running build.
@@ -271,6 +281,7 @@ impl BuiltWith {
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
             avian_features: AVIAN_FEATURES.iter().map(|f| f.to_string()).collect(),
+            commit: BUILD_COMMIT.map(str::to_string),
         }
     }
 

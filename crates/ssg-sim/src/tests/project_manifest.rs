@@ -501,6 +501,7 @@ fn a_manifest_from_another_build_gets_a_note() {
         app_version: "0.0.1".to_string(),
         target: "nowhere-os".to_string(),
         avian_features: vec!["parallel".to_string()],
+        commit: None,
     });
     save_manifest(dir.path(), &manifest).unwrap();
 
