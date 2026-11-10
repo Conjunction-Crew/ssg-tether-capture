@@ -1,7 +1,7 @@
 //! P9 S4: per-phase controller gains at their defaults change nothing. The Q13
 //! 6,400-step run of the example plan with every phase's `controller` set to the
 //! eight defaults explicitly gives the same state hash and transitions as the
-//! example plan without the key, and the macOS reference hash on macOS/aarch64.
+//! example plan without the key, and the reference hash, on every platform.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,9 +16,9 @@ use ssg_sim::test_support::q13;
 /// The Q13 fixture's GP epoch, as in the harness (`fixed_epoch()`).
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
 
-/// `ssg-sim run` of the Q13 6,400-step command (macOS/aarch64 reference; the
+/// `ssg-sim run` of the Q13 6,400-step command (the same on every platform; the
 /// value `record.rs` asserts).
-const Q13_6400_HASH: &str = "719f23004973b0ab";
+const Q13_6400_HASH: &str = "5496fcd1fb51cb11";
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -103,7 +103,5 @@ fn explicit_default_gains_keep_the_q13_6400_hash() {
     assert_eq!(with["state_hash"], without["state_hash"]);
     assert_eq!(with["transitions"], without["transitions"]);
     assert_eq!(with["final"], without["final"]);
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(with["state_hash"], Q13_6400_HASH);
-    }
+    assert_eq!(with["state_hash"], Q13_6400_HASH);
 }

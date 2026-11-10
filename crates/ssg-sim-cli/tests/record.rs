@@ -1,8 +1,8 @@
 //! `ssg-sim run --record NAME` (P7 S3, R3, R4): a recording is a read-only tap, so
 //! the run's state hash does not change; the recording folder holds the layout of
 //! the design; the project's `recording` block and `--record-from-phase` choose when
-//! it starts and ends. Platform-independent: runs are compared with each other; the
-//! macOS reference hash is asserted on macOS/aarch64 only.
+//! it starts and ends. Runs are compared with each other, and the reference hash
+//! is asserted on every platform.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -17,8 +17,8 @@ use ssg_sim::test_support::q13;
 /// The Q13 fixture's GP epoch, as in the harness (`fixed_epoch()`).
 const EPOCH: &str = "2026-04-03T16:03:47.002464";
 
-/// `ssg-sim run` of the Q13 6,400-step command (macOS/aarch64 reference).
-const Q13_6400_HASH: &str = "719f23004973b0ab";
+/// `ssg-sim run` of the Q13 6,400-step command (the same on every platform).
+const Q13_6400_HASH: &str = "5496fcd1fb51cb11";
 
 /// The files of a recording folder.
 const FILES: [&str; 6] = [
@@ -125,8 +125,7 @@ fn summary(project: &Path, out: &str) -> Value {
         .unwrap()
 }
 
-/// The step of the run's first transition (to `approach`): 4,769 on macOS/aarch64,
-/// a few steps earlier elsewhere (F-17, F-48), so the tests read it from the run.
+/// The step of the run's first transition (to `approach`), read from the run.
 fn first_transition_step(summary: &Value) -> u64 {
     let first = &summary["transitions"][0];
     assert_eq!(first["to"], "approach", "{summary}");
@@ -163,9 +162,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
     let recorded = run(&project, "recorded", &["--steps", "6400", "--record", "r"]);
     assert_success(&recorded);
     let recorded_summary = summary(&project, "recorded");
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(recorded_summary["state_hash"], Q13_6400_HASH);
-    }
+    assert_eq!(recorded_summary["state_hash"], Q13_6400_HASH);
     let message = stderr(&recorded);
     assert!(
         message.contains("recorded ") && message.contains("401 frames of 78 bodies"),
@@ -246,9 +243,7 @@ fn a_6400_step_recording_has_the_design_layout_and_keeps_the_reference_hash() {
         ),
         (transition, "approach")
     );
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        assert_eq!(transition, 6005);
-    }
+    assert_eq!(transition, 6005);
     // The folder passes the checks.
     let check = check_recording(&folder, "recordings/r");
     assert!(
