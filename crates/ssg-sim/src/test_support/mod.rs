@@ -25,8 +25,7 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimeUpdateStrategy;
 use bevy::{input::InputPlugin, scene::ScenePlugin};
-use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, Epoch, KeplerianPropagator, TimeSystem};
+use brahe::{Epoch, TimeSystem};
 use nalgebra::Vector6;
 
 use crate::SimPlugins;
@@ -34,6 +33,7 @@ use crate::SimStep;
 use crate::capture::plan::{CapturePlan, CapturePlanLibrary, build_capture_component};
 use crate::capture::{CaptureSphereRadius, capture_state_machine_update};
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::project::{AssetsDir, load_plans_from_dir};
 use crate::session::{SimSession, SimState};
 use crate::telemetry::{CaptureLog, LogEvent, LogLevel, collect_log_events};
@@ -127,17 +127,17 @@ pub fn ticks(app: &mut App, n: u64) {
     }
 }
 
-/// ECI state for Keplerian `elements` at `epoch`: the same two brahe calls
+/// ECI state for Keplerian `elements` at `epoch`: the same conversion
 /// `init_orbitals` makes.
 pub fn kepler_eci(elements: Vector6<f64>, epoch: Epoch) -> Vector6<f64> {
-    KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, 1.0)
+    TwoBody::from_elements(epoch, elements)
         .state_eci(epoch)
         .expect("Keplerian propagation failed")
 }
 
 /// A propagator starting from `eci` at [`fixed_epoch`].
-pub fn fixed_propagator(eci: Vector6<f64>) -> KeplerianPropagator {
-    KeplerianPropagator::from_eci(fixed_epoch(), eci, 1.0)
+pub fn fixed_propagator(eci: Vector6<f64>) -> TwoBody {
+    TwoBody::from_eci(fixed_epoch(), eci)
 }
 
 /// Assert `|actual - expected| <= tol`; the message names `what` and both values.

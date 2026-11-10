@@ -8,7 +8,7 @@ use nalgebra::Vector6;
 
 use crate::orbit::catalog::GpElements;
 use crate::orbit::lvlh::{LvlhFrame, relative_offset_lvlh, relative_start};
-use crate::orbit::{Orbit, propagated_start_state, start_state_eci, use_zero_eop};
+use crate::orbit::{Orbit, start_state_eci, use_zero_eop};
 use crate::project::manifest::{RelativePreset, RelativeToTarget};
 
 #[derive(Debug, Clone)]
@@ -142,12 +142,12 @@ pub fn relative_chaser_elements(
     offset_m: f64,
 ) -> Result<EditableOrbitalElements, String> {
     use_zero_eop();
-    let target_state = propagated_start_state(&target.start_orbit(), start_epoch)
+    let target_state = start_state_eci(&target.start_orbit(), start_epoch)
         .ok_or("the target has no start state (SGP4 failed)")?;
     let chaser = relative_start(&target_state, preset, offset_m)
         .ok_or("the target's orbit has no LVLH frame")?;
     let e = state_eci_to_koe(chaser, AngleFormat::Radians);
-    let started = propagated_start_state(
+    let started = start_state_eci(
         &Orbit::FromElementsAt {
             elements: e,
             epoch: start_epoch,

@@ -6,14 +6,14 @@ use std::f64::consts::TAU;
 
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
-use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, Epoch, GM_EARTH, KeplerianPropagator};
+use brahe::{Epoch, GM_EARTH};
 use nalgebra::Vector6;
 
 use crate::orbit::catalog::{
     GpuComputeEpochOrigin, GpuElements, GpuOrbitalElements, JsonOrbital, SpaceCatalogEntry,
     SpaceObjectCatalog, gp_record_to_elements, load_dataset_entities, propagate_catalog_eci_state,
 };
+use crate::orbit::kepler::TwoBody;
 use crate::project::{AssetsDir, WorkingDirectory};
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::test_support::{Lcg, LogTap, TempDir, assert_close, fixed_epoch, q13, repo_root};
@@ -34,7 +34,7 @@ fn brahe_state(el: &GpuOrbitalElements, offset_s: f32) -> Vector6<f64> {
         el.mean_anomaly as f64,
     );
     let epoch = fixed_epoch() + el.epoch_offset_seconds as f64;
-    KeplerianPropagator::from_keplerian(epoch, elements, AngleFormat::Radians, 1.0)
+    TwoBody::from_elements(epoch, elements)
         .state_eci(fixed_epoch() + offset_s as f64)
         .expect("brahe Kepler propagation")
 }

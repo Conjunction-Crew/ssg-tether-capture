@@ -7,18 +7,18 @@ use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::coordinates::state_eci_to_koe;
-use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, Epoch, KeplerianPropagator};
+use brahe::{AngleFormat, Epoch};
 use nalgebra::Vector6;
 
 use crate::capture::plan::CapturePlanLibrary;
 use crate::orbit::cache::OrbitalCache;
+use crate::orbit::kepler::TwoBody;
 use crate::orbit::lvlh::{LvlhFrame, cw_solution, relative_offset_lvlh, relative_start};
 use crate::orbit::selection::{
     EditableOrbitalElements, OrbitalSelectionSource, OrbitalSelectionState,
     RELATIVE_START_TOLERANCE_M, SelectedOrbitalObject, relative_chaser_elements,
 };
-use crate::orbit::{Orbit, propagated_start_state, use_zero_eop};
+use crate::orbit::{Orbit, start_state_eci, use_zero_eop};
 use crate::physics_bubble::body_eci_state;
 use crate::project::SelectedProject;
 use crate::project::epoch::format_utc;
@@ -61,7 +61,7 @@ fn circular() -> SelectedOrbitalObject {
 /// The target's start state, as the sim's propagator gives it.
 fn start_state(target: &SelectedOrbitalObject) -> Vector6<f64> {
     use_zero_eop();
-    propagated_start_state(&target.start_orbit(), fixed_epoch()).expect("start state")
+    start_state_eci(&target.start_orbit(), fixed_epoch()).expect("start state")
 }
 
 fn v3(s: &Vector6<f64>, i: usize) -> DVec3 {
@@ -80,7 +80,7 @@ fn relative_lvlh(target: &Vector6<f64>, chaser: &Vector6<f64>) -> (DVec3, DVec3)
 
 /// The chaser's start state from elements at the start epoch, as the sim gets it.
 fn elements_start(elements: Vector6<f64>) -> Vector6<f64> {
-    propagated_start_state(
+    start_state_eci(
         &Orbit::FromElementsAt {
             elements,
             epoch: fixed_epoch(),
@@ -94,7 +94,7 @@ fn elements_start(elements: Vector6<f64>) -> Vector6<f64> {
 fn propagated_lvlh(target: &Vector6<f64>, chaser: &Vector6<f64>, t: f64) -> (DVec3, DVec3) {
     let at: Epoch = fixed_epoch() + t;
     let state = |s: &Vector6<f64>| {
-        KeplerianPropagator::from_eci(fixed_epoch(), *s, 1.0)
+        TwoBody::from_eci(fixed_epoch(), *s)
             .state_eci(at)
             .expect("kepler")
     };

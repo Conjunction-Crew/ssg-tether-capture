@@ -6,11 +6,11 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use brahe::eop::{StaticEOPProvider, set_global_eop_provider};
-use brahe::utils::DOrbitStateProvider;
-use brahe::{AngleFormat, GM_EARTH, KeplerianPropagator};
+use brahe::{AngleFormat, GM_EARTH};
 use nalgebra::Vector6;
 
 use crate::orbit::catalog::{GpElements, gp_record_to_elements};
+use crate::orbit::kepler::TwoBody;
 use crate::orbit::lvlh::LvlhFrame;
 use crate::orbit::selection::EditableOrbitalElements;
 use crate::orbit::{
@@ -187,8 +187,7 @@ fn init_orbitals_only_initialises_newly_added_orbits() {
 fn cache_eci_states_stores_each_propagators_state_at_the_sim_epoch() {
     let mut app = test_app();
     app.init_resource::<OrbitalCache>();
-    let propagator =
-        KeplerianPropagator::from_keplerian(fixed_epoch(), ISS_ORBIT, AngleFormat::Radians, 1.0);
+    let propagator = TwoBody::from_elements(fixed_epoch(), ISS_ORBIT);
     let moving = app
         .world_mut()
         .spawn(Orbital {

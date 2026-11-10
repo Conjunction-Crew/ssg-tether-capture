@@ -1,6 +1,5 @@
 use avian3d::prelude::{DistanceJoint, RigidBodyDisabled, RigidBodyQuery};
 use bevy::{camera::visibility::RenderLayers, ecs::system::SystemParam, math::DVec3, prelude::*};
-use brahe::{AngleFormat, utils::DOrbitStateProvider};
 
 use crate::render::floating_origin_visuals::floating_origin_update_visuals;
 use crate::render::layers::{MAP_LAYER, MAP_UNITS_TO_M, SCENE_LAYER, eci_position_to_map};
@@ -145,7 +144,7 @@ pub fn orbital_gizmos(
             continue;
         };
 
-        if let Ok(elements) = propagator.state_koe_osc(world_time.epoch, AngleFormat::Radians) {
+        if let Ok(elements) = propagator.elements_at(world_time.epoch) {
             if elements.y >= 1.0 {
                 continue;
             }
