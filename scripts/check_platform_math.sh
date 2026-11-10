@@ -32,6 +32,10 @@ set -eu
 
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
+# The script reads cargo's and clippy's output: no colour codes (CI sets
+# CARGO_TERM_COLOR=always).
+CARGO_TERM_COLOR=never
+export CARGO_TERM_COLOR
 GUARD=scripts/platform_math_guard
 ALLOW=$GUARD/brahe_allowlist.txt
 MANIFEST_RS=crates/ssg-sim/src/project/manifest/mod.rs
