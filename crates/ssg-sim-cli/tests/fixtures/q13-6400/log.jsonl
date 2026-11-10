@@ -1,0 +1,4 @@
+{"timestamp":"16:03:47.033","epoch_utc":"2026-04-03T16:03:47.033714Z","level":"Info","source":"recording","message":"Recording started at step 2: 78 bodies, a frame every 32 steps, 32.6 MB at the 1800 s cap"}
+{"timestamp":"16:03:57.986","epoch_utc":"2026-04-03T16:03:57.986839Z","level":"Debug","source":"propagation","message":"Floating origin reset (epoch: 2026-04-03 16:03:57.987 UTC)"}
+{"timestamp":"16:04:09.002","epoch_utc":"2026-04-03T16:04:09.002464Z","level":"Debug","source":"propagation","message":"Floating origin reset (epoch: 2026-04-03 16:04:09.002 UTC)"}
+{"timestamp":"16:05:20.830","epoch_utc":"2026-04-03T16:05:20.830589Z","level":"Info","source":"capture","message":"State: rendezvous → approach (distance 1999.7 m < 2000.0 m)"}

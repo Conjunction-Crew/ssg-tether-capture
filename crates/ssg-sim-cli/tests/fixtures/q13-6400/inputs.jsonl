@@ -1,0 +1,2 @@
+{"step":1,"command":{"session_start":{"steps_before_propagators":1}}}
+{"step":2,"command":{"start_capture":{"target":"target","plan_id":"example_plan"}}}

@@ -66,6 +66,7 @@ Results are bit-identical **per platform**, not across platforms (see [Determini
 
 - Each determinism test compares runs with each other on the same platform (`determinism`, `harness_parity`, `baseline_q13_fixed_epoch_short`). These run everywhere.
 - The pinned numeric goldens (the capture checkpoints, the CLI `state_hash`) hold on macOS/aarch64 only. They are never asserted on Linux or Windows, and a test never carries a `cfg(target_os)` branch or a loosened tolerance to paper over a platform difference.
+- **The committed recording** `crates/ssg-sim-cli/tests/fixtures/q13-6400` is the reference scenario's first 6,400 steps, recorded on macOS; `the_committed_recording_replays_on_every_platform` (in `replay`) re-simulates it on every platform and expects every frame to match. When a golden moves, make it again on a Mac with Apple Silicon with `sh scripts/regenerate_recording_fixture.sh` and commit the six files with the change. `.gitattributes` keeps Git from rewriting the files' line endings on Windows.
 - **The CLI and the harness are offset by one step.** The CLI measures from step 2 (three updates, the capture command applied in the third); `q13::build` ticks once more, so the harness measures from step 3. Compare the two **by absolute step**: the CLI sample at step `s` and the harness checkpoint with the same `s` are the same trajectory point, bit for bit. `harness_parity` checks this; neither side's step semantics change, because that would move a pinned value.
 
 ## Coverage
