@@ -12,6 +12,7 @@ pub mod orbit_catalog;
 pub mod orbit_core;
 pub mod orbit_kepler;
 pub mod orbit_relative_start;
+pub mod orbit_sgp4_start;
 pub mod plan_migration_v0;
 pub mod plan_schema_v1;
 pub mod plan_v0_oracle;
