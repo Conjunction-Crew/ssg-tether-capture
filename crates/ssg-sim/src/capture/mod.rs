@@ -317,9 +317,10 @@ pub(crate) fn tail_lag_weight(
     let (out_root, out_tail) = (-root_r, -tail_r);
     let a = out_root - up * out_root.dot(up);
     let b = out_tail - up * out_tail.dot(up);
-    let theta = up.dot(a.cross(b)).atan2(a.dot(b));
-    let chord = 2.0 * tail_radius * (theta / 2.0).sin();
-    let held = spacing.min(2.0 * tail_radius * SPACING_MAX_HALF_ANGLE.sin());
+    // P11 probe round C (never merged): the three calls through libm.
+    let theta = libm::atan2(up.dot(a.cross(b)), a.dot(b));
+    let chord = 2.0 * tail_radius * libm::sin(theta / 2.0);
+    let held = spacing.min(2.0 * tail_radius * libm::sin(SPACING_MAX_HALF_ANGLE));
     let dv = tail_v.dot(forward_tangent(tail_r, up)) - root_v.dot(forward_tangent(root_r, up));
     ((chord - held) / gains.spacing_band_m - dv / gains.spacing_rate_band_mps).clamp(-1.0, 1.0)
 }

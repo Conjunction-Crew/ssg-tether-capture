@@ -22,10 +22,11 @@ serde_json = { workspace = true }
 dirs = { workspace = true }
 csv = { workspace = true }
 parquet = { version = "=60.1.0", default-features = false }
+# P11 Run 0 probe only (never merged): round C calls libm from tail_lag_weight;
+# the probe test uses it for the libm column of the function table.
+libm = "0.2.16"
 
 [dev-dependencies]
 ssg-sim = { path = ".", features = ["test-support"] }
 # Generates the published JSON Schema files from the plan types (design D10); test only.
 schemars = "=1.2.3"
-# P11 Run 0 probe only (never merged): the libm column of the function table.
-libm = "0.2.16"
