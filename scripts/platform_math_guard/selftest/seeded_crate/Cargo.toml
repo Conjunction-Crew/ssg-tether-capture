@@ -1,0 +1,13 @@
+# Self-test of the platform-math guard, Part 1: a one-file crate outside the
+# workspace whose only function calls `f64::sin`. The guard's clippy call must
+# fail on it (sh scripts/check_platform_math.sh --self-test).
+[package]
+name = "platform-math-guard-seeded"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[workspace]
