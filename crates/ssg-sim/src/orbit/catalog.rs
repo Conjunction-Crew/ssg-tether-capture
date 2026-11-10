@@ -12,6 +12,7 @@ use nalgebra::Vector6;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::math;
 use crate::project::{AssetsDir, WorkingDirectory};
 use crate::telemetry::{LogEvent, LogLevel};
 use crate::time::WorldTime;
@@ -182,7 +183,10 @@ impl GpElements {
     /// The semi-major axis from the mean motion (two-body, `GM_EARTH`).
     pub fn semi_major_axis_m(&self) -> f64 {
         let mean_motion_rad_s = self.mean_motion_rev_per_day * 2.0 * PI / 86400.0;
-        (GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s)).powf(1.0 / 3.0)
+        math::powf(
+            GM_EARTH / (mean_motion_rad_s * mean_motion_rad_s),
+            1.0 / 3.0,
+        )
     }
 
     /// `[a, e, i, raan, argp, mean anomaly]`, metres and radians.
@@ -232,8 +236,8 @@ pub fn propagate_catalog_eci_state(
     let mean_anomaly = wrap_angle(element.mean_anomaly as f64 + mean_motion * dt_seconds);
     let eccentric_anomaly = solve_eccentric_anomaly(mean_anomaly, eccentricity);
 
-    let sin_e = eccentric_anomaly.sin();
-    let cos_e = eccentric_anomaly.cos();
+    let sin_e = math::sin(eccentric_anomaly);
+    let cos_e = math::cos(eccentric_anomaly);
     let one_minus_e2 = (1.0 - eccentricity * eccentricity).max(0.0);
     let sqrt_one_minus_e2 = one_minus_e2.sqrt();
     let radius = semi_major_axis * (1.0 - eccentricity * cos_e);
@@ -287,8 +291,8 @@ fn solve_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
     };
 
     for _ in 0..6 {
-        let sin_e = eccentric_anomaly.sin();
-        let cos_e = eccentric_anomaly.cos();
+        let sin_e = math::sin(eccentric_anomaly);
+        let cos_e = math::cos(eccentric_anomaly);
         let residual = eccentric_anomaly - eccentricity * sin_e - mean_anomaly;
         let derivative = 1.0 - eccentricity * cos_e;
         eccentric_anomaly -= residual / derivative;
@@ -298,12 +302,12 @@ fn solve_eccentric_anomaly(mean_anomaly: f64, eccentricity: f64) -> f64 {
 }
 
 fn perifocal_to_eci(value: DVec3, inclination: f64, raan: f64, argp: f64) -> DVec3 {
-    let cos_raan = raan.cos();
-    let sin_raan = raan.sin();
-    let cos_argp = argp.cos();
-    let sin_argp = argp.sin();
-    let cos_i = inclination.cos();
-    let sin_i = inclination.sin();
+    let cos_raan = math::cos(raan);
+    let sin_raan = math::sin(raan);
+    let cos_argp = math::cos(argp);
+    let sin_argp = math::sin(argp);
+    let cos_i = math::cos(inclination);
+    let sin_i = math::sin(inclination);
 
     let r11 = cos_raan * cos_argp - sin_raan * sin_argp * cos_i;
     let r12 = -cos_raan * sin_argp - sin_raan * cos_argp * cos_i;
@@ -574,7 +578,7 @@ fn parse_dataset_epoch_fast(raw: &str) -> Option<Epoch> {
             }
 
             let value = digits.parse::<u32>().ok()? as f64;
-            let scale = 10_f64.powi(digits.len() as i32);
+            let scale = math::powi(10_f64, digits.len() as i32);
             Some(value / scale)
         })
         .unwrap_or(0.0);
