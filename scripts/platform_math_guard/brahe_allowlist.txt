@@ -1,0 +1,23 @@
+# The platform-math guard, Part 2 (scripts/check_platform_math.sh): the brahe
+# items the library code of ssg-sim may name. brahe computes with each
+# platform's own math library and with C code, so every other item is refused.
+# One item name per line, then `# why it is safe` (required).
+#
+# Time
+Epoch # time arithmetic (Julian dates, UTC/TT/UT1 offsets from tables): no transcendental math; pinned bit for bit on three platforms by f5_what_stays_with_brahes_epoch_known_answer_bits; its gast and gmst are banned in clippy.toml
+TimeSystem # an enum naming a time scale
+StaticEOPProvider # zero Earth-orientation parameters, built in memory: no file or network read
+set_global_eop_provider # installs the zero provider once (orbit::use_zero_eop)
+#
+# Constants
+GM_EARTH # a constant (Earth's gravitational parameter)
+WGS84_A # a constant (Earth's equatorial radius)
+#
+# CCSDS OEM export (project/export.rs): writes states the simulation has already computed; nothing flows back into it
+CCSDSFormat # output format enum
+CCSDSRefFrame # output frame name
+CCSDSTimeSystem # output time-system name
+OEM # the OEM document
+OEMMetadata # an OEM segment's header
+OEMSegment # an OEM segment
+OEMStateVector # one written state
