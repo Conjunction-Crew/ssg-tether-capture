@@ -10,6 +10,7 @@ pub mod integration_tests;
 pub mod math_portable;
 pub mod orbit_catalog;
 pub mod orbit_core;
+pub mod orbit_frames;
 pub mod orbit_kepler;
 pub mod orbit_relative_start;
 pub mod orbit_sgp4_start;

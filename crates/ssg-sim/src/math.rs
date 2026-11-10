@@ -23,6 +23,12 @@ pub fn sin_cos(x: f64) -> (f64, f64) {
     (libm::sin(x), libm::cos(x))
 }
 
+/// Arctangent of `x` (radians).
+#[inline]
+pub fn atan(x: f64) -> f64 {
+    libm::atan(x)
+}
+
 /// Four-quadrant arctangent of `y / x`.
 #[inline]
 pub fn atan2(y: f64, x: f64) -> f64 {
