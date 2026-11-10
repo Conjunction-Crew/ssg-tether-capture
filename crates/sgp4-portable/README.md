@@ -26,9 +26,10 @@ Centre for Neuromorphic Systems. The licence text is kept unchanged in
 - Upstream's tests, examples and documentation examples are not carried
   (`doctest = false`: the examples name the crate `sgp4`).
 
-Nothing else was changed. On the orbits measured (two low Earth orbits and one
-12-hour orbit, up to seven days from the epoch), the results differ from
-upstream's by at most 5 ULP, 1.2e-9 m.
+Nothing else was changed. Measured against upstream on macOS, up to 219 days from
+the epoch: on two low Earth orbits the results differ by at most 7 ULP per
+component, 3.4e-9 m; on a Molniya and a geostationary record by at most 25 ULP,
+1.2e-8 m, which is at most 2.8e-16 of their distance from the Earth.
 
 ## How to check it
 

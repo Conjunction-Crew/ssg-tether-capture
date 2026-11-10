@@ -7,9 +7,10 @@
 // loop), so the results are the same bits on every platform; its two traits
 // replace the ones imported from num-traits. Unused methods of the `Float` trait
 // were removed, and the code was formatted with `cargo fmt`.
-// Nothing else was changed. The results differ from upstream's by at most 5 ULP,
-// 1.2e-9 m (measured on macOS). To check the copy: `diff -ru` this `src/` against
-// the registry source of sgp4 2.3.0.
+// Nothing else was changed. The results differ from upstream's by at most 7 ULP,
+// 3.4e-9 m on low Earth orbits and 25 ULP, 1.2e-8 m (2.8e-16 of the distance) on
+// a Molniya and a geostationary record (measured on macOS, up to 219 days). To
+// check the copy: `diff -ru` this `src/` against the registry source of sgp4 2.3.0.
 
 // copied code keeps upstream's shape; the platform-math guard does not use this allow
 #![allow(clippy::all)]
