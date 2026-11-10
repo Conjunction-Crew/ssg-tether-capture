@@ -175,6 +175,14 @@ jobs:
           cargo test -p ssg-sim-cli --locked cli_three_runs_to_capture_identical -- --ignored --nocapture
           && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_to_capture_contacts tether_rest_ten_minutes
           && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_taut_in_rendezvous approach_range_never_grows ends_clear_through_the_reorientation ends_apart_on_the_sphere root_orbits_cleanly tether_flung_out_while_circling capture_phase_wraps_with_contacts hold_phase_stops_the_ends
+          && cargo test -p ssg-sim --locked baseline_q13_to_capture -- --ignored --nocapture
+
+      - name: Release build replays the committed recording
+        # The tests run dev builds; what ships is a release build. A release build
+        # of this commit replays the recording made on macOS bit for bit (exit 0).
+        # Replay writes nothing, so it runs on the checkout in place.
+        if: needs.changes.outputs.full == 'true'
+        run: cargo run --release -p ssg-sim-cli --locked -- replay crates/ssg-sim-cli/tests/fixtures/q13-6400 --assets assets
 
       - name: Build (full runs only)
         if: needs.changes.outputs.full == 'true'
@@ -340,11 +348,18 @@ jobs:
           && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_to_capture_contacts tether_rest_ten_minutes
           && cargo test -p ssg-sim --locked -- --ignored --nocapture tether_taut_in_rendezvous approach_range_never_grows ends_clear_through_the_reorientation ends_apart_on_the_sphere root_orbits_cleanly tether_flung_out_while_circling capture_phase_wraps_with_contacts hold_phase_stops_the_ends
 
-      - name: macOS goldens to capture
-        # The goldens hold on macOS/aarch64 only (Q29 as replaced, F-48): there
-        # are no cross-platform goldens and no cfg branches in the tests.
-        if: needs.changes.outputs.full == 'true' && runner.os == 'macOS'
+      - name: Goldens to capture
+        # One set of goldens, asserted bit for bit on every platform (F-48); no
+        # cfg branches in the tests.
+        if: needs.changes.outputs.full == 'true'
         run: cargo test -p ssg-sim --locked baseline_q13_to_capture -- --ignored --nocapture
+
+      - name: Release build replays the committed recording
+        # The tests run dev builds; what ships is a release build. A release build
+        # of this commit replays the recording made on macOS bit for bit (exit 0).
+        # Replay writes nothing, so it runs on the checkout in place.
+        if: needs.changes.outputs.full == 'true'
+        run: cargo run --release -p ssg-sim-cli --locked -- replay crates/ssg-sim-cli/tests/fixtures/q13-6400 --assets assets
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docusaurus build — catches broken links / build errors, and enforces the
