@@ -20,6 +20,9 @@ const TRIG_IN: [f64; 8] = [
     1e6,
     -2.5,
 ];
+/// `atan` (178-P11 S3, for `c2ixys`): include 0, a subnormal, values near π/2 and
+/// π, 1e6, a negative value, and the size of the CIP's `sqrt(r2 / (1 - r2))`.
+const ATAN_IN: [f64; 8] = [0.0, SUB, FRAC_PI_2, PI, 1e6, -2.5, 1e-9, 1.5e-2];
 const HYP_IN: [f64; 8] = [0.0, SUB, FRAC_PI_2, PI, 1e-3, 1e6, -2.5, 0.5];
 const ATAN2_IN: [(f64, f64); 8] = [
     (0.0, 1.0),
@@ -81,6 +84,16 @@ const ATAN2_BITS: [u64; 8] = [
     0x400921fb5421d100,
     0x3ff921f82ef5bef6,
     0xbffc4a83936311da,
+];
+const ATAN_BITS: [u64; 8] = [
+    0x0000000000000000,
+    0x0000000000000001,
+    0x3ff00fe987ed02ff,
+    0x3ff433b8a322ddd2,
+    0x3ff921fa47d4b30d,
+    0xbff30b6d796a4da8,
+    0x3e112e0be826d695,
+    0x3f8eb7baf2082977,
 ];
 const POWF_BITS: [u64; 8] = [
     0x0000000000000000,
@@ -203,4 +216,10 @@ fn powi_is_exact_where_the_product_is() {
     assert_eq!(math::powi(2.0, -3), 0.125);
     assert_eq!(math::powi(-2.0, 7), -128.0);
     assert_eq!(math::powi(0.5, -1), 2.0);
+}
+
+#[test]
+fn atan_known_answers() {
+    let got: Vec<f64> = ATAN_IN.iter().map(|&x| math::atan(x)).collect();
+    assert_none(mismatches("atan", &ATAN_IN, &got, &ATAN_BITS));
 }

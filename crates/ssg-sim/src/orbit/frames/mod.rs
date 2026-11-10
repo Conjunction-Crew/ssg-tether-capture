@@ -149,3 +149,12 @@ fn matrix3(r: &iau2006::Mat) -> Matrix3<f64> {
         r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2],
     )
 }
+
+/// The two series tables of `nut00a`, for the shape test.
+#[cfg(test)]
+pub(crate) fn nut00a_tables() -> (
+    &'static [nut00a_tables::LuniSolarTerm],
+    &'static [nut00a_tables::PlanetaryTerm],
+) {
+    (&nut00a_tables::XLS, &nut00a_tables::XPL)
+}
