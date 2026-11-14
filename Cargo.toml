@@ -23,7 +23,7 @@ csv = "1.4.0"
 chrono = "0.4.41"
 brahe = "1.1.4"
 nalgebra = "0.34.1"
-rfd = "0.17"
+rfd = "0.18"
 arboard = "3"
 dirs = "7"
 ssg-sim = { path = "crates/ssg-sim" }
